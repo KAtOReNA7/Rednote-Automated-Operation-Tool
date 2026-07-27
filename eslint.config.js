@@ -7,7 +7,9 @@ export default tseslint.config(
     ignores: [
       '**/coverage/**',
       '**/dist/**',
+      '**/.vite/**',
       '**/node_modules/**',
+      '**/out/**',
       '**/*.tsbuildinfo',
       'codex-master-development-instruction-v1.md',
       'xiaohongshu-development-roadmap-v1.md',
@@ -22,9 +24,15 @@ export default tseslint.config(
     },
   },
   {
-    files: ['**/*.ts'],
+    files: ['**/*.{ts,tsx}'],
     rules: {
       '@typescript-eslint/consistent-type-imports': 'error',
+    },
+  },
+  {
+    files: ['apps/web-ui/**/*.{ts,tsx}', 'tests/desktop-renderer.test.tsx'],
+    languageOptions: {
+      globals: globals.browser,
     },
   },
 );

@@ -1,0 +1,164 @@
+// @vitest-environment jsdom
+
+import '@testing-library/jest-dom/vitest';
+
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { userEvent } from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+
+import type { DesktopBridge } from '../packages/shared/src/index.js';
+import { App } from '../apps/web-ui/src/app.js';
+import { ErrorBoundary } from '../apps/web-ui/src/error-boundary.js';
+import { NAVIGATION_ITEMS, resolveRoute } from '../apps/web-ui/src/routes.js';
+
+const bridge: DesktopBridge = {
+  getAppInfo: async () => ({
+    ok: true,
+    value: { name: '红笺本地运营台', platform: 'win32', version: '0.0.0' },
+  }),
+  getFoundationHealth: async () => ({
+    ok: true,
+    value: {
+      checks: {
+        backup: true,
+        cleanup: true,
+        foreignKeys: true,
+        migrations: true,
+        nodeSqlite: true,
+        queueLifecycle: true,
+        reopen: true,
+        wal: true,
+      },
+      schemaVersion: 2,
+      status: 'ready',
+    },
+  }),
+  getRuntimeCapabilities: async () => ({
+    ok: true,
+    value: {
+      chromiumVersion: '150.0.0',
+      electronVersion: '43.2.0',
+      nodeSqlite: true,
+      nodeVersion: '24.18.0',
+      v8Version: '15.0.0',
+    },
+  }),
+  getWindowState: async () => ({
+    ok: true,
+    value: { isFullScreen: false, isMaximized: false },
+  }),
+};
+
+beforeEach(() => {
+  window.location.hash = '#/overview';
+  Object.defineProperty(window, 'rednoteDesktop', {
+    configurable: true,
+    value: bridge,
+  });
+});
+
+afterEach(() => {
+  cleanup();
+  window.location.hash = '';
+});
+
+describe('React desktop shell', () => {
+  it('defines the exact ten destinations in product order', () => {
+    expect(NAVIGATION_ITEMS.map(({ label }) => label)).toEqual([
+      '总览',
+      '书库',
+      '资料研究',
+      '选题池',
+      '内容生产',
+      '审批',
+      '发布包',
+      '数据复盘',
+      '任务中心',
+      '设置',
+    ]);
+  });
+
+  it('renders all destinations and the ready overview', async () => {
+    render(<App />);
+    expect(screen.getAllByRole('link')).toHaveLength(10);
+    expect(await screen.findByText('安全桌面壳层已就绪')).toBeInTheDocument();
+    expect(screen.getByText('本机基础设施正常')).toBeInTheDocument();
+    expect(screen.getByText('Electron')).toBeInTheDocument();
+    expect(screen.getByText('43.2.0')).toBeInTheDocument();
+  });
+
+  it('navigates to a real placeholder without presenting fake actions', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText('安全桌面壳层已就绪');
+    await user.click(screen.getByRole('link', { name: /书库/u }));
+
+    expect(await screen.findByRole('heading', { name: '书库', level: 1 })).toBeInTheDocument();
+    expect(screen.getByText('这里还是一个清晰的占位页')).toBeInTheDocument();
+    expect(screen.getByText(/尚未在当前里程碑实现/u)).toBeInTheDocument();
+    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+  });
+
+  it.each(NAVIGATION_ITEMS)('renders the $label route at $path', async (item) => {
+    window.location.hash = `#${item.path}`;
+    render(<App />);
+    expect(await screen.findByRole('heading', { name: item.label, level: 1 })).toBeInTheDocument();
+  });
+
+  it('renders a controlled 404 route', async () => {
+    window.location.hash = '#/not-a-route';
+    render(<App />);
+    expect(await screen.findByText('没有这个本地页面')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '返回总览' })).toBeInTheDocument();
+  });
+
+  it('shows a safe error state when the preload bridge is unavailable', async () => {
+    Object.defineProperty(window, 'rednoteDesktop', {
+      configurable: true,
+      value: undefined,
+    });
+    render(<App />);
+    expect(await screen.findByText('本地基础自检未完成')).toBeInTheDocument();
+    expect(screen.getByText(/不会连接任何外部服务/u)).toBeInTheDocument();
+  });
+
+  it.each(NAVIGATION_ITEMS)('resolves $label at $path', (item) => {
+    expect(resolveRoute(item.path)).toEqual(item);
+  });
+
+  it('does not resolve unknown or partial routes', () => {
+    expect(resolveRoute('/')).toBeNull();
+    expect(resolveRoute('/overview/extra')).toBeNull();
+  });
+
+  it('supports keyboard navigation with a visible focus target', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await screen.findByText('安全桌面壳层已就绪');
+    await user.tab();
+    expect(screen.getByRole('link', { name: /总览/u })).toHaveFocus();
+  });
+
+  it('contains render failures in the Error Boundary', () => {
+    const Throwing = (): React.JSX.Element => {
+      throw new Error('synthetic renderer failure');
+    };
+    render(
+      <ErrorBoundary>
+        <Throwing />
+      </ErrorBoundary>,
+    );
+    expect(screen.getByRole('alert')).toHaveTextContent('桌面壳层暂时无法显示');
+    expect(screen.getByRole('alert')).not.toHaveTextContent('synthetic renderer failure');
+  });
+
+  it('marks only the active route for assistive technology', async () => {
+    render(<App />);
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: /总览/u })).toHaveAttribute('aria-current', 'page');
+    });
+    expect(
+      screen.getAllByRole('link').filter((link) => link.hasAttribute('aria-current')),
+    ).toHaveLength(1);
+  });
+});

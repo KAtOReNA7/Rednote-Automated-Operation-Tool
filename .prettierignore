@@ -1,5 +1,7 @@
 node_modules/
 dist/
+.vite/
+out/
 coverage/
 package-lock.json
 
@@ -7,5 +9,6 @@ package-lock.json
 codex-master-development-instruction-v1.md
 M1-Issue007-SQLite-schema-migrations-Codex-instruction.md
 M1-Issue009-persistent-local-job-queue-Codex-instruction.txt
+M1-Issue006-Electron-React-desktop-shell-Codex-instruction.txt
 xiaohongshu-development-roadmap-v1.md
 xiaohongshu-mystery-account-prd-v1.md

@@ -919,9 +919,9 @@ flowchart TD
 5. Issue 005：Windows CI；
 6. Issue 007：SQLite；
 7. Issue 009：任务队列；
-8. Issue 010：设置；
-9. Issue 006：桌面 UI；
-10. Issue 008：本地文件；
+8. Issue 006：桌面 UI；
+9. Issue 008：本地文件；
+10. Issue 010：设置；
 11. Issue 011：本地 API。
 
 原因：

@@ -1,0 +1,1290 @@
+M1 Issue 006：Electron + React 桌面壳——Codex 执行指令
+=====================================================
+
+版本：V1.0
+日期：2026-07-27
+
+
+前置状态
+--------
+
+M0 commit：
+b01785f7010f259c2faf2bfb7173dc678ca16cca
+
+Issue 007 commit：
+891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+
+Issue 009 commit：
+4438f237729ee68a4631d5068fcbc3ec1a8f200c
+
+预期分支：
+main
+
+预期 HEAD：
+4438f237729ee68a4631d5068fcbc3ec1a8f200c
+
+预期工作树：
+clean
+
+预期远端：
+未配置
+
+
+执行配置
+--------
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High
+预计耗时：3—6 小时
+是否适合无人值守：适合
+是否需要真实 API：不需要
+是否允许产生模型费用：不需要且不得产生
+本轮结束点：Issue 006 验收完成
+
+
+一、结论与路线图顺序修正
+------------------------
+
+本轮授权实施 Issue 006：Electron 桌面壳和 React UI。
+
+Codex 对下一步的推荐是正确的。
+
+现有 xiaohongshu-development-roadmap-v1.md 的“第一阶段实际开发顺序”
+存在文档内部依赖矛盾：
+
+- 它把 Issue 010 排在 Issue 006 和 Issue 008 之前；
+- 但 Roadmap 自己声明 Issue 010 依赖 Issue 006、007、008。
+
+正确的剩余顺序应为：
+
+Issue 006 → Issue 008 → Issue 010 → Issue 011
+
+本轮允许进行一次纯文档修正：
+
+1. 只修正 Roadmap 中“第一阶段实际开发顺序”的剩余顺序；
+2. 已完成部分应保持：
+   001 → 002 → 003 → 004 → 005 → 007 → 009；
+3. 未完成部分改为：
+   006 → 008 → 010 → 011；
+4. 不改变各 Issue 的内容、依赖或验收标准；
+5. 不修改 PRD 的产品需求；
+6. 在 Issue 006 验收映射中记录这是文档依赖修正，不是需求变更。
+
+
+二、任务授权边界
+----------------
+
+本轮只允许：
+
+1. 修正上述路线图顺序；
+2. 实施 Issue 006：安全的 Electron 桌面壳；
+3. 实施 React 桌面导航和占位页面；
+4. 建立严格、最小化、类型安全的 preload/IPC 边界；
+5. 在真实 Electron 运行时验证 node:sqlite、现有迁移和队列基础可加载；
+6. 完成开发模式、打包目录模式和自动化测试；
+7. 创建一个独立本地提交。
+
+本轮不得进入：
+
+- Issue 008：本地文件仓库；
+- Issue 010：正式设置向导和密钥引用；
+- Issue 011：本地 HTTP API 和浏览器插件认证；
+- Issue 012 及之后的模型、搜索、研究、内容、图片和 OCR；
+- Issue 046：正式安装包、升级或发布。
+
+本轮不得实现：
+
+- 真实书库页面；
+- 真实研究页面；
+- 真实选题和文案功能；
+- 正式审批功能；
+- 发布包导出；
+- 数据导入；
+- 模型配置；
+- 中转站配置；
+- 密钥保存；
+- 搜索；
+- 图片；
+- OCR；
+- 浏览器插件通信；
+- 小红书登录、发布、评论、私信、定时、验证码或风控；
+- 云服务；
+- 自动更新；
+- GitHub Release；
+- 代码签名；
+- 正式 MSI/EXE 安装器。
+
+
+三、权威文件
+------------
+
+完整读取，不得只读摘要：
+
+1. xiaohongshu-mystery-account-prd-v1.md
+2. xiaohongshu-development-roadmap-v1.md
+3. codex-master-development-instruction-v1.md
+4. M1-Issue009-persistent-local-job-queue-Codex-instruction.txt
+5. docs/adr/0001-m0-foundation.md
+6. docs/adr/0002-sqlite-schema-and-migrations.md
+7. docs/adr/0003-persistent-local-job-queue.md
+8. docs/m0-acceptance-map.md
+9. docs/m1-issue007-acceptance-map.md
+10. docs/m1-issue009-acceptance-map.md
+11. apps/desktop 全部文件
+12. apps/web-ui 全部文件
+13. packages/core 全部文件
+14. packages/db 全部文件
+15. packages/workflows 全部文件
+16. 当前 CI、package.json、package-lock.json 和全部测试
+
+冲突优先级：
+
+1. 用户当前明确要求；
+2. PRD 冻结硬约束；
+3. Roadmap 禁止事项和 Issue 006 验收；
+4. 本指令；
+5. 现有实现细节。
+
+不得通过修改冻结 PRD 或硬约束解决实现困难。
+
+
+四、起点核验
+------------
+
+修改前：
+
+1. 确认分支为 main。
+2. 确认 HEAD 精确等于：
+   4438f237729ee68a4631d5068fcbc3ec1a8f200c
+3. 确认以下提交均为祖先且顺序正确：
+   - b01785f7010f259c2faf2bfb7173dc678ca16cca
+   - 891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+   - 4438f237729ee68a4631d5068fcbc3ec1a8f200c
+4. 确认工作树干净。
+5. 确认未跟踪文件为 0。
+6. 确认历史迁移 SHA-256 不变。
+7. 确认 Issue 009 指令文件已在项目根目录。
+8. 检查是否存在 AGENTS.md。
+
+运行：
+
+npm ci
+npm run format-check
+npm run lint
+npm run typecheck
+npm run test:constraints
+npm run test:db
+npm run test:queue
+npm run test
+npm run build
+npm run audit:dependencies
+
+只有全部通过才可以开始。
+
+以下任一情况出现时立即停止并报告 BLOCKED：
+
+- HEAD 不匹配；
+- 工作树不干净；
+- 存在无法确认归属的文件；
+- 历史迁移变化；
+- 现有测试失败；
+- 需要重写 Issue 007 或 Issue 009；
+- 需要自行重置、变基或选择其他起点。
+
+
+五、Electron 版本选择
+--------------------
+
+实施时必须核对 Electron 官方发布记录与支持周期。
+
+截至 2026-07-27，官方 Electron 43：
+
+- 发布于 2026-07-02；
+- 内置 Node.js v24.17.0；
+- Electron 40 已停止支持；
+- Electron 43 仍属于当前支持线。
+
+官方参考：
+
+Electron 43：
+https://www.electronjs.org/blog/electron-43-0
+
+Electron Releases：
+https://releases.electronjs.org/
+
+Electron 支持时间表：
+https://releases.electronjs.org/schedule
+
+要求：
+
+1. 不使用已经停止支持的 Electron 36、37、38、39 或 40。
+2. 实施时选择仍受支持的稳定版本。
+3. 默认优先 Electron 43 的最新稳定补丁版本。
+4. 不使用 beta、nightly 或 canary。
+5. 不在 package.json 中使用无界的 latest。
+6. 确认版本后使用精确版本并写入 package-lock.json。
+7. 在 ADR 中记录：
+   - 选择的精确 Electron 版本；
+   - 内置 Node/Chromium/V8 版本；
+   - 支持周期；
+   - node:sqlite 兼容性；
+   - 为什么不使用旧 36/37 建议。
+8. 如果实施时 Electron 43 已不再是受支持版本：
+   - 选择当时仍受支持的稳定版本；
+   - 必须内置满足 node:sqlite 能力的 Node；
+   - 在 ADR 中保存官方证据；
+   - 不得静默使用 EOL 版本。
+
+
+六、打包工具选择
+----------------
+
+Electron 官方文档推荐 Electron Forge。
+
+官方参考：
+
+https://www.electronjs.org/docs/latest/tutorial/application-distribution
+https://www.electronjs.org/docs/latest/tutorial/tutorial-packaging
+https://www.electronjs.org/docs/latest/tutorial/forge-overview
+
+默认选择：
+
+Electron Forge。
+
+实施前核对它与现有 npm workspaces、TypeScript 和 React 构建的兼容性。
+
+如果选择其他工具：
+
+1. 必须说明 Electron Forge 无法满足的具体要求；
+2. 必须记录在 ADR；
+3. 不得引入发布服务器；
+4. 不得引入云端打包；
+5. 不得进入安装器、签名或自动更新范围。
+
+Issue 006 只需要：
+
+- development start；
+- production renderer build；
+- Electron package 目录；
+- packaged application smoke test。
+
+不需要：
+
+- MSI；
+- NSIS；
+- Squirrel；
+- Microsoft Store；
+- 自动更新；
+- 发布；
+- 签名。
+
+
+七、目标进程架构
+----------------
+
+建立清晰的 Electron 三层：
+
+1. Main process
+   - 创建窗口；
+   - 管理生命周期；
+   - 承担最小受信任能力；
+   - 注册严格 IPC；
+   - 执行 Electron 运行时能力检查；
+   - 不承载 React。
+
+2. Preload
+   - contextBridge；
+   - 只暴露最小、命名明确、类型安全的 API；
+   - 不暴露 ipcRenderer；
+   - 不暴露 Node 模块；
+   - 不暴露任意文件、命令或网络能力。
+
+3. Renderer
+   - React；
+   - 不启用 Node；
+   - 不直接访问数据库；
+   - 不直接访问文件系统；
+   - 不直接访问 Electron 模块；
+   - 只使用 preload 暴露的窄 API。
+
+包边界建议：
+
+apps/desktop/
+  src/main/
+  src/preload/
+  tests/
+
+apps/web-ui/
+  src/app/
+  src/pages/
+  src/components/
+  src/styles/
+  tests/
+
+可以根据现有仓库结构调整，但不能混合受信任和非受信任代码。
+
+
+八、强制安全配置
+----------------
+
+BrowserWindow 必须显式配置：
+
+- nodeIntegration: false
+- nodeIntegrationInWorker: false
+- contextIsolation: true
+- sandbox: true
+- webSecurity: true
+- allowRunningInsecureContent: false
+- webviewTag: false
+
+不得依赖默认值代替显式配置。
+
+官方参考：
+
+Electron Security：
+https://www.electronjs.org/docs/latest/tutorial/security
+
+Context Isolation：
+https://www.electronjs.org/docs/latest/tutorial/context-isolation
+
+Process Sandboxing：
+https://www.electronjs.org/docs/latest/tutorial/sandbox
+
+Preload：
+https://www.electronjs.org/docs/latest/tutorial/tutorial-preload
+
+IPC：
+https://www.electronjs.org/docs/latest/tutorial/ipc
+
+其他要求：
+
+1. Renderer 只加载本地受控资源。
+2. Production 不加载远程网页。
+3. 不使用 webview。
+4. 不禁用 webSecurity。
+5. 不允许任意 window.open。
+6. 拒绝未授权导航。
+7. 拒绝外部页面把当前窗口导航走。
+8. 默认拒绝 permission request。
+9. 不启用 remote module。
+10. 不使用 eval 或 new Function。
+11. 不使用 unsafe-eval CSP。
+12. Production CSP 最少应包含：
+    - default-src 'self'
+    - script-src 'self'
+    - style-src 只允许项目实际需要的来源
+    - img-src 'self' data: blob:
+    - connect-src 'self' 或更严格
+    - object-src 'none'
+    - frame-src 'none'
+    - base-uri 'none'
+13. Dev server 例外必须只在开发模式启用。
+14. Development 和 production origin 必须分别验证。
+15. Renderer 不能读取 process.env。
+
+
+九、IPC 设计
+------------
+
+不得暴露：
+
+- ipcRenderer.send
+- ipcRenderer.invoke
+- 任意 channel 名称；
+- 任意文件路径读取；
+- 任意 shell 命令；
+- 任意 URL 请求；
+- SQL；
+- 数据库连接；
+- JobQueueRepository；
+- JobWorker；
+- Node require；
+- process；
+- Buffer；
+- child_process。
+
+只允许建立最小只读 API，例如：
+
+window.rednote.getAppInfo()
+window.rednote.getRuntimeCapabilities()
+window.rednote.getFoundationHealth()
+window.rednote.getWindowState()
+
+返回内容限制为：
+
+- 应用版本；
+- Electron/Node/Chrome 版本；
+- 当前平台；
+- node:sqlite 能力布尔值；
+- 数据库迁移 smoke test 状态；
+- 队列 smoke test 状态；
+- 非敏感窗口状态。
+
+不得返回：
+
+- 用户目录完整路径；
+- 数据库完整路径；
+-环境变量；
+-请求头；
+-密钥；
+-完整错误堆栈；
+-任意 SQL；
+-任意 payload。
+
+要求：
+
+1. IPC channel 使用常量和类型。
+2. 每个 handler 有独立 schema 验证。
+3. 验证 event.senderFrame 来源。
+4. Production 只接受受控应用 origin。
+5. Development 只接受实际 dev server origin。
+6. 不注册通配或 generic invoke handler。
+7. preload 暴露对象应冻结或不可随意变异。
+8. API 类型在 renderer 编译期可见。
+9. IPC 错误返回安全错误码和短消息。
+10. 不把异常 stack 传给 renderer。
+
+
+十、导航与权限策略
+------------------
+
+实现并测试：
+
+1. will-navigate：
+   - 只允许当前受控应用 origin；
+   - 其他导航阻止。
+
+2. setWindowOpenHandler：
+   - 默认 deny；
+   - 本 Issue 不需要打开外部链接；
+   - 如果帮助页有官方文档链接，只显示文本，不调用 shell.openExternal。
+
+3. setPermissionRequestHandler：
+   - 默认拒绝所有权限。
+
+4. setPermissionCheckHandler：
+   - 默认拒绝。
+
+5. 禁止：
+   - 摄像头；
+   - 麦克风；
+   - 地理位置；
+   - 通知；
+   - MIDI；
+   - 蓝牙；
+   - 剪贴板读取；
+   - 屏幕捕获。
+
+未来需要某项权限时必须由对应 Issue 单独授权。
+
+
+十一、Electron Fuses
+--------------------
+
+评估并在打包产物中配置 Electron Fuses。
+
+官方参考：
+
+https://www.electronjs.org/docs/latest/tutorial/fuses
+
+目标：
+
+- RunAsNode：禁用
+- EnableNodeOptionsEnvironmentVariable：禁用
+- EnableNodeCliInspectArguments：禁用
+- EnableEmbeddedAsarIntegrityValidation：启用
+- OnlyLoadAppFromAsar：启用
+
+要求：
+
+1. 不影响开发模式。
+2. 只对 production packaged artifact 生效。
+3. 有自动化检查证明 fuse 状态。
+4. 如果所选 Electron/Forge 版本的 fuse 名称变化：
+   - 以官方当前 API 为准；
+   - 在 ADR 记录；
+   - 不静默跳过。
+5. 不使用 fuse 配置替代 BrowserWindow 安全配置。
+
+
+十二、单实例与生命周期
+----------------------
+
+实现：
+
+1. app.requestSingleInstanceLock()。
+2. 第二实例启动时：
+   - 不创建第二个主窗口；
+   - 激活已有窗口；
+   - 不启动第二个数据库/队列实例。
+3. app.whenReady() 后创建窗口。
+4. 窗口 ready-to-show 后再显示，避免白屏闪烁。
+5. Windows 上关闭主窗口后正常退出。
+6. 应用退出前：
+   - 停止本 Issue 创建的测试性后台活动；
+   - 关闭数据库 smoke connection；
+   - 不伪造任务成功；
+   - 不启动真实 JobWorker。
+7. 不注册自动启动。
+8. 不注册系统协议。
+9. 不注册文件关联。
+10. 不实现托盘常驻。
+
+
+十三、窗口状态
+--------------
+
+Issue 006 只保存技术性窗口状态：
+
+- width
+- height
+- x
+- y
+- maximized
+
+不保存正式业务设置、模型设置或密钥。
+
+要求：
+
+1. 保存到 Electron userData 下的独立小型文件。
+2. 文件内容不包含敏感信息。
+3. 原子写入，避免半文件。
+4. 文件损坏时回退默认值。
+5. 窗口位置超出当前显示器范围时自动回到可见区域。
+6. 更换显示器、分辨率或 DPI 后仍可恢复。
+7. 对 width/height 设置合理最小和最大值。
+8. 关闭重开后保持有效窗口状态。
+9. 测试中文和空格 userData 路径。
+
+Roadmap 中“关闭和重新打开应用不丢失设置”，本 Issue 只验收窗口状态。
+
+正式业务设置属于 Issue 010，不得提前实现。
+
+
+十四、React 桌面壳
+------------------
+
+建立中文桌面导航和占位页面。
+
+至少包含：
+
+1. 总览
+2. 书库
+3. 资料研究
+4. 选题池
+5. 内容生产
+6. 审批
+7. 发布包
+8. 数据复盘
+9. 任务中心
+10. 设置
+
+要求：
+
+1. 页面只显示结构、说明和“尚未在当前里程碑实现”的明确状态。
+2. 不使用伪造业务数据营造“已经实现”的假象。
+3. 不调用真实数据库查询。
+4. 不启动真实任务。
+5. 不提供可操作的发布按钮。
+6. 不提供密钥输入框。
+7. 不提供云端登录。
+8. 不提供小红书登录。
+9. 不讨论 AI 运营实验作为账号内容。
+10. 桌面优先，不建设手机布局。
+
+壳层至少包括：
+
+- 应用名称；
+- 左侧或顶部主导航；
+- 当前页面标题；
+- 本地运行状态；
+- Foundation health 状态；
+- 错误边界；
+- 404 页面；
+- 加载状态；
+- 空状态；
+- 键盘可访问焦点；
+- 版本信息入口。
+
+视觉要求：
+
+- 清晰、克制；
+- 中文优先；
+- 不使用低对比度文本；
+- 不追求本轮品牌视觉；
+- 不引入复杂动效；
+- 窗口最小尺寸下仍可操作；
+- 支持 Windows 默认缩放。
+
+
+十五、React 与路由
+------------------
+
+要求：
+
+1. 使用明确的路由表。
+2. 导航配置和页面路由保持单一来源。
+3. 未知路由进入 404，不崩溃。
+4. 刷新或重新加载 production 页面仍能打开当前路由。
+5. 不依赖公网路由。
+6. 不在 URL 中保存敏感信息。
+7. 所有页面均可通过键盘到达。
+8. 页面 title 可理解。
+
+选择 React Router 或同等级工具时：
+
+- 记录版本；
+- 精确锁定依赖；
+- 不引入服务端路由；
+- 不引入 Next.js 或云部署要求。
+
+
+十六、错误边界与诊断
+--------------------
+
+实现：
+
+1. React Error Boundary。
+2. Renderer 未捕获异常的安全展示。
+3. Main process 安全日志。
+4. IPC 失败的安全错误状态。
+5. Foundation health 检查失败时显示“基础组件不可用”，而不是白屏。
+6. 提供重新加载 renderer 的按钮。
+7. 不把完整 stack、用户路径、环境变量或密钥显示给 renderer。
+8. 不发送遥测。
+9. 不上传错误。
+
+本 Issue 不实现完整脱敏诊断包，后者属于 Issue 045。
+
+
+十七、Electron 运行时 node:sqlite 验证
+------------------------------------
+
+必须在实际 Electron main process 中验证，而不是只在外部 Node.js 中验证：
+
+1. import/require node:sqlite 成功；
+2. DatabaseSync 可用；
+3. backup API 可用；
+4. timeout option 可用；
+5. foreign_keys 可用；
+6. WAL 可用；
+7. 现有迁移器可在 Electron runtime 中对临时数据库执行；
+8. 现有队列 repository 可在临时数据库中完成最小 smoke：
+   - 入队；
+   - 领取；
+   - 完成；
+9. 临时 smoke 数据库关闭后可重新打开；
+10. smoke 完成后清理临时文件。
+
+限制：
+
+- 不打开真实生产数据库；
+- 不创建正式 data root；
+- 不启动长期 JobWorker；
+- 不写入用户业务数据；
+- 不产生模型调用；
+- 不在 renderer 直接执行 SQLite；
+- 不在数据库事务内启动 Electron UI。
+
+Foundation health 只返回布尔状态和安全错误码。
+
+
+十八、Utility Process 决策
+--------------------------
+
+Electron 官方文档指出 Utility Process 适合独立 Node 工作，例如 SQLite 服务进程。
+
+官方参考：
+
+https://www.electronjs.org/docs/latest/tutorial/fuses
+https://www.electronjs.org/docs/latest/api/utility-process
+
+本 Issue 必须在 ADR 中评估：
+
+方案 A：
+短数据库操作位于 main process，未来长任务放 utility process。
+
+方案 B：
+数据库和任务 worker 统一放 utility process。
+
+本轮默认：
+
+- 不提前实现完整 utility-process 数据库服务；
+- main process 只运行短暂 foundation smoke；
+- 保持 packages/db 和 packages/workflows 不依赖 Electron；
+- 为 Issue 011 或后续集成保留清晰进程边界。
+
+如果 Codex 判断现在必须引入 utility process：
+
+- 先证明不用它无法满足 Issue 006；
+- 不得扩大到完整任务服务；
+- 仍不得实现本地 HTTP API；
+- 必须增加进程退出和崩溃测试；
+- 必须在 ADR 说明额外复杂度。
+
+
+十九、Development 与 Production 加载
+-----------------------------------
+
+Development：
+
+- 可使用本机 dev server；
+- 只监听 127.0.0.1；
+- 不监听 0.0.0.0；
+- origin 必须精确验证；
+- devTools 仅在 development 可用。
+
+Production：
+
+- 只加载打包后的本地应用资源；
+- 不依赖 localhost server；
+- 不启动 HTTP server；
+- 不依赖公网；
+- devTools 默认关闭；
+- CSP 生效；
+- 导航和权限策略生效。
+
+不得使用 file:// 拼接任意用户路径形成页面。
+
+可以选择安全自定义 app:// 协议或 Forge 推荐生产加载方式，但必须在 ADR 中说明。
+
+
+二十、网络边界
+--------------
+
+Issue 006 runtime 不需要任何外部网络。
+
+要求：
+
+1. Production 桌面壳启动和导航在离线状态可用。
+2. 不加载 CDN 字体、脚本、CSS 或图片。
+3. 不加载 Google Fonts。
+4. 不发送遥测。
+5. 不检查更新。
+6. 不连接 GitHub。
+7. 不连接小红书。
+8. 不连接中转站。
+9. 不建立本地 HTTP API。
+10. 不监听任何 TCP 端口。
+
+开发依赖从 npm 安装不属于 runtime 网络能力，但必须进入 package-lock.json 并通过依赖审计。
+
+
+二十一、打包目录
+----------------
+
+建立：
+
+npm run package:desktop
+
+目标：
+
+- 生成 Windows 可运行的 packaged directory；
+- 不生成正式安装器；
+- 不发布；
+- 不签名；
+- 不自动更新；
+- 不上传。
+
+打包要求：
+
+1. 只包含运行所需文件。
+2. 不包含测试 fixture。
+3. 不包含真实密钥。
+4. 不包含用户数据库。
+5. 不包含未授权内部资料。
+6. 不包含 .env。
+7. 不包含 Git 历史。
+8. Fuses 按预期。
+9. Production CSP 生效。
+10. packaged app 可运行 Electron/node:sqlite smoke test。
+
+
+二十二、测试脚本
+----------------
+
+新增明确命令：
+
+npm run test:desktop
+npm run test:electron-smoke
+npm run package:desktop
+
+含义：
+
+test:desktop：
+- Electron main/preload 单元测试；
+- React shell/component/router 测试；
+- 安全策略测试；
+- 窗口状态测试。
+
+test:electron-smoke：
+- 启动实际 Electron runtime；
+- 验证 main、preload、renderer；
+- 验证 node:sqlite；
+- 验证迁移和队列最小 smoke；
+- 验证退出码；
+- 不产生真实业务数据。
+
+package:desktop：
+- 生成 production packaged directory。
+
+根级 npm run test 必须包含 desktop 测试。
+
+
+二十三、最低测试矩阵
+--------------------
+
+A. 起点与回归
+
+1. 固定起点 HEAD 正确。
+2. 历史迁移 SHA-256 不变。
+3. test:constraints 通过。
+4. test:db 通过。
+5. test:queue 通过。
+6. 路线图顺序修正仅改变对应文档段落。
+
+B. Electron 版本
+
+7. 选择受支持的稳定 Electron。
+8. Electron 版本精确锁定。
+9. 不使用 beta/nightly/canary。
+10. 不使用 EOL 36—40。
+11. 记录内置 Node/Chromium/V8。
+12. 实际 Electron runtime 版本等于锁定版本。
+
+C. BrowserWindow 安全
+
+13. nodeIntegration=false。
+14. nodeIntegrationInWorker=false。
+15. contextIsolation=true。
+16. sandbox=true。
+17. webSecurity=true。
+18. allowRunningInsecureContent=false。
+19. webviewTag=false。
+20. Production devTools 默认关闭。
+
+D. Renderer 隔离
+
+21. Renderer 无 require。
+22. Renderer 无直接 ipcRenderer。
+23. Renderer 无 Node fs。
+24. Renderer 无 process.env。
+25. Renderer 无数据库访问。
+26. Renderer 无 JobQueueRepository。
+
+E. Preload/IPC
+
+27. contextBridge API 存在。
+28. 只暴露允许的只读 API。
+29. 不暴露任意 channel。
+30. senderFrame 来源验证。
+31. 非法 origin 被拒绝。
+32. 非法参数被拒绝。
+33. 错误不泄露 stack。
+34. 返回值不泄露完整路径。
+
+F. 导航与权限
+
+35. Production 只加载本地应用。
+36. will-navigate 拒绝外部导航。
+37. window.open 默认拒绝。
+38. permission request 默认拒绝。
+39. permission check 默认拒绝。
+40. webview 不可用。
+41. 拖放 URL 不触发导航。
+
+G. CSP
+
+42. Production 有 CSP。
+43. script-src 不含 unsafe-eval。
+44. object-src none。
+45. frame-src none。
+46. base-uri none。
+47. 不加载 CDN。
+48. 不加载远程字体。
+
+H. 生命周期
+
+49. 单实例锁生效。
+50. 第二实例不创建第二窗口。
+51. 第二实例激活已有窗口。
+52. ready-to-show 后显示。
+53. 主窗口关闭后正常退出。
+54. 退出时连接关闭。
+55. 不自动启动 JobWorker。
+
+I. 窗口状态
+
+56. 默认窗口尺寸正确。
+57. bounds 保存与恢复。
+58. maximized 保存与恢复。
+59. 损坏文件回退。
+60. 屏幕外坐标被纠正。
+61. 最小尺寸约束。
+62. 中文/空格 userData 路径。
+63. 原子写入。
+64. 窗口状态不含敏感数据。
+
+J. React Shell
+
+65. 十个中文导航入口存在。
+66. 各占位页面可到达。
+67. 当前路由高亮。
+68. 404 页面。
+69. Error Boundary。
+70. Foundation health 状态。
+71. 键盘导航。
+72. 可见焦点。
+73. 不展示伪造业务数据。
+74. 不提供发布按钮。
+75. 不提供密钥输入。
+76. 不提供平台登录。
+
+K. Electron node:sqlite
+
+77. 实际 Electron main 可加载 node:sqlite。
+78. DatabaseSync 可用。
+79. backup API 可用。
+80. timeout 可用。
+81. foreign_keys 可用。
+82. WAL 可用。
+83. 临时数据库迁移通过。
+84. 临时队列入队/领取/完成通过。
+85. 数据库关闭重开通过。
+86. smoke 临时文件清理。
+
+L. Packaging
+
+87. production renderer build 通过。
+88. Electron package 通过。
+89. packaged app 启动通过。
+90. packaged app node:sqlite smoke 通过。
+91. package 不含 .env。
+92. package 不含测试 fixture。
+93. package 不含用户数据库。
+94. package 不含密钥。
+95. Fuses 状态正确。
+
+M. 网络与范围
+
+96. Production 不监听 TCP 端口。
+97. Production 不发出 runtime 网络请求。
+98. 无自动更新。
+99. 无云服务。
+100. 无真实模型/API 调用。
+101. 无小红书平台动作。
+102. 无开卷。
+103. 无盗版电子书处理。
+104. ai_disclosure 规则不变。
+105. 版权不参与门禁、评分、审批、优先级或排期。
+
+不得只通过搜索源代码字符串替代 Electron 运行时验证。
+
+
+二十四、Fuses 与 Packaged Smoke
+-------------------------------
+
+packaged app 必须提供仅供自动化验收的 smoke 模式，例如命令行 flag。
+
+要求：
+
+1. Smoke mode 不打开可见主窗口，或使用隐藏窗口。
+2. 运行：
+   - runtime version；
+   - BrowserWindow 安全配置；
+   - node:sqlite；
+   -迁移；
+   -队列最小流程。
+3. 输出只包含安全 JSON。
+4. 不输出用户完整路径。
+5. 不输出环境变量。
+6. 不输出密钥。
+7. 成功退出码 0。
+8. 失败退出非 0。
+9. 自动清理临时文件。
+10. 测试实际 packaged executable，而不是外部 Node 脚本。
+
+
+二十五、CI
+----------
+
+更新 Windows CI，至少加入：
+
+npm run test:desktop
+npm run test:electron-smoke
+npm run package:desktop
+
+保留：
+
+npm run format-check
+npm run lint
+npm run typecheck
+npm run test:constraints
+npm run test:db
+npm run test:queue
+npm run test
+npm run build
+npm run audit:dependencies
+
+要求：
+
+1. windows-latest 仍为必过作业。
+2. 不删除任何已有门禁。
+3. 不把 desktop 测试设为 allow-failure。
+4. 不把 packaged smoke 设为 skip。
+5. GitHub 托管 CI 尚未运行时，不得声称已通过。
+6. 本地无法模拟的 CI 行为明确列为未验证。
+
+
+二十六、文档
+------------
+
+至少新增：
+
+docs/adr/0004-electron-react-desktop-shell.md
+docs/m1-issue006-acceptance-map.md
+
+ADR 至少记录：
+
+- Electron 精确版本；
+- 内置 Node/Chromium/V8；
+- 支持周期；
+- Forge 或替代工具选择；
+- main/preload/renderer 边界；
+- BrowserWindow 安全设置；
+- IPC allowlist；
+- CSP；
+- 导航和权限；
+- Fuses；
+- development/production 加载；
+- node:sqlite Electron runtime 结果；
+- utility process 决策；
+- 为什么不固定 Electron 36/37；
+- 为什么本 Issue 不实现正式 data root。
+
+验收映射必须逐项对应本指令最低测试矩阵。
+
+
+二十七、完成验证
+----------------
+
+完成后从干净依赖状态运行：
+
+npm ci
+npm run format-check
+npm run lint
+npm run typecheck
+npm run test:constraints
+npm run test:db
+npm run test:queue
+npm run test:desktop
+npm run test:electron-smoke
+npm run test
+npm run build
+npm run package:desktop
+npm run audit:dependencies
+
+然后运行 packaged executable smoke test。
+
+必须确认：
+
+- 失败测试 0；
+- 跳过测试 0；
+- 待办测试 0；
+- 依赖漏洞 0；
+- Electron runtime smoke 通过；
+- packaged runtime smoke 通过；
+- 没有 TCP 监听；
+- 没有 runtime 外网请求；
+- 没有密钥；
+- 没有真实 API；
+- 费用 0；
+- 未进入其他 Issue。
+
+任何验收失败：
+
+- 保存证据；
+- 报告 BLOCKED；
+- 不删除测试；
+- 不降低断言；
+- 不关闭 sandbox；
+- 不开启 nodeIntegration；
+- 不禁用 webSecurity；
+- 不跳过 packaged smoke；
+- 不创建完成提交。
+
+
+二十八、本地提交
+----------------
+
+全部通过后创建一个独立本地提交：
+
+feat(desktop): add secure Electron React shell
+
+要求：
+
+- 路线图顺序修正与 Issue 006 实现在同一提交中，并在提交说明中明确；
+- 不 amend 既有提交；
+- 不 squash；
+- 不配置远端；
+- 不 push；
+- 不创建 PR；
+- 不合并；
+- 最终工作树干净。
+
+
+二十九、最终报告格式
+--------------------
+
+1. 结论
+
+- Issue 006：PASS、FAIL 或 BLOCKED；
+- 是否只修正了允许的路线图顺序；
+- 是否进入其他 Issue；
+- 是否产生 API 调用或费用。
+
+2. Git
+
+- 起始 HEAD；
+- 最终 commit SHA；
+- 最终 HEAD；
+- 分支；
+- 工作树；
+- 远端；
+- push/PR/merge。
+
+3. 路线图修正
+
+- 原冲突；
+- 修正后的顺序；
+- 实际修改段落；
+- 确认未改变 PRD 和 Issue 内容。
+
+4. Electron
+
+- 精确 Electron 版本；
+- Node/Chromium/V8；
+- 支持状态；
+- 包管理锁定；
+- Forge/打包工具；
+- ADR。
+
+5. 安全架构
+
+- main/preload/renderer；
+- BrowserWindow webPreferences；
+- IPC allowlist；
+- sender 验证；
+- CSP；
+- navigation；
+- permission；
+- Fuses。
+
+6. React Shell
+
+- 页面清单；
+- 路由；
+- Error Boundary；
+- Foundation health；
+- 键盘可访问性；
+- 窗口状态。
+
+7. Electron node:sqlite
+
+- 实际 Electron runtime；
+- DatabaseSync；
+- backup；
+- timeout；
+- foreign_keys；
+- WAL；
+- 迁移 smoke；
+- 队列 smoke；
+- packaged smoke。
+
+8. 测试
+
+- 每条命令；
+- 测试文件数；
+- 测试总数；
+- desktop 数量；
+- electron smoke 数量；
+- 失败/跳过/待办；
+- package 结果；
+- packaged executable 结果；
+- 网络监听和请求检查。
+
+9. 范围与硬约束
+
+- 无正式业务数据；
+- 无模型/API；
+- 无密钥；
+- 无云；
+- 无小红书动作；
+- 无开卷；
+- 无盗版电子书；
+- AI 标识固定 false；
+- 版权不参与门禁、评分、审批、优先级和排期。
+
+10. CI
+
+分别报告：
+
+- Windows 本地测试；
+- CI 配置测试；
+- GitHub 托管 CI。
+
+如果没有远端，必须写：
+
+GitHub 托管 CI 尚未运行，不能声称已通过。
+
+11. 下一步
+
+- 只推荐一个后续 Issue；
+- 应推荐 Issue 008，除非发现真实阻塞；
+- 说明依赖是否满足；
+- 是否需要密钥、费用或用户输入；
+- 不自动开始。
+
+
+三十、停止条件
+--------------
+
+遇到以下任一情况立即停止：
+
+- 起点 HEAD 不匹配；
+- 工作树不干净；
+- 历史迁移变化；
+- Issue 009 回归失败；
+- 只能使用 EOL Electron；
+- node:sqlite 无法在实际 Electron runtime 加载；
+- packaged runtime 无法运行现有数据库基础；
+- 需要开启 nodeIntegration；
+- 需要关闭 contextIsolation、sandbox 或 webSecurity；
+- 需要加载远程页面；
+- 需要启动 HTTP server；
+- 需要云服务；
+- 需要真实密钥或付费调用；
+- 需要进入 Issue 008/010/011；
+- 测试必须被删除、跳过或削弱。
+
+停止时保留证据，报告 BLOCKED，不得自行扩大权限。
+
+
+三十一、现在执行
+----------------
+
+现在：
+
+1. 核验固定起点。
+2. 完整读取权威文件。
+3. 修正路线图中的依赖顺序。
+4. 选择并锁定受支持的 Electron 和打包工具。
+5. 实现安全 main/preload/renderer 架构。
+6. 实现 React 中文桌面壳和占位页面。
+7. 实现窗口状态、单实例和错误边界。
+8. 在实际 Electron 和 packaged runtime 中验证 node:sqlite、迁移和队列 smoke。
+9. 完成全部测试、构建、打包和安全门禁。
+10. 创建独立本地提交。
+11. 输出完整验收报告。
+12. 停止，不进入 Issue 008。
+

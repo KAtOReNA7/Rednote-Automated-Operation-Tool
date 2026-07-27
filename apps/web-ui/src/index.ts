@@ -1,1 +1,2 @@
-export const M0_PACKAGE_BOUNDARY = 'web-ui' as const;
+export { App } from './app.js';
+export { NAVIGATION_ITEMS, resolveRoute } from './routes.js';

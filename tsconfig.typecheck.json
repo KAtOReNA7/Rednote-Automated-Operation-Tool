@@ -3,13 +3,24 @@
   "compilerOptions": {
     "declaration": false,
     "declarationMap": false,
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "noEmit": true,
     "paths": {
       "@mystery-operations/core": ["./packages/core/src/index.ts"],
       "@mystery-operations/db": ["./packages/db/src/index.ts"],
+      "@mystery-operations/shared": ["./packages/shared/src/index.ts"],
       "@mystery-operations/workflows": ["./packages/workflows/src/index.ts"]
     },
-    "types": ["node", "vitest/globals"]
+    "types": ["node", "vite/client", "vitest/globals"]
   },
-  "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "packages/**/*.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "vite.*.config.ts",
+    "vitest.config.ts"
+  ]
 }
