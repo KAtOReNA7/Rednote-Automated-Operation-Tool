@@ -1,0 +1,29 @@
+{
+  "files": [],
+  "references": [
+    {
+      "path": "./apps/desktop"
+    },
+    {
+      "path": "./apps/web-ui"
+    },
+    {
+      "path": "./apps/clipper"
+    },
+    {
+      "path": "./packages/core"
+    },
+    {
+      "path": "./packages/db"
+    },
+    {
+      "path": "./packages/providers"
+    },
+    {
+      "path": "./packages/workflows"
+    },
+    {
+      "path": "./packages/shared"
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+node_modules/
+dist/
+coverage/
+package-lock.json
+
+# Frozen source documents are preserved verbatim.
+codex-master-development-instruction-v1.md
+xiaohongshu-development-roadmap-v1.md
+xiaohongshu-mystery-account-prd-v1.md
+

@@ -1,0 +1,67 @@
+export enum ContentStatus {
+  IDEA = 'IDEA',
+  RESEARCHING = 'RESEARCHING',
+  RESEARCH_READY = 'RESEARCH_READY',
+  DRAFTING = 'DRAFTING',
+  REVIEW_REQUIRED = 'REVIEW_REQUIRED',
+  APPROVAL_READY = 'APPROVAL_READY',
+  APPROVED = 'APPROVED',
+  EXPORT_READY = 'EXPORT_READY',
+  EXPORTED = 'EXPORTED',
+  MANUALLY_PUBLISHED = 'MANUALLY_PUBLISHED',
+  MEASURED = 'MEASURED',
+  FACT_BLOCKED = 'FACT_BLOCKED',
+  GENERATION_FAILED = 'GENERATION_FAILED',
+  VISUAL_FAILED = 'VISUAL_FAILED',
+  USER_REJECTED = 'USER_REJECTED',
+  ARCHIVED = 'ARCHIVED',
+}
+
+export const STANDARD_CONTENT_STATUSES = [
+  ContentStatus.IDEA,
+  ContentStatus.RESEARCHING,
+  ContentStatus.RESEARCH_READY,
+  ContentStatus.DRAFTING,
+  ContentStatus.REVIEW_REQUIRED,
+  ContentStatus.APPROVAL_READY,
+  ContentStatus.APPROVED,
+  ContentStatus.EXPORT_READY,
+  ContentStatus.EXPORTED,
+  ContentStatus.MANUALLY_PUBLISHED,
+  ContentStatus.MEASURED,
+] as const;
+
+export const EXCEPTION_CONTENT_STATUSES = [
+  ContentStatus.FACT_BLOCKED,
+  ContentStatus.GENERATION_FAILED,
+  ContentStatus.VISUAL_FAILED,
+  ContentStatus.USER_REJECTED,
+  ContentStatus.ARCHIVED,
+] as const;
+
+export type ExceptionContentStatus = (typeof EXCEPTION_CONTENT_STATUSES)[number];
+
+export enum ReadingState {
+  UNKNOWN = 'UNKNOWN',
+  READ_CLEAR = 'READ_CLEAR',
+  READ_FUZZY = 'READ_FUZZY',
+  READ_UNVERIFIED = 'READ_UNVERIFIED',
+  NOT_READ = 'NOT_READ',
+}
+
+export enum SpoilerLevel {
+  NONE = 'NONE',
+  LIGHT = 'LIGHT',
+  FULL = 'FULL',
+}
+
+export enum ApprovalTier {
+  FAST = 'FAST',
+  FOCUSED = 'FOCUSED',
+}
+
+export enum ScoreType {
+  PERSONAL = 'PERSONAL',
+  RESEARCH_ANALYSIS = 'RESEARCH_ANALYSIS',
+  INTERNAL_PREDICTION = 'INTERNAL_PREDICTION',
+}

@@ -1,0 +1,37 @@
+{
+  "name": "xiaohongshu-mystery-operations",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Windows-local mystery fiction content operations system",
+  "type": "module",
+  "packageManager": "npm@11.13.0",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "audit:dependencies": "npm audit --audit-level=high",
+    "build": "tsc -b --pretty false",
+    "check": "npm run format-check && npm run lint && npm run typecheck && npm run test && npm run build",
+    "format": "prettier --write .",
+    "format-check": "prettier --check .",
+    "lint": "eslint . --max-warnings=0",
+    "test": "vitest run",
+    "test:constraints": "vitest run tests/hard-constraints.test.ts tests/forbidden-scope.architecture.test.ts",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit --pretty false"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.1.1",
+    "eslint": "10.8.0",
+    "globals": "17.8.0",
+    "prettier": "3.9.6",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.65.0",
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
+  }
+}
