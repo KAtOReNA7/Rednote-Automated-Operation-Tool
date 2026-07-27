@@ -29,7 +29,7 @@ const bridge: DesktopBridge = {
         reopen: true,
         wal: true,
       },
-      schemaVersion: 2,
+      schemaVersion: 3,
       status: 'ready',
     },
   }),

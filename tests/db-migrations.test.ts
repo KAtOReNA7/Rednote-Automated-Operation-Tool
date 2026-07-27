@@ -336,10 +336,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2],
+        appliedVersions: [1, 2, 3],
         backupPath: null,
         databasePath,
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
       expect(tables).toEqual([...BUSINESS_TABLE_NAMES, 'schema_migrations'].sort());
     } finally {
@@ -400,9 +400,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 2,
+        schemaVersion: 3,
       });
-      expect(row.count).toBe(2);
+      expect(row.count).toBe(3);
     } finally {
       database.close();
     }

@@ -115,6 +115,7 @@ try {
     report.ok !== true ||
     report.packaged !== true ||
     report.runtimeVersion !== '43.2.0' ||
+    report.storage !== true ||
     report.security?.externalRequestAttempts !== 0 ||
     tcpConnectionCount !== 0
   ) {

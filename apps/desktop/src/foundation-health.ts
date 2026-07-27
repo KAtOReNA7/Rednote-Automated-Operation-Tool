@@ -1,5 +1,5 @@
 import { rm, mkdtemp } from 'node:fs/promises';
-import { join } from 'node:path';
+import { isAbsolute, join, relative } from 'node:path';
 import { backup } from 'node:sqlite';
 import { tmpdir } from 'node:os';
 
@@ -10,6 +10,7 @@ import {
   JobQueueRepository,
   MIGRATIONS,
 } from '@mystery-operations/db';
+import { initializeProjectDataRoot, LocalFileRepository } from '@mystery-operations/storage';
 import { JobHandlerRegistry, JobQueueService } from '@mystery-operations/workflows';
 import type { FoundationHealth } from '@mystery-operations/shared';
 
@@ -17,16 +18,34 @@ const FIXED_NOW = new Date('2026-01-01T00:00:00.000Z');
 
 export async function runFoundationHealthCheck(): Promise<FoundationHealth> {
   const directory = await mkdtemp(join(tmpdir(), '红笺 基础自检-'));
-  const databasePath = join(directory, '临时 队列.sqlite');
-  const backupPath = join(directory, '临时 备份.sqlite');
+  const dataRoot = await initializeProjectDataRoot(join(directory, 'project-data 中文 空格'));
+  const databasePath = join(dataRoot.databaseDirectory, '临时 队列.sqlite');
+  const backupPath = join(dataRoot.backupDatabaseDirectory, '临时 备份.sqlite');
   let database: ReturnType<typeof connectDatabase> | undefined;
   let health: FoundationHealth | undefined;
 
   try {
     const capabilities = assertSqliteRuntimeCapabilities();
+    await initializeDatabase({
+      databasePath,
+      migrations: MIGRATIONS.slice(0, 2),
+      now: () => FIXED_NOW,
+    });
     const migration = await initializeDatabase({
+      backupDirectory: dataRoot.backupDatabaseDirectory,
       databasePath,
       now: () => FIXED_NOW,
+    });
+    const repository = new LocalFileRepository(dataRoot, {
+      now: () => FIXED_NOW,
+    });
+    const storedFile = await repository.putBuffer(Buffer.from('storage smoke', 'utf8'), {
+      category: 'SOURCE_SNAPSHOT',
+      displayName: '合成 快照.html',
+    });
+    await repository.verifyManagedFile(storedFile.managedPath, {
+      expectedSha256: storedFile.sha256,
+      expectedSizeBytes: storedFile.sizeBytes,
     });
 
     database = connectDatabase(databasePath);
@@ -78,6 +97,10 @@ export async function runFoundationHealthCheck(): Promise<FoundationHealth> {
       !capabilities.nodeSqlite ||
       !capabilities.timeoutOption ||
       migration.schemaVersion !== MIGRATIONS.length ||
+      migration.appliedVersions.join(',') !== '3' ||
+      migration.backupPath === null ||
+      isAbsolute(relative(dataRoot.backupDatabaseDirectory, migration.backupPath)) ||
+      relative(dataRoot.backupDatabaseDirectory, migration.backupPath).startsWith('..') ||
       foreignKeys?.foreign_keys !== 1 ||
       journalMode?.journal_mode.toLowerCase() !== 'wal' ||
       completed.status !== 'SUCCEEDED' ||

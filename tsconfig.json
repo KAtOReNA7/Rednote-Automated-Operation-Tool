@@ -24,6 +24,9 @@
     },
     {
       "path": "./packages/shared"
+    },
+    {
+      "path": "./packages/storage"
     }
   ]
 }

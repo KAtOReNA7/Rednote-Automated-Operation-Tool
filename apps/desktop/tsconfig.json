@@ -20,6 +20,9 @@
       "path": "../../packages/shared"
     },
     {
+      "path": "../../packages/storage"
+    },
+    {
       "path": "../../packages/workflows"
     }
   ]

@@ -1,5 +1,5 @@
 {
-  "name": "@mystery-operations/shared",
+  "name": "@mystery-operations/storage",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -9,13 +9,12 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
-    },
-    "./storage": {
-      "types": "./dist/storage-contracts.d.ts",
-      "default": "./dist/storage-contracts.js"
     }
   },
   "files": [
     "dist"
-  ]
+  ],
+  "dependencies": {
+    "@mystery-operations/shared": "0.0.0"
+  }
 }

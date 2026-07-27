@@ -31,8 +31,14 @@ export default defineConfig({
       '@mystery-operations/db': fileURLToPath(
         new URL('./packages/db/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/shared/storage': fileURLToPath(
+        new URL('./packages/shared/src/storage-contracts.ts', import.meta.url),
+      ),
       '@mystery-operations/shared': fileURLToPath(
         new URL('./packages/shared/src/index.ts', import.meta.url),
+      ),
+      '@mystery-operations/storage': fileURLToPath(
+        new URL('./packages/storage/src/index.ts', import.meta.url),
       ),
       '@mystery-operations/workflows': fileURLToPath(
         new URL('./packages/workflows/src/index.ts', import.meta.url),

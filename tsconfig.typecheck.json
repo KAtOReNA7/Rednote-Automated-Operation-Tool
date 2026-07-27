@@ -10,6 +10,8 @@
       "@mystery-operations/core": ["./packages/core/src/index.ts"],
       "@mystery-operations/db": ["./packages/db/src/index.ts"],
       "@mystery-operations/shared": ["./packages/shared/src/index.ts"],
+      "@mystery-operations/shared/storage": ["./packages/shared/src/storage-contracts.ts"],
+      "@mystery-operations/storage": ["./packages/storage/src/index.ts"],
       "@mystery-operations/workflows": ["./packages/workflows/src/index.ts"]
     },
     "types": ["node", "vite/client", "vitest/globals"]

@@ -17,6 +17,7 @@ import {
 afterEach(cleanTemporaryDatabases);
 
 const ISSUE_007_CHECKSUM = '8964b8727dfb4f244a8c63a47368da3ceb23de945078b37efe161af91acac907';
+const ISSUE_009_MIGRATIONS = MIGRATIONS.slice(0, 2);
 
 async function createIssue007Database(databasePath: string): Promise<void> {
   await initializeDatabase({
@@ -49,7 +50,7 @@ describe('Issue 009 immutable queue migration', () => {
   });
 
   it('adds one consecutive immutable migration', () => {
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2]);
+    expect(ISSUE_009_MIGRATIONS.map(({ version }) => version)).toEqual([1, 2]);
     expect(MIGRATIONS[1]).toMatchObject({
       name: 'persistent_local_job_queue',
       version: 2,
@@ -59,9 +60,11 @@ describe('Issue 009 immutable queue migration', () => {
 
   it('is idempotent when the queue migration is already applied', async () => {
     const databasePath = createTemporaryDatabasePath();
-    await initializeDatabase({ databasePath });
+    await initializeDatabase({ databasePath, migrations: ISSUE_009_MIGRATIONS });
 
-    await expect(initializeDatabase({ databasePath })).resolves.toMatchObject({
+    await expect(
+      initializeDatabase({ databasePath, migrations: ISSUE_009_MIGRATIONS }),
+    ).resolves.toMatchObject({
       appliedVersions: [],
       backupPath: null,
       schemaVersion: 2,
@@ -86,7 +89,10 @@ describe('Issue 009 immutable queue migration', () => {
       .run();
     oldDatabase.close();
 
-    const result = await initializeDatabase({ databasePath });
+    const result = await initializeDatabase({
+      databasePath,
+      migrations: ISSUE_009_MIGRATIONS,
+    });
     const migrated = connectDatabase(databasePath);
     try {
       expect(result.appliedVersions).toEqual([2]);
@@ -167,7 +173,10 @@ describe('Issue 009 immutable queue migration', () => {
   it('creates a pre-migration backup before applying the queue migration', async () => {
     const databasePath = createTemporaryDatabasePath();
     await createIssue007Database(databasePath);
-    const result = await initializeDatabase({ databasePath });
+    const result = await initializeDatabase({
+      databasePath,
+      migrations: ISSUE_009_MIGRATIONS,
+    });
 
     expect(result.backupPath).not.toBeNull();
     expect(existsSync(result.backupPath ?? '')).toBe(true);
@@ -177,7 +186,7 @@ describe('Issue 009 immutable queue migration', () => {
     const databasePath = createTemporaryDatabasePath();
     await createIssue007Database(databasePath);
     const before = tableDefinitions(databasePath);
-    await initializeDatabase({ databasePath });
+    await initializeDatabase({ databasePath, migrations: ISSUE_009_MIGRATIONS });
     const after = tableDefinitions(databasePath);
 
     expect(after).toEqual(before);

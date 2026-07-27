@@ -44,6 +44,7 @@ try {
     report.ok !== true ||
     report.packaged !== false ||
     report.runtimeVersion !== '43.2.0' ||
+    report.storage !== true ||
     report.security?.externalRequestAttempts !== 0
   ) {
     throw new Error(`Electron source smoke failed with code ${String(exitCode)}: ${stderr}`);

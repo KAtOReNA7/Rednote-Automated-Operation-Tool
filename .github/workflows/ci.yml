@@ -44,6 +44,9 @@ jobs:
       - name: Run persistent local job queue suites
         run: npm run test:queue
 
+      - name: Run local file repository suites
+        run: npm run test:storage
+
       - name: Run desktop shell suites
         run: npm run test:desktop
 

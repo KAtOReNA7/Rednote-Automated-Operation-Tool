@@ -1,4 +1,5 @@
 export interface Migration {
+  readonly foreignKeysDisabled?: boolean;
   readonly name: string;
   readonly sql: string;
   readonly version: number;
@@ -579,6 +580,495 @@ CREATE INDEX idx_jobs_next_run_at_id
   ON jobs(next_run_at, id);
 `;
 
+const MANAGED_LOCAL_FILE_PATH_TRANSITION_GUARDS = `
+CREATE TRIGGER validate_sources_local_snapshot_path_insert
+BEFORE INSERT ON sources
+WHEN NEW.local_snapshot_path IS NOT NULL AND NOT (
+  typeof(NEW.local_snapshot_path) = 'text' AND
+  length(NEW.local_snapshot_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.local_snapshot_path, char(0)) = 0 AND
+  NEW.local_snapshot_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.local_snapshot_path, char(92)) = 0 AND
+  instr(NEW.local_snapshot_path, ':') = 0 AND
+  substr(NEW.local_snapshot_path, 1, 1) <> '/' AND
+  substr(NEW.local_snapshot_path, -1, 1) <> '/' AND
+  instr(NEW.local_snapshot_path, '//') = 0 AND
+  instr(NEW.local_snapshot_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.local_snapshot_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.local_snapshot_path || '/') NOT GLOB '*/../*' AND
+  NEW.local_snapshot_path GLOB 'sources/snapshots/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: sources.local_snapshot_path');
+END;
+
+CREATE TRIGGER validate_sources_local_snapshot_path_update
+BEFORE UPDATE OF local_snapshot_path ON sources
+WHEN NEW.local_snapshot_path IS NOT NULL AND NOT (
+  typeof(NEW.local_snapshot_path) = 'text' AND
+  length(NEW.local_snapshot_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.local_snapshot_path, char(0)) = 0 AND
+  NEW.local_snapshot_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.local_snapshot_path, char(92)) = 0 AND
+  instr(NEW.local_snapshot_path, ':') = 0 AND
+  substr(NEW.local_snapshot_path, 1, 1) <> '/' AND
+  substr(NEW.local_snapshot_path, -1, 1) <> '/' AND
+  instr(NEW.local_snapshot_path, '//') = 0 AND
+  instr(NEW.local_snapshot_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.local_snapshot_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.local_snapshot_path || '/') NOT GLOB '*/../*' AND
+  NEW.local_snapshot_path GLOB 'sources/snapshots/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: sources.local_snapshot_path');
+END;
+
+CREATE TRIGGER validate_clips_screenshot_path_insert
+BEFORE INSERT ON clips
+WHEN NEW.screenshot_path IS NOT NULL AND NOT (
+  typeof(NEW.screenshot_path) = 'text' AND
+  length(NEW.screenshot_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.screenshot_path, char(0)) = 0 AND
+  NEW.screenshot_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.screenshot_path, char(92)) = 0 AND
+  instr(NEW.screenshot_path, ':') = 0 AND
+  substr(NEW.screenshot_path, 1, 1) <> '/' AND
+  substr(NEW.screenshot_path, -1, 1) <> '/' AND
+  instr(NEW.screenshot_path, '//') = 0 AND
+  instr(NEW.screenshot_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.screenshot_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.screenshot_path || '/') NOT GLOB '*/../*' AND
+  NEW.screenshot_path GLOB 'sources/screenshots/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: clips.screenshot_path');
+END;
+
+CREATE TRIGGER validate_clips_screenshot_path_update
+BEFORE UPDATE OF screenshot_path ON clips
+WHEN NEW.screenshot_path IS NOT NULL AND NOT (
+  typeof(NEW.screenshot_path) = 'text' AND
+  length(NEW.screenshot_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.screenshot_path, char(0)) = 0 AND
+  NEW.screenshot_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.screenshot_path, char(92)) = 0 AND
+  instr(NEW.screenshot_path, ':') = 0 AND
+  substr(NEW.screenshot_path, 1, 1) <> '/' AND
+  substr(NEW.screenshot_path, -1, 1) <> '/' AND
+  instr(NEW.screenshot_path, '//') = 0 AND
+  instr(NEW.screenshot_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.screenshot_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.screenshot_path || '/') NOT GLOB '*/../*' AND
+  NEW.screenshot_path GLOB 'sources/screenshots/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: clips.screenshot_path');
+END;
+
+CREATE TRIGGER validate_assets_original_path_insert
+BEFORE INSERT ON assets
+WHEN NEW.original_path IS NOT NULL AND NOT (
+  typeof(NEW.original_path) = 'text' AND
+  length(NEW.original_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.original_path, char(0)) = 0 AND
+  NEW.original_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.original_path, char(92)) = 0 AND
+  instr(NEW.original_path, ':') = 0 AND
+  substr(NEW.original_path, 1, 1) <> '/' AND
+  substr(NEW.original_path, -1, 1) <> '/' AND
+  instr(NEW.original_path, '//') = 0 AND
+  instr(NEW.original_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.original_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.original_path || '/') NOT GLOB '*/../*' AND
+  NEW.original_path GLOB 'photos/originals/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: assets.original_path');
+END;
+
+CREATE TRIGGER validate_assets_original_path_update
+BEFORE UPDATE OF original_path ON assets
+WHEN NEW.original_path IS NOT NULL AND NOT (
+  typeof(NEW.original_path) = 'text' AND
+  length(NEW.original_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.original_path, char(0)) = 0 AND
+  NEW.original_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.original_path, char(92)) = 0 AND
+  instr(NEW.original_path, ':') = 0 AND
+  substr(NEW.original_path, 1, 1) <> '/' AND
+  substr(NEW.original_path, -1, 1) <> '/' AND
+  instr(NEW.original_path, '//') = 0 AND
+  instr(NEW.original_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.original_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.original_path || '/') NOT GLOB '*/../*' AND
+  NEW.original_path GLOB 'photos/originals/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: assets.original_path');
+END;
+
+CREATE TRIGGER validate_assets_processed_path_insert
+BEFORE INSERT ON assets
+WHEN NEW.processed_path IS NOT NULL AND NOT (
+  typeof(NEW.processed_path) = 'text' AND
+  length(NEW.processed_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.processed_path, char(0)) = 0 AND
+  NEW.processed_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.processed_path, char(92)) = 0 AND
+  instr(NEW.processed_path, ':') = 0 AND
+  substr(NEW.processed_path, 1, 1) <> '/' AND
+  substr(NEW.processed_path, -1, 1) <> '/' AND
+  instr(NEW.processed_path, '//') = 0 AND
+  instr(NEW.processed_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.processed_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.processed_path || '/') NOT GLOB '*/../*' AND
+  NEW.processed_path GLOB 'photos/processed/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: assets.processed_path');
+END;
+
+CREATE TRIGGER validate_assets_processed_path_update
+BEFORE UPDATE OF processed_path ON assets
+WHEN NEW.processed_path IS NOT NULL AND NOT (
+  typeof(NEW.processed_path) = 'text' AND
+  length(NEW.processed_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.processed_path, char(0)) = 0 AND
+  NEW.processed_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.processed_path, char(92)) = 0 AND
+  instr(NEW.processed_path, ':') = 0 AND
+  substr(NEW.processed_path, 1, 1) <> '/' AND
+  substr(NEW.processed_path, -1, 1) <> '/' AND
+  instr(NEW.processed_path, '//') = 0 AND
+  instr(NEW.processed_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.processed_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.processed_path || '/') NOT GLOB '*/../*' AND
+  NEW.processed_path GLOB 'photos/processed/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: assets.processed_path');
+END;
+
+CREATE TRIGGER validate_post_packages_export_path_insert
+BEFORE INSERT ON post_packages
+WHEN NEW.export_path IS NOT NULL AND NOT (
+  typeof(NEW.export_path) = 'text' AND
+  length(NEW.export_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.export_path, char(0)) = 0 AND
+  NEW.export_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.export_path, char(92)) = 0 AND
+  instr(NEW.export_path, ':') = 0 AND
+  substr(NEW.export_path, 1, 1) <> '/' AND
+  substr(NEW.export_path, -1, 1) <> '/' AND
+  instr(NEW.export_path, '//') = 0 AND
+  instr(NEW.export_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.export_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.export_path || '/') NOT GLOB '*/../*' AND
+  NEW.export_path GLOB 'exports/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: post_packages.export_path');
+END;
+
+CREATE TRIGGER validate_post_packages_export_path_update
+BEFORE UPDATE OF export_path ON post_packages
+WHEN NEW.export_path IS NOT NULL AND NOT (
+  typeof(NEW.export_path) = 'text' AND
+  length(NEW.export_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.export_path, char(0)) = 0 AND
+  NEW.export_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.export_path, char(92)) = 0 AND
+  instr(NEW.export_path, ':') = 0 AND
+  substr(NEW.export_path, 1, 1) <> '/' AND
+  substr(NEW.export_path, -1, 1) <> '/' AND
+  instr(NEW.export_path, '//') = 0 AND
+  instr(NEW.export_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.export_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.export_path || '/') NOT GLOB '*/../*' AND
+  NEW.export_path GLOB 'exports/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: post_packages.export_path');
+END;
+
+CREATE TRIGGER validate_metric_snapshots_import_file_path_insert
+BEFORE INSERT ON metric_snapshots
+WHEN NEW.import_file_path IS NOT NULL AND NOT (
+  typeof(NEW.import_file_path) = 'text' AND
+  length(NEW.import_file_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.import_file_path, char(0)) = 0 AND
+  NEW.import_file_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.import_file_path, char(92)) = 0 AND
+  instr(NEW.import_file_path, ':') = 0 AND
+  substr(NEW.import_file_path, 1, 1) <> '/' AND
+  substr(NEW.import_file_path, -1, 1) <> '/' AND
+  instr(NEW.import_file_path, '//') = 0 AND
+  instr(NEW.import_file_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.import_file_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.import_file_path || '/') NOT GLOB '*/../*' AND
+  NEW.import_file_path GLOB 'imports/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: metric_snapshots.import_file_path');
+END;
+
+CREATE TRIGGER validate_metric_snapshots_import_file_path_update
+BEFORE UPDATE OF import_file_path ON metric_snapshots
+WHEN NEW.import_file_path IS NOT NULL AND NOT (
+  typeof(NEW.import_file_path) = 'text' AND
+  length(NEW.import_file_path) BETWEEN 1 AND 1024 AND
+  instr(NEW.import_file_path, char(0)) = 0 AND
+  NEW.import_file_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+  instr(NEW.import_file_path, char(92)) = 0 AND
+  instr(NEW.import_file_path, ':') = 0 AND
+  substr(NEW.import_file_path, 1, 1) <> '/' AND
+  substr(NEW.import_file_path, -1, 1) <> '/' AND
+  instr(NEW.import_file_path, '//') = 0 AND
+  instr(NEW.import_file_path, '/.rednote-tmp-') = 0 AND
+  ('/' || NEW.import_file_path || '/') NOT GLOB '*/./*' AND
+  ('/' || NEW.import_file_path || '/') NOT GLOB '*/../*' AND
+  NEW.import_file_path GLOB 'imports/?*'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'managed local file path constraint: metric_snapshots.import_file_path');
+END;
+`;
+
+const MANAGED_LOCAL_FILE_PATHS = `
+${MANAGED_LOCAL_FILE_PATH_TRANSITION_GUARDS}
+
+CREATE TABLE sources_issue008_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  url TEXT NOT NULL UNIQUE CHECK (length(trim(url)) > 0),
+  title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+  publisher_or_site TEXT,
+  source_tier TEXT NOT NULL CHECK (length(trim(source_tier)) > 0),
+  source_type TEXT NOT NULL CHECK (length(trim(source_type)) > 0),
+  retrieved_at TEXT NOT NULL CHECK (retrieved_at ${UTC_REQUIRED}),
+  content_hash TEXT NOT NULL CHECK (length(trim(content_hash)) > 0),
+  local_snapshot_path TEXT CHECK (
+    local_snapshot_path IS NULL OR (
+      typeof(local_snapshot_path) = 'text' AND
+      length(local_snapshot_path) BETWEEN 1 AND 1024 AND
+      instr(local_snapshot_path, char(0)) = 0 AND
+      local_snapshot_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+      instr(local_snapshot_path, char(92)) = 0 AND
+      instr(local_snapshot_path, ':') = 0 AND
+      substr(local_snapshot_path, 1, 1) <> '/' AND
+      substr(local_snapshot_path, -1, 1) <> '/' AND
+      instr(local_snapshot_path, '//') = 0 AND
+      instr(local_snapshot_path, '/.rednote-tmp-') = 0 AND
+      ('/' || local_snapshot_path || '/') NOT GLOB '*/./*' AND
+      ('/' || local_snapshot_path || '/') NOT GLOB '*/../*' AND
+      local_snapshot_path GLOB 'sources/snapshots/?*'
+    )
+  ),
+  language TEXT NOT NULL CHECK (length(trim(language)) > 0),
+  user_supplied INTEGER NOT NULL DEFAULT 0 CHECK (user_supplied IN (0, 1))
+) STRICT;
+
+INSERT INTO sources_issue008_new (
+  id, url, title, publisher_or_site, source_tier, source_type, retrieved_at,
+  content_hash, local_snapshot_path, language, user_supplied
+)
+SELECT
+  id, url, title, publisher_or_site, source_tier, source_type, retrieved_at,
+  content_hash, local_snapshot_path, language, user_supplied
+FROM sources;
+
+CREATE TABLE clips_issue008_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  url TEXT NOT NULL CHECK (length(trim(url)) > 0),
+  platform TEXT NOT NULL CHECK (length(trim(platform)) > 0),
+  account_name TEXT,
+  page_title TEXT,
+  published_at TEXT CHECK (published_at ${UTC_OPTIONAL} published_at ${UTC_REQUIRED}),
+  selected_text TEXT,
+  user_note TEXT,
+  visible_metrics_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(visible_metrics_json)),
+  screenshot_path TEXT CHECK (
+    screenshot_path IS NULL OR (
+      typeof(screenshot_path) = 'text' AND
+      length(screenshot_path) BETWEEN 1 AND 1024 AND
+      instr(screenshot_path, char(0)) = 0 AND
+      screenshot_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+      instr(screenshot_path, char(92)) = 0 AND
+      instr(screenshot_path, ':') = 0 AND
+      substr(screenshot_path, 1, 1) <> '/' AND
+      substr(screenshot_path, -1, 1) <> '/' AND
+      instr(screenshot_path, '//') = 0 AND
+      instr(screenshot_path, '/.rednote-tmp-') = 0 AND
+      ('/' || screenshot_path || '/') NOT GLOB '*/./*' AND
+      ('/' || screenshot_path || '/') NOT GLOB '*/../*' AND
+      screenshot_path GLOB 'sources/screenshots/?*'
+    )
+  ),
+  tags_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(tags_json)),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO clips_issue008_new (
+  id, url, platform, account_name, page_title, published_at, selected_text, user_note,
+  visible_metrics_json, screenshot_path, tags_json, created_at
+)
+SELECT
+  id, url, platform, account_name, page_title, published_at, selected_text, user_note,
+  visible_metrics_json, screenshot_path, tags_json, created_at
+FROM clips;
+
+CREATE TABLE assets_issue008_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  asset_type TEXT NOT NULL CHECK (length(trim(asset_type)) > 0),
+  origin TEXT NOT NULL CHECK (length(trim(origin)) > 0),
+  source_id TEXT REFERENCES sources(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  original_path TEXT CHECK (
+    original_path IS NULL OR (
+      typeof(original_path) = 'text' AND
+      length(original_path) BETWEEN 1 AND 1024 AND
+      instr(original_path, char(0)) = 0 AND
+      original_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+      instr(original_path, char(92)) = 0 AND
+      instr(original_path, ':') = 0 AND
+      substr(original_path, 1, 1) <> '/' AND
+      substr(original_path, -1, 1) <> '/' AND
+      instr(original_path, '//') = 0 AND
+      instr(original_path, '/.rednote-tmp-') = 0 AND
+      ('/' || original_path || '/') NOT GLOB '*/./*' AND
+      ('/' || original_path || '/') NOT GLOB '*/../*' AND
+      original_path GLOB 'photos/originals/?*'
+    )
+  ),
+  processed_path TEXT CHECK (
+    processed_path IS NULL OR (
+      typeof(processed_path) = 'text' AND
+      length(processed_path) BETWEEN 1 AND 1024 AND
+      instr(processed_path, char(0)) = 0 AND
+      processed_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+      instr(processed_path, char(92)) = 0 AND
+      instr(processed_path, ':') = 0 AND
+      substr(processed_path, 1, 1) <> '/' AND
+      substr(processed_path, -1, 1) <> '/' AND
+      instr(processed_path, '//') = 0 AND
+      instr(processed_path, '/.rednote-tmp-') = 0 AND
+      ('/' || processed_path || '/') NOT GLOB '*/./*' AND
+      ('/' || processed_path || '/') NOT GLOB '*/../*' AND
+      processed_path GLOB 'photos/processed/?*'
+    )
+  ),
+  mime_type TEXT NOT NULL CHECK (length(trim(mime_type)) > 0),
+  width INTEGER CHECK (width IS NULL OR width > 0),
+  height INTEGER CHECK (height IS NULL OR height > 0),
+  content_hash TEXT NOT NULL CHECK (length(trim(content_hash)) > 0),
+  generation_run_id TEXT REFERENCES model_runs(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  metadata_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata_json))
+) STRICT;
+
+INSERT INTO assets_issue008_new (
+  id, asset_type, origin, source_id, original_path, processed_path, mime_type,
+  width, height, content_hash, generation_run_id, metadata_json
+)
+SELECT
+  id, asset_type, origin, source_id, original_path, processed_path, mime_type,
+  width, height, content_hash, generation_run_id, metadata_json
+FROM assets;
+
+CREATE TABLE post_packages_issue008_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  draft_id TEXT NOT NULL UNIQUE REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  planned_publish_at TEXT
+    CHECK (planned_publish_at ${UTC_OPTIONAL} planned_publish_at ${UTC_REQUIRED}),
+  export_path TEXT CHECK (
+    export_path IS NULL OR (
+      typeof(export_path) = 'text' AND
+      length(export_path) BETWEEN 1 AND 1024 AND
+      instr(export_path, char(0)) = 0 AND
+      export_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+      instr(export_path, char(92)) = 0 AND
+      instr(export_path, ':') = 0 AND
+      substr(export_path, 1, 1) <> '/' AND
+      substr(export_path, -1, 1) <> '/' AND
+      instr(export_path, '//') = 0 AND
+      instr(export_path, '/.rednote-tmp-') = 0 AND
+      ('/' || export_path || '/') NOT GLOB '*/./*' AND
+      ('/' || export_path || '/') NOT GLOB '*/../*' AND
+      export_path GLOB 'exports/?*'
+    )
+  ),
+  manifest_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(manifest_json)),
+  ai_disclosure INTEGER NOT NULL DEFAULT 0 CHECK (ai_disclosure = 0),
+  exported_at TEXT CHECK (exported_at ${UTC_OPTIONAL} exported_at ${UTC_REQUIRED}),
+  status TEXT NOT NULL ${CONTENT_STATUS_CHECK}
+) STRICT;
+
+INSERT INTO post_packages_issue008_new (
+  id, draft_id, planned_publish_at, export_path, manifest_json, ai_disclosure,
+  exported_at, status
+)
+SELECT
+  id, draft_id, planned_publish_at, export_path, manifest_json, ai_disclosure,
+  exported_at, status
+FROM post_packages;
+
+CREATE TABLE metric_snapshots_issue008_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  publication_id TEXT NOT NULL REFERENCES publications(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  snapshot_window TEXT NOT NULL CHECK (length(trim(snapshot_window)) > 0),
+  captured_at TEXT NOT NULL CHECK (captured_at ${UTC_REQUIRED}),
+  source_method TEXT NOT NULL CHECK (length(trim(source_method)) > 0),
+  metrics_json TEXT NOT NULL CHECK (json_valid(metrics_json)),
+  import_file_path TEXT CHECK (
+    import_file_path IS NULL OR (
+      typeof(import_file_path) = 'text' AND
+      length(import_file_path) BETWEEN 1 AND 1024 AND
+      instr(import_file_path, char(0)) = 0 AND
+      import_file_path NOT GLOB ('*[' || char(1) || '-' || char(31) || char(127) || ']*') AND
+      instr(import_file_path, char(92)) = 0 AND
+      instr(import_file_path, ':') = 0 AND
+      substr(import_file_path, 1, 1) <> '/' AND
+      substr(import_file_path, -1, 1) <> '/' AND
+      instr(import_file_path, '//') = 0 AND
+      instr(import_file_path, '/.rednote-tmp-') = 0 AND
+      ('/' || import_file_path || '/') NOT GLOB '*/./*' AND
+      ('/' || import_file_path || '/') NOT GLOB '*/../*' AND
+      import_file_path GLOB 'imports/?*'
+    )
+  ),
+  ocr_confidence REAL CHECK (ocr_confidence IS NULL OR ocr_confidence BETWEEN 0 AND 1),
+  UNIQUE (publication_id, snapshot_window)
+) STRICT;
+
+INSERT INTO metric_snapshots_issue008_new (
+  id, publication_id, snapshot_window, captured_at, source_method, metrics_json,
+  import_file_path, ocr_confidence
+)
+SELECT
+  id, publication_id, snapshot_window, captured_at, source_method, metrics_json,
+  import_file_path, ocr_confidence
+FROM metric_snapshots;
+
+DROP TABLE sources;
+DROP TABLE clips;
+DROP TABLE assets;
+DROP TABLE post_packages;
+DROP TABLE metric_snapshots;
+
+ALTER TABLE sources_issue008_new RENAME TO sources;
+ALTER TABLE clips_issue008_new RENAME TO clips;
+ALTER TABLE assets_issue008_new RENAME TO assets;
+ALTER TABLE post_packages_issue008_new RENAME TO post_packages;
+ALTER TABLE metric_snapshots_issue008_new RENAME TO metric_snapshots;
+
+CREATE INDEX idx_sources_retrieved_at ON sources(retrieved_at);
+CREATE INDEX idx_sources_content_hash ON sources(content_hash);
+CREATE INDEX idx_clips_platform_created_at ON clips(platform, created_at);
+CREATE INDEX idx_assets_source_id ON assets(source_id);
+CREATE INDEX idx_assets_generation_run_id ON assets(generation_run_id);
+CREATE INDEX idx_assets_content_hash ON assets(content_hash);
+CREATE INDEX idx_post_packages_status_planned_at
+  ON post_packages(status, planned_publish_at);
+CREATE INDEX idx_metric_snapshots_captured_at ON metric_snapshots(captured_at);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -589,5 +1079,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'persistent_local_job_queue',
     sql: PERSISTENT_JOB_QUEUE,
     version: 2,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'managed_local_file_paths',
+    sql: MANAGED_LOCAL_FILE_PATHS,
+    version: 3,
   }),
 ]);

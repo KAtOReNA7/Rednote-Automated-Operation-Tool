@@ -146,41 +146,54 @@ async function startApplication(): Promise<void> {
       app.exit(3);
     }, 20_000);
 
+    let smokeReported = false;
     mainWindow.on('page-title-updated', (event, title) => {
       const renderer = parseRendererSmokeTitle(title);
-      if (renderer === null) {
+      if (renderer === null || smokeReported) {
         return;
       }
+      smokeReported = true;
       event.preventDefault();
       clearTimeout(timeout);
-      const ok =
-        renderer.appInfo &&
-        renderer.foundation &&
-        renderer.navigationCount === 10 &&
-        renderer.preload &&
-        renderer.renderer &&
-        renderer.runtimeCapabilities &&
-        renderer.windowState &&
-        sessionSecurityAudit.externalRequestAttempts === 0;
-      writeSmokeReport(smokeOutputPath, {
-        main: true,
-        ok,
-        packaged: app.isPackaged,
-        renderer,
-        runtimeVersion: process.versions.electron ?? 'unknown',
-        security: {
-          contextIsolation: true,
-          externalRequestAttempts: sessionSecurityAudit.externalRequestAttempts,
-          navigationDenied: true,
-          networkDenied: true,
-          nodeIntegration: false,
-          sandbox: true,
-          webviewDenied: true,
-        },
-      });
-      setTimeout(() => {
-        app.exit(ok ? 0 : 4);
-      }, 1_000);
+      void foundationHealth
+        .then(() => {
+          const ok =
+            renderer.appInfo &&
+            renderer.foundation &&
+            renderer.navigationCount === 10 &&
+            renderer.preload &&
+            renderer.renderer &&
+            renderer.runtimeCapabilities &&
+            renderer.windowState &&
+            sessionSecurityAudit.externalRequestAttempts === 0;
+          writeSmokeReport(smokeOutputPath, {
+            main: true,
+            ok,
+            packaged: app.isPackaged,
+            renderer,
+            runtimeVersion: process.versions.electron ?? 'unknown',
+            security: {
+              contextIsolation: true,
+              externalRequestAttempts: sessionSecurityAudit.externalRequestAttempts,
+              navigationDenied: true,
+              networkDenied: true,
+              nodeIntegration: false,
+              sandbox: true,
+              webviewDenied: true,
+            },
+            storage: true,
+          });
+          setTimeout(() => {
+            app.exit(ok ? 0 : 4);
+          }, 1_000);
+        })
+        .catch(() => {
+          writeSmokeReport(smokeOutputPath, {
+            error: 'STORAGE_SMOKE_FAILED',
+            ok: false,
+          });
+          app.exit(5);
+        });
     });
   }
 

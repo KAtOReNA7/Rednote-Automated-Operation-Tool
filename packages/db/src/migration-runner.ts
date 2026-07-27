@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { closeSync, existsSync, mkdirSync, openSync, unlinkSync } from 'node:fs';
-import { basename, dirname, extname, join } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path';
 import { backup, DatabaseSync } from 'node:sqlite';
 
 import { connectDatabase, resolveDatabasePath } from './connection.js';
@@ -23,6 +23,7 @@ interface AppliedMigrationRow {
 }
 
 export interface InitializeDatabaseOptions {
+  readonly backupDirectory?: string;
   readonly databasePath: string;
   readonly migrations?: readonly Migration[];
   readonly now?: () => Date;
@@ -56,7 +57,12 @@ export class MigrationError extends Error {
 
 export function migrationChecksum(migration: Migration): string {
   return createHash('sha256')
-    .update(`${migration.version}\n${migration.name}\n${migration.sql}`, 'utf8')
+    .update(
+      `${migration.version}\n${migration.name}\n${
+        migration.foreignKeysDisabled === true ? 'foreign_keys_disabled\n' : ''
+      }${migration.sql}`,
+      'utf8',
+    )
     .digest('hex');
 }
 
@@ -74,7 +80,12 @@ function validateMigrationDefinitions(migrations: readonly Migration[]): void {
       throw new Error(`Migration ${migration.version} must have a non-empty name and SQL body.`);
     }
 
-    if (/(?:^|;)\s*(?:BEGIN|COMMIT|ROLLBACK)(?:\s|;|$)/imu.test(migration.sql)) {
+    const containsTransactionBoundary =
+      /(?:^|;)\s*(?:COMMIT|ROLLBACK)(?:\s|;|$)/iu.test(migration.sql) ||
+      /(?:^|;)\s*BEGIN(?:\s+(?:DEFERRED|EXCLUSIVE|IMMEDIATE|TRANSACTION))?\s*(?:;|$)/iu.test(
+        migration.sql,
+      );
+    if (containsTransactionBoundary) {
       throw new Error(
         `Migration ${migration.version} contains transaction control; the migration runner owns the transaction.`,
       );
@@ -148,9 +159,19 @@ function backupFileName(databasePath: string, now: Date, counter: number): strin
 async function createPreMigrationBackup(
   database: DatabaseSync,
   databasePath: string,
+  requestedBackupDirectory: string | undefined,
   now: Date,
 ): Promise<string> {
-  const backupDirectory = join(dirname(databasePath), 'backups');
+  if (
+    requestedBackupDirectory !== undefined &&
+    (requestedBackupDirectory.trim().length === 0 || !isAbsolute(requestedBackupDirectory))
+  ) {
+    throw new TypeError('backupDirectory must be an absolute non-empty path.');
+  }
+  const backupDirectory =
+    requestedBackupDirectory === undefined
+      ? join(dirname(databasePath), 'backups')
+      : resolve(requestedBackupDirectory);
   mkdirSync(backupDirectory, { recursive: true });
 
   let counter = 0;
@@ -225,7 +246,12 @@ export async function initializeDatabase(
 
       if (appliedMigrations.length < migrations.length) {
         try {
-          backupPath = await createPreMigrationBackup(readOnlyDatabase, databasePath, now());
+          backupPath = await createPreMigrationBackup(
+            readOnlyDatabase,
+            databasePath,
+            options.backupDirectory,
+            now(),
+          );
         } catch (error) {
           throw new MigrationError(
             'SQLite pre-migration backup failed; the source database was not migrated.',
@@ -263,8 +289,14 @@ export async function initializeDatabase(
 
   const database = connectDatabase(databasePath);
   let failingMigrationVersion: number | null = null;
+  const foreignKeysDisabled = pendingMigrations.some(
+    (migration) => migration.foreignKeysDisabled === true,
+  );
 
   try {
+    if (foreignKeysDisabled) {
+      database.exec('PRAGMA foreign_keys = OFF;');
+    }
     runInTransaction(database, () => {
       database.exec(SCHEMA_MIGRATIONS_SQL);
       const recordMigration = database.prepare(
@@ -285,7 +317,22 @@ export async function initializeDatabase(
 
       assertDatabaseIntegrity(database);
     });
+    if (foreignKeysDisabled) {
+      database.exec('PRAGMA foreign_keys = ON;');
+      const row = database.prepare('PRAGMA foreign_keys').get() as
+        { readonly foreign_keys: number } | undefined;
+      if (row?.foreign_keys !== 1) {
+        throw new Error('SQLite foreign keys could not be re-enabled after migration.');
+      }
+    }
   } catch (error) {
+    if (foreignKeysDisabled) {
+      try {
+        database.exec('PRAGMA foreign_keys = ON;');
+      } catch {
+        // The migration failure remains primary; closing the connection is the safe fallback.
+      }
+    }
     throw new MigrationError(
       `SQLite migration ${failingMigrationVersion ?? 'setup'} failed; all pending changes were rolled back.${backupPath === null ? '' : ` Pre-migration backup: ${backupPath}`}`,
       {
