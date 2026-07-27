@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { readdir, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readdir, readFile, rm, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -43,17 +43,26 @@ if (
 }
 
 const outputPath = join(tmpdir(), `issue006-smoke-${randomUUID()}.json`);
+const smokeWorkspace = await mkdtemp(join(tmpdir(), 'rednote-issue010-smoke-'));
 const childEnvironment = { ...process.env };
 delete childEnvironment.DESKTOP_DEV_SERVER_URL;
 delete childEnvironment.ELECTRON_RUN_AS_NODE;
 delete childEnvironment.NODE_OPTIONS;
 
-const child = spawn(executablePath, ['--issue006-smoke', `--issue006-smoke-output=${outputPath}`], {
-  cwd: packageDirectory,
-  env: childEnvironment,
-  stdio: ['ignore', 'pipe', 'pipe'],
-  windowsHide: true,
-});
+const child = spawn(
+  executablePath,
+  [
+    '--issue006-smoke',
+    `--issue006-smoke-output=${outputPath}`,
+    `--issue010-smoke-workspace=${smokeWorkspace}`,
+  ],
+  {
+    cwd: packageDirectory,
+    env: childEnvironment,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    windowsHide: true,
+  },
+);
 let stderr = '';
 child.stderr.setEncoding('utf8');
 child.stderr.on('data', (chunk) => {
@@ -116,14 +125,23 @@ try {
     report.packaged !== true ||
     report.runtimeVersion !== '43.2.0' ||
     report.storage !== true ||
+    report.settings?.credentialCleared !== true ||
+    report.settings?.credentialRoundtrip !== true ||
+    report.settings?.locator !== true ||
+    report.settings?.safeStorage !== true ||
+    report.settings?.secretEgressSafeCount !== 30 ||
+    report.settings?.settings !== true ||
     report.security?.externalRequestAttempts !== 0 ||
     tcpConnectionCount !== 0
   ) {
-    throw new Error(`Packaged executable smoke failed with code ${String(exitCode)}: ${stderr}`);
+    throw new Error(
+      `Packaged executable smoke failed with code ${String(exitCode)} and report ${JSON.stringify(report)}: ${stderr}`,
+    );
   }
   process.stdout.write(
     `${JSON.stringify({ ...report, fuses: true, tcpConnections: tcpConnectionCount })}\n`,
   );
 } finally {
   await rm(outputPath, { force: true });
+  await rm(smokeWorkspace, { force: true, recursive: true });
 }

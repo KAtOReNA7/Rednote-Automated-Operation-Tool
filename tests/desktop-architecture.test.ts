@@ -13,8 +13,10 @@ describe('Issue 006 architecture boundaries', () => {
       'apps/web-ui/src/error-boundary.tsx',
       'apps/web-ui/src/main.tsx',
       'apps/web-ui/src/routes.ts',
+      'apps/web-ui/src/settings-page.tsx',
       'apps/web-ui/src/use-desktop-status.ts',
       'apps/web-ui/src/use-hash-route.ts',
+      'apps/web-ui/src/use-settings.ts',
     ]
       .map(read)
       .join('\n');
@@ -117,8 +119,8 @@ describe('Issue 006 architecture boundaries', () => {
     expect(production).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/u);
   });
 
-  it('keeps every non-overview destination an explicit milestone placeholder', () => {
+  it('keeps every destination outside overview and settings an explicit milestone placeholder', () => {
     const routes = read('apps/web-ui/src/routes.ts');
-    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(9);
+    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(8);
   });
 });

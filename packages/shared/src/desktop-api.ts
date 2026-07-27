@@ -1,9 +1,29 @@
+import type {
+  CredentialStatusView,
+  DiagnosticExport,
+  DiagnosticPreview,
+  NonSecretSettingsDraft,
+  SettingsBundle,
+  SettingsErrorCode,
+  SetupState,
+} from '@mystery-operations/settings';
+
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
 export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getAppInfo: 'desktop:get-app-info',
   getFoundationHealth: 'desktop:get-foundation-health',
   getRuntimeCapabilities: 'desktop:get-runtime-capabilities',
+  getSetupState: 'settings:get-setup-state',
+  getSettings: 'settings:get-settings',
+  selectDataRoot: 'settings:select-data-root',
+  confirmDataRootSelection: 'settings:confirm-data-root-selection',
+  updateNonSecretSettings: 'settings:update-non-secret',
+  setCredential: 'settings:set-credential',
+  clearCredential: 'settings:clear-credential',
+  getCredentialStatus: 'settings:get-credential-status',
+  buildDiagnosticPreview: 'settings:build-diagnostic-preview',
+  exportDiagnosticReport: 'settings:export-diagnostic-report',
   getWindowState: 'desktop:get-window-state',
 });
 
@@ -21,8 +41,11 @@ export const FOUNDATION_CHECK_KEYS = Object.freeze([
 export type FoundationCheckKey = (typeof FOUNDATION_CHECK_KEYS)[number];
 
 export interface DesktopError {
-  readonly code: 'FOUNDATION_UNAVAILABLE' | 'INTERNAL_ERROR' | 'INVALID_REQUEST';
+  readonly code:
+    'FOUNDATION_UNAVAILABLE' | 'INTERNAL_ERROR' | 'INVALID_REQUEST' | SettingsErrorCode;
+  readonly context?: Readonly<Record<string, boolean | number | string>>;
   readonly message: string;
+  readonly retryable: boolean;
 }
 
 export type DesktopResult<T> =
@@ -53,9 +76,71 @@ export interface WindowState {
   readonly isMaximized: boolean;
 }
 
+export interface DataRootSelection {
+  readonly displayPath: string;
+  readonly expiresAt: string;
+  readonly token: string;
+}
+
+export interface SetupStateView {
+  readonly project:
+    | { readonly status: 'NOT_CONFIGURED' }
+    | {
+        readonly errorCode: SettingsErrorCode;
+        readonly status: 'RECOVERY_REQUIRED';
+      }
+    | {
+        readonly displayPath: string;
+        readonly revision: number;
+        readonly status: 'READY';
+      };
+  readonly setupState: 'NO_PROJECT' | SetupState;
+}
+
+export interface ConfirmDataRootSelectionInput {
+  readonly confirmation: 'ACTIVATE_DATA_ROOT';
+  readonly expectedRevision: number | null;
+  readonly mode: 'CREATE_OR_OPEN' | 'OPEN_EXISTING';
+  readonly token: string;
+}
+
+export interface SetCredentialInput {
+  readonly plaintext: string;
+  readonly slot: 'CONTENT_AI_API_KEY';
+}
+
+export interface ClearCredentialInput {
+  readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
+  readonly slot: 'CONTENT_AI_API_KEY';
+}
+
+export interface GetCredentialStatusInput {
+  readonly slot: 'CONTENT_AI_API_KEY';
+}
+
+export interface ExportDiagnosticReportInput {
+  readonly expectedPreviewHash: string;
+}
+
 export interface DesktopBridge {
+  buildDiagnosticPreview(): Promise<DesktopResult<DiagnosticPreview>>;
+  clearCredential(input: ClearCredentialInput): Promise<DesktopResult<CredentialStatusView>>;
+  confirmDataRootSelection(
+    input: ConfirmDataRootSelectionInput,
+  ): Promise<DesktopResult<SetupStateView>>;
+  exportDiagnosticReport(
+    input: ExportDiagnosticReportInput,
+  ): Promise<DesktopResult<DiagnosticExport>>;
   getAppInfo(): Promise<DesktopResult<AppInfo>>;
+  getCredentialStatus(
+    input: GetCredentialStatusInput,
+  ): Promise<DesktopResult<CredentialStatusView>>;
   getFoundationHealth(): Promise<DesktopResult<FoundationHealth>>;
   getRuntimeCapabilities(): Promise<DesktopResult<RuntimeCapabilities>>;
+  getSettings(): Promise<DesktopResult<SettingsBundle>>;
+  getSetupState(): Promise<DesktopResult<SetupStateView>>;
   getWindowState(): Promise<DesktopResult<WindowState>>;
+  selectDataRoot(): Promise<DesktopResult<DataRootSelection | null>>;
+  setCredential(input: SetCredentialInput): Promise<DesktopResult<CredentialStatusView>>;
+  updateNonSecretSettings(input: NonSecretSettingsDraft): Promise<DesktopResult<SettingsBundle>>;
 }

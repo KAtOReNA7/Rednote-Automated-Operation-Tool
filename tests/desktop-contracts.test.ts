@@ -13,12 +13,22 @@ import {
 import { validateDesktopIpcRequest } from '../apps/desktop/src/ipc-policy.js';
 
 describe('desktop process contracts', () => {
-  it('exposes exactly four named, read-only IPC channels', () => {
+  it('exposes exactly the fixed desktop and settings IPC allowlist', () => {
     expect(DESKTOP_IPC_CHANNELS).toEqual({
+      buildDiagnosticPreview: 'settings:build-diagnostic-preview',
+      clearCredential: 'settings:clear-credential',
+      confirmDataRootSelection: 'settings:confirm-data-root-selection',
+      exportDiagnosticReport: 'settings:export-diagnostic-report',
       getAppInfo: 'desktop:get-app-info',
+      getCredentialStatus: 'settings:get-credential-status',
       getFoundationHealth: 'desktop:get-foundation-health',
       getRuntimeCapabilities: 'desktop:get-runtime-capabilities',
+      getSettings: 'settings:get-settings',
+      getSetupState: 'settings:get-setup-state',
       getWindowState: 'desktop:get-window-state',
+      selectDataRoot: 'settings:select-data-root',
+      setCredential: 'settings:set-credential',
+      updateNonSecretSettings: 'settings:update-non-secret',
     });
     expect(Object.isFrozen(DESKTOP_IPC_CHANNELS)).toBe(true);
   });
@@ -58,6 +68,7 @@ describe('desktop process contracts', () => {
       error: {
         code: 'INVALID_REQUEST',
         message: expect.any(String),
+        retryable: false,
       },
       ok: false,
     });
@@ -73,6 +84,9 @@ describe('desktop process contracts', () => {
       renderer: true,
       runtimeCapabilities: true,
       windowState: true,
+      credentialStatus: true,
+      settings: true,
+      setupState: true,
     };
     expect(
       parseRendererSmokeTitle(`${SMOKE_TITLE_PREFIX}${encodeURIComponent(JSON.stringify(report))}`),
@@ -91,6 +105,9 @@ describe('desktop process contracts', () => {
         renderer: true,
         runtimeCapabilities: true,
         windowState: true,
+        credentialStatus: true,
+        settings: true,
+        setupState: true,
       }),
     );
     expect(parseRendererSmokeTitle(`${SMOKE_TITLE_PREFIX}${invalid}`)).toBeNull();

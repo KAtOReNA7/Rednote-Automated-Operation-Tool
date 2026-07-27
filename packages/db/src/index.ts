@@ -3,6 +3,7 @@ export { JobQueueRepository, JobQueueRepositoryError } from './job-queue-reposit
 export { MigrationError, initializeDatabase, migrationChecksum } from './migration-runner.js';
 export { MIGRATIONS } from './migrations.js';
 export { assertSqliteRuntimeCapabilities } from './runtime-capabilities.js';
+export { SqliteSettingsRepository } from './settings-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';

@@ -11,6 +11,7 @@
       "@mystery-operations/db": ["./packages/db/src/index.ts"],
       "@mystery-operations/shared": ["./packages/shared/src/index.ts"],
       "@mystery-operations/shared/storage": ["./packages/shared/src/storage-contracts.ts"],
+      "@mystery-operations/settings": ["./packages/settings/src/index.ts"],
       "@mystery-operations/storage": ["./packages/storage/src/index.ts"],
       "@mystery-operations/workflows": ["./packages/workflows/src/index.ts"]
     },

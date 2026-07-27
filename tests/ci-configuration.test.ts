@@ -50,8 +50,14 @@ describe('Windows CI configuration', () => {
       'npm run test:constraints',
       'npm run test:db',
       'npm run test:queue',
+      'npm run test:storage',
+      'npm run test:desktop',
+      'npm run test:settings',
+      'npm run test:electron-smoke',
       'npm run test',
       'npm run build',
+      'npm run package:desktop',
+      'npm run test:packaged-smoke',
       'npm run audit:dependencies',
     ]) {
       expect(commands).toContain(command);

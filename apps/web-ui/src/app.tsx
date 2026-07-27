@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { NAVIGATION_ITEMS, resolveRoute } from './routes.js';
+import { SettingsPage } from './settings-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
 
@@ -34,18 +35,38 @@ export function App(): React.JSX.Element {
     if (window.location.search !== '?smoke=1' || desktop.phase === 'loading') {
       return;
     }
-    queueMicrotask(() => {
-      const report = {
-        appInfo: desktop.phase === 'ready',
-        foundation: desktop.phase === 'ready' && desktop.foundation.status === 'ready',
-        navigationCount: document.querySelectorAll('[data-navigation-item]').length,
-        preload: window.rednoteDesktop !== undefined,
-        renderer: document.querySelector('[data-desktop-shell]') !== null,
-        runtimeCapabilities: desktop.phase === 'ready' && desktop.runtime.nodeSqlite,
-        windowState: desktop.phase === 'ready',
-      };
-      document.title = `${SMOKE_TITLE_PREFIX}${encodeURIComponent(JSON.stringify(report))}`;
+    let active = true;
+    const bridge = window.rednoteDesktop;
+    if (bridge === undefined) {
+      return;
+    }
+    void Promise.all([
+      bridge.getSetupState(),
+      bridge.getSettings(),
+      bridge.getCredentialStatus({ slot: 'CONTENT_AI_API_KEY' }),
+    ]).then(([setup, settings, credential]) => {
+      if (!active) {
+        return;
+      }
+      queueMicrotask(() => {
+        const report = {
+          appInfo: desktop.phase === 'ready',
+          credentialStatus: credential.ok && credential.value.status === 'NOT_CONFIGURED',
+          foundation: desktop.phase === 'ready' && desktop.foundation.status === 'ready',
+          navigationCount: document.querySelectorAll('[data-navigation-item]').length,
+          preload: window.rednoteDesktop !== undefined,
+          renderer: document.querySelector('[data-desktop-shell]') !== null,
+          runtimeCapabilities: desktop.phase === 'ready' && desktop.runtime.nodeSqlite,
+          settings: settings.ok && settings.value.providerCapability === 'UNPROBED',
+          setupState: setup.ok && setup.value.project.status === 'READY',
+          windowState: desktop.phase === 'ready',
+        };
+        document.title = `${SMOKE_TITLE_PREFIX}${encodeURIComponent(JSON.stringify(report))}`;
+      });
     });
+    return () => {
+      active = false;
+    };
   }, [desktop]);
 
   return (
@@ -118,6 +139,8 @@ export function App(): React.JSX.Element {
               <h2>本地基础自检未完成</h2>
               <p>界面不会继续执行任务，也不会连接任何外部服务。请重新启动应用。</p>
             </div>
+          ) : route.path === '/settings' ? (
+            <SettingsPage />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">

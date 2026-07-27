@@ -11,6 +11,9 @@ export interface RendererSmokeReport {
   readonly preload: boolean;
   readonly renderer: boolean;
   readonly runtimeCapabilities: boolean;
+  readonly settings: boolean;
+  readonly setupState: boolean;
+  readonly credentialStatus: boolean;
   readonly windowState: boolean;
 }
 
@@ -31,6 +34,9 @@ export function parseRendererSmokeTitle(title: string): RendererSmokeReport | nu
       typeof report.preload !== 'boolean' ||
       typeof report.renderer !== 'boolean' ||
       typeof report.runtimeCapabilities !== 'boolean' ||
+      typeof report.settings !== 'boolean' ||
+      typeof report.setupState !== 'boolean' ||
+      typeof report.credentialStatus !== 'boolean' ||
       typeof report.windowState !== 'boolean'
     ) {
       return null;

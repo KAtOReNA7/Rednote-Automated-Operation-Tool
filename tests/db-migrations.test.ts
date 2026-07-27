@@ -29,6 +29,23 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'created_at',
       'updated_at',
     ],
+    app_settings: [
+      'id',
+      'provider_protocol',
+      'provider_base_url',
+      'credential_reference',
+      'research_model_id',
+      'writing_model_id',
+      'review_model_id',
+      'embedding_model_id',
+      'image_model_id',
+      'monthly_warning_cents',
+      'monthly_hard_limit_cents',
+      'setup_state',
+      'revision',
+      'created_at',
+      'updated_at',
+    ],
     approvals: [
       'id',
       'draft_id',
@@ -319,7 +336,7 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
   };
 
 describe('SQLite initialization and migrations', () => {
-  it('creates a new database from an empty directory with all 25 PRD tables', async () => {
+  it('creates a new database with all 25 PRD tables plus app_settings', async () => {
     const databasePath = createTemporaryDatabasePath('empty directory');
     const result = await initializeDatabase({ databasePath });
     const database = connectDatabase(databasePath);
@@ -336,10 +353,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3],
+        appliedVersions: [1, 2, 3, 4],
         backupPath: null,
         databasePath,
-        schemaVersion: 3,
+        schemaVersion: 4,
       });
       expect(tables).toEqual([...BUSINESS_TABLE_NAMES, 'schema_migrations'].sort());
     } finally {
@@ -400,9 +417,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 3,
+        schemaVersion: 4,
       });
-      expect(row.count).toBe(3);
+      expect(row.count).toBe(4);
     } finally {
       database.close();
     }

@@ -1069,6 +1069,180 @@ CREATE INDEX idx_post_packages_status_planned_at
 CREATE INDEX idx_metric_snapshots_captured_at ON metric_snapshots(captured_at);
 `;
 
+const LOCAL_SETTINGS_AND_CREDENTIAL_REFERENCE = `
+CREATE TABLE app_settings (
+  id TEXT PRIMARY KEY NOT NULL DEFAULT 'app' CHECK (id = 'app'),
+  provider_protocol TEXT NOT NULL DEFAULT 'OPENAI_COMPATIBLE'
+    CHECK (provider_protocol = 'OPENAI_COMPATIBLE'),
+  provider_base_url TEXT CHECK (
+    provider_base_url IS NULL OR (
+      typeof(provider_base_url) = 'text' AND
+      length(provider_base_url) BETWEEN 8 AND 2048 AND
+      provider_base_url = trim(provider_base_url) AND
+      provider_base_url NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*') AND
+      instr(provider_base_url, '@') = 0 AND
+      instr(provider_base_url, '?') = 0 AND
+      instr(provider_base_url, '#') = 0 AND
+      (
+        lower(provider_base_url) GLOB 'https://?*' OR
+        lower(provider_base_url) = 'http://localhost' OR
+        lower(provider_base_url) GLOB 'http://localhost[:/]?*' OR
+        lower(provider_base_url) = 'http://127.0.0.1' OR
+        lower(provider_base_url) GLOB 'http://127.0.0.1[:/]?*' OR
+        lower(provider_base_url) = 'http://[::1]' OR
+        lower(provider_base_url) GLOB 'http://[[]::1[]][:/]?*'
+      )
+    )
+  ),
+  credential_reference TEXT
+    CHECK (credential_reference IS NULL OR credential_reference = 'CONTENT_AI_API_KEY'),
+  research_model_id TEXT CHECK (
+    research_model_id IS NULL OR (
+      typeof(research_model_id) = 'text' AND
+      length(research_model_id) BETWEEN 1 AND 200 AND
+      research_model_id = trim(research_model_id) AND
+      research_model_id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  writing_model_id TEXT CHECK (
+    writing_model_id IS NULL OR (
+      typeof(writing_model_id) = 'text' AND
+      length(writing_model_id) BETWEEN 1 AND 200 AND
+      writing_model_id = trim(writing_model_id) AND
+      writing_model_id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  review_model_id TEXT CHECK (
+    review_model_id IS NULL OR (
+      typeof(review_model_id) = 'text' AND
+      length(review_model_id) BETWEEN 1 AND 200 AND
+      review_model_id = trim(review_model_id) AND
+      review_model_id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  embedding_model_id TEXT CHECK (
+    embedding_model_id IS NULL OR (
+      typeof(embedding_model_id) = 'text' AND
+      length(embedding_model_id) BETWEEN 1 AND 200 AND
+      embedding_model_id = trim(embedding_model_id) AND
+      embedding_model_id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  image_model_id TEXT CHECK (
+    image_model_id IS NULL OR (
+      typeof(image_model_id) = 'text' AND
+      length(image_model_id) BETWEEN 1 AND 200 AND
+      image_model_id = trim(image_model_id) AND
+      image_model_id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  monthly_warning_cents INTEGER NOT NULL DEFAULT 8000
+    CHECK (typeof(monthly_warning_cents) = 'integer' AND monthly_warning_cents >= 0),
+  monthly_hard_limit_cents INTEGER NOT NULL DEFAULT 10000
+    CHECK (
+      typeof(monthly_hard_limit_cents) = 'integer' AND
+      monthly_hard_limit_cents > 0 AND
+      monthly_hard_limit_cents <= 10000 AND
+      monthly_warning_cents < monthly_hard_limit_cents
+    ),
+  setup_state TEXT NOT NULL DEFAULT 'LOCAL_PROJECT_READY' CHECK (setup_state IN (
+    'LOCAL_PROJECT_READY',
+    'PROVIDER_CONFIG_INCOMPLETE',
+    'PROVIDER_CONFIGURED_UNVERIFIED',
+    'CREDENTIAL_REAUTH_REQUIRED'
+  )),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TRIGGER app_settings_revision_monotonic
+BEFORE UPDATE ON app_settings
+WHEN NEW.revision <> OLD.revision + 1
+BEGIN
+  SELECT RAISE(ABORT, 'app_settings revision must increase by one');
+END;
+
+CREATE TRIGGER app_settings_no_delete
+BEFORE DELETE ON app_settings
+BEGIN
+  SELECT RAISE(ABORT, 'app_settings singleton cannot be deleted');
+END;
+
+CREATE TRIGGER account_profile_settings_insert_shape
+BEFORE INSERT ON account_profiles
+WHEN NEW.id = 'primary' AND (
+  NEW.ownership <> 'PERSONAL' OR
+  NEW.occupation_disclosure <> 'DEFERRED' OR
+  (SELECT count(*) FROM json_each(NEW.tone_config_json)) <> 4 OR
+  json_extract(NEW.tone_config_json, '$.schemaVersion') IS NOT 1 OR
+  json_extract(NEW.tone_config_json, '$.voice') IS NOT '观点鲜明' OR
+  json_extract(NEW.tone_config_json, '$.sentenceStyle') IS NOT '短句直接' OR
+  json_extract(NEW.tone_config_json, '$.humor') IS NOT '少量冷幽默' OR
+  (SELECT count(*) FROM json_each(NEW.content_scope_json)) <> 3 OR
+  json_extract(NEW.content_scope_json, '$.schemaVersion') IS NOT 1 OR
+  json_extract(NEW.content_scope_json, '$.focus') IS NOT '推理小说' OR
+  json_type(NEW.content_scope_json, '$.excluded') IS NOT 'array' OR
+  json_array_length(json_extract(NEW.content_scope_json, '$.excluded')) IS NOT 5 OR
+  json_extract(NEW.content_scope_json, '$.excluded[0]') IS NOT '偶像' OR
+  json_extract(NEW.content_scope_json, '$.excluded[1]') IS NOT '音乐' OR
+  json_extract(NEW.content_scope_json, '$.excluded[2]') IS NOT '演唱会' OR
+  json_extract(NEW.content_scope_json, '$.excluded[3]') IS NOT '泛娱乐' OR
+  json_extract(NEW.content_scope_json, '$.excluded[4]') IS NOT '粉圈'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'primary account profile shape invalid');
+END;
+
+CREATE TRIGGER account_profile_settings_update_shape
+BEFORE UPDATE ON account_profiles
+WHEN NEW.id = 'primary' AND (
+  NEW.ownership <> 'PERSONAL' OR
+  NEW.occupation_disclosure <> 'DEFERRED' OR
+  (SELECT count(*) FROM json_each(NEW.tone_config_json)) <> 4 OR
+  json_extract(NEW.tone_config_json, '$.schemaVersion') IS NOT 1 OR
+  json_extract(NEW.tone_config_json, '$.voice') IS NOT '观点鲜明' OR
+  json_extract(NEW.tone_config_json, '$.sentenceStyle') IS NOT '短句直接' OR
+  json_extract(NEW.tone_config_json, '$.humor') IS NOT '少量冷幽默' OR
+  (SELECT count(*) FROM json_each(NEW.content_scope_json)) <> 3 OR
+  json_extract(NEW.content_scope_json, '$.schemaVersion') IS NOT 1 OR
+  json_extract(NEW.content_scope_json, '$.focus') IS NOT '推理小说' OR
+  json_type(NEW.content_scope_json, '$.excluded') IS NOT 'array' OR
+  json_array_length(json_extract(NEW.content_scope_json, '$.excluded')) IS NOT 5 OR
+  json_extract(NEW.content_scope_json, '$.excluded[0]') IS NOT '偶像' OR
+  json_extract(NEW.content_scope_json, '$.excluded[1]') IS NOT '音乐' OR
+  json_extract(NEW.content_scope_json, '$.excluded[2]') IS NOT '演唱会' OR
+  json_extract(NEW.content_scope_json, '$.excluded[3]') IS NOT '泛娱乐' OR
+  json_extract(NEW.content_scope_json, '$.excluded[4]') IS NOT '粉圈'
+)
+BEGIN
+  SELECT RAISE(ABORT, 'primary account profile shape invalid');
+END;
+
+INSERT INTO account_profiles (
+  id, working_name, bio, occupation_disclosure, ownership,
+  tone_config_json, content_scope_json
+) VALUES (
+  'primary',
+  '未命名账号',
+  '',
+  'DEFERRED',
+  'PERSONAL',
+  '{"schemaVersion":1,"voice":"观点鲜明","sentenceStyle":"短句直接","humor":"少量冷幽默"}',
+  '{"schemaVersion":1,"focus":"推理小说","excluded":["偶像","音乐","演唱会","泛娱乐","粉圈"]}'
+)
+ON CONFLICT(id) DO UPDATE SET
+  occupation_disclosure = 'DEFERRED',
+  ownership = 'PERSONAL',
+  tone_config_json =
+    '{"schemaVersion":1,"voice":"观点鲜明","sentenceStyle":"短句直接","humor":"少量冷幽默"}',
+  content_scope_json =
+    '{"schemaVersion":1,"focus":"推理小说","excluded":["偶像","音乐","演唱会","泛娱乐","粉圈"]}',
+  updated_at = ${UTC_NOW};
+
+INSERT INTO app_settings(id) VALUES ('app');
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -1085,5 +1259,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'managed_local_file_paths',
     sql: MANAGED_LOCAL_FILE_PATHS,
     version: 3,
+  }),
+  Object.freeze({
+    name: 'local_settings_and_credential_reference',
+    sql: LOCAL_SETTINGS_AND_CREDENTIAL_REFERENCE,
+    version: 4,
   }),
 ]);

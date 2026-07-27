@@ -116,7 +116,10 @@ a {
 }
 
 .nav-item:focus-visible,
-.text-link:focus-visible {
+.text-link:focus-visible,
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible {
   outline: 2px solid #c18a64;
   outline-offset: 2px;
 }
@@ -380,6 +383,273 @@ a {
   border-top-color: #b47c59;
   border-radius: 50%;
   animation: spin 900ms linear infinite;
+}
+
+.settings-layout {
+  display: grid;
+  gap: 16px;
+  max-width: 1040px;
+  margin: 0 auto;
+}
+
+.settings-intro,
+.wizard-step,
+.diagnostic-card {
+  border: 1px solid #293034;
+  border-radius: 14px;
+  background: #171c1f;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 10%);
+}
+
+.settings-intro {
+  padding: 28px 30px;
+  background: linear-gradient(120deg, rgb(163 111 80 / 12%), transparent 60%), #171c1f;
+}
+
+.settings-intro h2,
+.wizard-step h3,
+.diagnostic-card h3 {
+  margin: 6px 0 0;
+  color: #eee5d9;
+  font-family: Georgia, 'Songti SC', 'Microsoft YaHei', serif;
+  font-weight: 500;
+}
+
+.settings-intro h2 {
+  font-size: 28px;
+}
+
+.settings-intro > p:last-child,
+.wizard-step p,
+.diagnostic-card p {
+  color: #89918f;
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.settings-message {
+  margin: 0;
+  padding: 12px 15px;
+  border: 1px solid #544035;
+  border-radius: 10px;
+  color: #ddc2aa;
+  background: #241e1b;
+  font-size: 12px;
+}
+
+.wizard-step {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  gap: 18px;
+  margin: 0;
+  padding: 24px;
+}
+
+fieldset.wizard-step {
+  min-width: 0;
+}
+
+.wizard-step:disabled {
+  opacity: 0.55;
+}
+
+.step-number {
+  display: grid;
+  width: 38px;
+  height: 38px;
+  place-items: center;
+  border: 1px solid #5a4336;
+  border-radius: 10px;
+  color: #d29a72;
+  background: #261f1b;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 11px;
+}
+
+.step-heading {
+  grid-column: 1 / -1;
+}
+
+.step-heading p,
+.wizard-step h3 + p {
+  margin: 8px 0 0;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 15px;
+  min-width: 0;
+}
+
+.field {
+  display: grid;
+  gap: 7px;
+  color: #aeb3af;
+  font-size: 11px;
+}
+
+.field--wide,
+.capability-note,
+.strategy-summary,
+.danger-zone {
+  grid-column: 1 / -1;
+}
+
+.field input,
+.field textarea {
+  width: 100%;
+  border: 1px solid #343c3f;
+  border-radius: 9px;
+  color: #e8e1d8;
+  background: #111619;
+  font: inherit;
+  font-size: 13px;
+}
+
+.field input {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+.field textarea {
+  min-height: 88px;
+  padding: 11px 12px;
+  resize: vertical;
+}
+
+.field input::placeholder {
+  color: #596260;
+}
+
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin-top: 15px;
+}
+
+.button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid #3b4446;
+  border-radius: 9px;
+  color: #c9ceca;
+  background: #20272a;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+
+.button:hover:not(:disabled) {
+  border-color: #596365;
+  background: #283033;
+}
+
+.button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.button--primary {
+  border-color: #81583f;
+  color: #f3dfce;
+  background: #543a2d;
+}
+
+.button--danger {
+  border-color: #784c45;
+  color: #e7bbb2;
+  background: #3e2926;
+}
+
+.selection-preview,
+.strategy-summary,
+.danger-zone {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 13px 15px;
+  border: 1px solid #31393b;
+  border-radius: 9px;
+  color: #a8afab;
+  background: #121719;
+  font-size: 11px;
+}
+
+.selection-preview span {
+  overflow-wrap: anywhere;
+  color: #d4d3cc;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+.check-row {
+  display: flex;
+  grid-column: 1 / -1;
+  gap: 9px;
+  align-items: center;
+  color: #aab0ad;
+  font-size: 11px;
+}
+
+.check-row input {
+  accent-color: #a97454;
+}
+
+.capability-note {
+  margin: 0;
+  padding: 9px 11px;
+  border-left: 2px solid #76523e;
+  color: #a88c78 !important;
+  background: #1c1917;
+}
+
+.strategy-summary {
+  grid-template-columns: max-content 1fr;
+  margin-top: 0;
+}
+
+.strategy-summary strong {
+  color: #b98a6c;
+}
+
+.diagnostic-card {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 12px 20px;
+  padding: 24px;
+}
+
+.diagnostic-card .button-row {
+  align-self: center;
+  margin: 0;
+}
+
+.diagnostic-preview {
+  grid-column: 1 / -1;
+  max-height: 260px;
+  margin: 4px 0 0;
+  padding: 14px;
+  overflow: auto;
+  border: 1px solid #30383a;
+  border-radius: 9px;
+  color: #abb6b0;
+  background: #0e1315;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 10px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 .fatal-state {

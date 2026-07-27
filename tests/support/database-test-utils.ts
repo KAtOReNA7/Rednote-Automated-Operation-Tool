@@ -7,6 +7,7 @@ import { connectDatabase, initializeDatabase } from '../../packages/db/src/index
 
 export const BUSINESS_TABLE_NAMES = [
   'account_profiles',
+  'app_settings',
   'approvals',
   'assets',
   'audit_events',

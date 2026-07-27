@@ -50,6 +50,9 @@ jobs:
       - name: Run desktop shell suites
         run: npm run test:desktop
 
+      - name: Run local settings and credential-reference suites
+        run: npm run test:settings
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

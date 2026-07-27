@@ -17,5 +17,8 @@
   },
   "files": [
     "dist"
-  ]
+  ],
+  "dependencies": {
+    "@mystery-operations/settings": "0.0.0"
+  }
 }

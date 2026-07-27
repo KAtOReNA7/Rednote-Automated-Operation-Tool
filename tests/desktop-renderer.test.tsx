@@ -12,6 +12,28 @@ import { ErrorBoundary } from '../apps/web-ui/src/error-boundary.js';
 import { NAVIGATION_ITEMS, resolveRoute } from '../apps/web-ui/src/routes.js';
 
 const bridge: DesktopBridge = {
+  buildDiagnosticPreview: async () => ({
+    ok: true,
+    value: { content: '{}\n', hash: 'a'.repeat(64) },
+  }),
+  clearCredential: async () => ({
+    ok: true,
+    value: { available: true, requiresReauth: false, status: 'NOT_CONFIGURED' },
+  }),
+  confirmDataRootSelection: async () => ({
+    ok: true,
+    value: {
+      project: { displayPath: 'C:\\测试 数据', revision: 0, status: 'READY' },
+      setupState: 'LOCAL_PROJECT_READY',
+    },
+  }),
+  exportDiagnosticReport: async (input) => ({
+    ok: true,
+    value: {
+      managedPath: 'exports/diagnostics/report.json',
+      previewHash: input.expectedPreviewHash,
+    },
+  }),
   getAppInfo: async () => ({
     ok: true,
     value: { name: '红笺本地运营台', platform: 'win32', version: '0.0.0' },
@@ -29,7 +51,7 @@ const bridge: DesktopBridge = {
         reopen: true,
         wal: true,
       },
-      schemaVersion: 3,
+      schemaVersion: 4,
       status: 'ready',
     },
   }),
@@ -43,10 +65,72 @@ const bridge: DesktopBridge = {
       v8Version: '15.0.0',
     },
   }),
+  getCredentialStatus: async () => ({
+    ok: true,
+    value: { available: true, requiresReauth: false, status: 'NOT_CONFIGURED' },
+  }),
+  getSettings: async () => ({
+    ok: true,
+    value: {
+      account: {
+        bio: '',
+        contentScope: {
+          excluded: ['偶像', '音乐', '演唱会', '泛娱乐', '粉圈'],
+          focus: '推理小说',
+          schemaVersion: 1,
+        },
+        occupationDisclosure: 'DEFERRED',
+        ownership: 'PERSONAL',
+        tone: {
+          humor: '少量冷幽默',
+          schemaVersion: 1,
+          sentenceStyle: '短句直接',
+          voice: '观点鲜明',
+        },
+        workingName: '未命名账号',
+      },
+      credential: { available: true, requiresReauth: false, status: 'NOT_CONFIGURED' },
+      providerCapability: 'UNPROBED',
+      settings: {
+        credentialReference: null,
+        embeddingModelId: null,
+        imageModelId: null,
+        monthlyHardLimitCents: 10000,
+        monthlyWarningCents: 8000,
+        providerBaseUrl: null,
+        providerProtocol: 'OPENAI_COMPATIBLE',
+        researchModelId: null,
+        reviewModelId: null,
+        revision: 0,
+        setupState: 'LOCAL_PROJECT_READY',
+        updatedAt: '2026-07-27T00:00:00.000Z',
+        writingModelId: null,
+      },
+    },
+  }),
+  getSetupState: async () => ({
+    ok: true,
+    value: {
+      project: { displayPath: 'C:\\测试 数据', revision: 0, status: 'READY' },
+      setupState: 'LOCAL_PROJECT_READY',
+    },
+  }),
   getWindowState: async () => ({
     ok: true,
     value: { isFullScreen: false, isMaximized: false },
   }),
+  selectDataRoot: async () => ({ ok: true, value: null }),
+  setCredential: async () => ({
+    ok: true,
+    value: { available: true, requiresReauth: false, status: 'CONFIGURED' },
+  }),
+  updateNonSecretSettings: async () => {
+    const result = await bridge.getSettings();
+    if (!result.ok) {
+      throw new Error('fixture settings unavailable');
+    }
+    return result;
+  },
 };
 
 beforeEach(() => {

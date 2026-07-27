@@ -1,8 +1,12 @@
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
-import { extname, join, relative, resolve, sep } from 'node:path';
+import { extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { randomUUID } from 'node:crypto';
+import { tmpdir } from 'node:os';
 
-import { app, BrowserWindow, protocol, screen, session } from 'electron';
+import { app, BrowserWindow, dialog, protocol, safeStorage, screen, session } from 'electron';
+
+import { SettingsError } from '@mystery-operations/settings';
 
 import { runFoundationHealthCheck } from './foundation-health.js';
 import { registerDesktopIpc } from './ipc.js';
@@ -14,12 +18,32 @@ import {
 } from './smoke-report.js';
 import { createSecureWebPreferences } from './window-factory.js';
 import { createWindowStateStore } from './window-state.js';
+import { DesktopSettingsRuntime } from './settings-runtime.js';
 
 const APP_PROTOCOL = 'rednote';
 const LOCAL_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
 const DEVELOPMENT_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d{1,5}(?:\/.*)?$/u;
 const isSmokeMode = process.argv.includes('--issue006-smoke');
 const smokeOutputPath = resolveSmokeOutputPath(process.argv);
+function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
+  const prefix = '--issue010-smoke-workspace=';
+  const argument = argv.find((value) => value.startsWith(prefix));
+  if (argument === undefined) {
+    return null;
+  }
+  const candidate = resolve(argument.slice(prefix.length));
+  const temporaryRoot = resolve(tmpdir());
+  const relativePath = relative(temporaryRoot, candidate);
+  const name = candidate.split(/[\\/]/u).at(-1) ?? '';
+  return isAbsolute(candidate) &&
+    !relativePath.startsWith('..') &&
+    !isAbsolute(relativePath) &&
+    /^rednote-issue010-smoke-[a-zA-Z0-9-]+$/u.test(name)
+    ? candidate
+    : null;
+}
+
+const smokeWorkspacePath = isSmokeMode ? resolveSmokeWorkspacePath(process.argv) : null;
 const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -42,6 +66,12 @@ protocol.registerSchemesAsPrivileged([
     scheme: APP_PROTOCOL,
   },
 ]);
+
+if (smokeWorkspacePath !== null) {
+  const isolatedUserData = join(smokeWorkspacePath, 'userData 中文 空格');
+  mkdirSync(isolatedUserData, { recursive: true });
+  app.setPath('userData', isolatedUserData);
+}
 
 function rendererUrl(): string {
   const candidate = process.env.DESKTOP_DEV_SERVER_URL;
@@ -88,6 +118,20 @@ async function startApplication(): Promise<void> {
 
   const sessionSecurityAudit = installSessionSecurity(session.defaultSession, expectedRendererUrl);
   const foundationHealth = runFoundationHealthCheck();
+  const settingsRuntime = new DesktopSettingsRuntime(app.getPath('userData'), safeStorage, dialog, {
+    appVersion: app.getVersion(),
+    chromiumVersion: process.versions.chrome ?? 'unknown',
+    electronVersion: process.versions.electron ?? 'unknown',
+    nodeVersion: process.versions.node,
+  });
+  await settingsRuntime.initialize();
+  const settingsSmoke =
+    smokeWorkspacePath === null
+      ? null
+      : await settingsRuntime.runIsolatedSmoke(
+          join(smokeWorkspacePath, 'project data 中文 空格'),
+          `unusable-runtime-${randomUUID()}`,
+        );
   const stateStore = createWindowStateStore(join(app.getPath('userData'), 'window-state.json'));
   const workAreas = screen.getAllDisplays().map((display) => display.workArea);
   const persistedState = stateStore.load(workAreas);
@@ -109,6 +153,7 @@ async function startApplication(): Promise<void> {
     expectedRendererUrl,
     foundationHealth,
     getWindow: () => mainWindow,
+    settingsRuntime,
   });
 
   if (persistedState.isMaximized && !isSmokeMode) {
@@ -129,7 +174,11 @@ async function startApplication(): Promise<void> {
     }
   });
   mainWindow.on('closed', () => {
+    if (mainWindow !== null) {
+      settingsRuntime.clearWindowSelections(mainWindow.id);
+    }
     removeIpcHandlers();
+    settingsRuntime.close();
     mainWindow = null;
   });
 
@@ -164,6 +213,15 @@ async function startApplication(): Promise<void> {
             renderer.preload &&
             renderer.renderer &&
             renderer.runtimeCapabilities &&
+            renderer.settings &&
+            renderer.setupState &&
+            renderer.credentialStatus &&
+            settingsSmoke?.credentialCleared === true &&
+            settingsSmoke.credentialRoundtrip &&
+            settingsSmoke.locator &&
+            settingsSmoke.safeStorage &&
+            settingsSmoke.secretEgressSafeCount === 30 &&
+            settingsSmoke.settings &&
             renderer.windowState &&
             sessionSecurityAudit.externalRequestAttempts === 0;
           writeSmokeReport(smokeOutputPath, {
@@ -181,13 +239,16 @@ async function startApplication(): Promise<void> {
               sandbox: true,
               webviewDenied: true,
             },
+            settings: settingsSmoke,
             storage: true,
           });
+          settingsRuntime.close();
           setTimeout(() => {
             app.exit(ok ? 0 : 4);
           }, 1_000);
         })
         .catch(() => {
+          settingsRuntime.close();
           writeSmokeReport(smokeOutputPath, {
             error: 'STORAGE_SMOKE_FAILED',
             ok: false,
@@ -219,10 +280,13 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(startApplication)
-    .catch(() => {
+    .catch((error: unknown) => {
       if (isSmokeMode && smokeOutputPath !== null) {
         writeSmokeReport(smokeOutputPath, {
-          error: 'STARTUP_FAILED',
+          ...(error instanceof SettingsError && error.context !== undefined
+            ? { context: error.context }
+            : {}),
+          error: error instanceof SettingsError ? error.code : 'STARTUP_FAILED',
           ok: false,
         });
       }

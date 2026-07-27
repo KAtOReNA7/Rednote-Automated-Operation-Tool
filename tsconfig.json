@@ -26,6 +26,9 @@
       "path": "./packages/shared"
     },
     {
+      "path": "./packages/settings"
+    },
+    {
       "path": "./packages/storage"
     }
   ]

@@ -171,7 +171,7 @@ describe('managed local path migration', () => {
   it('keeps migrations 1 and 2 immutable and appends one stable consecutive migration', () => {
     expect(migrationChecksum(MIGRATIONS[0] as Migration)).toBe(ISSUE_007_CHECKSUM);
     expect(migrationChecksum(MIGRATIONS[1] as Migration)).toBe(ISSUE_009_CHECKSUM);
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3]);
+    expect(MIGRATIONS.slice(0, 3).map(({ version }) => version)).toEqual([1, 2, 3]);
     expect(MIGRATIONS[2]).toMatchObject({
       name: 'managed_local_file_paths',
       version: 3,
@@ -306,6 +306,7 @@ describe('managed local path migration', () => {
     const result = await initializeDatabase({
       backupDirectory: root.backupDatabaseDirectory,
       databasePath,
+      migrations: MIGRATIONS.slice(0, 3),
     });
     expect(result).toMatchObject({ appliedVersions: [3], schemaVersion: 3 });
     expect(result.backupPath?.startsWith(root.backupDatabaseDirectory)).toBe(true);
@@ -360,7 +361,7 @@ describe('managed local path migration', () => {
     await expect(
       initializeDatabase({
         databasePath,
-        migrations: [...MIGRATIONS, failingMigration],
+        migrations: [...MIGRATIONS.slice(0, 3), failingMigration],
       }),
     ).rejects.toMatchObject({ migrationVersion: 4 });
     const database = connectDatabase(databasePath);

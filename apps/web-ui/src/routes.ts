@@ -61,7 +61,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = Object.freeze([
     shortLabel: '任',
   },
   {
-    description: '应用配置尚未在当前里程碑实现。',
+    description: '配置本地数据目录、中转站、模型、预算、账号策略与本机凭据引用。',
     label: '设置',
     path: '/settings',
     shortLabel: '设',
