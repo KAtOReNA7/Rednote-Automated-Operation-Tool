@@ -22,6 +22,16 @@ export { evaluateContentDecision } from './decision.js';
 export { applyQualityChecks, createPostPackage } from './post-package.js';
 export { hasRequiredSpoilerWarnings } from './spoiler.js';
 export {
+  allowedJobStatusTransitions,
+  canTransitionJobStatus,
+  InvalidJobStatusTransitionError,
+  isTerminalJobStatus,
+  JOB_STATUSES,
+  JobStatus,
+  TERMINAL_JOB_STATUSES,
+  transitionJobStatus,
+} from './job-status.js';
+export {
   ApprovalTier,
   ContentStatus,
   EXCEPTION_CONTENT_STATUSES,

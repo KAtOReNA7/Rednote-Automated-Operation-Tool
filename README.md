@@ -2,10 +2,10 @@
 
 这是一个面向 Windows 10/11 的本地优先、单用户推理小说内容运营生产与决策系统。
 
-当前仓库已完成 M0（Issue 001—005）以及 M1 的 Issue 007：TypeScript 单仓库、领域规则
-与状态机、两项不可变约束回归测试、禁止范围架构测试、Windows 必过 CI，以及本地
-SQLite Schema 和迁移基础。尚未实现桌面 UI、设置、任务执行器、供应商接入、搜索、图片
-或任何业务工作流。
+当前仓库已完成 M0（Issue 001—005）以及 M1 的 Issue 007、Issue 009：TypeScript
+单仓库、领域规则与状态机、两项不可变约束回归测试、禁止范围架构测试、Windows 必过
+CI、本地 SQLite Schema 和迁移基础，以及持久化本地任务队列。尚未实现桌面 UI、设置、
+Electron 接入、供应商接入、搜索、图片或任何真实业务工作流。
 
 ## 产品边界
 
@@ -32,9 +32,9 @@ apps/
   clipper/       M0 仅保留包边界
 packages/
   core/          领域枚举、规则、状态机和发布包不变量
-  db/            SQLite 连接、25 张业务表、迁移、事务和迁移前备份
+  db/            SQLite 连接、25 张业务表、迁移、事务、备份和队列仓储
   providers/     M0 仅保留包边界
-  workflows/     M0 仅保留包边界
+  workflows/     本地任务队列 Service、Worker、恢复和测试 handler registry
   shared/        M0 仅保留包边界
 tests/           领域、硬约束、架构、Windows 路径和 CI 配置测试
 ```
@@ -72,6 +72,15 @@ SQLite 迁移、持久化、失败恢复、Windows 路径和数据库硬约束�
 npm run test:db
 ```
 
+持久化本地任务队列可以独立验证：
+
+```powershell
+npm run test:queue
+```
+
+队列采用至少一次交付，不是恰好一次交付。未来真实 handler 必须对外部副作用实现业务
+幂等；本轮只有本地测试 handler，没有 Electron、模型、搜索、图片、OCR 或平台动作接入。
+
 依赖审计：
 
 ```powershell
@@ -92,10 +101,13 @@ npm run audit:dependencies
 ## CI
 
 `.github/workflows/ci.yml` 将 `windows-latest` 作为唯一必过作业，依次执行锁定安装、格式
-检查、Lint、类型检查、两项约束套件、SQLite 专项测试、完整测试、构建和依赖审计。CI
-不读取或打印业务环境变量。
+检查、Lint、类型检查、两项约束套件、SQLite 专项测试、任务队列专项测试、完整测试、
+构建和依赖审计。CI 不读取或打印业务环境变量。
 
 架构与 M0 取舍见 [ADR-0001](./docs/adr/0001-m0-foundation.md)，逐 Issue 验收映射见
 [M0 验收映射](./docs/m0-acceptance-map.md)。SQLite 选型与迁移策略见
 [ADR-0002](./docs/adr/0002-sqlite-schema-and-migrations.md)，Issue 007 的逐项证据见
-[M1 Issue 007 验收映射](./docs/m1-issue007-acceptance-map.md)。
+[M1 Issue 007 验收映射](./docs/m1-issue007-acceptance-map.md)。持久化队列的交付语义、
+状态、租约、恢复、幂等和 handler 契约见
+[ADR-0003](./docs/adr/0003-persistent-local-job-queue.md)，Issue 009 的逐项证据见
+[M1 Issue 009 验收映射](./docs/m1-issue009-acceptance-map.md)。

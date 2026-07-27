@@ -41,6 +41,9 @@ jobs:
       - name: Run SQLite migration and persistence suites
         run: npm run test:db
 
+      - name: Run persistent local job queue suites
+        run: npm run test:queue
+
       - name: Run complete test suite
         run: npm run test
 

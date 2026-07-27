@@ -1,0 +1,1147 @@
+M1 Issue 009：持久化本地任务队列——Codex 执行指令
+=====================================================
+
+版本：V1.0
+日期：2026-07-27
+
+前置状态
+--------
+
+M0 基线：PASS
+M0 commit：
+b01785f7010f259c2faf2bfb7173dc678ca16cca
+
+Issue 007：PASS
+Issue 007 commit：
+891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+
+预期分支：
+main
+
+预期 HEAD：
+891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+
+预期工作树：
+clean
+
+预期远端：
+无已配置远端
+
+
+执行配置
+--------
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High
+预计耗时：2—4 小时
+是否适合无人值守：适合
+是否需要真实 API：不需要
+是否允许产生模型费用：不需要且不得产生
+本轮结束点：Issue 009 验收完成
+
+
+一、任务授权范围
+----------------
+
+本轮只授权实施：
+
+Issue 009：持久化本地任务队列。
+
+不得进入：
+
+- Issue 006：Electron 桌面壳和 React UI
+- Issue 008：本地文件仓库
+- Issue 010：设置向导与密钥引用
+- Issue 011：本地 API 与插件认证
+- Issue 012 及之后的模型、搜索、研究和业务功能
+
+不得实现任何真实内容研究、模型调用、图片生成、OCR、浏览器插件业务、
+发布包、数据分析或小红书平台动作。
+
+
+二、权威文件
+------------
+
+完整读取以下文件，不得只读摘要：
+
+1. xiaohongshu-mystery-account-prd-v1.md
+2. xiaohongshu-development-roadmap-v1.md
+3. codex-master-development-instruction-v1.md
+4. docs/adr/0001-m0-foundation.md
+5. docs/adr/0002-sqlite-schema-and-migrations.md
+6. docs/m0-acceptance-map.md
+7. docs/m1-issue007-acceptance-map.md
+8. packages/core 中全部领域定义
+9. packages/db 中全部 Schema、迁移和数据库连接代码
+10. 当前 tests 目录中的全部约束与数据库测试
+
+本文件规定本轮 Issue 009 的执行细节。
+
+冲突优先级：
+
+1. 用户当前明确要求
+2. PRD 的冻结硬约束
+3. Roadmap 的禁止事项
+4. 本文件
+5. 现有实现细节
+
+不得通过修改冻结文档解决实现冲突。
+
+
+三、起点核验
+------------
+
+开始修改前执行只读核验：
+
+1. 确认当前分支为 main。
+2. 确认 HEAD 精确等于：
+   891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+3. 确认 M0 commit 是 HEAD 的祖先：
+   b01785f7010f259c2faf2bfb7173dc678ca16cca
+4. 确认工作树干净。
+5. 确认不存在未跟踪文件。
+6. 确认没有已配置远端，或报告实际差异。
+7. 确认 Issue 007 的迁移历史和 SHA-256 校验全部有效。
+8. 确认现有数据库测试全部通过。
+
+运行：
+
+npm ci
+npm run format-check
+npm run lint
+npm run typecheck
+npm run test:constraints
+npm run test:db
+npm run test
+npm run build
+npm run audit:dependencies
+
+只有全部通过才能开始 Issue 009。
+
+出现以下任何情况时立即停止并报告 BLOCKED：
+
+- HEAD 不一致
+- 工作树不干净
+- 存在无法确认归属的文件
+- 现有迁移校验失败
+- 现有测试失败
+- 需要修改或重写 Issue 007 的历史迁移
+
+不得自行重置、变基、删除文件或选择其他起点。
+
+
+四、对 Issue 007 技术选择的核对结论
+-----------------------------------
+
+继续使用现有 node:sqlite DatabaseSync 和不可变 SQL 迁移器。
+
+不要在 Issue 009 中更换数据库驱动、引入 ORM 或重新设计 Schema 基础层。
+
+但必须遵守以下边界：
+
+1. DatabaseSync 的数据库调用是同步的。
+2. 领取任务、状态转换和租约更新事务必须非常短。
+3. 不得在数据库事务内执行任务处理器、网络请求、模型调用、文件处理或等待。
+4. 队列编排可以是异步的，但数据库访问必须封装在短小、确定的仓储方法中。
+5. 队列不能阻塞未来 Electron 的渲染进程。
+6. 未来应能在 Electron main process 或 utility process 中承载，不得耦合到 UI。
+7. 本 Issue 不引入 Electron，也不固定 Electron 版本。
+8. 不得把 Electron 36 或 37 写成未来的固定目标。
+9. Issue 006 必须届时重新选择仍受支持、且内置 Node 运行时满足 node:sqlite
+   所需能力的 Electron 版本。
+10. 与其只检查版本号，优先建立运行时能力检查：
+    - node:sqlite 可加载
+    - DatabaseSync 可用
+    - backup API 可用
+    - timeout 选项可用
+
+截至本指令编写时的官方参考：
+
+Node.js SQLite 文档：
+https://nodejs.org/docs/latest-v24.x/api/sqlite.html
+
+Electron 43 官方发布说明：
+https://electronjs.org/blog/electron-43-0
+
+Electron Utility Process 文档：
+https://www.electronjs.org/docs/latest/api/utility-process
+
+这些链接只用于核对技术边界，不授权联网修改项目，也不要求本轮接入 Electron。
+
+
+五、交付语义：不得承诺 exactly-once
+-----------------------------------
+
+任务队列必须明确记录其交付语义：
+
+at-least-once execution with durable idempotent enqueue and lease protection
+
+也就是：
+
+- 正常运行时，同一任务不能被两个 worker 同时领取。
+- 同一幂等键不能重复创建逻辑相同的任务。
+- 进程崩溃后，租约过期的任务可以恢复。
+- 但如果未来某个任务在完成外部副作用后、写入完成状态前崩溃，
+  该任务仍可能被再次执行。
+
+因此不得在代码、ADR、README 或报告中宣称：
+
+- exactly once
+- 绝对不会重复执行
+- 外部副作用天然只发生一次
+
+未来所有产生费用或外部副作用的任务处理器必须自行使用业务幂等键、
+model_runs、cost_ledger 或目标资源唯一约束实现幂等。
+
+本 Issue 只提供队列基础，不实现上述业务处理器。
+
+
+六、需要实现的组件
+------------------
+
+至少实现以下边界清晰的组件：
+
+1. JobQueueRepository
+   负责 SQLite 中的任务创建、领取、租约、状态转换和查询。
+
+2. JobQueueService
+   负责公开队列操作、参数验证和状态机。
+
+3. JobWorker
+   负责轮询、领取、调用已注册测试处理器、心跳和结果提交。
+
+4. JobHandlerRegistry
+   只注册本地处理器接口和测试处理器。
+   不得注册任何真实研究、模型、图片或平台处理器。
+
+5. JobRecoveryService
+   负责应用启动时恢复过期租约。
+
+6. QueueClock
+   可注入时钟，确保租约、退避和恢复测试确定。
+
+7. BackoffPolicy
+   可注入退避策略，支持确定性测试。
+
+8. JobPayloadValidator
+   负责 JSON、大小、禁止凭据字段和任务类型验证。
+
+组件放置位置应符合现有 monorepo 边界。
+
+推荐：
+
+- 数据库 SQL 和仓储放在 packages/db
+- 队列状态机、worker 和编排放在 packages/workflows
+- 跨包类型和稳定枚举放在 packages/core 或 shared
+
+不得造成 packages/core 反向依赖 packages/db 或 workflows。
+
+
+七、任务状态
+------------
+
+在检查现有 Core 定义后，建立一个单一权威的任务状态集合。
+
+至少需要表达：
+
+- QUEUED
+- RUNNING
+- PAUSE_REQUESTED
+- PAUSED
+- CANCEL_REQUESTED
+- RETRY_WAIT
+- SUCCEEDED
+- FAILED
+- CANCELLED
+
+如果现有 Core 已有等价名称，优先复用，不得建立第二套语义不同的枚举。
+
+合法转换至少包括：
+
+1. 创建：
+   无 → QUEUED
+
+2. 领取：
+   QUEUED → RUNNING
+   RETRY_WAIT → RUNNING
+
+3. 成功：
+   RUNNING → SUCCEEDED
+
+4. 自动重试：
+   RUNNING → RETRY_WAIT
+   RETRY_WAIT → RUNNING
+
+5. 重试耗尽：
+   RUNNING → FAILED
+
+6. 排队状态暂停：
+   QUEUED → PAUSED
+   RETRY_WAIT → PAUSED
+
+7. 运行中请求暂停：
+   RUNNING → PAUSE_REQUESTED
+   PAUSE_REQUESTED → PAUSED
+
+8. 恢复：
+   PAUSED → QUEUED
+
+9. 排队或暂停状态取消：
+   QUEUED → CANCELLED
+   RETRY_WAIT → CANCELLED
+   PAUSED → CANCELLED
+
+10. 运行中请求取消：
+    RUNNING → CANCEL_REQUESTED
+    CANCEL_REQUESTED → CANCELLED
+
+11. 过期租约恢复：
+    RUNNING → RETRY_WAIT 或 FAILED
+    PAUSE_REQUESTED → PAUSED
+    CANCEL_REQUESTED → CANCELLED
+
+终态：
+
+- SUCCEEDED
+- FAILED
+- CANCELLED
+
+终态不得被后台恢复器自动复活。
+
+FAILED 的人工重试必须通过显式 API 进行，不得静默发生。
+
+所有非法转换必须被领域层和数据库操作拒绝。
+
+
+八、Schema 增量迁移
+-------------------
+
+先检查当前 jobs 表的真实字段和约束，再设计下一版增量迁移。
+
+不得编辑、重写或重新计算已经提交的历史迁移。
+
+必须使用一个新的、连续编号的不可变迁移。
+
+为实现 Issue 009，jobs 至少需要支持以下语义：
+
+- 调用方提供的 idempotency_key
+- payload_hash
+- priority
+- status
+- attempt_count
+- max_attempts
+- next_run_at 或等价可执行时间
+- lock_owner
+- lease_token
+- lease_expires_at
+- last_heartbeat_at
+- pause_requested_at
+- cancel_requested_at
+- started_at
+- finished_at
+- last_error_code
+- last_error 或安全错误摘要
+- result_json，可选
+- created_at
+- updated_at
+- revision 或等价并发保护字段，若设计需要
+
+字段名称可以根据现有 Schema 调整，但语义不得缺失。
+
+数据库约束至少包括：
+
+1. idempotency_key 非空且唯一。
+2. payload_hash 非空。
+3. priority 有合理范围。
+4. attempt_count >= 0。
+5. max_attempts >= 1。
+6. attempt_count <= max_attempts，或明确说明为什么需要允许等于/超过并用测试证明。
+7. lease 相关字段在 RUNNING、PAUSE_REQUESTED、CANCEL_REQUESTED 时符合一致性。
+8. 终态必须有 finished_at。
+9. 非终态不得错误设置完成字段。
+10. JSON 字段必须是合法 JSON。
+11. 时间字段必须符合项目的 UTC 时间格式。
+12. 状态必须来自 Core 权威集合。
+
+如 SQLite ADD COLUMN 无法安全表达新约束，可以使用受控的表重建迁移。
+
+表重建必须测试：
+
+- 保留已有 jobs 数据
+- 保留主键
+- 保留外键
+- 保留索引
+- 保留创建和更新时间
+- 不改变其他 25 张业务表
+- 失败时完整回滚
+
+
+九、是否增加技术表
+------------------
+
+优先复用现有 audit_events 记录任务状态转换。
+
+如果认为必须增加 job_attempts 或 job_events 技术表：
+
+1. 先说明现有 audit_events 无法满足的具体需求。
+2. 只增加技术表，不增加范围外业务实体。
+3. 通过新的增量迁移添加。
+4. 写入 ADR 或 Issue 009 设计说明。
+5. 为其保留、外键、索引和删除行为提供测试。
+
+不得仅为了“以后可能有用”而增加表。
+
+
+十、幂等入队
+------------
+
+公开 API 至少实现：
+
+enqueueJob(input)
+
+input 至少包含：
+
+- jobType
+- idempotencyKey
+- payload
+- priority
+- maxAttempts
+- availableAt，可选
+
+规则：
+
+1. idempotencyKey 由调用方提供。
+2. 系统保存规范化 payload 的稳定哈希。
+3. 同一幂等键、同一 jobType、同一 payload 再次入队：
+   返回已有任务，不创建新行。
+4. 同一幂等键但 jobType 不同：
+   抛出 IDEMPOTENCY_CONFLICT。
+5. 同一幂等键但 payload 不同：
+   抛出 IDEMPOTENCY_CONFLICT。
+6. 并发两个连接使用同一幂等键入队：
+   最终只能有一条任务记录。
+7. 不允许用随机幂等键掩盖重复任务。
+8. 不允许把完整 API 密钥、Authorization header 或其他凭据放进幂等键。
+
+payload 规范化必须确定、可测试，不得受对象键顺序影响。
+
+
+十一、原子领取与租约
+--------------------
+
+公开 API 至少实现：
+
+claimNextJob(workerId, options)
+
+要求：
+
+1. 使用短事务原子领取。
+2. 只领取：
+   - QUEUED 且 next_run_at <= now
+   - RETRY_WAIT 且 next_run_at <= now
+3. 排序至少考虑：
+   - priority 高者优先
+   - next_run_at 早者优先
+   - created_at 早者优先
+   - 使用 id 作为最终确定性排序
+4. 领取后设置：
+   - RUNNING
+   - lock_owner
+   - 新 lease_token
+   - lease_expires_at
+   - last_heartbeat_at
+   - started_at，首次执行时
+   - attempt_count 增加
+5. 同一任务不能被两个 worker 同时领取。
+6. 两个独立 DatabaseSync 连接竞争时也必须成立。
+7. 领取事务提交后才允许调用任务处理器。
+8. 不得在领取事务内等待。
+
+lease_token 用于防止旧 worker 或同名 worker 对新租约执行完成操作。
+
+只使用 workerId 不足以证明租约所有权。
+
+
+十二、心跳
+----------
+
+公开 API 至少实现：
+
+heartbeat(jobId, workerId, leaseToken)
+
+要求：
+
+1. 只有当前租约所有者可以续租。
+2. 过期租约不能被旧 worker 恢复。
+3. leaseToken 不匹配时拒绝。
+4. 终态任务拒绝心跳。
+5. 心跳返回当前控制信号：
+   - CONTINUE
+   - PAUSE
+   - CANCEL
+6. 心跳更新必须是短事务。
+7. 心跳失败不能静默忽略。
+
+
+十三、完成和失败
+----------------
+
+公开 API 至少实现：
+
+completeJob(jobId, workerId, leaseToken, result?)
+failJob(jobId, workerId, leaseToken, error)
+
+完成规则：
+
+1. 只有当前有效租约所有者可以完成。
+2. leaseToken 不匹配时拒绝。
+3. SUCCEEDED 设置 finished_at。
+4. 清除租约字段。
+5. result 必须是合法、受大小限制的 JSON。
+6. 重复 complete 调用必须有明确的幂等或冲突语义。
+
+失败规则：
+
+1. 保存稳定 error code 和安全错误摘要。
+2. 不把完整 stack、请求头、密钥或巨大响应写入 jobs。
+3. 如果 attempt_count < max_attempts：
+   进入 RETRY_WAIT，并持久化 next_run_at。
+4. 如果重试耗尽：
+   进入 FAILED 并设置 finished_at。
+5. 清除租约字段。
+6. 失败和新状态必须在同一事务中写入。
+
+
+十四、退避策略
+--------------
+
+实现可配置、可注入、可确定性测试的退避策略。
+
+默认可使用：
+
+- 指数退避
+- 最大延迟上限
+- 可选 jitter
+
+要求：
+
+1. 基础延迟、倍率、上限可配置。
+2. 测试使用注入时钟和注入随机源。
+3. next_run_at 在事务中持久化。
+4. 应用重启后不能重新随机计算已经安排的时间。
+5. 不允许负延迟。
+6. 极大 attempt 值不能发生整数溢出。
+
+
+十五、暂停、恢复和取消
+----------------------
+
+公开 API 至少实现：
+
+requestPause(jobId)
+acknowledgePause(jobId, workerId, leaseToken)
+resumeJob(jobId)
+requestCancel(jobId)
+acknowledgeCancel(jobId, workerId, leaseToken)
+
+暂停规则：
+
+1. QUEUED/RETRY_WAIT：
+   可直接进入 PAUSED。
+2. RUNNING：
+   进入 PAUSE_REQUESTED，由 worker 协作确认。
+3. PAUSED：
+   重复暂停应幂等。
+4. resume：
+   PAUSED → QUEUED。
+5. resume 不得重置 attempt_count。
+6. 终态不能暂停或恢复。
+
+取消规则：
+
+1. QUEUED/RETRY_WAIT/PAUSED：
+   可直接进入 CANCELLED。
+2. RUNNING：
+   进入 CANCEL_REQUESTED，由 worker 协作确认。
+3. CANCELLED：
+   重复取消应幂等。
+4. 取消后不得被 worker 领取。
+5. 终态不得被取消请求复活。
+
+不得使用强杀线程来伪装可靠取消。
+
+worker handler 使用 AbortSignal 或等价协作机制。
+
+
+十六、失败任务的显式人工重试
+----------------------------
+
+公开 API 至少实现：
+
+retryFailedJob(jobId, options)
+
+只允许 FAILED。
+
+要求：
+
+1. 必须显式调用。
+2. 不删除历史 attempt_count。
+3. 不修改原 idempotency_key。
+4. 通过增加允许的 additionalAttempts 或等价设计保留历史。
+5. 新的 maxAttempts 必须大于当前 attempt_count。
+6. 设置新的 next_run_at。
+7. 清除终态完成字段和安全错误摘要中的执行态信息，但保留审计记录。
+8. 不得对 SUCCEEDED 或 CANCELLED 自动重试。
+
+
+十七、崩溃与重启恢复
+--------------------
+
+实现：
+
+recoverExpiredLeases(now)
+
+只处理租约已经过期的任务。
+
+规则：
+
+1. RUNNING：
+   - attempt_count < max_attempts → RETRY_WAIT
+   - 否则 → FAILED
+2. PAUSE_REQUESTED：
+   → PAUSED
+3. CANCEL_REQUESTED：
+   → CANCELLED
+4. 未过期租约不能恢复。
+5. 终态不能恢复。
+6. 恢复清除旧 lock_owner、lease_token、lease_expires_at 和 heartbeat。
+7. 恢复动作写入 audit_events。
+8. 多个进程同时恢复时，状态转换仍必须原子且只发生一次。
+
+应用启动时可以调用恢复服务，但本 Issue 不接 Electron 启动流程。
+
+只提供可复用的恢复入口和测试。
+
+
+十八、JobWorker
+---------------
+
+实现一个不依赖 Electron 的本地 worker。
+
+要求：
+
+1. 默认并发数为 1，可配置。
+2. 不允许无界并发。
+3. 无任务时使用可配置轮询间隔。
+4. 使用注入时钟或可控调度器测试。
+5. 处理器运行时不保持数据库事务。
+6. 定期心跳。
+7. 接收 PAUSE/CANCEL 控制信号。
+8. 处理器成功后调用 completeJob。
+9. 处理器失败后调用 failJob。
+10. 未注册 jobType：
+    使用稳定错误码失败，不崩溃整个 worker。
+11. worker 停止领取新任务后，支持受控关闭。
+12. 超过关闭等待时间的执行中任务：
+    不得伪造成功；依赖租约恢复或安全地进入重试。
+
+本 Issue 的 handler registry 只使用测试处理器，例如：
+
+- success handler
+- fail-once handler
+- always-fail handler
+- slow cooperative handler
+- pause-aware handler
+- cancel-aware handler
+
+不得加入研究、模型、图片、OCR 或平台处理器。
+
+
+十九、查询接口
+--------------
+
+实现最小只读查询：
+
+getJob(jobId)
+listJobs(filter, pagination)
+getQueueStats()
+
+支持过滤：
+
+- status
+- jobType
+- created time range
+- next run time range
+
+要求：
+
+1. 分页有上限。
+2. 排序确定。
+3. 空结果明确。
+4. 不加载无限量任务。
+5. 不提供 UI。
+
+
+二十、Payload 与错误安全
+------------------------
+
+payload 必须：
+
+- 可 JSON 序列化
+- 有大小上限
+- 有深度上限或等价防护
+- 规范化后再计算 hash
+- 不允许循环引用
+- 不允许 undefined、function、symbol 等不可持久化值
+
+至少拒绝明显凭据字段：
+
+- apiKey
+- api_key
+- authorization
+- password
+- secret
+- accessToken
+- access_token
+- refreshToken
+- refresh_token
+
+未来任务只能保存凭据引用名称，不能保存凭据值。
+
+错误摘要：
+
+- 有长度上限
+- 不保存完整请求头
+- 不保存完整 API 响应
+- 不保存明文密钥
+- 不保存用户未授权的大段内容
+
+
+二十一、Audit 记录
+-----------------
+
+所有重要状态转换应在同一事务中写入 audit_events：
+
+- ENQUEUED
+- CLAIMED
+- HEARTBEAT，是否每次记录由容量评估决定
+- COMPLETED
+- RETRY_SCHEDULED
+- FAILED
+- PAUSE_REQUESTED
+- PAUSED
+- RESUMED
+- CANCEL_REQUESTED
+- CANCELLED
+- LEASE_RECOVERED
+- MANUAL_RETRY
+
+如果不记录每次 HEARTBEAT，必须说明原因，且仍需保留 last_heartbeat_at。
+
+Audit 内容不得包含密钥或完整 payload。
+
+
+二十二、数据库性能边界
+----------------------
+
+建立并验证适合以下查询的索引：
+
+1. 下一个可领取任务：
+   status + next_run_at + priority + created_at
+2. 过期租约：
+   status + lease_expires_at
+3. 幂等键：
+   idempotency_key unique
+4. worker 当前任务：
+   lock_owner + status
+5. 按类型和状态查询：
+   job_type + status
+
+使用 EXPLAIN QUERY PLAN 或等价方法证明关键查询使用预期索引。
+
+不得为了测试通过创建大量重复或无意义索引。
+
+
+二十三、最低测试矩阵
+--------------------
+
+至少覆盖：
+
+A. 起点和迁移
+
+1. Issue 007 历史迁移校验和不变。
+2. 新迁移版本连续。
+3. 新迁移重复运行幂等。
+4. 现有 jobs 数据在迁移后保留。
+5. 新迁移失败时完整回滚。
+6. 迁移前备份仍生效。
+7. 其他业务表未发生无关改变。
+
+B. 入队和幂等
+
+8. 正常入队。
+9. 延迟入队。
+10. 同键、同类型、同 payload 返回同一任务。
+11. 同键、不同类型冲突。
+12. 同键、不同 payload 冲突。
+13. 两连接并发同键只创建一条。
+14. payload 对象键顺序不同但语义相同时 hash 一致。
+15. 无效 JSON 类型被拒绝。
+16. 超大 payload 被拒绝。
+17. 明显凭据字段被拒绝。
+
+C. 领取和租约
+
+18. 领取最高优先级且已到期任务。
+19. 未到 next_run_at 的任务不被领取。
+20. PAUSED/CANCELLED/终态不被领取。
+21. 两个 worker 不能领取同一任务。
+22. 两个独立数据库连接竞争仍只有一个成功。
+23. 领取增加 attempt_count。
+24. 领取生成新 lease_token。
+25. 非所有者不能心跳。
+26. 旧 lease_token 不能操作新租约。
+27. 心跳延长租约。
+28. 过期租约不能由旧 worker 完成。
+
+D. 完成和失败
+
+29. 正常完成。
+30. 重复完成的明确语义。
+31. 失败后进入 RETRY_WAIT。
+32. next_run_at 持久化。
+33. 达到 max_attempts 后 FAILED。
+34. 终态设置 finished_at。
+35. 租约字段被清理。
+36. result_json 大小和 JSON 约束。
+37. 错误摘要截断和凭据清理。
+
+E. 暂停、恢复和取消
+
+38. QUEUED 直接暂停。
+39. RETRY_WAIT 直接暂停。
+40. RUNNING 请求暂停。
+41. worker 确认暂停。
+42. PAUSED 恢复为 QUEUED。
+43. resume 不重置 attempt_count。
+44. QUEUED/RETRY_WAIT/PAUSED 直接取消。
+45. RUNNING 请求取消。
+46. worker 确认取消。
+47. CANCELLED 不再领取。
+48. 终态非法转换被拒绝。
+
+F. 重试和恢复
+
+49. FAILED 显式人工重试。
+50. 人工重试保留历史 attempt_count。
+51. 人工重试增加可用 attempts。
+52. SUCCEEDED/CANCELLED 不能人工重试。
+53. 过期 RUNNING 恢复为 RETRY_WAIT。
+54. 重试耗尽的过期 RUNNING 恢复为 FAILED。
+55. 过期 PAUSE_REQUESTED 恢复为 PAUSED。
+56. 过期 CANCEL_REQUESTED 恢复为 CANCELLED。
+57. 未过期任务不恢复。
+58. 多恢复器竞争只转换一次。
+59. 数据库关闭重开后恢复行为一致。
+
+G. Worker
+
+60. success handler。
+61. fail-once handler 自动重试后成功。
+62. always-fail handler 最终失败。
+63. 未注册 handler 不导致 worker 崩溃。
+64. pause-aware handler。
+65. cancel-aware handler。
+66. worker 停止后不领取新任务。
+67. 崩溃模拟后租约恢复。
+68. 并发上限生效。
+
+H. 性能与平台
+
+69. 关键领取查询使用预期索引。
+70. 过期租约查询使用预期索引。
+71. 中文和空格 Windows 路径。
+72. 多个 DatabaseSync 连接。
+73. WAL 模式下状态一致。
+74. 1,000 个待处理任务下领取顺序正确。
+
+I. 冻结约束
+
+75. ai_disclosure 仍固定 false。
+76. 不存在版权检查或版权队列状态。
+77. AI 参与程度不影响任务优先级、领取和状态。
+78. 来源字段变化不影响队列调度。
+79. 不存在小红书平台动作。
+80. 不存在真实 API、云服务、开卷或盗版电子书处理。
+
+不得用纯字符串搜索替代运行时行为测试。
+
+
+二十四、脚本与 CI
+-----------------
+
+新增明确的测试命令：
+
+npm run test:queue
+
+该命令必须只运行任务队列相关测试，并可独立失败。
+
+现有：
+
+npm run test
+
+必须包含队列测试。
+
+Windows CI 必须增加：
+
+npm run test:queue
+
+不得删除：
+
+- test:constraints
+- test:db
+- lint
+- typecheck
+- build
+- dependency audit
+
+如果项目声明最低 Node 22.16 支持：
+
+1. 增加运行时能力检查或兼容 CI 配置。
+2. 不得只根据 engines 字段声称兼容。
+3. 若无法实际验证最低版本，报告“最低版本未经托管 CI 证明”，
+   不得伪装为已经验证。
+
+GitHub 托管 CI 尚未运行，最终报告必须继续明确区分：
+
+- Windows 本地测试
+- CI 配置测试
+- GitHub 托管 CI
+
+
+二十五、文档
+------------
+
+至少新增：
+
+1. Issue 009 设计说明或 ADR
+2. Issue 009 验收映射
+3. 队列交付语义说明
+4. 状态转换表
+5. 租约和恢复说明
+6. 幂等语义说明
+7. 未来 handler 的实现契约
+
+建议路径：
+
+docs/adr/0003-persistent-local-job-queue.md
+docs/m1-issue009-acceptance-map.md
+
+文档必须明确：
+
+- at-least-once，不是 exactly-once
+- 长任务不在数据库事务中运行
+- 外部副作用需要 handler 业务幂等
+- 本轮没有真实 handler
+- 本轮没有 Electron 接入
+- 不将 Electron 36/37 固定为目标
+
+
+二十六、完成验证
+----------------
+
+完成后从干净依赖状态运行：
+
+npm ci
+npm run format-check
+npm run lint
+npm run typecheck
+npm run test:constraints
+npm run test:db
+npm run test:queue
+npm run test
+npm run build
+npm run audit:dependencies
+
+并确认：
+
+- 跳过测试为 0
+- 待办测试为 0
+- 失败测试为 0
+- 依赖漏洞为 0
+- 未调用真实 API
+- 未产生费用
+- 未使用密钥
+- 未进入其他 Issue
+
+如果任何验收失败：
+
+- 保存失败证据
+- 报告 BLOCKED
+- 不删除测试
+- 不降低断言
+- 不修改冻结文档
+- 不创建完成提交
+
+
+二十七、本地提交
+----------------
+
+只有全部验收通过，才创建一个独立本地提交。
+
+提交信息：
+
+feat(workflows): add persistent local job queue
+
+要求：
+
+- 不 amend M0 或 Issue 007
+- 不 squash
+- 不配置远端
+- 不 push
+- 不创建 PR
+- 不合并
+- 工作树最终干净
+
+
+二十八、最终报告格式
+--------------------
+
+1. 结论
+
+- Issue 009 状态：PASS、FAIL 或 BLOCKED
+- 是否进入其他 Issue
+- 是否产生 API 调用或费用
+
+2. 起点与 Git
+
+- 起始 HEAD
+- 最终 commit SHA
+- 最终 HEAD
+- 分支
+- 工作树
+- 远端
+- push/PR/merge 状态
+
+3. 设计
+
+- 队列组件
+- 包边界
+- at-least-once 语义
+- 幂等语义
+- 状态机
+- 租约
+- 心跳
+- 退避
+- 恢复
+- 暂停/取消
+- 人工重试
+
+4. Schema
+
+- 新迁移版本
+- 迁移 SHA-256
+- jobs 字段变化
+- 新增或修改索引
+- 新增技术表，如有
+- 历史迁移是否保持不变
+- 现有数据迁移结果
+
+5. 测试
+
+- test:constraints
+- test:db
+- test:queue
+- test
+- lint
+- typecheck
+- build
+- audit
+- 测试文件数
+- 测试总数
+- 失败、跳过和待办数量
+- 多连接竞争结果
+- 重启恢复结果
+- Windows 路径结果
+- 关键查询计划
+
+6. 安全与范围
+
+逐项确认：
+
+- 无真实 handler
+- 无 API
+- 无密钥
+- 无云服务
+- 无小红书平台动作
+- 无开卷
+- 无盗版电子书
+- AI 标识规则不变
+- 版权不参与门禁、评分、审批和排期
+
+7. Electron/Node 兼容性
+
+- 当前实际测试 Node 版本
+- 使用的 node:sqlite 能力
+- 是否实际验证最低 Node 版本
+- 是否修改 Electron 目标
+- 明确没有将 Electron 36/37 固定为未来版本
+
+8. CI
+
+明确分别报告：
+
+- Windows 本地验证
+- CI 配置验证
+- GitHub 托管 CI
+
+如果没有远端，必须写：
+
+GitHub 托管 CI 尚未运行，不能声称已通过。
+
+9. 下一步
+
+- 只推荐一个后续 Issue
+- 说明依赖
+- 是否需要密钥、费用或用户输入
+- 不自动开始
+
+
+二十九、停止条件
+----------------
+
+遇到以下任一情况立即停止：
+
+- 起点 HEAD 不匹配
+- 工作树不干净
+- 历史迁移校验变化
+- 需要重写 Issue 007 迁移
+- 需要更换数据库驱动
+- 需要云服务
+- 无法实现原子领取
+- 无法实现租约所有权保护
+- 只能通过承诺 exactly-once 满足需求
+- 状态机与 Core 冲突
+- 必须削弱冻结约束
+- 需要真实密钥或付费调用
+- 需要进入其他 Issue
+- 测试必须被删除或削弱
+
+停止时保留证据，报告 BLOCKED，不得自行扩大权限。
+
+
+三十、现在执行
+--------------
+
+现在执行：
+
+1. 核验固定起点。
+2. 完整读取权威文件。
+3. 设计并记录 at-least-once、幂等、租约和恢复语义。
+4. 添加连续不可变迁移。
+5. 实现 JobQueueRepository、Service、Worker、Recovery 和测试 registry。
+6. 完成全部测试与项目门禁。
+7. 创建独立本地提交。
+8. 输出完整验收报告。
+9. 停止，不进入其他 Issue。
+

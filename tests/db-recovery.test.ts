@@ -18,6 +18,8 @@ import {
 
 afterEach(cleanTemporaryDatabases);
 
+const NEXT_MIGRATION_VERSION = MIGRATIONS.length + 1;
+
 const FAILING_MIGRATION: Migration = {
   name: 'simulated_failure',
   sql: `
@@ -25,11 +27,11 @@ const FAILING_MIGRATION: Migration = {
     INSERT INTO migration_probe(id) VALUES ('temporary-row');
     INSERT INTO table_that_does_not_exist(id) VALUES ('failure');
   `,
-  version: 2,
+  version: NEXT_MIGRATION_VERSION,
 };
 
 const MIGRATIONS_WITH_FAILURE = [...MIGRATIONS, FAILING_MIGRATION] as const;
-const SUCCESSFUL_SECOND_MIGRATION: Migration = {
+const SUCCESSFUL_NEXT_MIGRATION: Migration = {
   name: 'successful_incremental_upgrade',
   sql: `
     CREATE TABLE migration_upgrade_probe(
@@ -37,10 +39,10 @@ const SUCCESSFUL_SECOND_MIGRATION: Migration = {
       note TEXT NOT NULL
     ) STRICT;
   `,
-  version: 2,
+  version: NEXT_MIGRATION_VERSION,
 };
 
-async function createVersionOneDatabase(databasePath: string): Promise<void> {
+async function createCurrentDatabase(databasePath: string): Promise<void> {
   await initializeDatabase({ databasePath });
   const database = connectDatabase(databasePath);
   try {
@@ -56,17 +58,17 @@ async function createVersionOneDatabase(databasePath: string): Promise<void> {
 }
 
 describe('pre-migration backup and failure recovery', () => {
-  it('applies a versioned incremental migration after backing up version one', async () => {
+  it('applies a versioned incremental migration after backing up the current schema', async () => {
     const databasePath = createTemporaryDatabasePath();
-    await createVersionOneDatabase(databasePath);
+    await createCurrentDatabase(databasePath);
 
     const result = await initializeDatabase({
       databasePath,
-      migrations: [...MIGRATIONS, SUCCESSFUL_SECOND_MIGRATION],
+      migrations: [...MIGRATIONS, SUCCESSFUL_NEXT_MIGRATION],
     });
 
-    expect(result.appliedVersions).toEqual([2]);
-    expect(result.schemaVersion).toBe(2);
+    expect(result.appliedVersions).toEqual([NEXT_MIGRATION_VERSION]);
+    expect(result.schemaVersion).toBe(NEXT_MIGRATION_VERSION);
     expect(existsSync(result.backupPath ?? '')).toBe(true);
     const database = connectDatabase(databasePath);
     try {
@@ -113,7 +115,7 @@ describe('pre-migration backup and failure recovery', () => {
       ).toEqual({ value: 'keep-me' });
       expect(
         migratedDatabase.prepare('SELECT max(version) AS version FROM schema_migrations').get(),
-      ).toEqual({ version: 1 });
+      ).toEqual({ version: MIGRATIONS.length });
     } finally {
       migratedDatabase.close();
     }
@@ -121,7 +123,7 @@ describe('pre-migration backup and failure recovery', () => {
 
   it('backs up an existing database before applying a pending migration', async () => {
     const databasePath = createTemporaryDatabasePath();
-    await createVersionOneDatabase(databasePath);
+    await createCurrentDatabase(databasePath);
 
     let error: unknown;
     try {
@@ -136,7 +138,7 @@ describe('pre-migration backup and failure recovery', () => {
 
     expect(error).toBeInstanceOf(MigrationError);
     const migrationError = error as MigrationError;
-    expect(migrationError.message).toContain('SQLite migration 2 failed');
+    expect(migrationError.message).toContain(`SQLite migration ${NEXT_MIGRATION_VERSION} failed`);
     expect(migrationError.cause).toBeInstanceOf(Error);
     expect(migrationError.backupPath).not.toBeNull();
     expect(migrationError.backupPath).toMatch(/content\.before-migration\..+\.sqlite\.bak$/u);
@@ -162,7 +164,7 @@ describe('pre-migration backup and failure recovery', () => {
 
   it('never overwrites an existing backup filename', async () => {
     const databasePath = createTemporaryDatabasePath();
-    await createVersionOneDatabase(databasePath);
+    await createCurrentDatabase(databasePath);
     const fixedDate = new Date('2026-07-27T12:34:56.789Z');
     const extension = extname(databasePath);
     const stem = basename(databasePath, extension);
@@ -194,7 +196,7 @@ describe('pre-migration backup and failure recovery', () => {
 
   it('keeps the source database openable, its data intact, and its version unchanged', async () => {
     const databasePath = createTemporaryDatabasePath();
-    await createVersionOneDatabase(databasePath);
+    await createCurrentDatabase(databasePath);
 
     await expect(
       initializeDatabase({
@@ -202,7 +204,7 @@ describe('pre-migration backup and failure recovery', () => {
         migrations: MIGRATIONS_WITH_FAILURE,
       }),
     ).rejects.toMatchObject({
-      migrationVersion: 2,
+      migrationVersion: NEXT_MIGRATION_VERSION,
       name: 'MigrationError',
     });
 
@@ -220,7 +222,7 @@ describe('pre-migration backup and failure recovery', () => {
       expect(
         database.prepare('SELECT max(version) AS version FROM schema_migrations').get(),
       ).toEqual({
-        version: 1,
+        version: MIGRATIONS.length,
       });
       expect(
         database

@@ -49,6 +49,7 @@ describe('Windows CI configuration', () => {
       'npm run typecheck',
       'npm run test:constraints',
       'npm run test:db',
+      'npm run test:queue',
       'npm run test',
       'npm run build',
       'npm run audit:dependencies',

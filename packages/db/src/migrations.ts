@@ -418,10 +418,176 @@ CREATE INDEX idx_audit_events_entity ON audit_events(entity_type, entity_id, cre
 CREATE INDEX idx_audit_events_created_at ON audit_events(created_at);
 `;
 
+const PERSISTENT_JOB_QUEUE = `
+ALTER TABLE jobs RENAME TO jobs_issue007;
+DROP INDEX idx_jobs_status_next_run_at;
+
+CREATE TABLE jobs (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  job_type TEXT NOT NULL CHECK (
+    length(trim(job_type)) BETWEEN 1 AND 128
+  ),
+  idempotency_key TEXT NOT NULL UNIQUE CHECK (
+    length(trim(idempotency_key)) BETWEEN 1 AND 512
+  ),
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  payload_hash TEXT NOT NULL CHECK (length(trim(payload_hash)) > 0),
+  priority INTEGER NOT NULL DEFAULT 0 CHECK (priority BETWEEN -1000 AND 1000),
+  status TEXT NOT NULL CHECK (status IN (
+    'QUEUED',
+    'RUNNING',
+    'PAUSE_REQUESTED',
+    'PAUSED',
+    'CANCEL_REQUESTED',
+    'RETRY_WAIT',
+    'SUCCEEDED',
+    'FAILED',
+    'CANCELLED'
+  )),
+  attempt_count INTEGER NOT NULL DEFAULT 0 CHECK (attempt_count >= 0),
+  max_attempts INTEGER NOT NULL DEFAULT 1 CHECK (max_attempts >= 1),
+  next_run_at TEXT NOT NULL CHECK (next_run_at ${UTC_REQUIRED}),
+  lock_owner TEXT CHECK (
+    lock_owner IS NULL OR length(trim(lock_owner)) BETWEEN 1 AND 256
+  ),
+  lease_token TEXT CHECK (
+    lease_token IS NULL OR length(trim(lease_token)) BETWEEN 1 AND 256
+  ),
+  lease_expires_at TEXT CHECK (
+    lease_expires_at ${UTC_OPTIONAL} lease_expires_at ${UTC_REQUIRED}
+  ),
+  last_heartbeat_at TEXT CHECK (
+    last_heartbeat_at ${UTC_OPTIONAL} last_heartbeat_at ${UTC_REQUIRED}
+  ),
+  pause_requested_at TEXT CHECK (
+    pause_requested_at ${UTC_OPTIONAL} pause_requested_at ${UTC_REQUIRED}
+  ),
+  cancel_requested_at TEXT CHECK (
+    cancel_requested_at ${UTC_OPTIONAL} cancel_requested_at ${UTC_REQUIRED}
+  ),
+  started_at TEXT CHECK (started_at ${UTC_OPTIONAL} started_at ${UTC_REQUIRED}),
+  finished_at TEXT CHECK (finished_at ${UTC_OPTIONAL} finished_at ${UTC_REQUIRED}),
+  last_error_code TEXT CHECK (
+    last_error_code IS NULL OR length(trim(last_error_code)) BETWEEN 1 AND 128
+  ),
+  last_error TEXT CHECK (
+    last_error IS NULL OR length(last_error) <= 1000
+  ),
+  result_json TEXT CHECK (result_json IS NULL OR json_valid(result_json)),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  CHECK (attempt_count <= max_attempts),
+  CHECK (
+    (
+      status IN ('RUNNING', 'PAUSE_REQUESTED', 'CANCEL_REQUESTED') AND
+      lock_owner IS NOT NULL AND
+      lease_token IS NOT NULL AND
+      lease_expires_at IS NOT NULL AND
+      last_heartbeat_at IS NOT NULL
+    ) OR (
+      status NOT IN ('RUNNING', 'PAUSE_REQUESTED', 'CANCEL_REQUESTED') AND
+      lock_owner IS NULL AND
+      lease_token IS NULL AND
+      lease_expires_at IS NULL AND
+      last_heartbeat_at IS NULL
+    )
+  ),
+  CHECK (
+    (
+      status IN ('SUCCEEDED', 'FAILED', 'CANCELLED') AND
+      finished_at IS NOT NULL
+    ) OR (
+      status NOT IN ('SUCCEEDED', 'FAILED', 'CANCELLED') AND
+      finished_at IS NULL
+    )
+  )
+) STRICT;
+
+INSERT INTO jobs (
+  id,
+  job_type,
+  idempotency_key,
+  payload_json,
+  payload_hash,
+  priority,
+  status,
+  attempt_count,
+  max_attempts,
+  next_run_at,
+  started_at,
+  finished_at,
+  last_error_code,
+  last_error,
+  created_at,
+  updated_at,
+  revision
+)
+SELECT
+  id,
+  job_type,
+  'legacy:' || id,
+  payload_json,
+  'legacy:' || lower(hex(payload_json)),
+  0,
+  CASE
+    WHEN status = 'RUNNING' AND attempt_count < max_attempts THEN 'RETRY_WAIT'
+    WHEN status = 'RUNNING' THEN 'FAILED'
+    WHEN status = 'PAUSE_REQUESTED' THEN 'PAUSED'
+    WHEN status = 'CANCEL_REQUESTED' THEN 'CANCELLED'
+    WHEN status IN (
+      'QUEUED',
+      'PAUSED',
+      'RETRY_WAIT',
+      'SUCCEEDED',
+      'FAILED',
+      'CANCELLED'
+    ) THEN status
+    ELSE 'QUEUED'
+  END,
+  attempt_count,
+  max_attempts,
+  coalesce(next_run_at, created_at),
+  locked_at,
+  CASE
+    WHEN status IN ('SUCCEEDED', 'FAILED', 'CANCELLED', 'CANCEL_REQUESTED') THEN updated_at
+    WHEN status = 'RUNNING' AND attempt_count >= max_attempts THEN updated_at
+    ELSE NULL
+  END,
+  CASE WHEN last_error IS NULL THEN NULL ELSE 'LEGACY_ERROR' END,
+  CASE WHEN last_error IS NULL THEN NULL ELSE substr(last_error, 1, 1000) END,
+  created_at,
+  updated_at,
+  0
+FROM jobs_issue007;
+
+DROP TABLE jobs_issue007;
+
+CREATE INDEX idx_jobs_claim
+  ON jobs(priority DESC, next_run_at, created_at, id, status)
+  WHERE status IN ('QUEUED', 'RETRY_WAIT');
+CREATE INDEX idx_jobs_expired_lease
+  ON jobs(lease_expires_at, id, status)
+  WHERE status IN ('RUNNING', 'PAUSE_REQUESTED', 'CANCEL_REQUESTED');
+CREATE INDEX idx_jobs_worker_status
+  ON jobs(lock_owner, status);
+CREATE INDEX idx_jobs_type_status
+  ON jobs(job_type, status);
+CREATE INDEX idx_jobs_created_at_id
+  ON jobs(created_at, id);
+CREATE INDEX idx_jobs_next_run_at_id
+  ON jobs(next_run_at, id);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
     sql: INITIAL_SCHEMA,
     version: 1,
+  }),
+  Object.freeze({
+    name: 'persistent_local_job_queue',
+    sql: PERSISTENT_JOB_QUEUE,
+    version: 2,
   }),
 ]);

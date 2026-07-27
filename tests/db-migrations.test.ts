@@ -179,15 +179,28 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
     jobs: [
       'id',
       'job_type',
+      'idempotency_key',
       'payload_json',
+      'payload_hash',
+      'priority',
       'status',
       'attempt_count',
       'max_attempts',
       'next_run_at',
-      'locked_at',
+      'lock_owner',
+      'lease_token',
+      'lease_expires_at',
+      'last_heartbeat_at',
+      'pause_requested_at',
+      'cancel_requested_at',
+      'started_at',
+      'finished_at',
+      'last_error_code',
       'last_error',
+      'result_json',
       'created_at',
       'updated_at',
+      'revision',
     ],
     metric_snapshots: [
       'id',
@@ -323,10 +336,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1],
+        appliedVersions: [1, 2],
         backupPath: null,
         databasePath,
-        schemaVersion: 1,
+        schemaVersion: 2,
       });
       expect(tables).toEqual([...BUSINESS_TABLE_NAMES, 'schema_migrations'].sort());
     } finally {
@@ -387,9 +400,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 1,
+        schemaVersion: 2,
       });
-      expect(row.count).toBe(1);
+      expect(row.count).toBe(2);
     } finally {
       database.close();
     }

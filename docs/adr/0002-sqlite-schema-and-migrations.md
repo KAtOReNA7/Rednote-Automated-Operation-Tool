@@ -25,7 +25,9 @@ Issue 007 只建立 Windows 本地 SQLite 持久化基础，不实现 UI、设�
 - 每个连接显式启用外键、5 秒 busy timeout、WAL 和 `synchronous=NORMAL`；
 - 不加载 SQLite 扩展。
 
-后续 Issue 006 如果接入 Electron，必须使用已经修复内置 `node:sqlite` 加载问题的 Electron 版本（至少 `36.7.3` 或 `37.2.3`），并继续把数据库留在主进程边界。本 Issue 不实现 Electron 集成。
+后续 Issue 006 如果接入 Electron，必须重新选择当时仍受支持、且经运行时能力测试确认可用
+`node:sqlite` 的 Electron 版本，并继续把数据库留在主进程或独立本地进程边界。本 ADR
+不把 Electron 36/37 固定为未来目标，本 Issue 也不实现 Electron 集成。
 
 ### Schema
 

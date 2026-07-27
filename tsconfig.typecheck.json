@@ -4,6 +4,11 @@
     "declaration": false,
     "declarationMap": false,
     "noEmit": true,
+    "paths": {
+      "@mystery-operations/core": ["./packages/core/src/index.ts"],
+      "@mystery-operations/db": ["./packages/db/src/index.ts"],
+      "@mystery-operations/workflows": ["./packages/workflows/src/index.ts"]
+    },
     "types": ["node", "vitest/globals"]
   },
   "include": ["apps/**/*.ts", "packages/**/*.ts", "tests/**/*.ts", "vitest.config.ts"]

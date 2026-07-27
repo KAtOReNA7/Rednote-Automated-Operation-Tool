@@ -22,6 +22,7 @@
     "test": "vitest run",
     "test:constraints": "vitest run tests/hard-constraints.test.ts tests/db-hard-constraints.test.ts tests/forbidden-scope.architecture.test.ts",
     "test:db": "vitest run tests/db-migrations.test.ts tests/db-recovery.test.ts tests/db-persistence-windows.test.ts tests/db-hard-constraints.test.ts",
+    "test:queue": "vitest run tests/queue-state-machine.test.ts tests/queue-migration.test.ts tests/queue-enqueue-payload.test.ts tests/queue-lease-lifecycle.test.ts tests/queue-control-recovery.test.ts tests/queue-worker.test.ts tests/queue-contracts.test.ts tests/queue-performance-platform.test.ts tests/queue-hard-constraints.test.ts",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit --pretty false"
   },
   "devDependencies": {

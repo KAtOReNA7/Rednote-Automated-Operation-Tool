@@ -1,1 +1,35 @@
-export const M0_PACKAGE_BOUNDARY = 'workflows' as const;
+export { ExponentialBackoffPolicy } from './queue/backoff.js';
+export { QueueSleepAbortedError, SystemQueueClock, SystemQueueScheduler } from './queue/clock.js';
+export { JobHandlerExecutionError, sanitizeJobError } from './queue/error-sanitizer.js';
+export { JobHandlerRegistry } from './queue/handler-registry.js';
+export {
+  assertSafeIdempotencyKey,
+  JobPayloadValidationError,
+  JobPayloadValidator,
+} from './queue/payload-validator.js';
+export { JobQueueService, JobQueueServiceError } from './queue/queue-service.js';
+export { JobRecoveryService } from './queue/recovery-service.js';
+export { JobWorker } from './queue/worker.js';
+
+export type { BackoffPolicy, ExponentialBackoffOptions } from './queue/backoff.js';
+export type { QueueClock, QueueScheduler } from './queue/clock.js';
+export type { SafeJobError } from './queue/error-sanitizer.js';
+export type { JobHandler, JobHandlerContext } from './queue/handler-registry.js';
+export type {
+  JobPayloadValidatorOptions,
+  PayloadValidationErrorCode,
+  ValidatedJson,
+} from './queue/payload-validator.js';
+export type { JobQueueServiceErrorCode, JobQueueServiceOptions } from './queue/queue-service.js';
+export type {
+  ClaimNextJobOptions,
+  EnqueueJobInput,
+  Job,
+  JobPagination,
+  JsonPrimitive,
+  JsonValue,
+  ListJobsFilter,
+  QueueControlSignal,
+  RetryFailedJobOptions,
+} from './queue/types.js';
+export type { JobWorkerOptions } from './queue/worker.js';
