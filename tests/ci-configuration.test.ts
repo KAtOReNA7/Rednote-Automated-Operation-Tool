@@ -36,7 +36,7 @@ describe('Windows CI configuration', () => {
     expect(windowsJob?.['continue-on-error']).not.toBe(true);
   });
 
-  it('runs install, all M0 gates, constraint suites, and dependency audit', () => {
+  it('runs install, all gates, database suites, constraint suites, and dependency audit', () => {
     const commands = windowsJob?.steps
       .map((step) => step.run)
       .filter((command): command is string => command !== undefined)
@@ -48,6 +48,7 @@ describe('Windows CI configuration', () => {
       'npm run lint',
       'npm run typecheck',
       'npm run test:constraints',
+      'npm run test:db',
       'npm run test',
       'npm run build',
       'npm run audit:dependencies',

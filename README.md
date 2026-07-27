@@ -2,9 +2,10 @@
 
 这是一个面向 Windows 10/11 的本地优先、单用户推理小说内容运营生产与决策系统。
 
-当前仓库只完成 M0（Issue 001—005）：TypeScript 单仓库、领域规则与状态机、两项不可变
-约束的回归测试、禁止范围架构测试，以及 Windows 必过 CI。尚未实现桌面 UI、SQLite、供应
-商接入、搜索、图片或任何业务工作流。
+当前仓库已完成 M0（Issue 001—005）以及 M1 的 Issue 007：TypeScript 单仓库、领域规则
+与状态机、两项不可变约束回归测试、禁止范围架构测试、Windows 必过 CI，以及本地
+SQLite Schema 和迁移基础。尚未实现桌面 UI、设置、任务执行器、供应商接入、搜索、图片
+或任何业务工作流。
 
 ## 产品边界
 
@@ -31,7 +32,7 @@ apps/
   clipper/       M0 仅保留包边界
 packages/
   core/          领域枚举、规则、状态机和发布包不变量
-  db/            M0 仅保留包边界
+  db/            SQLite 连接、25 张业务表、迁移、事务和迁移前备份
   providers/     M0 仅保留包边界
   workflows/     M0 仅保留包边界
   shared/        M0 仅保留包边界
@@ -40,7 +41,7 @@ tests/           领域、硬约束、架构、Windows 路径和 CI 配置测试
 
 ## Windows PowerShell
 
-先安装 Node.js 24（最低支持 Node.js 22.13），再在 PowerShell 中执行：
+先安装 Node.js 24（最低支持 Node.js 22.16），再在 PowerShell 中执行：
 
 ```powershell
 Set-Location 'D:\你的路径\小红书 推理项目'
@@ -65,6 +66,12 @@ npm run build
 npm run test:constraints
 ```
 
+SQLite 迁移、持久化、失败恢复、Windows 路径和数据库硬约束可以单独运行：
+
+```powershell
+npm run test:db
+```
+
 依赖审计：
 
 ```powershell
@@ -85,8 +92,10 @@ npm run audit:dependencies
 ## CI
 
 `.github/workflows/ci.yml` 将 `windows-latest` 作为唯一必过作业，依次执行锁定安装、格式
-检查、Lint、类型检查、两项约束套件、完整测试、构建和依赖审计。CI 不读取或打印业务
-环境变量。
+检查、Lint、类型检查、两项约束套件、SQLite 专项测试、完整测试、构建和依赖审计。CI
+不读取或打印业务环境变量。
 
 架构与 M0 取舍见 [ADR-0001](./docs/adr/0001-m0-foundation.md)，逐 Issue 验收映射见
-[M0 验收映射](./docs/m0-acceptance-map.md)。
+[M0 验收映射](./docs/m0-acceptance-map.md)。SQLite 选型与迁移策略见
+[ADR-0002](./docs/adr/0002-sqlite-schema-and-migrations.md)，Issue 007 的逐项证据见
+[M1 Issue 007 验收映射](./docs/m1-issue007-acceptance-map.md)。
