@@ -22,8 +22,3 @@ export function isExtensionOrigin(value: string): boolean {
     return false;
   }
 }
-
-export function extensionOriginId(value: string): string {
-  const normalized = normalizeExtensionOrigin(value);
-  return normalized.slice('chrome-extension://'.length);
-}

@@ -18,7 +18,7 @@ export {
   LocalApiAuthenticator,
   parseBearerAuthorization,
 } from './authenticator.js';
-export { extensionOriginId, isExtensionOrigin, normalizeExtensionOrigin } from './origin-policy.js';
+export { isExtensionOrigin, normalizeExtensionOrigin } from './origin-policy.js';
 export {
   PAIRING_MAX_FAILED_ATTEMPTS,
   PAIRING_TTL_MILLISECONDS,

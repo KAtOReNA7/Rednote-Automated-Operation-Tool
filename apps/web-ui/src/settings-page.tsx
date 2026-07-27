@@ -339,7 +339,7 @@ export function SettingsPage(): React.JSX.Element {
   return (
     <div className="settings-layout">
       <header className="settings-intro">
-        <p className="section-kicker">Issue 010 · 本地设置</p>
+        <p className="section-kicker">本地基础 · 设置与凭据</p>
         <h2>{project === null ? '先建立本地项目' : '设置向导与本地凭据引用'}</h2>
         <p>可以先只完成数据目录；中转站、模型和密钥以后再填。尚未进行能力探测。</p>
       </header>

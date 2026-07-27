@@ -278,7 +278,7 @@ export function LocalApiSettings(): React.JSX.Element {
     <section className="local-api-card" aria-labelledby="local-api-title">
       <div className="local-api-heading">
         <div>
-          <p className="section-kicker">Issue 011 · 默认关闭</p>
+          <p className="section-kicker">本地基础 · 默认关闭</p>
           <h3 id="local-api-title">本地插件连接</h3>
           <p>仅监听 127.0.0.1。Chrome/Edge 收藏插件将在 Issue 017 实现，本阶段没有样本保存功能。</p>
         </div>

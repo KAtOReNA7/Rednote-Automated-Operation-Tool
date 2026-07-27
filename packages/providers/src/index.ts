@@ -1,1 +1,5 @@
-export const M0_PACKAGE_BOUNDARY = 'providers' as const;
+/**
+ * Reserved entry point for the Issue 012 provider abstraction.
+ * No provider client or external request is implemented yet.
+ */
+export {};

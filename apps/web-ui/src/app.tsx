@@ -147,10 +147,11 @@ export function App(): React.JSX.Element {
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">
-                <p className="section-kicker">当前里程碑 · Issue 006</p>
-                <h2>安全桌面壳层已就绪</h2>
+                <p className="section-kicker">当前进度 · M1 本地基础已完成</p>
+                <h2>本地安全底座已就绪</h2>
                 <p>
-                  当前仅提供本地窗口、导航骨架和基础设施健康检查。内容、数据与业务操作尚未接入。
+                  桌面壳、SQLite、任务队列、文件仓库、本地设置与回环 API
+                  已接通。模型、研究、内容生产与发布业务尚未开始。
                 </p>
               </article>
               <article className="metric-card">
