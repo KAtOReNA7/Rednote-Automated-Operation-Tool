@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import {
+  type CancelLocalApiPairingRequest,
   DESKTOP_BRIDGE_KEY,
   DESKTOP_IPC_CHANNELS,
   type ClearCredentialInput,
@@ -9,7 +10,9 @@ import {
   type ExportDiagnosticReportInput,
   type GetCredentialStatusInput,
   type NonSecretSettingsDraft,
+  type RevokeLocalApiClientRequest,
   type SetCredentialInput,
+  type UpdateLocalApiSettingsRequest,
 } from '@mystery-operations/shared';
 
 const desktopBridge: DesktopBridge = Object.freeze({
@@ -24,13 +27,22 @@ const desktopBridge: DesktopBridge = Object.freeze({
   getCredentialStatus: (input: GetCredentialStatusInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCredentialStatus, input),
   getFoundationHealth: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFoundationHealth),
+  getLocalApiStatus: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getLocalApiStatus),
   getRuntimeCapabilities: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getRuntimeCapabilities),
   getSettings: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSettings),
   getSetupState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSetupState),
   getWindowState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getWindowState),
+  listLocalApiClients: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.listLocalApiClients),
   selectDataRoot: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.selectDataRoot),
   setCredential: (input: SetCredentialInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.setCredential, input),
+  startLocalApiPairing: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.startLocalApiPairing),
+  cancelLocalApiPairing: (input: CancelLocalApiPairingRequest) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelLocalApiPairing, input),
+  revokeLocalApiClient: (input: RevokeLocalApiClientRequest) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.revokeLocalApiClient, input),
+  updateLocalApiSettings: (input: UpdateLocalApiSettingsRequest) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.updateLocalApiSettings, input),
   updateNonSecretSettings: (input: NonSecretSettingsDraft) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.updateNonSecretSettings, input),
 });

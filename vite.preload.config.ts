@@ -19,6 +19,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@mystery-operations/local-api': fileURLToPath(
+        new URL('./packages/local-api/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/shared': fileURLToPath(
         new URL('./packages/shared/src/index.ts', import.meta.url),
       ),

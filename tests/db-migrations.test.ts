@@ -353,12 +353,19 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4],
+        appliedVersions: [1, 2, 3, 4, 5],
         backupPath: null,
         databasePath,
-        schemaVersion: 4,
+        schemaVersion: 5,
       });
-      expect(tables).toEqual([...BUSINESS_TABLE_NAMES, 'schema_migrations'].sort());
+      expect(tables).toEqual(
+        [
+          ...BUSINESS_TABLE_NAMES,
+          'local_api_clients',
+          'local_api_settings',
+          'schema_migrations',
+        ].sort(),
+      );
     } finally {
       database.close();
     }
@@ -417,9 +424,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 4,
+        schemaVersion: 5,
       });
-      expect(row.count).toBe(4);
+      expect(row.count).toBe(5);
     } finally {
       database.close();
     }

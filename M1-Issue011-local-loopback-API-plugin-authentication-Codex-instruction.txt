@@ -1,0 +1,1487 @@
+M1 Issue 011：本地 Loopback API 与浏览器插件认证——Codex 完整开发指令
+====================================================================
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；架构、安全边界、数据库迁移和最终验收使用 XHigh
+授权范围：只实现 Roadmap Issue 011
+固定起点：aab11d793021ac4f97dcf134d325be4576b5e9da
+目标提交信息：feat(local-api): add loopback service and plugin authentication
+
+
+零、任务授权与停止边界
+----------------------
+
+你现在获得的唯一开发授权是：
+
+Issue 011：实现本地 API 与插件认证。
+
+本轮必须完成：
+
+- 只绑定 127.0.0.1 的本地 HTTP API；
+- 用户可配置的本地端口；
+- 浏览器插件配对与 Bearer token 认证基础设施；
+- 严格 Host、Origin、CORS、请求体、超时、限流和生命周期控制；
+- Electron main 集成；
+- 设置页中的本地插件连接管理；
+- SQLite migration v5 与本地插件客户端记录；
+- Windows source Electron 和 packaged EXE 的真实 loopback 验证；
+- 独立测试、全量回归、CI、文档、验收映射和一个本地 Git 提交。
+
+本轮明确不做：
+
+- Issue 012 的模型供应商接口；
+- Issue 013 的中转站能力探测；
+- Issue 014 的模型路由、缓存和成本治理；
+- Issue 017 的 Chrome/Edge Manifest V3 插件；
+- 任何真实插件业务路由或页面样本保存；
+- 搜索、书库、资料研究、图片、OCR 或生成工作流；
+- 真实模型、真实 API、真实中转站或费用调用；
+- 云服务、远程 API、远程队列、云数据库或云存储；
+- 小红书登录、发布、定时、评论、私信、验证码或风控动作；
+- 开卷数据、盗版电子书或磨铁内部业务数据；
+- 自动更新、安装器、代码签名、Windows 服务或后台常驻进程。
+
+完成 Issue 011 后必须停止。不得自动进入 Issue 012。
+
+
+一、必须完整读取的事实来源
+--------------------------
+
+开始改代码前，完整读取，不得只看摘要：
+
+1. xiaohongshu-mystery-account-prd-v1.md
+2. xiaohongshu-development-roadmap-v1.md
+3. codex-master-development-instruction-v1.md
+4. README.md
+5. package.json
+6. package-lock.json
+7. docs/adr/0001-m0-foundation.md
+8. docs/adr/0002-sqlite-schema-and-migrations.md
+9. docs/adr/0003-persistent-local-job-queue.md
+10. docs/adr/0004-electron-react-desktop-shell.md
+11. docs/adr/0005-local-file-repository.md
+12. docs/adr/0006-settings-and-local-credential-reference.md
+13. docs/m0-acceptance-map.md
+14. docs/m1-issue007-acceptance-map.md
+15. docs/m1-issue009-acceptance-map.md
+16. docs/m1-issue006-acceptance-map.md
+17. docs/m1-issue008-acceptance-map.md
+18. docs/m1-issue010-acceptance-map.md
+19. docs/m1-issue010-implementation-plan.md
+20. M1-Issue011-local-loopback-API-plugin-authentication-Codex-instruction.txt
+
+同时读取仓库中所有适用的 AGENTS.md，以及将要修改文件所在目录的 package.json、
+tsconfig、测试配置、Electron main/preload、IPC、settings、storage、db、shared 和
+smoke scripts。
+
+若任何冻结文档不存在、无法完整读取或内容损坏，立即停止并报告，不得凭记忆重建。
+
+需求优先级：
+
+1. 用户当前回合的明确要求；
+2. PRD 第 1 节冻结约束；
+3. Roadmap 第 5 节禁止事项；
+4. 本 Issue 011 指令；
+5. PRD 其他内容；
+6. Roadmap 其他内容；
+7. 既有 ADR。
+
+
+二、开工前 Git 与弹窗事故阻断核验
+--------------------------------
+
+只读检查：
+
+- 当前目录必须是 D:\porject\rednote；
+- 当前分支必须是 main；
+- HEAD 必须精确为：
+  aab11d793021ac4f97dcf134d325be4576b5e9da
+- 工作树必须干净；
+- 不得存在未提交或未跟踪的用户文件；
+- 远端状态只读记录；
+- 不得 fetch、pull、push、创建 PR 或合并。
+
+核对以下祖先提交全部存在且顺序正确：
+
+- b01785f7010f259c2faf2bfb7173dc678ca16cca
+- 891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+- 4438f237729ee68a4631d5068fcbc3ec1a8f200c
+- eb9ac8a600caa05c764eb3f2e62e535efa509069
+- a8ba00dc1dd6658984a6803f12fc93733a886bde
+- aab11d793021ac4f97dcf134d325be4576b5e9da
+
+Issue 010 执行期间曾出现 Windows Electron 弹窗，其错误参数表现为把：
+
+console.log(JSON.stringify(process.versions)); process.exit(0)
+
+当作 Electron app 路径。
+
+因此本轮开始前必须：
+
+1. 使用 rg 搜索上述完整字符串及其有意义片段。
+2. 检查 package scripts、Electron smoke、packaged smoke、临时 fixture 和文档。
+3. 确认仓库中不存在把裸 JavaScript 字符串作为 Electron app 参数的已提交调用。
+4. 在任何修改前运行现有 npm run test:electron-smoke 和
+   npm run test:packaged-smoke。
+5. 确认不再弹出 “Unable to find Electron app”。
+6. 记录结果到 Issue 011 实施计划的“开工核验”小节。
+
+若错误调用已写入仓库，或现有 smoke 再次触发该弹窗：
+
+- 停止；
+- 不进入 Issue 011 实现；
+- 报告准确文件、命令、退出码和最小复现；
+- 等待新的修复授权。
+
+若只确认这是未提交的临时错误命令，记录结论后继续，不修改 Issue 010 历史提交。
+
+不要 amend、rebase、squash 或改写任何历史提交。
+
+
+三、两项硬约束继续冻结
+----------------------
+
+必须持续满足：
+
+ai_disclosure：
+
+- 默认且只能为 false；
+- 不自动开启；
+- 不构成门禁；
+- 不影响评分、审批、优先级、排期或导出；
+- 本地 API 不新增 AI 标识设置、提示、header、字段或检查；
+- 不开发平台 AI 检测规避功能。
+
+copyright：
+
+- 不构成门禁；
+- 不阻断、延迟或追加审批；
+- 不影响评分、优先级、排期或导出；
+- 不建立版权风险字段、类型、API、route、header、检查器或提示；
+- 来源数据只用于事实回溯和内容管理。
+
+本地 API、认证、CORS、Host 校验和请求限制属于本机接口安全，不得借机加入 AI 标识
+或版权逻辑。
+
+
+四、Issue 011 的架构决策
+-----------------------
+
+采用 Electron main 内部的 Node.js 原生 node:http 服务，不新增 Fastify、Express、
+Koa、WebSocket、Socket.IO、反向代理或其他 HTTP runtime 依赖。
+
+理由：
+
+- 当前 Node.js/Electron runtime 已提供稳定 http、net、crypto 能力；
+- Issue 011 路由数量很少；
+- 可精确控制监听地址、Host、CORS、body、socket 和关闭行为；
+- 避免引入新的依赖树和 Windows 打包风险；
+- 保持现有 0 vulnerabilities 门禁。
+
+新增 Electron 无关包：
+
+packages/local-api
+
+该包负责：
+
+- API 合同；
+- route registry；
+- 请求解析与严格验证；
+- CORS/Origin/Host 策略；
+- pairing session；
+- token digest 认证；
+- rate limit；
+- 稳定错误 DTO；
+- 服务状态与生命周期合同；
+- 不依赖 Electron renderer。
+
+Electron main 负责：
+
+- 创建实际 node:http server；
+- app 生命周期；
+- 读取设置；
+- 绑定 127.0.0.1；
+- 组装 SQLite repository；
+- 通过窄 IPC 管理启用、端口、配对和客户端撤销；
+- 将安全状态提供给 renderer。
+
+React renderer：
+
+- 不直接调用 loopback HTTP；
+- 不接收长期 Bearer token 或 token digest；
+- 继续通过窄 preload/IPC 管理本地 API；
+- 不引入 raw fetch 任意 URL 能力；
+- 不替换 Issue 010 已存在的安全 IPC 架构。
+
+HTTP API 是未来 Chrome/Edge 插件的通信边界。Issue 017 才实现真实 Manifest V3
+插件和样本保存路由。本轮只提供认证后的 status/capabilities 合同和配对基础设施。
+
+
+五、正式技术参考
+----------------
+
+实施时以仓库实际锁定的 Node.js 24 / Electron 43 能力为准。参考：
+
+- Node.js v24 HTTP：
+  https://nodejs.org/download/release/latest-v24.x/docs/api/http.html
+- Node.js v24 Net：
+  https://nodejs.org/download/release/v24.16.0/docs/api/net.html
+- Node.js Crypto：
+  https://nodejs.org/download/release/latest-v24.x/docs/api/crypto.html
+- Electron app 生命周期：
+  https://www.electronjs.org/docs/latest/api/app
+- Electron 安全清单：
+  https://www.electronjs.org/docs/latest/tutorial/security
+- Chrome 扩展跨源请求：
+  https://developer.chrome.com/docs/extensions/develop/concepts/network-requests
+- Chrome runtime：
+  https://developer.chrome.com/docs/extensions/reference/api/runtime/
+- Microsoft Edge Chromium 扩展兼容：
+  https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/port-chrome-extension
+
+不得因为文档示例省略参数而省略显式 host。Node 在 host 缺失时可能监听未指定地址；
+本项目必须显式传入 127.0.0.1。
+
+
+六、监听地址、端口与生命周期
+----------------------------
+
+唯一允许的监听地址：
+
+127.0.0.1
+
+禁止：
+
+- localhost；
+- 0.0.0.0；
+- ::；
+- ::1；
+- 任意 LAN IP；
+- 任意公网 IP；
+- named pipe；
+- Unix socket；
+- remote tunnel；
+- proxy；
+- 端口转发；
+- Windows 服务；
+- 防火墙规则修改。
+
+使用用户可配置固定端口，而不是每次启动随机端口。默认：
+
+43119
+
+合法范围：
+
+1024—65535。
+
+原因：
+
+- 浏览器插件需要跨应用重启后稳定找到本地服务；
+- PRD 允许动态端口或用户配置；
+- 不进行端口扫描或服务发现；
+- 端口不是秘密。
+
+服务默认关闭。用户必须在设置页明确启用“本地插件连接”。首次启用时：
+
+1. 验证本地项目已就绪；
+2. 验证设置和 DB 可用；
+3. 以 host=127.0.0.1、配置端口启动；
+4. 读取 server.address()；
+5. 精确断言 address=127.0.0.1、family=IPv4、port=配置值；
+6. 任一不符立即关闭并返回稳定错误。
+
+端口冲突：
+
+- 返回 LOCAL_API_PORT_IN_USE；
+- 不静默选择其他端口；
+- 不覆盖用户配置；
+- 不重试一串端口；
+- UI 提示用户修改端口；
+- 旧服务状态保持确定。
+
+修改端口采用两阶段流程：
+
+1. 验证新端口；
+2. 停止旧 listener；
+3. 尝试绑定新端口；
+4. 成功后持久化新设置；
+5. 持久化失败时关闭新 listener，并尽力恢复旧 listener；
+6. 无法恢复时进入 ERROR_RESTART_REQUIRED，不伪装运行。
+
+服务状态至少包括：
+
+- DISABLED
+- DISABLED_NO_PROJECT
+- STARTING
+- RUNNING
+- STOPPING
+- PORT_IN_USE
+- ERROR
+- ERROR_RESTART_REQUIRED
+
+Electron app.whenReady() 后才允许组装和启动。关闭顺序：
+
+1. 停止接受新请求；
+2. 取消所有 pairing session；
+3. server.close()；
+4. 在限定时间后 closeAllConnections()；
+5. 清理 socket registry、timer 和 rate limit state；
+6. 确认端口已释放；
+7. 再关闭 DB 和 app。
+
+应用退出后不得残留 Electron、Node、listener 或端口占用。
+
+
+七、SQLite migration v5
+-----------------------
+
+只追加 immutable migration v5。不得修改 v1—v4 内容、名称或 SHA-256。
+
+v1：
+8964b8727dfb4f244a8c63a47368da3ceb23de945078b37efe161af91acac907
+
+v2：
+ab3d6d34621f9f29601f1574f624381d78c208f1c36cfda35377d8f82f4c57ce
+
+v3：
+11dc5ba6496b265cf2945ea7b6b94f59e01428ee253a203596d188b929a222ed
+
+v4：
+c84c82c50f2170c20154c754d0604319082c6683737624a9c14d3a508315471c
+
+建议 migration v5 名称：
+
+local_loopback_api_and_plugin_clients
+
+新增 STRICT singleton：
+
+local_api_settings
+
+至少包含：
+
+- id，固定 1；
+- enabled，0/1，默认 0；
+- port，INTEGER，默认 43119，1024—65535；
+- revision，单调非负整数；
+- created_at；
+- updated_at。
+
+新增 STRICT 表：
+
+local_api_clients
+
+至少包含：
+
+- id，稳定随机 ID，不含 token；
+- extension_origin；
+- client_label，可空、长度受限、去控制字符；
+- token_digest，32-byte BLOB；
+- created_at；
+- updated_at；
+- last_used_at，可空；
+- revoked_at，可空；
+- revision。
+
+约束：
+
+- extension_origin 必须是规范化的 chrome-extension://<extension-id>；
+- extension id 只接受 Chromium 32 位 a—p 小写格式；
+- origin 不允许 path、query、fragment、userinfo 或尾随 slash；
+- token_digest 必须 typeof(blob) 且 length=32；
+- 同一 extension_origin 最多一个 active client；
+- revoked_at 与 active 状态语义一致；
+- UTC 时间格式受约束；
+- 外键和索引完整；
+- 每个常用查询有首列覆盖索引。
+
+Bearer token 只在插件端持有。SQLite 只保存 SHA-256 digest，不保存：
+
+- 明文 token；
+- pairing code；
+- Authorization header；
+- cookie；
+- CONTENT_AI_API_KEY；
+- safeStorage ciphertext；
+- token 前缀、后四位、长度展示值或 fingerprint。
+
+token 为 32-byte CSPRNG 随机值的 base64url 表示。token digest 使用 SHA-256，验证时：
+
+- 严格解析 Bearer 语法；
+- 先做定长格式检查；
+- 计算 32-byte digest；
+- 使用 crypto.timingSafeEqual；
+- 不输出比较值。
+
+迁移要求：
+
+- v1—v4 校验和保持不变；
+- v5 连续、不可变、可重复检查；
+- 迁移前备份；
+- 失败完整回滚；
+- 旧业务数据全部保留；
+- foreign_key_check 和 quick_check 通过；
+- 备份可独立打开；
+- 不通过删除或重建用户数据库处理失败。
+
+
+八、插件 token 与配对协议
+------------------------
+
+未来插件安装时自行生成 32-byte CSPRNG token。Issue 011 不实现插件，只用运行时测试
+客户端模拟该行为。
+
+配对流程：
+
+1. 用户在桌面设置页点击“开始配对”。
+2. main 生成 32-byte base64url pairing code。
+3. pairing code：
+   - 只存在内存；
+   - TTL 默认 120 秒；
+   - 单次使用；
+   - 绑定当前 listener instance、port 和发起窗口；
+   - 最多 5 次失败尝试；
+   - 取消、超时、服务停止或窗口销毁时立即失效。
+4. UI 可以暂时显示并复制 pairing code、端口和到期时间。
+5. UI 不显示、复制或接收长期插件 token。
+6. 测试客户端向 POST /v1/pairings/exchange 提交：
+   - pairingCode；
+   - extensionOrigin；
+   - clientToken；
+   - 可选 clientLabel。
+7. HTTP Origin header 必须与 body 中 extensionOrigin 精确一致。
+8. pairing code 验证通过后：
+   - 规范化 origin；
+   - 对 clientToken 计算 digest；
+   - SQLite 事务写入 client；
+   - 同 origin 重新配对时原 active token 立即失效；
+   - pairing code 立即销毁。
+9. 响应只返回：
+   - paired=true；
+   - clientId；
+   - apiVersion；
+   - createdAt。
+10. 响应绝不返回 token、digest 或 pairing code。
+
+重新配对同一 origin 等同于安全轮换。旧 token 必须立即得到 401。
+
+撤销：
+
+- 用户在设置页明确确认；
+- 只传 clientId，不传 token 或 digest；
+- 设置 revoked_at；
+- 后续请求立即 401；
+- 不因 last_used 更新恢复；
+- 可重新配对形成新 active client。
+
+最多允许 8 个 active client。超过后拒绝配对，用户需先撤销。
+
+
+九、HTTP API v1 路由
+-------------------
+
+本轮只允许以下 route：
+
+1. OPTIONS /v1/pairings/exchange
+2. POST /v1/pairings/exchange
+3. OPTIONS /v1/status
+4. GET /v1/status
+5. OPTIONS /v1/capabilities
+6. GET /v1/capabilities
+
+不得加入：
+
+- /clips；
+- /sources；
+- /books；
+- /research；
+- /jobs；
+- /models；
+- /generate；
+- /publish；
+- /xiaohongshu；
+- 任意文件上传；
+- 任意截图、正文或样本保存。
+
+GET /v1/status 必须经过 Bearer auth，只返回有限字段：
+
+- apiVersion；
+- serviceState；
+- projectReady；
+- serverTime；
+- clientId；
+- clientStatus。
+
+GET /v1/capabilities 必须经过 Bearer auth，只返回：
+
+- apiVersion；
+- pairing=true；
+- authenticatedStatus=true；
+- clipperBusinessRoutes=false；
+- clipperIssue="017"；
+- maxJsonBodyBytes；
+- supportedOriginScheme="chrome-extension"。
+
+不得伪装插件或业务路由已经可用。
+
+所有未知 route 返回稳定 404。已知 route 的错误 method 返回 405 和精确 Allow。
+拒绝 query string。URL fragment 不会进入 HTTP 请求，但解析层不得自行支持。
+
+
+十、Host、Origin 与 CORS
+-----------------------
+
+Host：
+
+- 必须只有一个 Host header；
+- 值必须精确等于 127.0.0.1:<actualPort>；
+- 拒绝 localhost；
+- 拒绝 0.0.0.0；
+- 拒绝 [::1]；
+- 拒绝其他 IP、域名、尾点、userinfo 和异常端口；
+- 拒绝绝对形式 request-target 指向其他 host；
+- 用于降低 DNS rebinding 和错误代理风险。
+
+remote address：
+
+- socket.remoteAddress 必须是 127.0.0.1；
+- 其他值全部拒绝；
+- 不相信 X-Forwarded-For、Forwarded、X-Real-IP；
+- 不启用 trust proxy。
+
+Origin：
+
+- 所有应用 route 都必须有且只有一个 Origin；
+- 只接受 chrome-extension://<32 位 a—p 小写 id>；
+- 拒绝 null、file、http、https、moz-extension 和缺失 Origin；
+- pairing 时允许当前有效 pairing session 的合法 Chromium origin；
+- auth route 只允许与 active client 精确匹配的 origin；
+- token 和 origin 必须同时匹配。
+
+CORS：
+
+- 不使用 Access-Control-Allow-Origin: *；
+- 不使用 Access-Control-Allow-Credentials: true；
+- 只对通过验证的精确 origin 回显 ACAO；
+- 加 Vary: Origin；
+- allow methods 只列实际 route；
+- allow headers 只允许 authorization、content-type；
+- expose headers 默认空；
+- preflight max age 不超过 300 秒；
+- 非法 preflight 不返回 ACAO；
+- OPTIONS 是浏览器预检，不产生业务数据；它不使用 Bearer token，但必须通过 Host、
+  remote address、Origin、request method 和 request headers 校验。
+
+不要把 CORS 当作认证。Bearer token 是主认证，Origin 是附加绑定。
+
+
+十一、请求与响应限制
+--------------------
+
+node:http server 必须显式配置并测试：
+
+- maxHeaderSize：不超过 16 KiB；
+- maxHeadersCount：不超过 32；
+- headersTimeout：5 秒；
+- requestTimeout：10 秒；
+- keepAliveTimeout：2 秒；
+- maxRequestsPerSocket：100；
+- server.timeout：10 秒；
+- maxConnections：32；
+- backlog：32；
+- insecureHTTPParser=false；
+- 不支持 upgrade；
+- 不支持 CONNECT；
+- 不支持 WebSocket；
+- 不支持 HTTP/2；
+- 不支持压缩。
+
+body：
+
+- pairing route 只接受 application/json；
+- 最大 8 KiB；
+- 按流计数，超过上限立即终止并返回 413；
+- 不信任 Content-Length；
+- 重复或冲突 Content-Length 拒绝；
+- GET/OPTIONS 不接受 body；
+- JSON 深度、数组长度、字符串长度和字段数受限；
+- exact-object，多余字段拒绝；
+- 空 body、无效 UTF-8、BOM 或无效 JSON 拒绝；
+- 不把 raw body 放进错误、日志或 audit。
+
+response：
+
+- JSON UTF-8；
+- 最大 16 KiB；
+- Cache-Control: no-store；
+- Pragma: no-cache；
+- X-Content-Type-Options: nosniff；
+- Referrer-Policy: no-referrer；
+- Content-Security-Policy: default-src 'none'；
+- 不返回 Server、X-Powered-By、stack、SQL、绝对路径或内部类名；
+- request id 只能是运行时随机无敏感信息 ID；
+- 所有日期为 UTC；
+- 错误使用稳定 code、有限 message 和 requestId。
+
+不得记录整个 req/res 对象。
+
+
+十二、认证失败、限流和并发
+--------------------------
+
+稳定错误码至少包括：
+
+- LOCAL_API_DISABLED
+- LOCAL_API_NO_PROJECT
+- LOCAL_API_PORT_IN_USE
+- LOCAL_API_BIND_FAILED
+- LOCAL_API_INVALID_HOST
+- LOCAL_API_INVALID_ORIGIN
+- LOCAL_API_CORS_REJECTED
+- LOCAL_API_AUTH_REQUIRED
+- LOCAL_API_AUTH_INVALID
+- LOCAL_API_CLIENT_REVOKED
+- LOCAL_API_PAIRING_NOT_ACTIVE
+- LOCAL_API_PAIRING_EXPIRED
+- LOCAL_API_PAIRING_INVALID
+- LOCAL_API_PAIRING_ATTEMPTS_EXCEEDED
+- LOCAL_API_CLIENT_LIMIT_REACHED
+- LOCAL_API_RATE_LIMITED
+- LOCAL_API_BODY_TOO_LARGE
+- LOCAL_API_INVALID_JSON
+- LOCAL_API_INVALID_REQUEST
+- LOCAL_API_METHOD_NOT_ALLOWED
+- LOCAL_API_NOT_FOUND
+- LOCAL_API_SHUTTING_DOWN
+- LOCAL_API_INTERNAL_ERROR
+- LOCAL_API_REVISION_CONFLICT
+
+外部调用者不得通过错误差异判断某个 token digest 是否存在。无效、未知、轮换后旧 token
+统一得到有限 401。
+
+限流使用可注入 clock 的内存实现，不需要 Redis、DB 计数器或后台任务：
+
+- pairing exchange：每个 active session 最多 5 次失败；
+- pairing 全局：每分钟最多 10 次；
+- authenticated route：每个 client 每分钟最多 120 次；
+- 未认证请求：全局每分钟最多 60 次；
+- 超限返回 429 和有限 Retry-After；
+- timer 使用受控清理；
+- app 退出不残留 timer。
+
+并发：
+
+- 同一 pairing code 并发只能一个成功；
+- 同一 origin 并发重配对最终只有一个 active digest；
+- 撤销与请求竞争时，事务提交后的新请求必须失败；
+- last_used_at 更新节流，例如每 60 秒最多写一次，避免每请求写 DB；
+- last_used 写入失败不能使已认证请求获得额外权限，也不能泄漏 token。
+
+
+十三、IPC、preload 与 React 设置页
+---------------------------------
+
+新增窄能力，不暴露 raw ipcRenderer、Node、http、net、crypto 或 DB。
+
+preload 方法建议：
+
+- getLocalApiStatus()
+- updateLocalApiSettings({ enabled, port, expectedRevision })
+- startLocalApiPairing()
+- cancelLocalApiPairing({ pairingSessionId })
+- listLocalApiClients()
+- revokeLocalApiClient({ clientId, expectedRevision })
+
+所有 IPC：
+
+- 固定 channel；
+- senderFrame origin 校验；
+- sender window 绑定；
+- exact-object；
+- 多余字段拒绝；
+- 字节、深度和字符串长度限制；
+- 稳定错误 DTO；
+- 不允许 renderer 传 host、bind address、任意 URL、任意 origin allowlist、
+  token、digest、header 或文件路径。
+
+startLocalApiPairing 返回可展示的短期数据：
+
+- pairingSessionId；
+- pairingCode；
+- endpoint=http://127.0.0.1:<port>；
+- expiresAt。
+
+它不返回长期 token。
+
+设置页新增“本地插件连接”区域：
+
+- 明确默认关闭；
+- 显示 DISABLED/RUNNING/ERROR 等真实状态；
+- 显示配置端口；
+- 显示 loopback endpoint；
+- 启用/停用需要明确操作；
+- 修改端口时说明会重启本地服务；
+- 端口占用有明确错误；
+- 开始/取消配对；
+- 显示 pairing code 和倒计时；
+- 支持复制 pairing code/endpoint；
+- 只列 client label、规范 origin、createdAt、lastUsedAt、状态；
+- 支持明确确认后撤销；
+- 明确显示“Chrome/Edge 收藏插件将在 Issue 017 实现，本阶段没有样本保存功能”；
+- 不显示虚构连接成功；
+- 不显示 token、digest、Authorization header；
+- loading、empty、error、conflict、stopping、expired 状态完整；
+- 键盘导航、可见 focus、中文 UI。
+
+pairing code 属于短期敏感值：
+
+- 组件取消、超时、卸载或服务停止时清空；
+- 不写 localStorage、sessionStorage、IndexedDB、URL、DOM data attribute、日志、
+  screenshot 或诊断；
+- 用户主动复制是唯一允许的导出动作。
+
+
+十四、审计、日志和诊断
+----------------------
+
+允许 audit event：
+
+- LOCAL_API_ENABLED
+- LOCAL_API_DISABLED
+- LOCAL_API_PORT_CHANGED
+- LOCAL_API_PAIRING_STARTED
+- LOCAL_API_PAIRING_CANCELLED
+- LOCAL_API_CLIENT_PAIRED
+- LOCAL_API_CLIENT_REVOKED
+
+audit 只保存：
+
+- 稳定事件类型；
+- clientId（如适用）；
+- 成功/失败的稳定状态；
+- UTC 时间。
+
+不得保存：
+
+- token；
+- token digest；
+- pairing code；
+- Authorization；
+- Cookie；
+- raw Origin/Host/header；
+- raw body；
+- IP 列表；
+- stack；
+- SQL；
+- 绝对路径。
+
+日志默认不记录每个请求。只记录服务状态转换和脱敏计数。错误日志只含稳定错误码、
+requestId 和安全上下文。
+
+Issue 010 基础诊断可以增加：
+
+- localApiEnabled；
+- localApiState；
+- configuredPort；
+- activeClientCount；
+- apiVersion。
+
+不得增加：
+
+- client origin；
+- client label；
+- clientId；
+- token/digest；
+- pairing code；
+- Authorization；
+- 连接请求正文或 header。
+
+诊断 preview hash 和过期保护继续有效。
+
+
+十五、secret egress 矩阵
+-----------------------
+
+至少建立 36 项插件 token/pairing code egress 检查：
+
+1. SQLite 业务列不含明文 token。
+2. WAL 不含明文 token。
+3. SHM 不含明文 token。
+4. schema_migrations 不含明文 token。
+5. audit_events 不含明文 token。
+6. audit metadata 不含 token digest。
+7. jobs payload 不含 token。
+8. jobs result 不含 token。
+9. JSONL 日志不含 token。
+10. error DTO 不含 token。
+11. stack 不含 token。
+12. diagnostic preview 不含 token。
+13. diagnostic export 不含 token。
+14. backup 不含明文 token。
+15. ProjectDataRoot 普通文件不含 token。
+16. userData locator 不含 token。
+17. CONTENT_AI_API_KEY envelope 不被复用。
+18. renderer state 不含长期 token。
+19. DOM 不含长期 token。
+20. localStorage 不含 token。
+21. sessionStorage 不含 token。
+22. IndexedDB 不含 token。
+23. URL/query/fragment 不含 token。
+24. Cookie 不含 token。
+25. requestId 不含 token。
+26. response JSON 不回显 clientToken。
+27. response header 不回显 token。
+28. CORS header 不含 token。
+29. package asar 不含 fixture token。
+30. source map 不含 fixture token。
+31. test snapshot 不含 token。
+32. test output 不含 token。
+33. CI artifact 不含 token。
+34. Git tracked files 不含运行时 token。
+35. pairing code 不进入持久层。
+36. pairing code 不进入日志、诊断或 audit。
+
+测试 token/pairing code 必须在运行时使用 crypto.randomBytes 生成，明确不可用于真实
+服务，不使用 sk-、Bearer 示例固定值或其他真实凭据形态，不打印。
+
+
+十六、文件级实施范围
+--------------------
+
+先创建：
+
+docs/m1-issue011-implementation-plan.md
+
+写清预计修改文件、依赖、迁移、测试和不做内容，再开始实现。最终回填实际结果。
+
+建议新增/修改：
+
+packages/local-api/
+  package.json
+  tsconfig.json
+  src/contracts.ts
+  src/origin-policy.ts
+  src/request-policy.ts
+  src/pairing-session.ts
+  src/authenticator.ts
+  src/rate-limiter.ts
+  src/router.ts
+  src/server.ts
+  src/index.ts
+
+packages/db/src/
+  migrations.ts
+  local-api-repository.ts
+  index.ts
+
+packages/shared/src/
+  desktop-api.ts
+  local-api-contracts.ts
+
+apps/desktop/src/
+  local-api-runtime.ts
+  ipc-policy.ts
+  ipc.ts
+  preload.ts
+  main.ts
+  foundation-health.ts
+  smoke-report.ts
+
+apps/web-ui/src/
+  settings-page.tsx
+  use-settings.ts
+  styles.css
+
+tests/
+  local-api-schema.test.ts
+  local-api-binding.test.ts
+  local-api-host-origin-cors.test.ts
+  local-api-request-limits.test.ts
+  local-api-pairing-auth.test.ts
+  local-api-rate-limit.test.ts
+  local-api-lifecycle.test.ts
+  local-api-ipc.test.ts
+  local-api-renderer.test.tsx
+  local-api-secret-egress.test.ts
+  local-api-architecture.test.ts
+
+scripts/
+  run-electron-smoke.mjs
+  run-packaged-smoke.mjs
+
+docs/
+  adr/0007-local-loopback-api-and-plugin-authentication.md
+  contracts/local-api-v1.md
+  m1-issue011-acceptance-map.md
+  m1-issue011-implementation-plan.md
+
+实际文件可根据仓库结构微调，但不得重写无关包。
+
+
+十七、Electron smoke 与 TCP 断言必须精确升级
+-------------------------------------------
+
+Issue 010 及此前 packaged smoke 的安全预期是：
+
+TCP 监听/连接 0。
+
+Issue 011 合法引入一个 loopback listener，因此不得继续用“总监听为 0”，也不得粗暴删除
+网络断言。
+
+必须改为两态验证：
+
+A. local API disabled：
+
+- 进程树 TCP listener 0；
+- external connection 0。
+
+B. local API enabled：
+
+- 恰好一个预期 listener；
+- address 精确 127.0.0.1；
+- family IPv4；
+- port 精确为测试配置端口；
+- listener 属于预期 Electron 进程树；
+- 0.0.0.0 listener 0；
+- :: listener 0；
+- ::1 listener 0；
+- LAN/public listener 0；
+- 外部 established connection 0；
+- 只允许 smoke 自身发起的 127.0.0.1 loopback 请求；
+- 测试结束后 listener 0、残留进程 0。
+
+source Electron 和 packaged EXE 都必须验证：
+
+- 未认证 GET /v1/status 得到 401；
+- 错误 Host 被拒绝；
+- 错误 Origin 被拒绝且无 ACAO；
+- 显式用户 pairing；
+- 运行时随机 client token 配对；
+- auth status 成功；
+- capabilities 明确业务 route=false；
+- token 轮换后旧 token 401；
+- revoke 后 token 401；
+- body 上限；
+- graceful shutdown；
+- 端口释放。
+
+smoke 报告只保存：
+
+- 布尔值；
+- 版本；
+- 状态枚举；
+- 安全计数；
+- loopback address/family；
+- 配置端口或端口是否匹配。
+
+不得保存 token、digest、pairing code、Origin、clientId、绝对路径、header、body 或 stack。
+
+如 Windows 弹出防火墙授权对话框：
+
+- 不要求用户允许专用或公用网络；
+- 不修改防火墙规则；
+- 停止并报告实际 bind 行为和最小复现；
+- 不伪造 PASS。
+
+
+十八、独立测试与 CI
+------------------
+
+新增：
+
+npm run test:local-api
+
+要求：
+
+- 只运行 Issue 011 专项测试；
+- 可独立失败；
+- 使用真实 node:http loopback server；
+- 使用临时 DB、userData 和 ProjectDataRoot；
+- 使用可注入 clock/random；
+- 不需要真实插件；
+- 不使用真实 API、真实 token 或费用；
+- 不依赖公网；
+- 并发、失败和 shutdown 可重复。
+
+npm run test 必须包含 local-api 测试。
+
+Windows CI 保留全部旧门禁并加入 test:local-api。不得删除：
+
+- npm ci
+- npm run format-check
+- npm run lint
+- npm run typecheck
+- npm run test:constraints
+- npm run test:db
+- npm run test:queue
+- npm run test:desktop
+- npm run test:storage
+- npm run test:settings
+- npm run test:electron-smoke
+- npm run test
+- npm run build
+- npm run package:desktop
+- npm run test:packaged-smoke
+- npm run audit:dependencies
+
+CI 不得访问真实中转站或公网业务 API。
+
+
+十九、180 项最低验收矩阵
+-----------------------
+
+以下每项必须在 docs/m1-issue011-acceptance-map.md 中逐项映射到真实代码、测试、runtime
+证据或门禁。不得合并编号，不得只写“同上”。
+
+A. 起点与回归
+
+1. 起始 HEAD 精确为 aab11d793021ac4f97dcf134d325be4576b5e9da。
+2. main 分支且起点工作树干净。
+3. M0、007、009、006、008、010 祖先顺序正确。
+4. 不改写历史提交。
+5. v1 migration 内容与 SHA-256 不变。
+6. v2 migration 内容与 SHA-256 不变。
+7. v3 migration 内容与 SHA-256 不变。
+8. v4 migration 内容与 SHA-256 不变。
+9. 既有 test:constraints 通过且断言未削弱。
+10. 既有 test:db 通过且断言未削弱。
+11. 既有 test:queue 通过且断言未削弱。
+12. 既有 test:desktop 通过且断言未削弱。
+13. 既有 test:storage 通过且断言未削弱。
+14. 既有 test:settings 通过且断言未削弱。
+15. Electron 错误探针未写入仓库，旧 smoke 不再弹窗。
+
+B. Schema 与 repository
+
+16. migration v5 版本连续且名称稳定。
+17. v5 重复检查幂等。
+18. v5 失败完整回滚。
+19. v5 前备份可独立打开。
+20. 旧业务数据、索引、外键和 STRICT 保留。
+21. local_api_settings 为 STRICT singleton。
+22. local_api_settings 默认 enabled=0。
+23. 默认 port=43119。
+24. port 只接受 1024—65535 整数。
+25. settings revision 单调并支持 expected revision。
+26. local_api_clients 为 STRICT。
+27. client id 稳定且不包含 token。
+28. extension_origin 规范约束有效。
+29. token_digest 只接受 32-byte BLOB。
+30. DB 不保存明文 token。
+31. DB 不保存 pairing code。
+32. 同 origin 最多一个 active client。
+33. active client 上限为 8。
+34. revoke 状态与时间一致。
+35. client 查询索引覆盖实际查询。
+
+C. Bind 与生命周期
+
+36. server 使用 Node 原生 node:http。
+37. 未新增 Fastify/Express/Koa/WebSocket runtime。
+38. listen 显式 host=127.0.0.1。
+39. 不监听 localhost。
+40. 不监听 0.0.0.0。
+41. 不监听 ::。
+42. 不监听 ::1。
+43. 不监听 LAN/public IP。
+44. server.address 精确验证 IPv4 loopback。
+45. 默认服务关闭。
+46. 无 ProjectDataRoot 时不监听。
+47. app.whenReady 后才组装。
+48. enabled 后启动并进入 RUNNING。
+49. disabled 后端口释放。
+50. 配置端口重启服务。
+51. 端口冲突返回稳定错误。
+52. 端口冲突不扫描其他端口。
+53. bind 失败不伪装运行。
+54. 端口切换持久化失败可恢复旧状态。
+55. shutdown 停止新请求。
+56. shutdown 取消 pairing。
+57. shutdown 关闭 idle/active socket。
+58. shutdown 清理 timer/rate limiter。
+59. app 退出无残留 listener。
+60. app 退出无残留 Electron/Node 进程。
+
+D. HTTP 与路由
+
+61. route allowlist 只有本指令六项。
+62. 未实现 clips 或其他业务 route。
+63. GET /v1/status 必须认证。
+64. GET /v1/capabilities 必须认证。
+65. capabilities 明确 clipperBusinessRoutes=false。
+66. 未认证 status 返回 401。
+67. 未认证 capabilities 返回 401。
+68. 未知 route 返回有限 404。
+69. 错误 method 返回 405 和精确 Allow。
+70. query string 被拒绝。
+71. Host header 必须唯一。
+72. Host 只接受 127.0.0.1:actualPort。
+73. localhost Host 被拒绝。
+74. DNS rebinding 风格 Host 被拒绝。
+75. remoteAddress 只接受 127.0.0.1。
+76. 不信任 X-Forwarded-For。
+77. CONNECT 被拒绝。
+78. Upgrade/WebSocket 被拒绝。
+79. maxHeaderSize 有界。
+80. maxHeadersCount 有界。
+81. headersTimeout 非零且为 5 秒。
+82. requestTimeout 非零且为 10 秒。
+83. keepAliveTimeout 为 2 秒。
+84. maxRequestsPerSocket 有界。
+85. maxConnections/backlog 有界。
+86. pairing body 最大 8 KiB。
+87. body 按流计数而非信任声明长度。
+88. GET/OPTIONS body 被拒绝。
+89. invalid UTF-8、BOM 和 invalid JSON 被拒绝。
+90. response/header/error 不泄漏内部细节。
+
+E. Origin 与 CORS
+
+91. Origin header 必须唯一。
+92. 缺失 Origin 被拒绝。
+93. null Origin 被拒绝。
+94. http/https/file origin 被拒绝。
+95. moz-extension origin 被拒绝。
+96. 只接受 chrome-extension origin。
+97. extension id 只接受 32 位 a—p 小写格式。
+98. origin path/query/fragment 被拒绝。
+99. pairing header/body origin 必须一致。
+100. auth route origin 必须匹配 active client。
+101. ACAO 从不使用星号。
+102. ACAO 只回显已验证精确 origin。
+103. 不返回 Allow-Credentials=true。
+104. Vary: Origin 存在。
+105. allow methods 只含实际 method。
+106. allow headers 只含 authorization/content-type。
+107. 非法 preflight 无 ACAO。
+108. preflight 不产生业务状态。
+109. preflight max age <=300。
+110. CORS 与 Bearer auth 分离。
+
+F. Pairing 与 token
+
+111. pairing 只能由用户显式 IPC 发起。
+112. pairing code 为 32-byte CSPRNG base64url。
+113. pairing code 只存在内存。
+114. pairing code TTL=120 秒。
+115. pairing code 单次使用。
+116. pairing code 绑定 listener/port/window。
+117. pairing code 最多 5 次失败。
+118. cancel 后 pairing code 失效。
+119. timeout 后 pairing code 失效。
+120. window 销毁后 pairing code 失效。
+121. 服务停止后 pairing code 失效。
+122. client token 为 32-byte CSPRNG base64url。
+123. token 只在 pairing request 和 Authorization 使用。
+124. pairing response 不回显 token。
+125. pairing response 不回显 digest/code。
+126. token digest 使用 SHA-256。
+127. digest 比较使用 timingSafeEqual。
+128. 无效 token 返回有限 401。
+129. 未知 token 与旧 token 不泄漏存在差异。
+130. 同 pairing code 并发只有一个成功。
+131. 同 origin 重配对原 token 立即失效。
+132. revoke 后 token 立即失效。
+133. client 上限超出时安全拒绝。
+134. Bearer parser 拒绝重复 header。
+135. Bearer parser 拒绝错误 scheme/长度/字符。
+
+G. 限流、并发和错误
+
+136. pairing 全局限流有效。
+137. 未认证请求限流有效。
+138. 每 client auth route 限流有效。
+139. 429 返回有限 Retry-After。
+140. rate limit 使用可注入 clock。
+141. rate limit 不依赖 Redis/云/任务队列。
+142. last_used 更新节流。
+143. revoke 与 request 竞争语义确定。
+144. service stopping 时新请求被拒绝。
+145. 稳定错误码覆盖正常失败。
+
+H. IPC 与 UI
+
+146. preload 只暴露窄 local API 方法。
+147. 不暴露 raw ipcRenderer/http/net/crypto/db。
+148. IPC 保持 senderFrame origin 校验。
+149. IPC 输入 exact-object 且多余字段拒绝。
+150. renderer 不能传 bind host。
+151. renderer 不能传任意 origin allowlist。
+152. renderer 不接收长期 token/digest。
+153. 设置页默认显示关闭。
+154. 设置页显示真实状态和端口。
+155. 端口占用/冲突/停止状态可见。
+156. pairing code 有倒计时和取消。
+157. pairing code 组件卸载时清空。
+158. client 列表不显示 token/digest。
+159. revoke 有明确确认。
+160. UI 明确插件业务将在 Issue 017 实现。
+
+I. Egress、runtime 与范围
+
+161. 36 项 secret egress 全部通过。
+162. pairing code 不进入持久层。
+163. token 不进入日志/audit/diagnostic/export。
+164. diagnostic 只增加有限 local API 状态。
+165. source Electron disabled 状态 listener=0。
+166. source Electron enabled 只有一个 IPv4 loopback listener。
+167. packaged EXE disabled 状态 listener=0。
+168. packaged EXE enabled 只有一个 IPv4 loopback listener。
+169. source/package 0.0.0.0/::/LAN/public listener=0。
+170. source/package 外部 established connection=0。
+171. source/package 完成真实 pairing/auth/rotation/revoke。
+172. source/package 结束后端口释放且进程清理。
+173. test:local-api 独立通过。
+174. 全量 test 包含 local API 且通过。
+175. build/package/audit 全部通过且 0 vulnerabilities。
+176. Windows CI 保留旧门禁并加入 test:local-api。
+177. ai_disclosure=false 硬约束保持。
+178. 版权不参与门禁/评分/审批/排期硬约束保持。
+179. 无真实 API/模型/密钥/费用/云/平台动作/开卷/盗版处理。
+180. 严格停止在 Issue 011，不进入 Issue 012。
+
+
+二十、禁止用脆弱测试代替真实行为
+--------------------------------
+
+以下不可作为唯一证据：
+
+- 只搜索字符串 127.0.0.1；
+- 只检查 source code 中有 Authorization；
+- 只检查 route 名称；
+- mock 掉实际 server.listen；
+- mock 掉全部 SQLite；
+- 宿主 Node 单元测试替代 Electron runtime；
+- 只检查 netstat 文本但不执行 auth；
+- 用固定 token fixture；
+- 通过延长 sleep 掩盖竞争；
+- 捕获错误后始终 exit 0；
+- 删除、skip、todo 或放宽既有测试。
+
+必须组合：
+
+- 纯函数/合同单测；
+- 真实 SQLite；
+- 真实 node:http loopback；
+- 并发与 fake clock；
+- Electron source smoke；
+- packaged EXE smoke；
+- Windows 进程树和 socket 检查；
+- secret egress 扫描；
+- 架构禁止项测试。
+
+
+二十一、实现顺序
+----------------
+
+1. 完成只读仓库、Git、附件和旧 smoke 核验。
+2. 建立 docs/m1-issue011-implementation-plan.md。
+3. 草拟 180 项验收映射，不得先删减验收。
+4. 设计 ADR 和 local API v1 contract。
+5. 追加 migration v5 和 repository。
+6. 实现 packages/local-api 纯合同、策略、pairing、auth、rate limit。
+7. 实现真实 node:http server 与 lifecycle。
+8. 集成 Electron main、IPC 和 preload。
+9. 实现设置页 local API 管理区。
+10. 更新诊断、audit 和 egress。
+11. 实现专项测试。
+12. 精确升级 source/package smoke 网络断言。
+13. 回填 ADR、合同、实施计划和 180 项映射。
+14. 从 npm ci 开始运行全部最终门禁。
+15. 检查 Git diff、工作树、敏感值和范围。
+16. 全部通过后创建一个本地提交。
+17. 输出报告并停止。
+
+
+二十二、最终门禁
+----------------
+
+必须从干净依赖安装开始，依次执行并记录：
+
+1. npm ci
+2. npm run format-check
+3. npm run lint
+4. npm run typecheck
+5. npm run test:constraints
+6. npm run test:db
+7. npm run test:queue
+8. npm run test:desktop
+9. npm run test:storage
+10. npm run test:settings
+11. npm run test:local-api
+12. npm run test:electron-smoke
+13. npm run test
+14. npm run build
+15. npm run package:desktop
+16. npm run audit:dependencies
+17. npm run test:packaged-smoke
+
+要求：
+
+- 失败 0；
+- skip 0；
+- todo 0；
+- lint warning 0；
+- 依赖漏洞 0；
+- 不删除或降低测试；
+- 不调用真实 API；
+- 不产生费用；
+- 无残留 listener、进程或临时文件。
+
+如门禁发现缺陷，修复根因后必须从 npm ci 重新运行全部门禁。
+
+
+二十三、Git 提交
+----------------
+
+只有全部验收通过后才能提交。
+
+提交信息固定为：
+
+feat(local-api): add loopback service and plugin authentication
+
+要求：
+
+- 只创建一个 Issue 011 本地提交；
+- 不 amend Issue 010；
+- 不 squash 历史；
+- 不 push；
+- 不创建 PR；
+- 不合并；
+- 提交后工作树干净；
+- 最终 HEAD 等于新提交；
+- 报告完整 SHA。
+
+如果开始时工作树不干净，或中途出现与 Issue 011 无关的用户修改，不得擅自包含、
+删除、覆盖或 stash；停止并报告。
+
+
+二十四、最终报告格式
+--------------------
+
+报告必须依次包含：
+
+1. 结论
+   - Issue 011 PASS/FAIL；
+   - 是否严格停止；
+   - 真实 API/模型/密钥/费用状态。
+
+2. 起点与 Git
+   - 起始 HEAD；
+   - 最终 commit/HEAD；
+   - 分支、作者、工作树；
+   - 远端、push/PR/merge 状态；
+   - Electron 错误探针开工核验结果。
+
+3. 架构
+   - packages/local-api；
+   - node:http 选择；
+   - Electron main/IPC/renderer 边界；
+   - route allowlist；
+   - 明确未实现 Issue 017 插件业务。
+
+4. SQLite
+   - migration v5 名称和 SHA-256；
+   - v1—v4 校验和保持；
+   - local_api_settings；
+   - local_api_clients；
+   - token digest；
+   - 迁移回滚和备份。
+
+5. 监听与生命周期
+   - host/address/family/port；
+   - 默认关闭；
+   - 端口冲突；
+   - shutdown；
+   - 残留 listener/process。
+
+6. 配对与认证
+   - pairing code；
+   - token 生成责任；
+   - SHA-256/timingSafeEqual；
+   - origin 绑定；
+   - 轮换和撤销；
+   - 限流。
+
+7. HTTP 安全
+   - Host；
+   - remote address；
+   - CORS；
+   - body/header/timeout/concurrency；
+   - stable errors。
+
+8. UI
+   - 设置页 local API 区域；
+   - 状态、端口、配对、客户端、撤销；
+   - 不显示 token；
+   - Issue 017 占位说明。
+
+9. Secret egress
+   - 36 项结果；
+   - DB/WAL/SHM/log/audit/diagnostic/package/Git；
+   - 测试值为 runtime random。
+
+10. Windows/Electron
+    - Node/Electron/Chromium 版本；
+    - source disabled/enabled listener；
+    - packaged disabled/enabled listener；
+    - 0.0.0.0/::/LAN/public；
+    - 外部 connection；
+    - 结束清理。
+
+11. 测试
+    - 每条最终门禁；
+    - test 文件数与测试数；
+    - 失败/skip/todo；
+    - 180/180 映射。
+
+12. 硬约束与范围
+    - ai_disclosure；
+    - 版权；
+    - 无平台动作；
+    - 无真实 API/模型/费用；
+    - 无开卷/盗版；
+    - 未进入 Issue 012/013/017。
+
+13. CI
+    - Windows 本地结果；
+    - workflow 结构；
+    - 若 GitHub 托管 CI 未运行，必须原样写：
+      GitHub 托管 CI 尚未运行，不能声称已通过。
+
+14. 下一步
+    - 只推荐 Issue 012：供应商无关模型接口；
+    - 明确本轮未自动开始。
+
+
+二十五、停止与异常条件
+----------------------
+
+遇到以下任一情况，停止并报告，不得自行放宽：
+
+- HEAD 不匹配；
+- 工作树不干净；
+- 冻结文档缺失；
+- Issue 010 Electron 错误探针仍在仓库或再次弹窗；
+- 不能保证只绑定 127.0.0.1；
+- Windows 出现防火墙授权弹窗；
+- packaged EXE 出现 0.0.0.0、::、LAN 或公网 listener；
+- 外部 established connection 非 0；
+- token/pairing code 出现在任何禁止 egress；
+- migration v1—v4 发生变化；
+- 需要真实插件、真实密钥或真实网络才能通过；
+- 必须降低 Electron 安全设置或 fuses；
+- 必须删除/skip/todo 测试；
+- 依赖审计不为 0；
+- 需要扩大到 Issue 012、013 或 017。
+
+停止时保留证据和工作树，不 reset、不删除用户数据、不伪造 PASS。
+
+
+最终命令
+--------
+
+现在开始执行 M1 Issue 011。
+
+先完成只读核验和实施计划，再实现。只使用运行时随机测试 token，不读取或配置任何真实
+密钥，不调用真实 API，不产生费用。全部验收通过后创建一个本地提交并报告，然后停止，
+不得进入 Issue 012。

@@ -16,6 +16,7 @@
   ],
   "dependencies": {
     "@mystery-operations/core": "0.0.0",
+    "@mystery-operations/local-api": "0.0.0",
     "@mystery-operations/settings": "0.0.0"
   }
 }

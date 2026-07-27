@@ -23,6 +23,13 @@ interface BasicDiagnosticReport {
     readonly queue: boolean;
     readonly storage: boolean;
   };
+  readonly localApi: {
+    readonly activeClientCount: number;
+    readonly enabled: boolean;
+    readonly port: number;
+    readonly state: string;
+    readonly version: '1';
+  };
   readonly modelsConfigured: {
     readonly embedding: boolean;
     readonly image: boolean;
@@ -83,6 +90,13 @@ export function buildDiagnosticPreview(
       database: runtime.databaseHealthy,
       queue: runtime.queueHealthy,
       storage: runtime.storageHealthy,
+    },
+    localApi: {
+      activeClientCount: runtime.localApiActiveClientCount,
+      enabled: runtime.localApiEnabled,
+      port: runtime.localApiPort,
+      state: runtime.localApiState,
+      version: runtime.localApiVersion,
     },
     modelsConfigured: {
       embedding: bundle.settings.embeddingModelId !== null,

@@ -30,7 +30,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ['apps/web-ui/**/*.{ts,tsx}', 'tests/desktop-renderer.test.tsx'],
+    files: [
+      'apps/web-ui/**/*.{ts,tsx}',
+      'tests/desktop-renderer.test.tsx',
+      'tests/local-api-renderer.test.tsx',
+    ],
     languageOptions: {
       globals: globals.browser,
     },

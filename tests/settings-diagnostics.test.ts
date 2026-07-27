@@ -62,11 +62,16 @@ const runtime: DiagnosticRuntime = {
   dataRootFormatVersion: 1,
   databaseHealthy: true,
   electronVersion: '43.2.0',
+  localApiActiveClientCount: 2,
+  localApiEnabled: true,
+  localApiPort: 43_119,
+  localApiState: 'RUNNING',
+  localApiVersion: '1',
   nodeVersion: '24.16.0',
   platformVersion: 'Windows 11 fixture',
   queueHealthy: true,
   safeStorageAvailable: true,
-  schemaVersion: 4,
+  schemaVersion: 5,
   storageHealthy: true,
 };
 
@@ -87,6 +92,7 @@ describe('basic diagnostic report', () => {
       'credential',
       'dataRootFormatVersion',
       'health',
+      'localApi',
       'modelsConfigured',
       'provider',
       'runtime',
@@ -105,6 +111,13 @@ describe('basic diagnostic report', () => {
       research: true,
       review: true,
       writing: true,
+    });
+    expect(report.localApi).toEqual({
+      activeClientCount: 2,
+      enabled: true,
+      port: 43_119,
+      state: 'RUNNING',
+      version: '1',
     });
     expect(report.provider).toEqual({
       baseUrlConfigured: true,

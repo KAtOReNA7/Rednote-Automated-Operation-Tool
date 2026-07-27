@@ -1243,6 +1243,94 @@ ON CONFLICT(id) DO UPDATE SET
 INSERT INTO app_settings(id) VALUES ('app');
 `;
 
+const LOCAL_LOOPBACK_API_AND_PLUGIN_CLIENTS = `
+CREATE TABLE local_api_settings (
+  id INTEGER PRIMARY KEY NOT NULL DEFAULT 1 CHECK (id = 1),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (typeof(enabled) = 'integer' AND enabled IN (0, 1)),
+  port INTEGER NOT NULL DEFAULT 43119 CHECK (
+    typeof(port) = 'integer' AND port BETWEEN 1024 AND 65535
+  ),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TRIGGER local_api_settings_revision_monotonic
+BEFORE UPDATE ON local_api_settings
+WHEN NEW.revision <> OLD.revision + 1
+BEGIN
+  SELECT RAISE(ABORT, 'local_api_settings revision must increase by one');
+END;
+
+CREATE TRIGGER local_api_settings_no_delete
+BEFORE DELETE ON local_api_settings
+BEGIN
+  SELECT RAISE(ABORT, 'local_api_settings singleton cannot be deleted');
+END;
+
+CREATE TABLE local_api_clients (
+  id TEXT PRIMARY KEY NOT NULL CHECK (
+    typeof(id) = 'text' AND
+    length(id) BETWEEN 8 AND 128 AND
+    id = trim(id) AND
+    id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+  ),
+  extension_origin TEXT NOT NULL CHECK (
+    typeof(extension_origin) = 'text' AND
+    length(extension_origin) = 51 AND
+    substr(extension_origin, 1, 19) = 'chrome-extension://' AND
+    substr(extension_origin, 20) NOT GLOB '*[^a-p]*'
+  ),
+  client_label TEXT CHECK (
+    client_label IS NULL OR (
+      typeof(client_label) = 'text' AND
+      length(client_label) BETWEEN 1 AND 120 AND
+      client_label = trim(client_label) AND
+      client_label NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  token_digest BLOB NOT NULL CHECK (
+    typeof(token_digest) = 'blob' AND length(token_digest) = 32
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  last_used_at TEXT CHECK (last_used_at ${UTC_OPTIONAL} last_used_at ${UTC_REQUIRED}),
+  revoked_at TEXT CHECK (revoked_at ${UTC_OPTIONAL} revoked_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  CHECK (updated_at >= created_at),
+  CHECK (last_used_at IS NULL OR last_used_at >= created_at),
+  CHECK (revoked_at IS NULL OR revoked_at >= created_at)
+) STRICT;
+
+CREATE UNIQUE INDEX idx_local_api_clients_active_origin
+  ON local_api_clients(extension_origin)
+  WHERE revoked_at IS NULL;
+CREATE INDEX idx_local_api_clients_digest_active
+  ON local_api_clients(token_digest, revoked_at);
+CREATE INDEX idx_local_api_clients_active_created
+  ON local_api_clients(revoked_at, created_at, id);
+
+CREATE TRIGGER local_api_clients_revision_monotonic
+BEFORE UPDATE ON local_api_clients
+WHEN NEW.revision <> OLD.revision + 1
+BEGIN
+  SELECT RAISE(ABORT, 'local_api_clients revision must increase by one');
+END;
+
+CREATE TRIGGER local_api_clients_no_unrevoke
+BEFORE UPDATE OF revoked_at ON local_api_clients
+WHEN OLD.revoked_at IS NOT NULL AND NEW.revoked_at IS NULL
+BEGIN
+  SELECT RAISE(ABORT, 'local_api_clients cannot be unrevoked');
+END;
+
+INSERT INTO local_api_settings(id) VALUES (1);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -1264,5 +1352,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'local_settings_and_credential_reference',
     sql: LOCAL_SETTINGS_AND_CREDENTIAL_REFERENCE,
     version: 4,
+  }),
+  Object.freeze({
+    name: 'local_loopback_api_and_plugin_clients',
+    sql: LOCAL_LOOPBACK_API_AND_PLUGIN_CLIENTS,
+    version: 5,
   }),
 ]);

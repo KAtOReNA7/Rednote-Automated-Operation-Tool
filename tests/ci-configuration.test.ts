@@ -53,6 +53,7 @@ describe('Windows CI configuration', () => {
       'npm run test:storage',
       'npm run test:desktop',
       'npm run test:settings',
+      'npm run test:local-api',
       'npm run test:electron-smoke',
       'npm run test',
       'npm run build',

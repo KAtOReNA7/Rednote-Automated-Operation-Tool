@@ -7,6 +7,15 @@ import type {
   SettingsErrorCode,
   SetupState,
 } from '@mystery-operations/settings';
+import type {
+  CancelLocalApiPairingRequest,
+  LocalApiClientView,
+  LocalApiErrorCode,
+  LocalApiStatusView,
+  PairingView,
+  RevokeLocalApiClientRequest,
+  UpdateLocalApiSettingsRequest,
+} from './local-api-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -24,6 +33,12 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getCredentialStatus: 'settings:get-credential-status',
   buildDiagnosticPreview: 'settings:build-diagnostic-preview',
   exportDiagnosticReport: 'settings:export-diagnostic-report',
+  getLocalApiStatus: 'local-api:get-status',
+  updateLocalApiSettings: 'local-api:update-settings',
+  startLocalApiPairing: 'local-api:start-pairing',
+  cancelLocalApiPairing: 'local-api:cancel-pairing',
+  listLocalApiClients: 'local-api:list-clients',
+  revokeLocalApiClient: 'local-api:revoke-client',
   getWindowState: 'desktop:get-window-state',
 });
 
@@ -42,7 +57,11 @@ export type FoundationCheckKey = (typeof FOUNDATION_CHECK_KEYS)[number];
 
 export interface DesktopError {
   readonly code:
-    'FOUNDATION_UNAVAILABLE' | 'INTERNAL_ERROR' | 'INVALID_REQUEST' | SettingsErrorCode;
+    | 'FOUNDATION_UNAVAILABLE'
+    | 'INTERNAL_ERROR'
+    | 'INVALID_REQUEST'
+    | LocalApiErrorCode
+    | SettingsErrorCode;
   readonly context?: Readonly<Record<string, boolean | number | string>>;
   readonly message: string;
   readonly retryable: boolean;
@@ -136,11 +155,23 @@ export interface DesktopBridge {
     input: GetCredentialStatusInput,
   ): Promise<DesktopResult<CredentialStatusView>>;
   getFoundationHealth(): Promise<DesktopResult<FoundationHealth>>;
+  getLocalApiStatus(): Promise<DesktopResult<LocalApiStatusView>>;
   getRuntimeCapabilities(): Promise<DesktopResult<RuntimeCapabilities>>;
   getSettings(): Promise<DesktopResult<SettingsBundle>>;
   getSetupState(): Promise<DesktopResult<SetupStateView>>;
   getWindowState(): Promise<DesktopResult<WindowState>>;
+  listLocalApiClients(): Promise<DesktopResult<readonly LocalApiClientView[]>>;
   selectDataRoot(): Promise<DesktopResult<DataRootSelection | null>>;
   setCredential(input: SetCredentialInput): Promise<DesktopResult<CredentialStatusView>>;
+  startLocalApiPairing(): Promise<DesktopResult<PairingView>>;
+  cancelLocalApiPairing(
+    input: CancelLocalApiPairingRequest,
+  ): Promise<DesktopResult<LocalApiStatusView>>;
+  revokeLocalApiClient(
+    input: RevokeLocalApiClientRequest,
+  ): Promise<DesktopResult<LocalApiClientView>>;
+  updateLocalApiSettings(
+    input: UpdateLocalApiSettingsRequest,
+  ): Promise<DesktopResult<LocalApiStatusView>>;
   updateNonSecretSettings(input: NonSecretSettingsDraft): Promise<DesktopResult<SettingsBundle>>;
 }

@@ -7,6 +7,7 @@ import type {
   SettingsBundle,
 } from '@mystery-operations/shared';
 
+import { LocalApiSettings } from './local-api-settings.js';
 import { useSettings } from './use-settings.js';
 
 interface DraftFields {
@@ -625,6 +626,8 @@ export function SettingsPage(): React.JSX.Element {
         </div>
         {preview === null ? null : <pre className="diagnostic-preview">{preview.content}</pre>}
       </section>
+
+      <LocalApiSettings />
     </div>
   );
 }

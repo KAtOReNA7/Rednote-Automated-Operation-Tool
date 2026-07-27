@@ -7,6 +7,7 @@ export const SMOKE_TITLE_PREFIX = '__ISSUE006_SMOKE__:';
 export interface RendererSmokeReport {
   readonly appInfo: boolean;
   readonly foundation: boolean;
+  readonly localApiBridge: boolean;
   readonly navigationCount: number;
   readonly preload: boolean;
   readonly renderer: boolean;
@@ -30,6 +31,7 @@ export function parseRendererSmokeTitle(title: string): RendererSmokeReport | nu
     if (
       typeof report.appInfo !== 'boolean' ||
       typeof report.foundation !== 'boolean' ||
+      typeof report.localApiBridge !== 'boolean' ||
       typeof report.navigationCount !== 'number' ||
       typeof report.preload !== 'boolean' ||
       typeof report.renderer !== 'boolean' ||

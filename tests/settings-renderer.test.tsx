@@ -111,8 +111,18 @@ function makeBridge(
           reopen: true,
           wal: true,
         },
-        schemaVersion: 4,
+        schemaVersion: 5,
         status: 'ready',
+      }),
+    getLocalApiStatus: async () =>
+      ok({
+        activeClientCount: 0,
+        enabled: false,
+        endpoint: null,
+        port: 43_119,
+        projectReady: true,
+        revision: 0,
+        state: 'DISABLED',
       }),
     getRuntimeCapabilities: async () =>
       ok({
@@ -125,8 +135,47 @@ function makeBridge(
     getSettings: async () => ok(bundle),
     getSetupState: async () => ok(READY_SETUP),
     getWindowState: async () => ok({ isFullScreen: false, isMaximized: false }),
+    listLocalApiClients: async () => ok([]),
+    cancelLocalApiPairing: async () =>
+      ok({
+        activeClientCount: 0,
+        enabled: false,
+        endpoint: null,
+        port: 43_119,
+        projectReady: true,
+        revision: 0,
+        state: 'DISABLED',
+      }),
+    revokeLocalApiClient: async (input) =>
+      ok({
+        clientLabel: null,
+        createdAt: '2026-07-28T00:00:00.000Z',
+        extensionOrigin: `chrome-extension://${'a'.repeat(32)}`,
+        id: input.clientId,
+        lastUsedAt: null,
+        revision: input.expectedRevision + 1,
+        status: 'REVOKED',
+        updatedAt: '2026-07-28T00:00:01.000Z',
+      }),
     selectDataRoot: async () => ok(null),
     setCredential: async () => ok({ available: true, requiresReauth: false, status: 'CONFIGURED' }),
+    startLocalApiPairing: async () =>
+      ok({
+        endpoint: 'http://127.0.0.1:43119',
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        pairingCode: 'a'.repeat(43),
+        pairingSessionId: 'pairing-session-000011',
+      }),
+    updateLocalApiSettings: async (input) =>
+      ok({
+        activeClientCount: 0,
+        enabled: input.enabled,
+        endpoint: input.enabled ? `http://127.0.0.1:${input.port}` : null,
+        port: input.port,
+        projectReady: true,
+        revision: input.expectedRevision + 1,
+        state: input.enabled ? 'RUNNING' : 'DISABLED',
+      }),
     updateNonSecretSettings: async () => ok(bundle),
     ...overrides,
   };

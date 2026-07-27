@@ -1,5 +1,6 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { JobQueueRepository, JobQueueRepositoryError } from './job-queue-repository.js';
+export { SqliteLocalApiRepository } from './local-api-repository.js';
 export { MigrationError, initializeDatabase, migrationChecksum } from './migration-runner.js';
 export { MIGRATIONS } from './migrations.js';
 export { assertSqliteRuntimeCapabilities } from './runtime-capabilities.js';

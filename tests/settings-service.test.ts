@@ -39,11 +39,16 @@ function runtime() {
     dataRootFormatVersion: 1,
     databaseHealthy: true,
     electronVersion: '43.2.0',
+    localApiActiveClientCount: 0,
+    localApiEnabled: false,
+    localApiPort: 43_119,
+    localApiState: 'DISABLED',
+    localApiVersion: '1',
     nodeVersion: '24',
     platformVersion: 'Windows',
     queueHealthy: true,
     safeStorageAvailable: true,
-    schemaVersion: 4,
+    schemaVersion: 5,
     storageHealthy: true,
   } as const;
 }
@@ -290,8 +295,9 @@ describe('basic diagnostic report', () => {
     expect(first.hash).toMatch(/^[a-f0-9]{64}$/u);
     expect(JSON.parse(first.content)).toMatchObject({
       credential: { configured: false, safeStorageAvailable: true },
+      localApi: { activeClientCount: 0, enabled: false, port: 43_119 },
       provider: { baseUrlConfigured: false, capability: 'UNPROBED' },
-      schemaVersion: 4,
+      schemaVersion: 5,
     });
     await expect(test.service.exportDiagnosticReport(first.hash)).resolves.toEqual({
       managedPath: `exports/diagnostics/basic-${first.hash.slice(0, 12)}.json`,

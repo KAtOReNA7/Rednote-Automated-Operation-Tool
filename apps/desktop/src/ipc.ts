@@ -1,7 +1,9 @@
 import { app, ipcMain } from 'electron';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 
+import { LocalApiError } from '@mystery-operations/local-api';
 import {
+  type CancelLocalApiPairingRequest,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -11,8 +13,10 @@ import {
   type ExportDiagnosticReportInput,
   type FoundationHealth,
   type GetCredentialStatusInput,
+  type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
   type SetCredentialInput,
+  type UpdateLocalApiSettingsRequest,
   type WindowState,
 } from '@mystery-operations/shared';
 import type { NonSecretSettingsDraft } from '@mystery-operations/settings';
@@ -46,6 +50,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof LocalApiError) {
+    return failure(error.code, error.message, error.retryable, error.context);
+  }
   if (error instanceof SettingsError) {
     return failure(error.code, error.message, error.retryable, error.context);
   }
@@ -171,6 +178,43 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       return options.settingsRuntime.exportDiagnosticReport(input.expectedPreviewHash);
     },
   );
+  register('getLocalApiStatus', DESKTOP_IPC_CHANNELS.getLocalApiStatus, () =>
+    options.settingsRuntime.getLocalApiStatus(),
+  );
+  register(
+    'updateLocalApiSettings',
+    DESKTOP_IPC_CHANNELS.updateLocalApiSettings,
+    (_event, args) => {
+      const input = args[0] as UpdateLocalApiSettingsRequest;
+      return options.settingsRuntime.updateLocalApiSettings(input);
+    },
+  );
+  register('startLocalApiPairing', DESKTOP_IPC_CHANNELS.startLocalApiPairing, (event) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new LocalApiError('LOCAL_API_INVALID_REQUEST');
+    }
+    return options.settingsRuntime.startLocalApiPairing(window.id);
+  });
+  register('cancelLocalApiPairing', DESKTOP_IPC_CHANNELS.cancelLocalApiPairing, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new LocalApiError('LOCAL_API_INVALID_REQUEST');
+    }
+    const input = args[0] as CancelLocalApiPairingRequest;
+    return options.settingsRuntime.cancelLocalApiPairing(input.pairingSessionId, window.id);
+  });
+  register('listLocalApiClients', DESKTOP_IPC_CHANNELS.listLocalApiClients, () =>
+    options.settingsRuntime.listLocalApiClients(),
+  );
+  register('revokeLocalApiClient', DESKTOP_IPC_CHANNELS.revokeLocalApiClient, (_event, args) => {
+    const input = args[0] as RevokeLocalApiClientRequest;
+    return options.settingsRuntime.revokeLocalApiClient(
+      input.clientId,
+      input.expectedRevision,
+      input.confirmation,
+    );
+  });
 
   return () => {
     for (const channel of Object.values(DESKTOP_IPC_CHANNELS)) {

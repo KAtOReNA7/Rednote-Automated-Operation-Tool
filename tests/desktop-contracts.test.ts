@@ -22,12 +22,18 @@ describe('desktop process contracts', () => {
       getAppInfo: 'desktop:get-app-info',
       getCredentialStatus: 'settings:get-credential-status',
       getFoundationHealth: 'desktop:get-foundation-health',
+      getLocalApiStatus: 'local-api:get-status',
       getRuntimeCapabilities: 'desktop:get-runtime-capabilities',
       getSettings: 'settings:get-settings',
       getSetupState: 'settings:get-setup-state',
       getWindowState: 'desktop:get-window-state',
+      listLocalApiClients: 'local-api:list-clients',
+      cancelLocalApiPairing: 'local-api:cancel-pairing',
+      revokeLocalApiClient: 'local-api:revoke-client',
       selectDataRoot: 'settings:select-data-root',
       setCredential: 'settings:set-credential',
+      startLocalApiPairing: 'local-api:start-pairing',
+      updateLocalApiSettings: 'local-api:update-settings',
       updateNonSecretSettings: 'settings:update-non-secret',
     });
     expect(Object.isFrozen(DESKTOP_IPC_CHANNELS)).toBe(true);
@@ -79,6 +85,7 @@ describe('desktop process contracts', () => {
     const report = {
       appInfo: true,
       foundation: true,
+      localApiBridge: true,
       navigationCount: 10,
       preload: true,
       renderer: true,
@@ -100,6 +107,7 @@ describe('desktop process contracts', () => {
       JSON.stringify({
         appInfo: true,
         foundation: true,
+        localApiBridge: true,
         navigationCount: '10',
         preload: true,
         renderer: true,

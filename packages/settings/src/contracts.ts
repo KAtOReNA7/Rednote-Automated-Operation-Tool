@@ -213,6 +213,11 @@ export interface DiagnosticRuntime {
   readonly dataRootFormatVersion: number;
   readonly databaseHealthy: boolean;
   readonly electronVersion: string;
+  readonly localApiActiveClientCount: number;
+  readonly localApiEnabled: boolean;
+  readonly localApiPort: number;
+  readonly localApiState: string;
+  readonly localApiVersion: '1';
   readonly nodeVersion: string;
   readonly platformVersion: string;
   readonly queueHealthy: boolean;

@@ -27,10 +27,20 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getAppInfo: [],
   getCredentialStatus: [{ slot: 'CONTENT_AI_API_KEY' }],
   getFoundationHealth: [],
+  getLocalApiStatus: [],
   getRuntimeCapabilities: [],
   getSettings: [],
   getSetupState: [],
   getWindowState: [],
+  listLocalApiClients: [],
+  cancelLocalApiPairing: [{ pairingSessionId: 'pairing-session-000011' }],
+  revokeLocalApiClient: [
+    {
+      clientId: 'client-id-000011',
+      confirmation: 'REVOKE_LOCAL_API_CLIENT',
+      expectedRevision: 0,
+    },
+  ],
   selectDataRoot: [],
   setCredential: [
     {
@@ -38,6 +48,8 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       slot: 'CONTENT_AI_API_KEY',
     },
   ],
+  startLocalApiPairing: [],
+  updateLocalApiSettings: [{ enabled: true, expectedRevision: 0, port: 43_119 }],
   updateNonSecretSettings: [
     {
       account: { bio: '', workingName: '未命名账号' },

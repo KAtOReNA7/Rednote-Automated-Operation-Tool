@@ -25,6 +25,23 @@ const LOCAL_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
 const DEVELOPMENT_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d{1,5}(?:\/.*)?$/u;
 const isSmokeMode = process.argv.includes('--issue006-smoke');
 const smokeOutputPath = resolveSmokeOutputPath(process.argv);
+
+function resolveLocalApiSmoke(argv: readonly string[]): {
+  readonly mode: 'disabled' | 'enabled';
+  readonly port: number;
+} | null {
+  const modeArgument = argv.find((value) => value.startsWith('--issue011-smoke-mode='));
+  const portArgument = argv.find((value) => value.startsWith('--issue011-smoke-port='));
+  const mode = modeArgument?.slice('--issue011-smoke-mode='.length);
+  const port = Number(portArgument?.slice('--issue011-smoke-port='.length));
+  return (mode === 'disabled' || mode === 'enabled') &&
+    Number.isSafeInteger(port) &&
+    port >= 1_024 &&
+    port <= 65_535
+    ? { mode, port }
+    : null;
+}
+
 function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
   const prefix = '--issue010-smoke-workspace=';
   const argument = argv.find((value) => value.startsWith(prefix));
@@ -44,6 +61,7 @@ function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
 }
 
 const smokeWorkspacePath = isSmokeMode ? resolveSmokeWorkspacePath(process.argv) : null;
+const localApiSmoke = isSmokeMode ? resolveLocalApiSmoke(process.argv) : null;
 const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -124,13 +142,40 @@ async function startApplication(): Promise<void> {
     electronVersion: process.versions.electron ?? 'unknown',
     nodeVersion: process.versions.node,
   });
+  let runtimeClosed = false;
+  let shutdownStarted = false;
+  const closeRuntime = async (): Promise<void> => {
+    if (runtimeClosed) {
+      return;
+    }
+    await settingsRuntime.close();
+    runtimeClosed = true;
+  };
+  app.on('before-quit', (event) => {
+    if (runtimeClosed) {
+      return;
+    }
+    event.preventDefault();
+    if (!shutdownStarted) {
+      shutdownStarted = true;
+      void closeRuntime().finally(() => app.quit());
+    }
+  });
   await settingsRuntime.initialize();
+  if (isSmokeMode && localApiSmoke === null) {
+    throw new Error('INVALID_LOCAL_API_SMOKE_ARGUMENTS');
+  }
   const settingsSmoke =
     smokeWorkspacePath === null
       ? null
       : await settingsRuntime.runIsolatedSmoke(
           join(smokeWorkspacePath, 'project data 中文 空格'),
           `unusable-runtime-${randomUUID()}`,
+          {
+            mode: localApiSmoke?.mode ?? 'disabled',
+            port: localApiSmoke?.port ?? 43_119,
+            windowId: 11,
+          },
         );
   const stateStore = createWindowStateStore(join(app.getPath('userData'), 'window-state.json'));
   const workAreas = screen.getAllDisplays().map((display) => display.workArea);
@@ -178,7 +223,6 @@ async function startApplication(): Promise<void> {
       settingsRuntime.clearWindowSelections(mainWindow.id);
     }
     removeIpcHandlers();
-    settingsRuntime.close();
     mainWindow = null;
   });
 
@@ -196,6 +240,7 @@ async function startApplication(): Promise<void> {
     }, 20_000);
 
     let smokeReported = false;
+    let smokeReportWritten = false;
     mainWindow.on('page-title-updated', (event, title) => {
       const renderer = parseRendererSmokeTitle(title);
       if (renderer === null || smokeReported) {
@@ -204,11 +249,13 @@ async function startApplication(): Promise<void> {
       smokeReported = true;
       event.preventDefault();
       clearTimeout(timeout);
-      void foundationHealth
-        .then(() => {
+      void (async () => {
+        try {
+          await foundationHealth;
           const ok =
             renderer.appInfo &&
             renderer.foundation &&
+            renderer.localApiBridge &&
             renderer.navigationCount === 10 &&
             renderer.preload &&
             renderer.renderer &&
@@ -222,6 +269,15 @@ async function startApplication(): Promise<void> {
             settingsSmoke.safeStorage &&
             settingsSmoke.secretEgressSafeCount === 30 &&
             settingsSmoke.settings &&
+            settingsSmoke.localApi.mode === localApiSmoke?.mode &&
+            settingsSmoke.localApi.enabled === (localApiSmoke?.mode === 'enabled') &&
+            settingsSmoke.localApi.port ===
+              (localApiSmoke?.mode === 'enabled' ? localApiSmoke.port : 43_119) &&
+            settingsSmoke.localApi.pairingAuthRotationRevoke &&
+            settingsSmoke.localApi.hostRejected &&
+            settingsSmoke.localApi.originRejectedWithoutAcao &&
+            settingsSmoke.localApi.oversizedBodyRejected &&
+            settingsSmoke.localApi.preflight &&
             renderer.windowState &&
             sessionSecurityAudit.externalRequestAttempts === 0;
           writeSmokeReport(smokeOutputPath, {
@@ -242,19 +298,23 @@ async function startApplication(): Promise<void> {
             settings: settingsSmoke,
             storage: true,
           });
-          settingsRuntime.close();
-          setTimeout(() => {
-            app.exit(ok ? 0 : 4);
-          }, 1_000);
-        })
-        .catch(() => {
-          settingsRuntime.close();
-          writeSmokeReport(smokeOutputPath, {
-            error: 'STORAGE_SMOKE_FAILED',
-            ok: false,
+          smokeReportWritten = true;
+          await new Promise<void>((resolveDelay) => {
+            setTimeout(resolveDelay, 5_000);
           });
+          await closeRuntime();
+          app.exit(ok ? 0 : 4);
+        } catch {
+          await closeRuntime().catch(() => undefined);
+          if (!smokeReportWritten) {
+            writeSmokeReport(smokeOutputPath, {
+              error: 'STORAGE_SMOKE_FAILED',
+              ok: false,
+            });
+          }
           app.exit(5);
-        });
+        }
+      })();
     });
   }
 

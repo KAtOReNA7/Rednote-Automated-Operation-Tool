@@ -2,6 +2,11 @@ import { existsSync, lstatSync, readFileSync, readdirSync } from 'node:fs';
 import { release } from 'node:os';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
+import type {
+  LocalApiClientView,
+  LocalApiStatusView,
+  PairingView,
+} from '@mystery-operations/local-api';
 
 import {
   MIGRATIONS,
@@ -36,6 +41,12 @@ import {
 
 import { type AsyncSafeStorage, ElectronCredentialStore } from './credential-store.js';
 import { DataRootSelectionBroker, type DirectoryDialog } from './data-root-selection.js';
+import { DesktopLocalApiRuntime } from './local-api-runtime.js';
+import {
+  disabledLocalApiSmoke,
+  type LocalApiSmokeReport,
+  runEnabledLocalApiSmoke,
+} from './local-api-smoke.js';
 
 const PROJECT_DATABASE_FILE = 'rednote.sqlite';
 const SECRET_EGRESS_TARGET_COUNT = 30;
@@ -74,6 +85,7 @@ interface ActiveProject {
 export class DesktopSettingsRuntime {
   readonly #credentials: ElectronCredentialStore;
   readonly #locator: LocalProjectLocator;
+  readonly #localApi = new DesktopLocalApiRuntime();
   readonly #safeStorage: AsyncSafeStorage;
   readonly #selectionBroker: DataRootSelectionBroker;
   readonly #userDataPath: string;
@@ -104,15 +116,22 @@ export class DesktopSettingsRuntime {
     }
     const root = await openProjectDataRoot(this.#locatorState.record.activeDataRoot);
     this.#active = await this.#openActiveProject(root);
+    await this.#localApi.attachProject(this.#active.database);
   }
 
   public async runIsolatedSmoke(
     rootPath: string,
     unusableRuntimeValue: string,
+    localApi: {
+      readonly mode: 'disabled' | 'enabled';
+      readonly port: number;
+      readonly windowId: number;
+    },
   ): Promise<{
     readonly credentialCleared: boolean;
     readonly credentialRoundtrip: boolean;
     readonly locator: boolean;
+    readonly localApi: LocalApiSmokeReport;
     readonly safeStorage: boolean;
     readonly secretEgressSafeCount: number;
     readonly settings: boolean;
@@ -137,6 +156,7 @@ export class DesktopSettingsRuntime {
         new Date().toISOString(),
       );
       this.#active = prepared;
+      await this.#localApi.attachProject(prepared.database);
       this.#locatorState = { displayPath: root.rootPath, record, status: 'READY' };
       smokePhase = 'SET_CREDENTIAL';
       const configured = await prepared.service.setCredential(unusableRuntimeValue);
@@ -161,10 +181,16 @@ export class DesktopSettingsRuntime {
       }
       smokePhase = 'CLEAR_CREDENTIAL';
       const cleared = await prepared.service.clearCredential('DELETE_CONTENT_AI_API_KEY');
+      smokePhase = 'LOCAL_API_RUNTIME';
+      const localApiReport =
+        localApi.mode === 'enabled'
+          ? await runEnabledLocalApiSmoke(this, localApi.port, localApi.windowId)
+          : disabledLocalApiSmoke(this);
       return {
         credentialCleared: cleared.status === 'NOT_CONFIGURED',
         credentialRoundtrip,
         locator: (await this.#locator.read()).status === 'READY',
+        localApi: localApiReport,
         safeStorage: true,
         secretEgressSafeCount,
         settings: (await prepared.service.getSettings()).settings.revision >= 2,
@@ -249,6 +275,7 @@ export class DesktopSettingsRuntime {
         new Date().toISOString(),
       );
       const previous = this.#active;
+      await this.#localApi.attachProject(prepared.database);
       this.#active = prepared;
       this.#locatorState = {
         displayPath: root.rootPath,
@@ -292,9 +319,43 @@ export class DesktopSettingsRuntime {
 
   public clearWindowSelections(windowId: number): void {
     this.#selectionBroker.clearForWindow(windowId);
+    this.#localApi.clearWindowPairings(windowId);
   }
 
-  public close(): void {
+  public getLocalApiStatus(): LocalApiStatusView {
+    return this.#localApi.getStatus();
+  }
+
+  public updateLocalApiSettings(input: {
+    readonly enabled: boolean;
+    readonly expectedRevision: number;
+    readonly port: number;
+  }): Promise<LocalApiStatusView> {
+    return this.#localApi.updateSettings(input);
+  }
+
+  public startLocalApiPairing(windowId: number): PairingView {
+    return this.#localApi.startPairing(windowId);
+  }
+
+  public cancelLocalApiPairing(pairingSessionId: string, windowId: number): LocalApiStatusView {
+    return this.#localApi.cancelPairing(pairingSessionId, windowId);
+  }
+
+  public listLocalApiClients(): readonly LocalApiClientView[] {
+    return this.#localApi.listClients();
+  }
+
+  public revokeLocalApiClient(
+    clientId: string,
+    expectedRevision: number,
+    confirmation: string,
+  ): LocalApiClientView {
+    return this.#localApi.revokeClient(clientId, expectedRevision, confirmation);
+  }
+
+  public async close(): Promise<void> {
+    await this.#localApi.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -321,6 +382,11 @@ export class DesktopSettingsRuntime {
         safeStorageAvailable: this.#safeStorageAvailable,
         schemaVersion: MIGRATIONS.length,
         storageHealthy: true,
+        localApiActiveClientCount: this.#localApi.getStatus().activeClientCount,
+        localApiEnabled: this.#localApi.getStatus().enabled,
+        localApiPort: this.#localApi.getStatus().port,
+        localApiState: this.#localApi.getStatus().state,
+        localApiVersion: '1',
       }),
       diagnosticStore,
     });

@@ -53,6 +53,9 @@ jobs:
       - name: Run local settings and credential-reference suites
         run: npm run test:settings
 
+      - name: Run local loopback API and plugin-authentication suites
+        run: npm run test:local-api
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

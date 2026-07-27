@@ -44,7 +44,9 @@ export function App(): React.JSX.Element {
       bridge.getSetupState(),
       bridge.getSettings(),
       bridge.getCredentialStatus({ slot: 'CONTENT_AI_API_KEY' }),
-    ]).then(([setup, settings, credential]) => {
+      bridge.getLocalApiStatus(),
+      bridge.listLocalApiClients(),
+    ]).then(([setup, settings, credential, localApiStatus, localApiClients]) => {
       if (!active) {
         return;
       }
@@ -53,6 +55,7 @@ export function App(): React.JSX.Element {
           appInfo: desktop.phase === 'ready',
           credentialStatus: credential.ok && credential.value.status === 'NOT_CONFIGURED',
           foundation: desktop.phase === 'ready' && desktop.foundation.status === 'ready',
+          localApiBridge: localApiStatus.ok && localApiClients.ok,
           navigationCount: document.querySelectorAll('[data-navigation-item]').length,
           preload: window.rednoteDesktop !== undefined,
           renderer: document.querySelector('[data-desktop-shell]') !== null,

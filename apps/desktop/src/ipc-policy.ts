@@ -10,12 +10,18 @@ export type DesktopIpcOperation =
   | 'getAppInfo'
   | 'getCredentialStatus'
   | 'getFoundationHealth'
+  | 'getLocalApiStatus'
   | 'getRuntimeCapabilities'
   | 'getSettings'
   | 'getSetupState'
   | 'getWindowState'
+  | 'listLocalApiClients'
+  | 'cancelLocalApiPairing'
+  | 'revokeLocalApiClient'
   | 'selectDataRoot'
   | 'setCredential'
+  | 'startLocalApiPairing'
+  | 'updateLocalApiSettings'
   | 'updateNonSecretSettings';
 
 const MAX_IPC_BYTES = 32 * 1024;
@@ -88,9 +94,43 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'getSettings':
     case 'getSetupState':
     case 'getWindowState':
+    case 'getLocalApiStatus':
+    case 'listLocalApiClients':
     case 'selectDataRoot':
+    case 'startLocalApiPairing':
     case 'buildDiagnosticPreview':
       return args.length === 0;
+    case 'cancelLocalApiPairing': {
+      const value = validateOneObject(args, ['pairingSessionId']);
+      return (
+        typeof value?.pairingSessionId === 'string' &&
+        /^[a-zA-Z0-9-]{8,128}$/u.test(value.pairingSessionId)
+      );
+    }
+    case 'revokeLocalApiClient': {
+      const value = validateOneObject(args, ['clientId', 'confirmation', 'expectedRevision']);
+      return (
+        typeof value?.clientId === 'string' &&
+        /^[a-zA-Z0-9-]{8,128}$/u.test(value.clientId) &&
+        value.confirmation === 'REVOKE_LOCAL_API_CLIENT' &&
+        typeof value.expectedRevision === 'number' &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        value.expectedRevision >= 0
+      );
+    }
+    case 'updateLocalApiSettings': {
+      const value = validateOneObject(args, ['enabled', 'expectedRevision', 'port']);
+      return (
+        typeof value?.enabled === 'boolean' &&
+        typeof value.expectedRevision === 'number' &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        value.expectedRevision >= 0 &&
+        typeof value.port === 'number' &&
+        Number.isSafeInteger(value.port) &&
+        value.port >= 1_024 &&
+        value.port <= 65_535
+      );
+    }
     case 'getCredentialStatus': {
       const value = validateOneObject(args, ['slot']);
       return value?.slot === 'CONTENT_AI_API_KEY';

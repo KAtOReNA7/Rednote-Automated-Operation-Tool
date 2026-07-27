@@ -17,6 +17,9 @@
       "path": "./packages/db"
     },
     {
+      "path": "./packages/local-api"
+    },
+    {
       "path": "./packages/providers"
     },
     {

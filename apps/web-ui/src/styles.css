@@ -394,7 +394,8 @@ textarea:focus-visible {
 
 .settings-intro,
 .wizard-step,
-.diagnostic-card {
+.diagnostic-card,
+.local-api-card {
   border: 1px solid #293034;
   border-radius: 14px;
   background: #171c1f;
@@ -408,7 +409,8 @@ textarea:focus-visible {
 
 .settings-intro h2,
 .wizard-step h3,
-.diagnostic-card h3 {
+.diagnostic-card h3,
+.local-api-card h3 {
   margin: 6px 0 0;
   color: #eee5d9;
   font-family: Georgia, 'Songti SC', 'Microsoft YaHei', serif;
@@ -421,7 +423,8 @@ textarea:focus-visible {
 
 .settings-intro > p:last-child,
 .wizard-step p,
-.diagnostic-card p {
+.diagnostic-card p,
+.local-api-card p {
   color: #89918f;
   font-size: 13px;
   line-height: 1.7;
@@ -639,6 +642,180 @@ fieldset.wizard-step {
   font-size: 10px;
   line-height: 1.6;
   white-space: pre-wrap;
+}
+
+.local-api-card {
+  display: grid;
+  gap: 20px;
+  padding: 24px;
+}
+
+.local-api-heading,
+.client-panel-heading {
+  display: flex;
+  gap: 18px;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.local-api-heading p,
+.client-panel-heading p,
+.pairing-panel p {
+  margin: 8px 0 0;
+}
+
+.local-api-state {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  border: 1px solid #3a4244;
+  border-radius: 999px;
+  color: #aab1ae;
+  background: #121719;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 10px;
+}
+
+.local-api-state--running {
+  border-color: #3d5a46;
+  color: #9ec4a6;
+}
+
+.local-api-state--error,
+.local-api-state--error_restart_required,
+.local-api-state--port_in_use {
+  border-color: #6b4740;
+  color: #dda69b;
+}
+
+.local-api-controls {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(280px, 1fr);
+  gap: 14px 18px;
+  padding: 16px;
+  border: 1px solid #30383a;
+  border-radius: 10px;
+  background: #121719;
+}
+
+.local-api-controls > .button-row,
+.local-api-controls > .capability-note {
+  grid-column: 1 / -1;
+}
+
+.local-api-endpoint {
+  display: grid;
+  gap: 7px;
+  color: #aeb3af;
+  font-size: 11px;
+}
+
+.local-api-endpoint code,
+.pairing-code-panel code,
+.pairing-code-panel small,
+.client-list code {
+  overflow-wrap: anywhere;
+  color: #ddd8cf;
+  font-family: 'Cascadia Code', Consolas, monospace;
+}
+
+.local-api-endpoint code {
+  min-height: 42px;
+  padding: 12px;
+  border: 1px solid #343c3f;
+  border-radius: 9px;
+  background: #0e1315;
+}
+
+.pairing-panel,
+.client-panel {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid #30383a;
+  border-radius: 10px;
+  background: #121719;
+}
+
+.pairing-panel {
+  grid-template-columns: 1fr auto;
+  align-items: start;
+}
+
+.pairing-panel h4,
+.client-panel h4 {
+  margin: 0;
+  color: #dcd5cb;
+  font-size: 13px;
+}
+
+.pairing-code-panel {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid #604737;
+  border-radius: 9px;
+  background: #1e1916;
+}
+
+.pairing-code-panel > span {
+  color: #d8a783;
+  font-size: 11px;
+}
+
+.pairing-code-panel code {
+  font-size: 14px;
+}
+
+.pairing-code-panel small {
+  color: #888f8c;
+  font-size: 10px;
+}
+
+.client-list {
+  display: grid;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.client-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  padding: 13px;
+  border: 1px solid #2d3537;
+  border-radius: 9px;
+  background: #0f1416;
+}
+
+.client-list li > div:first-child {
+  display: grid;
+  gap: 6px;
+}
+
+.client-list strong {
+  color: #d6d0c7;
+  font-size: 12px;
+}
+
+.client-list code,
+.client-list span,
+.empty-note {
+  color: #77807e;
+  font-size: 10px;
+}
+
+.client-actions {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  justify-items: end;
+}
+
+.client-actions .check-row {
+  grid-column: auto;
 }
 
 .sr-only {
