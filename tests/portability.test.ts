@@ -20,14 +20,14 @@ describe('Issue 013 repository-volume portability', () => {
     );
   });
 
-  it('routes every test script through the portable Vitest launcher', () => {
+  it('routes every test script through a repository-controlled test runner', () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8')) as {
       readonly scripts: Readonly<Record<string, string>>;
     };
     for (const [name, command] of Object.entries(manifest.scripts)) {
       if (name === 'test' || name.startsWith('test:')) {
         expect(command, name).toMatch(
-          /run-portable-vitest\.mjs|run-electron-smoke\.mjs|run-packaged-smoke\.mjs/iu,
+          /run-portable-vitest\.mjs|run-electron-smoke\.mjs|run-packaged-smoke\.mjs|run-clipper-real-smoke\.mjs/iu,
         );
       }
     }
@@ -37,6 +37,7 @@ describe('Issue 013 repository-volume portability', () => {
     for (const file of [
       'scripts/package-desktop.mjs',
       'scripts/portable-temp.mjs',
+      'scripts/run-clipper-real-smoke.mjs',
       'scripts/run-electron-smoke.mjs',
       'scripts/run-packaged-smoke.mjs',
       'scripts/run-portable-vitest.mjs',

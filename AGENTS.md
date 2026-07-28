@@ -5,8 +5,8 @@
 ## 1. 项目定位与当前状态
 
 - 这是面向 Windows 10/11 的本地优先、单用户推理小说内容运营工作台。
-- M0（Issue 001—005）、M1（Issue 006—011）与 M2 Issue 012—016 已经完成。
-- 下一项规划是 Issue 017；不得在未收到明确任务时自动开始。
+- M0（Issue 001—005）、M1（Issue 006—011）与 M2 Issue 012—017 已经完成。
+- 下一项规划是 Issue 018；不得在未收到明确任务时自动开始。
 - 当前版本是开发中的本地基础设施，不是生产可用的内容运营成品。
 
 事实来源按优先级为：
@@ -55,7 +55,9 @@
 - 除非当前任务明确授权且安全凭据流程已经完成，否则不得调用真实模型、搜索、图片或业务
   API，不得产生费用。
 - Issue 013 只允许用户在设置页显式确认后执行有限能力探测；不得把 provider 接入启动、
-  保存设置、定时器、队列或内容工作流。`apps/clipper` 在 Issue 017 前保持无插件业务。
+  保存设置、定时器、队列或内容工作流。
+- `apps/clipper` 只允许 Issue 017 已冻结的用户点击式公开页面样本收藏；不得扩展为后台采集、
+  页面遍历、平台自动化或任意公网客户端。
 
 ## 5. 架构边界
 
@@ -72,7 +74,8 @@
 ## 6. SQLite 与数据规则
 
 - migration 只能按连续版本追加，已发布 migration 不得修改、重排、合并或删除。
-- 当前 migration v1—v9 已发布；历史 SHA-256 与 v8 搜索、v9 Fetch schema 均由测试冻结。
+- 当前 migration v1—v10 已发布；历史 SHA-256 与 v8 搜索、v9 Fetch、v10 Browser Clip
+  schema 均由测试冻结。
   任何不匹配都应视为阻塞，而不是更新预期值。
 - 迁移前备份、事务回滚、外键、STRICT 表和 Windows 路径行为必须保持。
 - 数据库只保存受控路径或相对路径；不得把任意外部绝对路径当作托管文件。
@@ -120,8 +123,11 @@ npm run test:capabilities
 npm run test:model-accounting
 npm run test:search
 npm run test:fetch
+npm run test:clipper
+npm run test:clipper-real
 npm run test:electron-smoke
 npm run package:desktop
+npm run package:clipper
 npm run audit:dependencies
 npm run test:packaged-smoke
 ```

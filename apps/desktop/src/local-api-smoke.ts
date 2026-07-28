@@ -198,7 +198,7 @@ export async function runEnabledLocalApiSmoke(
   assertSmoke(
     authenticated.status === 200 &&
       capabilities.status === 200 &&
-      capabilities.body.includes('"clipperBusinessRoutes":false') &&
+      capabilities.body.includes('"clipperBusinessRoutes":true') &&
       wrongOrigin.status === 401 &&
       !hasAcao(wrongOrigin),
   );

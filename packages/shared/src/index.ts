@@ -1,4 +1,5 @@
 export { DESKTOP_BRIDGE_KEY, DESKTOP_IPC_CHANNELS, FOUNDATION_CHECK_KEYS } from './desktop-api.js';
+export * from './browser-clip-contracts.js';
 
 export type {
   CancelLocalApiPairingRequest,
@@ -12,6 +13,7 @@ export type {
 
 export type {
   AppInfo,
+  BrowserClipView,
   CancelProviderCapabilityProbeInput,
   ClearCredentialInput,
   ConfirmModelCacheClearInput,
@@ -30,6 +32,7 @@ export type {
   FetchRunView,
   FetchStateView,
   GetProviderCapabilityProbeProgressInput,
+  GetBrowserClipInput,
   GetCredentialStatusInput,
   ModelAccountingRunView,
   ModelAccountingView,

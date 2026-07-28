@@ -125,6 +125,57 @@ describe('Host, remote address, Origin, and CORS policy', () => {
     expect(response.body).toBe('');
   });
 
+  it('accepts Chrome authenticated GETs that bind an omitted Origin in an exact header', async () => {
+    const context = await createLocalApiContext();
+    const paired = await pairOverHttp(context);
+    const response = await localApiRequest(context.port, {
+      authorization: `Bearer ${paired.token}`,
+      headers: {
+        'X-Rednote-Extension-Origin': paired.origin,
+      },
+      path: '/v1/status',
+    });
+    expect(response.status).toBe(200);
+    expect(JSON.parse(response.body)).toMatchObject({
+      clientStatus: 'ACTIVE',
+      serviceState: 'RUNNING',
+    });
+  });
+
+  it('allows the exact authenticated Chromium GET preflight header set', async () => {
+    const context = await createLocalApiContext();
+    const paired = await pairOverHttp(context);
+    const response = await localApiRequest(context.port, {
+      headers: {
+        'Access-Control-Request-Headers': 'authorization, x-rednote-extension-origin',
+        'Access-Control-Request-Method': 'GET',
+      },
+      method: 'OPTIONS',
+      origin: paired.origin,
+      path: '/v1/status',
+    });
+    expect(response.status).toBe(204);
+    expect(response.headers['access-control-allow-headers']).toBe(
+      'authorization,x-rednote-extension-origin',
+    );
+    expect(response.headers['access-control-allow-origin']).toBe(paired.origin);
+  });
+
+  it('rejects a claimed extension origin that disagrees with the browser Origin', async () => {
+    const context = await createLocalApiContext();
+    const paired = await pairOverHttp(context);
+    const response = await localApiRequest(context.port, {
+      authorization: `Bearer ${paired.token}`,
+      headers: {
+        'X-Rednote-Extension-Origin': randomExtensionOrigin(),
+      },
+      origin: paired.origin,
+      path: '/v1/status',
+    });
+    expect(response.status).toBe(403);
+    expect(response.headers['access-control-allow-origin']).toBeUndefined();
+  });
+
   it('allows a valid pairing preflight only while a pairing session is active', async () => {
     const context = await createLocalApiContext();
     const listenerId = context.server.listener?.listenerInstanceId;

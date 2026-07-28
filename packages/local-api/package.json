@@ -8,6 +8,9 @@
   "scripts": {
     "build": "tsc -b"
   },
+  "dependencies": {
+    "@mystery-operations/shared": "0.0.0"
+  },
   "engines": {
     "node": ">=22.16.0"
   }

@@ -4,6 +4,7 @@ dist/
 out/
 coverage/
 package-lock.json
+scripts/trigger-clipper-action.ps1
 
 # Frozen source documents are preserved verbatim.
 codex-master-development-instruction-v1.md

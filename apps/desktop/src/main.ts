@@ -77,6 +77,12 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
 });
+let screenshotReader:
+  | ((clipId: string) => Promise<{
+      readonly bytes: Uint8Array;
+      readonly mime: 'image/jpeg' | 'image/png';
+    } | null>)
+  | null = null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -112,6 +118,21 @@ function registerLocalRendererProtocol(rendererRoot: string): void {
     if (url.hostname !== 'app') {
       return new Response('Not found', { status: 404 });
     }
+    const screenshotMatch = /^\/clip-screenshot\/(clip-[0-9a-f-]{36})$/u.exec(url.pathname);
+    if (screenshotMatch !== null) {
+      if (url.search !== '' || url.hash !== '' || screenshotReader === null) {
+        return new Response('Not found', { status: 404 });
+      }
+      const screenshot = await screenshotReader(screenshotMatch[1] ?? '');
+      if (screenshot === null) return new Response('Not found', { status: 404 });
+      return new Response(Uint8Array.from(screenshot.bytes).buffer, {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Type': screenshot.mime,
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
 
     const decodedPath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
     const candidate = resolve(rendererRoot, `.${decodedPath}`);
@@ -138,9 +159,7 @@ function registerLocalRendererProtocol(rendererRoot: string): void {
 async function startApplication(): Promise<void> {
   const expectedRendererUrl = rendererUrl();
   const rendererRoot = join(app.getAppPath(), '.vite', 'renderer');
-  if (expectedRendererUrl === LOCAL_RENDERER_URL) {
-    registerLocalRendererProtocol(rendererRoot);
-  }
+  registerLocalRendererProtocol(rendererRoot);
 
   const sessionSecurityAudit = installSessionSecurity(session.defaultSession, expectedRendererUrl);
   const foundationHealth = runFoundationHealthCheck();
@@ -150,6 +169,7 @@ async function startApplication(): Promise<void> {
     electronVersion: process.versions.electron ?? 'unknown',
     nodeVersion: process.versions.node,
   });
+  screenshotReader = (clipId) => settingsRuntime.readBrowserClipScreenshot(clipId);
   let runtimeClosed = false;
   let shutdownStarted = false;
   const closeRuntime = async (): Promise<void> => {
@@ -157,6 +177,7 @@ async function startApplication(): Promise<void> {
       return;
     }
     await settingsRuntime.close();
+    screenshotReader = null;
     runtimeClosed = true;
   };
   app.on('before-quit', (event) => {

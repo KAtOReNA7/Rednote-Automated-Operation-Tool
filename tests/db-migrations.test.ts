@@ -142,6 +142,25 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'screenshot_path',
       'tags_json',
       'created_at',
+      'normalized_url',
+      'url_hash',
+      'capture_id',
+      'local_api_client_id',
+      'extension_origin',
+      'capture_source',
+      'browser_family',
+      'contract_version',
+      'extension_build_version',
+      'public_page_confirmed',
+      'selected_text_hash',
+      'screenshot_mime',
+      'screenshot_hash',
+      'screenshot_bytes',
+      'screenshot_width',
+      'screenshot_height',
+      'status',
+      'revision',
+      'updated_at',
     ],
     content_briefs: [
       'id',
@@ -393,14 +412,17 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
         backupPath: null,
         databasePath,
-        schemaVersion: 9,
+        schemaVersion: 10,
       });
       expect(tables).toEqual(
         [
           ...BUSINESS_TABLE_NAMES,
+          'clip_ingest_rate_states',
+          'clip_ingest_receipts',
+          'clip_search_candidate_links',
           'local_api_clients',
           'local_api_settings',
           'model_budget_reservations',
@@ -480,9 +502,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 9,
+        schemaVersion: 10,
       });
-      expect(row.count).toBe(9);
+      expect(row.count).toBe(10);
     } finally {
       database.close();
     }

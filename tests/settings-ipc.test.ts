@@ -76,6 +76,9 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getCredentialStatus: [{ slot: 'CONTENT_AI_API_KEY' }],
   getFoundationHealth: [],
   getFetchState: [],
+  getBrowserClip: [
+    { clipId: `clip-${'a'.repeat(8)}-${'b'.repeat(4)}-4ccc-8ddd-${'e'.repeat(12)}` },
+  ],
   getModelAccounting: [],
   getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
   getProviderCapabilityState: [],
@@ -86,6 +89,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getSetupState: [],
   getWindowState: [],
   listLocalApiClients: [],
+  listBrowserClips: [],
   cancelLocalApiPairing: [{ pairingSessionId: 'pairing-session-000011' }],
   revokeLocalApiClient: [
     {

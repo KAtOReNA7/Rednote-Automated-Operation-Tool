@@ -1,0 +1,904 @@
+M2 Issue 017：Chrome / Edge 浏览器收藏插件——精简增量开发指令
+=============================================================
+
+本文件是 Issue 017 的唯一增量指令；如存在其他 Issue 017 草稿，以本文件为准。
+
+完整遵守根级及作用域内 `AGENTS.md`；本指令仅定义当前 Issue 的增量规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；扩展权限、token、Local API、截图、幂等和 migration 使用 XHigh
+目标提交信息：feat(clipper): add Chrome and Edge sample capture
+
+
+一、授权目标
+------------
+
+只实现 Roadmap Issue 017：
+
+- 在 `apps/clipper` 实现 Manifest V3 浏览器收藏插件；
+- 同一代码基线构建可侧载的 Chrome 与 Microsoft Edge 包；
+- 只在用户明确点击插件后读取当前页面 URL、标题和选中文本；
+- 由用户填写账号名称、发布时间、备注、可见互动数据和内容类型；
+- 用户可选择截取当前可见区域，默认不截图；
+- 复用 Issue 011 的 `127.0.0.1` Local API 配对与 Bearer token；
+- 新增经过认证、限流和幂等保护的 BrowserClip 写入路由；
+- 保存 Clip 和可选截图，并在桌面应用查看；
+- 激活 Issue 015 的 `BrowserClipAdapter` 为被动本地来源；
+- 增加 migration v10、专项测试、Chrome/Edge 实机侧载 smoke、文档和 110 项增量验收映射。
+
+完成后停止，不进入 Issue 018。
+
+
+二、Issue 特有语义基线
+---------------------
+
+编码前以当前仓库事实确认：
+
+- Issue 011 Local API 默认关闭、固定 `127.0.0.1`、配对、token digest、origin 绑定、
+  client 撤销和限流完整；
+- Issue 015 的 BrowserClip 合同存在，但产品 readiness 仍为 `PENDING_LATER_ISSUE`；
+- Issue 016 Fetch 不接受裸 URL、没有 producer，候选与文档状态均保持未验证；
+- `clips` 业务表与 `CLIP_SCREENSHOT` 内容寻址目录已存在；
+- `apps/clipper` 尚无真实插件业务；
+- 当前 Local API 业务路由中尚无 BrowserClip 写入；
+- Chrome/Edge 使用的扩展 origin 均为
+  `chrome-extension://<32 位 a—p 小写 extension id>`，继续复用现有 origin 合同。
+
+不得修改 Issue 011 的 token 语义、Issue 015 候选冻结状态或 Issue 016 Fetch 边界。
+
+
+三、本 Issue 明确不做
+--------------------
+
+- 不发布到 Chrome Web Store 或 Microsoft Edge Add-ons；
+- 不申请商店账号、签名、自动更新或企业安装策略；
+- 不修改注册表、浏览器策略或要求管理员权限；
+- 不使用 Manifest V2；
+- 不申请 `<all_urls>`、`tabs`、`cookies`、`history`、`webRequest`、
+  `declarativeNetRequest`、`downloads`、`nativeMessaging`、`clipboardRead`、
+  `unlimitedStorage`；
+- 不声明持久 content script，不在页面打开时自动注入；
+- 不读取整页 HTML、隐藏 DOM、表单值、Cookie、localStorage、sessionStorage 或页面脚本变量；
+- 不抓取评论列表、账号主页、下一页、站内链接或后台接口；
+- 不自动滚动、拼接长截图、批量收藏或后台持续采集；
+- 不自动识别或抓取互动数据；可见指标只由用户手动填写；
+- 不自动提交登录、验证码、付费墙或访问控制页面；
+- 不调用 Issue 016 Fetch，不自动创建 Fetch Job；
+- 不进入书目发现、作品去重、Source、Claim、事实或研究档案；
+- 不实现编辑、删除、批量导入、OCR、图片处理或样本分析；
+- 不读取真实用户页面作为测试 fixture。
+
+
+四、正式技术基线
+----------------
+
+实施时重新核对官方文档，不把当前浏览器版本或扩展 ID写死为跨电脑门禁：
+
+- Manifest V3：
+  https://developer.chrome.com/docs/extensions/reference/manifest
+- `activeTab`：
+  https://developer.chrome.com/docs/extensions/develop/concepts/activeTab
+- `chrome.scripting`：
+  https://developer.chrome.com/docs/extensions/reference/api/scripting
+- MV3 Service Worker 生命周期：
+  https://developer.chrome.com/docs/extensions/develop/concepts/service-workers/lifecycle
+- `chrome.storage` 与 `setAccessLevel`：
+  https://developer.chrome.com/docs/extensions/reference/api/storage
+- 跨源请求：
+  https://developer.chrome.com/docs/extensions/develop/concepts/network-requests
+- `captureVisibleTab`：
+  https://developer.chrome.com/docs/extensions/reference/api/tabs
+- Microsoft Edge 兼容：
+  https://learn.microsoft.com/en-us/microsoft-edge/extensions/developer-guide/port-chrome-extension
+
+文档示例不是本项目安全边界；权限、消息和 payload 仍以本指令及现有合同为准。
+
+
+五、Manifest V3 与最小权限
+-------------------------
+
+插件使用事件驱动 MV3 Service Worker，不依赖长期存活或全局变量。
+
+允许的 manifest 权限仅为：
+
+- `activeTab`
+- `scripting`
+- `storage`
+
+允许的 host permission 仅为：
+
+- `http://127.0.0.1/*`
+
+其用途只是在 Service Worker 中访问用户配置的 Local API 端口。
+
+Manifest 必须：
+
+- `manifest_version = 3`；
+- `incognito = not_allowed`；
+- 不包含 `<all_urls>`；
+- 不包含 `content_scripts`；
+- 不包含 `externally_connectable`；
+- 不包含 `web_accessible_resources`，除非实际构建工具强制；如确需则必须空能力且 ADR 解释；
+- 不包含 `update_url`、固定 `key`、远程 script、CDN、Wasm 或 eval；
+- extension CSP 仅允许本包脚本，禁止 object、frame 和远程代码；
+- 不将 source map、测试 fixture、`.env`、token 或内部文档打入发行目录。
+
+若实现所需 API 在目标浏览器版本中不存在，真实显示不支持并停止；不得扩大权限补救。
+
+
+六、上下文与消息隔离
+--------------------
+
+只有三类运行上下文：
+
+1. action popup：表单和用户明确操作；
+2. MV3 Service Worker：token、Local API、截图和编排；
+3. 一次性 `chrome.scripting.executeScript`：读取当前主框架的有限页面信息。
+
+注入规则：
+
+- 只在用户点击插件 action 后；
+- 只注入当前 active tab 的 top frame；
+- 使用 `ISOLATED` world；
+- 只返回 exact-object 的 URL、标题、选中文本、document identity 和采集时间；
+- 不注入 allFrames；
+- 不注册持久脚本；
+- 不读 iframe；
+- 不修改页面 DOM/CSS；
+- 不建立 `window.postMessage` bridge；
+- 不监听页面事件；
+- 不调用 `chrome.storage`、Local API 或 token。
+
+插件不声明 external messaging listener。popup 与 Service Worker 消息必须验证：
+
+- `sender.id === chrome.runtime.id`；
+- sender URL 属于当前扩展 origin；
+- 固定 message kind allowlist；
+- exact-object、长度、深度和枚举；
+- 不接受函数、prototype pollution key 或任意 command。
+
+页面脚本、网页 DOM 和一次性注入函数永远不能获得 endpoint、port、pairing code、token、
+Authorization、clientId 或 Local API 响应。
+
+
+七、页面与导航绑定
+------------------
+
+只允许当前已提交的主框架 HTTP/HTTPS 页面。
+
+明确拒绝：
+
+- `chrome:`、`edge:`、`about:`、`file:`、`data:`、`blob:`、`view-source:`；
+- 其他扩展页面；
+- 浏览器设置、下载、密码、开发者工具和新标签页；
+- URL 中的 userinfo、控制字符或凭据型 query；
+- incognito tab；
+- 正在加载、discarded 或没有稳定 tab/document identity 的页面。
+
+一次收藏必须绑定：
+
+- tabId/windowId，仅驻内存；
+- documentId；
+- committed URL 与 URL hash；
+- page title hash；
+- capture startedAt；
+- activeTab user gesture。
+
+读取信息、生成截图和提交前分别重新确认 tab、document 和 URL 未变化。任一变化立即丢弃
+内存截图和表单提交，返回 `CLIPPER_TAB_CHANGED`。
+
+tabId、windowId 和 documentId 不写 SQLite、截图、日志、诊断或 Local API payload。
+
+
+八、用户采集流程
+----------------
+
+action popup 的顺序固定：
+
+1. 显示当前连接状态；
+2. 未配对时显示配对表单；
+3. 已配对时读取当前 HTTP/HTTPS 页面；
+4. 显示 host、标题和选中文本预览；
+5. 用户填写或确认字段；
+6. 用户可明确生成可见区域截图并预览/移除；
+7. 用户勾选“这是我主动选择保存的公开页面样本”；
+8. 用户点击“保存样本”；
+9. Service Worker 重新校验页面绑定；
+10. 经过认证的 Local API 写入；
+11. 只显示成功 ID 或有限错误；
+12. 清除 popup 与 Service Worker 中的正文、备注、截图和 pairing code。
+
+字段：
+
+- 页面 URL：自动、只读；
+- 页面标题：自动、允许用户修正后保存；
+- 账号名称：用户填写，可空；
+- 发布时间：用户填写，可空；
+- 选中文本：自动读取，可空，不以整页正文兜底；
+- 用户备注：用户填写，可空；
+- 平台：用户选择有限枚举；
+- 可见指标：用户手填有限字段；
+- 内容类型标签：用户选择有限枚举；
+- 截图：可选，默认关闭。
+
+可见指标至少支持：
+
+- views
+- likes
+- favorites
+- comments
+- shares
+
+每项为可空、非负、安全整数。缺失必须为 `NULL`/省略，不能填成 0。
+
+插件不得根据 DOM 自动识别账号、发布时间、平台、指标或标签；host 最多作为可见提示，
+最终值由用户确认。
+
+
+九、截图边界
+------------
+
+截图只通过用户点击“截取当前可见区域”触发：
+
+- 使用 `chrome.tabs.captureVisibleTab`；
+- 只截当前 viewport；
+- 不滚动、不拼接、不截全页；
+- 页面 scheme 已通过第七节校验后才调用；
+- 截图生成后立即再次检查 document/URL binding；
+- popup 显示缩略预览并允许移除；
+- 不写 `chrome.storage`、IndexedDB、Cache Storage 或临时磁盘；
+- 未保存、失败、取消或 popup 关闭时从内存释放。
+
+只接受浏览器生成的 PNG 或 JPEG：
+
+- data URL prefix 精确；
+- base64 canonical；
+- magic bytes、MIME、尺寸、像素数、解码字节和 hash 由桌面端重新验证；
+- 发行版不引入 EXIF、OCR、裁剪、滤镜、压缩重编码或缩略图业务；
+- 截图只写 `CLIP_SCREENSHOT` 内容寻址目录；
+- SQLite 只保存 ManagedRelativePath 和有限图片元数据。
+
+截图默认关闭。不得因截图未提供而阻止保存其他字段。
+
+
+十、配对、token 与浏览器存储
+---------------------------
+
+复用 Issue 011：
+
+`POST /v1/pairings/exchange`
+
+插件配对时：
+
+- 用户手动输入/粘贴精确的 `http://127.0.0.1:<port>` endpoint 与 pairing code；
+- 不接受 localhost、IPv6、host name、HTTPS、path、query 或 fragment；
+- 不扫描端口；
+- Service Worker 用 `crypto.getRandomValues` 生成 32-byte token；
+- extension origin 从 `chrome.runtime.getURL('')` 派生，不由用户输入；
+- Origin header 由浏览器产生，代码不得伪造；
+- 只把 token 发送给当前显式 endpoint；
+- pairing 响应成功后才进入 PAIRED。
+
+长期 token 只保存到 `chrome.storage.local`：
+
+- 保存前必须把 access level 设为 `TRUSTED_CONTEXTS`；
+- 浏览器不支持 `setAccessLevel` 时拒绝配对；
+- 不使用 `storage.sync`；
+- 不使用 Web Storage；
+- popup 和一次性注入脚本不能读取 token；
+- popup 状态 DTO 只含 `paired/reauthRequired/endpoint/clientLabel`；
+- token 不进入 DOM、message payload、错误、日志、截图、测试快照或 source map。
+
+配对采用可恢复的 pending 状态：
+
+- 交换前先保存 pending token 与 pairing attempt ID；
+- 成功响应后原子提升为 active；
+- Service Worker 中途停止后，可用 pending token 调用 authenticated status 判定是否已成功；
+- 不重新提交 pairing exchange；
+- 确认失败后清除 pending；
+- 同 origin 重新配对完成后替换旧 token；
+- 收到统一 401 时清除 active token 并进入 `REAUTH_REQUIRED`。
+
+Service Worker 不依赖全局变量保存任何必须恢复的状态。
+
+
+十一、BrowserClip V1 合同
+------------------------
+
+新增严格版本化：
+
+- `BrowserClipCreateV1`
+- `BrowserClipScreenshotV1`
+- `BrowserClipReceiptV1`
+- `BrowserClipResponseV1`
+- `BrowserClipStableErrorV1`
+
+`BrowserClipCreateV1` 至少包含：
+
+- contractVersion；
+- captureId，随机 UUID；
+- capturedAt；
+- extensionBuildVersion；
+- browserFamily：`CHROME / EDGE / CHROMIUM_UNKNOWN`；
+- pageUrl；
+- pageTitle；
+- platform；
+- accountName，可空；
+- publishedAt，可空；
+- selectedText，可空；
+- userNote，可空；
+- visibleMetrics；
+- contentTags；
+- publicPageConfirmed=true；
+- screenshot，可空。
+
+不得包含：
+
+- tab/window/document ID；
+- HTML/DOM；
+- hidden text；
+- Cookie/storage；
+- request/response header；
+- page script data；
+- token、pairing code、Authorization；
+- 任意文件路径；
+- 模型、Fetch、Source 或 Claim 字段。
+
+建议硬上限：
+
+- URL 4,096 UTF-8 字节；
+- title 512 字符；
+- account 200 字符；
+- selectedText 12,000 字符；
+- note 2,000 字符；
+- tags 最多 10 个、每项 64 字符；
+- metrics 只允许固定字段；
+- screenshot 解码后最大 6 MiB；
+- screenshot 最大 20,000,000 pixels；
+- 整个 route body 上限按 base64 膨胀显式计算并固定。
+
+所有文本 NFC、去 NUL/控制字符；selectedText/note 保留用户原文，不做摘要、翻译或事实判断。
+
+
+十二、Local API v1 增量
+----------------------
+
+只新增：
+
+- `OPTIONS /v1/browser-clips`
+- `POST /v1/browser-clips`
+- `OPTIONS /v1/browser-clips/receipts/<captureId>`
+- `GET /v1/browser-clips/receipts/<captureId>`
+
+不得新增 clip 列表、文件下载、任意查询、删除、编辑、Fetch、Search、Book、Source、Claim、
+模型或平台路由。
+
+所有 route 继续要求：
+
+- remote address/Host 精确为既有 `127.0.0.1:<actualPort>`；
+- 合法 `chrome-extension://` Origin；
+- Origin 与 active client 精确绑定；
+- Bearer token digest 认证；
+- CORS 只回显已验证 origin；
+- exact method、path 和 content type；
+- 不接受 query string；
+- 有界 header、body、timeout、并发和每 client rate；
+- stable error，不泄漏认证差异。
+
+`POST`：
+
+- 只接受 `application/json; charset=utf-8`；
+- route-specific body 上限，不改变其他 route 的 8 KiB 上限；
+- 按流计数，不信任 Content-Length；
+- 截图 base64 在落库前完整验证；
+- 同 client/origin 同时最多一个 ingest；
+- 不使用压缩、multipart 或 chunk upload。
+
+`GET receipt`：
+
+- 只读取同 extension origin 创建的 captureId；
+- 只返回 `UNKNOWN / IN_PROGRESS / SUCCEEDED / FAILED`、clipId、candidateId 和有限时间；
+- 不返回正文、备注、截图、路径或错误细节；
+- 仅用于 after-send 结果确认，不触发写入或重试。
+
+`GET /v1/capabilities` 必须真实更新：
+
+- `clipperBusinessRoutes=true`
+- BrowserClip contract version；
+- body/screenshot/text/metric/tag 限制；
+- receipt lookup 支持；
+- origin scheme 仍为 `chrome-extension`。
+
+
+十三、幂等、限流与失败语义
+------------------------
+
+captureId 由 Service Worker 每次用户点击保存时生成。
+
+数据库唯一键使用：
+
+`extension_origin + captureId`
+
+语义：
+
+- 同 captureId + 同 canonical payload hash：返回既有 receipt/clip；
+- 同 captureId + 不同 payload hash：`CLIPPER_CAPTURE_CONFLICT`；
+- 成功响应丢失时，插件只查询 receipt，不重发；
+- 可证明 before-send 失败时，用户可再次点击，继续使用同 captureId；
+- after-send 仍无法确认时显示 `SAVE_STATUS_UNKNOWN`，提示用户在桌面应用查看；
+- 不建立后台 outbox、不定时重试、不轮询；
+- popup 关闭后不持久化未发送正文或截图。
+
+每 client 必须有：
+
+- 每分钟 clip 数量上限；
+- 每日 clip 数量上限；
+- 同时 ingest 上限；
+- 每日截图字节上限；
+- 失败请求上限；
+- 有限 Retry-After。
+
+限流状态可持久化或复用现有安全实现，但重启不能把已提交 capture 变成可重复写入。
+
+
+十四、截图文件与事务
+--------------------
+
+桌面端对 screenshot：
+
+1. 严格解码 base64；
+2. 校验 magic/MIME/尺寸/像素/字节；
+3. 计算 SHA-256；
+4. 通过 `CLIP_SCREENSHOT` 不可变发布；
+5. 在同一数据库事务中写 clip、receipt、SearchCandidate link；
+6. 成功后返回有限 response。
+
+文件先发布、数据库后关联。DB 失败时留下可检测 orphan，不删除可能共享的内容寻址文件。
+
+无 screenshot 时不得创建空文件或伪路径。
+
+截图字节不得进入 SQLite、WAL、SHM、日志、audit、diagnostic、IPC DTO 或 SearchCandidate。
+
+
+十五、migration v10 与 Clip 数据
+-------------------------------
+
+只追加当前连续 migration，建议名称：
+
+`browser_clipper_samples`
+
+在不丢失既有 clip 行的前提下，补足 `clips` 的 V1 语义，至少包括：
+
+- normalized URL 与 URL hash；
+- captureId；
+- active local API client 关联；
+- capture source；
+- browser family；
+- contract/build version；
+- public-page confirmation；
+- selected-text hash；
+- screenshot MIME/hash/bytes/width/height；
+- status、revision、updatedAt。
+
+新增 STRICT 表：
+
+- `clip_ingest_receipts`
+- `clip_search_candidate_links`
+
+关键约束：
+
+- extension origin + captureId 唯一；
+- payload hash 不可变；
+- receipt 与 clip/candidate 关系完整；
+- screenshot path 只能属于 `sources/screenshots/`；
+- screenshot metadata 与可空 path 自洽；
+- metrics 只允许有限 nullable nonnegative integer；
+- tags 只允许有限枚举与数量；
+- selected text/note/title/account 有界；
+- URL、origin、client、status、createdAt 有索引；
+- token、digest、pairing code、Authorization、tab/document ID、HTML 不落业务表。
+
+不新增 migration v11，不修改历史 migration。
+
+
+十六、BrowserClipAdapter 激活
+----------------------------
+
+成功 ingest 必须在同一数据库事务中：
+
+1. 保存 Clip；
+2. 通过 Issue 015 BrowserClipAdapter 生成本地 SearchBatch/Candidate；
+3. 保存 SearchRun 与 SearchCandidate；
+4. 建立 `clip_search_candidate_links`；
+5. 完成 receipt。
+
+BrowserClipAdapter 运行时从 `PENDING_LATER_ISSUE` 变为：
+
+- mode=`PASSIVE_LOCAL`
+- readiness=`READY`
+- externalRequestCount=0
+- accounting=`NOT_INCURRED`
+- userSupplied=true
+- sourceMetadataKind=`BROWSER_CLIP_INPUT`
+
+Candidate 只复制 URL、有限标题和 provenance，不复制 selectedText、note、metrics 或 screenshot。
+
+Candidate 继续固定：
+
+- `LEAD_ONLY`
+- `NOT_FETCHED`
+- `UNVERIFIED`
+- `NOT_A_FACT`
+
+BrowserClipAdapter READY 只能使总体状态成为 `PASSIVE_ONLY` 或相应真实状态，不能伪装成
+`ACTIVE_SEARCH_READY`。
+
+不得自动创建 `FETCH_PUBLIC_PAGE_V1` Job。
+
+
+十七、桌面样本查看
+------------------
+
+在现有“资料研究”或最合适的既有入口增加“收藏样本”视图，不新增无关导航。
+
+列表显示：
+
+- page title；
+- display host；
+- platform；
+- account name；
+- publishedAt；
+- capturedAt；
+- tags；
+- screenshot 是否存在；
+- linked candidate 状态。
+
+详情显示：
+
+- 完整规范 URL，作为纯文本；
+- selected text；
+- user note；
+- visible metrics；
+- screenshot；
+- 来源 client label 与 capture time；
+- linked candidate ID/四项冻结状态。
+
+所有文本使用 React text rendering，禁止 `dangerouslySetInnerHTML`。
+
+截图通过 main 控制的同源/自定义安全 protocol 按 clipId 读取：
+
+- renderer 不接收 ManagedRelativePath 或绝对路径；
+- clipId 必须存在且有权限；
+- main 再次校验 path category、hash、MIME 和 magic；
+- 不接受任意 path/query/traversal；
+- response 设置 nosniff 与 no-store；
+- 不允许目录列举或其他文件类型。
+
+不得添加外部导航、网页加载、编辑、删除、分析、OCR 或批量操作。
+
+
+十八、插件 UI 状态
+------------------
+
+有限状态至少包括：
+
+- `UNPAIRED`
+- `PAIRING`
+- `PAIRED`
+- `REAUTH_REQUIRED`
+- `APP_DISABLED`
+- `APP_OFFLINE`
+- `APP_PORT_MISMATCH`
+- `PAGE_UNSUPPORTED`
+- `PAGE_READY`
+- `CAPTURING`
+- `READY_TO_SAVE`
+- `SAVING`
+- `SAVE_SUCCEEDED`
+- `SAVE_FAILED`
+- `SAVE_STATUS_UNKNOWN`
+
+桌面应用未启动、本地 API 未启用、端口错误、token 撤销、page 不支持和 payload 超限必须给出
+不同且可行动的中文提示。
+
+不得自动扫描端口、自动启动应用、自动重配对或隐藏失败。
+
+popup 必须支持键盘操作、可见 focus、loading/empty/error 状态和截图移除。
+
+
+十九、稳定错误
+--------------
+
+至少定义并测试：
+
+- `CLIPPER_INVALID_MESSAGE`
+- `CLIPPER_UNSUPPORTED_BROWSER`
+- `CLIPPER_STORAGE_UNTRUSTED`
+- `CLIPPER_ENDPOINT_INVALID`
+- `CLIPPER_UNPAIRED`
+- `CLIPPER_REAUTH_REQUIRED`
+- `CLIPPER_APP_OFFLINE`
+- `CLIPPER_PAGE_UNSUPPORTED`
+- `CLIPPER_PAGE_NOT_READY`
+- `CLIPPER_TAB_CHANGED`
+- `CLIPPER_SELECTION_TOO_LARGE`
+- `CLIPPER_NOTE_TOO_LARGE`
+- `CLIPPER_METRICS_INVALID`
+- `CLIPPER_TAGS_INVALID`
+- `CLIPPER_SCREENSHOT_UNAVAILABLE`
+- `CLIPPER_SCREENSHOT_INVALID`
+- `CLIPPER_SCREENSHOT_TOO_LARGE`
+- `CLIPPER_PAYLOAD_TOO_LARGE`
+- `CLIPPER_RATE_LIMITED`
+- `CLIPPER_CAPTURE_CONFLICT`
+- `CLIPPER_RECEIPT_UNKNOWN`
+- `CLIPPER_SAVE_STATUS_UNKNOWN`
+- `CLIPPER_STORAGE_FAILED`
+- `CLIPPER_INTERNAL`
+
+错误不得包含 token、pairing code、Authorization、selected text、note、screenshot、完整 URL query、
+extension storage 内容、内部路径、SQL 或 stack。
+
+
+二十、构建与 Chrome / Edge 验收
+------------------------------
+
+新增：
+
+- `npm run build:clipper`
+- `npm run package:clipper`
+- `npm run test:clipper`
+- 必要的 Chrome/Edge side-load smoke 命令。
+
+构建输出使用仓库相对目录，至少提供：
+
+- Chrome unpacked directory；
+- Edge unpacked directory；
+- 可复现 ZIP，各自不含 token、fixture、source map 或机器路径。
+
+Chrome 与 Edge 共用业务源码；只有确有必要的 manifest/branding 差异可分开，并在 ADR 说明。
+不得通过复制两套业务实现制造漂移。
+
+实机 smoke 必须：
+
+- 动态发现当前机器安装的 Chrome 和 Edge；
+- 使用各自隔离、受控、可清理的临时 profile；
+- 通过官方支持的 unpacked-extension 开发流程侧载；
+- 不写注册表、浏览器策略或正式用户 profile；
+- 打开本机合成 fixture 页面；
+- 完成一次配对；
+- 读取选中文本；
+- 填写 nullable metrics；
+- 可选截图；
+- 保存到临时 ProjectDataRoot；
+- 验证 Clip、截图和 BrowserClip Candidate；
+- 验证未启动桌面应用时的清晰提示；
+- 清理 profile、进程、listener 和临时数据。
+
+如任一浏览器未安装、当前版本不支持必要 API、或无法完成真实侧载 smoke，停止并报告，
+不得用 Chromium mock 冒充 Chrome/Edge PASS。
+
+浏览器本身可能有厂商后台流量；验收必须单独证明“插件业务请求”只到配置的
+`127.0.0.1:<port>`，不得把未观测的整个浏览器进程误报为零外连。
+
+
+二十一、Issue 特有测试与文档
+---------------------------
+
+`test:clipper` 至少覆盖：
+
+- manifest permission/CSP/static package；
+- popup/Service Worker 状态机；
+- MV3 worker 重启与 storage 恢复；
+- storage access level；
+- pairing pending/active/rotation/401；
+- endpoint 与 origin；
+- internal message validation；
+- activeTab/top-frame/isolated-world；
+- unsupported scheme/incognito/navigation race；
+- selected text/title/manual fields；
+- nullable metrics/tags；
+- screenshot consent/magic/dimensions/size；
+- Local API CORS/auth/body/rate；
+- capture idempotency/receipt/conflict；
+- migration v10；
+- screenshot store/orphan；
+- BrowserClipAdapter/SearchCandidate；
+- desktop list/detail/secure image protocol；
+- token/content/screenshot egress；
+- Chrome 和 Edge build/smoke；
+- Windows 中文、空格、emoji、长路径；
+- source/packaged Electron smoke 回归。
+
+至少建立 90 项 clipper egress 矩阵，覆盖：
+
+- token/pairing code；
+- selected text/note；
+- screenshot bytes；
+- URL/query；
+- extension origin/client identity；
+- DB/WAL/SHM；
+- logs/audit/diagnostic；
+- Job/cache/model ledger；
+- renderer/IPC/custom protocol；
+- package/source map/Git；
+- 错误与浏览器控制台。
+
+新增：
+
+- `docs/adr/0013-browser-clipper-and-local-ingest.md`
+- `docs/contracts/browser-clip-v1.md`
+- `docs/contracts/browser-clip-local-api-v1.md`
+- `docs/m2-issue017-implementation-plan.md`
+- `docs/m2-issue017-acceptance-map.md`
+- `docs/m2-issue017-egress-matrix.md`
+- Chrome/Edge unpacked 安装与配对说明。
+
+如 ADR 编号已占用，按仓库实际顺延。同步 README、AGENTS 和 Local API v1 合同中的当前事实。
+
+
+二十二、110 项增量验收矩阵
+-------------------------
+
+1. 只实现 Issue 017。
+2. Issue 011/015/016 能力由当前代码确认。
+3. 未修改历史 migration。
+4. 未进入 Issue 018。
+5. Chrome 与 Edge 使用同一业务源码。
+6. manifest_version 固定 3。
+7. 仅申请 activeTab/scripting/storage。
+8. host permission 仅 127.0.0.1 HTTP。
+9. 没有 `<all_urls>` 或 `tabs` 权限。
+10. 没有 cookies/history/webRequest/nativeMessaging 等扩权。
+11. incognito 明确禁用。
+12. 没有 declarative persistent content script。
+13. 没有 externally_connectable。
+14. 没有远程代码、CDN、eval 或 update_url。
+15. package 不含 source map/fixture/secret。
+16. Service Worker 事件驱动且可重启恢复。
+17. 必要状态不依赖全局变量。
+18. 注入只由用户 action gesture 触发。
+19. 只注入 top frame。
+20. 注入使用 ISOLATED world。
+21. 不读 iframe/hidden DOM/form/storage/cookie。
+22. 不修改页面或建立 postMessage bridge。
+23. internal messages 校验 sender 与 exact kind。
+24. 页面上下文永远拿不到 endpoint/token。
+25. 只允许 committed HTTP/HTTPS 页面。
+26. browser/file/data/blob/extension scheme 被拒绝。
+27. incognito/discarded/loading page 被拒绝。
+28. 凭据型 URL query 被拒绝。
+29. tab/document/URL 三次绑定校验。
+30. 导航 race 清除截图并失败。
+31. tab/window/document ID 不持久化。
+32. popup 明确显示连接与页面状态。
+33. 页面 URL 只读。
+34. selected text 可空且不以整页兜底。
+35. account/publishedAt 由用户填写。
+36. metrics 只由用户手填。
+37. metrics 缺失保持 NULL。
+38. tags/platform 使用有限枚举。
+39. public-page confirmation 默认未勾选。
+40. 保存必须由用户明确点击。
+41. screenshot 默认关闭。
+42. screenshot 仅用户点击生成。
+43. screenshot 只含当前 viewport。
+44. 不滚动、不拼接、不截全页。
+45. browser internal page 截图被拒绝。
+46. screenshot 不写 extension storage。
+47. screenshot PNG/JPEG magic/MIME 正确。
+48. screenshot bytes/dimensions/pixels 有界。
+49. 无 screenshot 时不创建空路径。
+50. 取消/失败/关闭 popup 后截图从内存清除。
+51. endpoint 只接受精确 127.0.0.1 端口。
+52. 插件不扫描端口。
+53. token 由 Service Worker CSPRNG 生成。
+54. extension origin 不由用户输入。
+55. Origin header 不由代码伪造。
+56. token 只保存 storage.local。
+57. storage.local access level 为 TRUSTED_CONTEXTS。
+58. 不支持 setAccessLevel 时拒绝配对。
+59. token 不进入 popup/DOM/message/content script。
+60. pairing code 使用后及时清除。
+61. pending pairing 可从 worker 终止恢复。
+62. pairing exchange 不因恢复重复提交。
+63. 同 origin 重配对安全轮换。
+64. 401 清 token 并进入 REAUTH_REQUIRED。
+65. BrowserClip V1 显式版本化。
+66. BrowserClip payload exact-object 且有界。
+67. payload 不含 HTML/DOM/header/cookie/path。
+68. URL/title/text/note/tags/metrics 限制正确。
+69. 新 Local API route 只有四条。
+70. route 继续要求 Host/Origin/Bearer 三重边界。
+71. CORS 不使用 wildcard/credentials。
+72. clip route 的大 body 上限不影响既有 route。
+73. body 按流计数且不信任 Content-Length。
+74. screenshot base64 在 DB 前验证。
+75. receipt lookup 只读且不返回内容。
+76. capabilities 真实标记 clipper route ready。
+77. origin + captureId 唯一。
+78. 同 payload replay 返回既有结果。
+79. 不同 payload 同 captureId 冲突。
+80. after-send 只查 receipt、不重发。
+81. 没有后台 outbox/轮询/自动 retry。
+82. per-client 数量/并发/截图字节有限速。
+83. screenshot 只进入 CLIP_SCREENSHOT。
+84. screenshot bytes 不进入 SQLite/WAL/IPC。
+85. DB 失败 orphan 可检测。
+86. migration v10 保留既有 clip。
+87. clips 新字段和 CHECK/索引完整。
+88. receipt/link 表均 STRICT。
+89. token/tab ID/HTML 不落业务表。
+90. BrowserClipAdapter 变为 READY/PASSIVE_LOCAL。
+91. BrowserClip externalRequestCount=0。
+92. BrowserClip 不创建 model run/cost。
+93. Candidate 只复制 URL/标题/provenance。
+94. selectedText/note/metrics/screenshot 不进 Candidate。
+95. Candidate 四项状态继续冻结。
+96. BrowserClip 不能证明 ACTIVE_SEARCH_READY。
+97. ingest 不自动创建 Fetch Job。
+98. 桌面列表可查看保存样本。
+99. 桌面详情安全显示文本/metrics/screenshot。
+100. React 不使用 dangerouslySetInnerHTML。
+101. screenshot protocol 只按 clipId 读取受控图片。
+102. renderer 不接收文件路径或任意 file URL。
+103. 应用离线提示清晰且不伪装成功。
+104. popup 键盘/focus/loading/error 完整。
+105. Chrome unpacked 实机 smoke 通过。
+106. Edge unpacked 实机 smoke 通过。
+107. 两个 smoke 均完成配对、保存与桌面查看。
+108. `test:clipper` 纳入全量和 Windows CI。
+109. 90 项 egress、恶意 fixture 和既有 smoke 全部通过。
+110. 创建唯一一个本地提交并停止。
+
+
+二十三、实施顺序
+---------------
+
+1. 按 AGENTS.md 建立动态基线，创建实施计划和 110 项验收草案。
+2. 核对当前 Chrome/Edge 官方 API 与现有 Local API v1。
+3. 冻结 BrowserClip V1、权限清单、消息和页面绑定。
+4. 实现 MV3 build、Service Worker、popup 和一次性注入。
+5. 实现 pairing/token trusted storage 与恢复。
+6. 实现截图与本地 payload validator。
+7. 追加 Local API BrowserClip/receipt route。
+8. 追加 migration v10、Clip repository 和截图存储。
+9. 激活 BrowserClipAdapter 并建立 Candidate link。
+10. 实现桌面样本列表、详情与安全截图 protocol。
+11. 完成 `test:clipper`、90 项 egress 和恶意 fixture。
+12. 在真实 Chrome 与 Edge 完成隔离 profile 侧载 smoke。
+13. 同步合同、ADR、README、AGENTS 和 110 项证据。
+14. 运行 AGENTS.md 定义的全部门禁，创建唯一提交。
+15. 报告并停止。
+
+
+二十四、Issue 特有停止条件
+-------------------------
+
+除 AGENTS.md 停止条件外，出现以下任一情况立即停止：
+
+- 必须申请 `<all_urls>`、tabs、cookies 或其他未授权权限；
+- 必须使用持久 content script、页面 bridge 或读取整页 DOM；
+- 无法保证 token 仅在受信任扩展上下文；
+- 必须扫描端口、伪造 Origin 或放宽 Local API host/origin/auth；
+- 必须保存截图到 extension storage 或把截图字节放入 SQLite；
+- 必须自动滚动、翻页、批量采集或后台监控；
+- 必须自动抓取指标或调用网站非公开接口；
+- 必须自动调用 Fetch、建立 Source/Claim/Book；
+- Chrome 或 Edge 任一真实侧载 smoke 无法完成；
+- 必须进入 Issue 018。
+
+
+最终启动指令
+------------
+
+现在开始执行 M2 Issue 017。
+
+完整遵守根级及作用域内 AGENTS.md；本文件只定义 Chrome/Edge 浏览器收藏插件增量。先完成
+动态基线、实施计划、权限清单和 110 项验收草案，再开发。
+
+插件只在用户点击后采集当前主框架的有限字段；token 只在 MV3 Service Worker 的受信任存储中；
+截图默认关闭且只截当前 viewport。所有测试使用合成页面、运行时随机 token 和本机 loopback。
+
+通过全部门禁及 Chrome/Edge 真实侧载 smoke 后创建本地提交
+`feat(clipper): add Chrome and Edge sample capture`，报告并停止，不得进入 Issue 018。

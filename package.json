@@ -15,7 +15,8 @@
   ],
   "scripts": {
     "audit:dependencies": "npm audit --audit-level=high",
-    "build": "tsc -b --pretty false && npm run build:desktop",
+    "build": "tsc -b --pretty false && npm run build:clipper && npm run build:desktop",
+    "build:clipper": "vite build --config vite.clipper.config.ts && node scripts/package-clipper.mjs",
     "build:desktop": "vite build --config vite.renderer.config.ts && vite build --config vite.preload.config.ts && vite build --config vite.main.config.ts",
     "check": "npm run format-check && npm run lint && npm run typecheck && npm run test && npm run build",
     "desktop:dev": "npm run build:desktop && npm run prepare:electron && electron .",
@@ -24,6 +25,8 @@
     "lint": "eslint . --max-warnings=0",
     "test": "node scripts/run-portable-vitest.mjs run",
     "test:capabilities": "node scripts/run-portable-vitest.mjs run tests/provider-capability-plan.test.ts tests/provider-capability-classifier.test.ts tests/provider-capability-transport.test.ts tests/provider-capability-runner.test.ts tests/provider-capability-guard.test.ts tests/provider-capability-db.test.ts tests/provider-capability-runtime.test.ts tests/provider-capability-renderer.test.tsx tests/provider-capability-secret-egress.test.ts tests/provider-capability-architecture.test.ts",
+    "test:clipper": "node scripts/run-portable-vitest.mjs run tests/clipper-contracts.test.ts tests/clipper-service-worker.test.ts tests/clipper-db.test.ts tests/clipper-local-api.test.ts tests/clipper-screenshot.test.ts tests/clipper-renderer.test.tsx tests/clipper-architecture.test.ts tests/clipper-egress.test.ts tests/clipper-real-smoke-harness.test.ts",
+    "test:clipper-real": "npm run build:clipper && tsc -b --pretty false && node scripts/run-clipper-real-smoke.mjs",
     "test:constraints": "node scripts/run-portable-vitest.mjs run tests/hard-constraints.test.ts tests/db-hard-constraints.test.ts tests/forbidden-scope.architecture.test.ts tests/agents-governance.test.ts",
     "test:db": "node scripts/run-portable-vitest.mjs run tests/db-migrations.test.ts tests/db-recovery.test.ts tests/db-persistence-windows.test.ts tests/db-hard-constraints.test.ts tests/provider-capability-db.test.ts tests/fetch-db.test.ts",
     "test:desktop": "node scripts/run-portable-vitest.mjs run tests/desktop-contracts.test.ts tests/desktop-security.test.ts tests/desktop-window-state.test.ts tests/desktop-renderer.test.tsx tests/desktop-architecture.test.ts tests/provider-capability-renderer.test.tsx",
@@ -39,6 +42,7 @@
     "test:search": "node scripts/run-portable-vitest.mjs run tests/search-contracts.test.ts tests/search-url-candidates.test.ts tests/search-adapters.test.ts tests/search-execution.test.ts tests/search-db.test.ts tests/search-architecture.test.ts tests/search-renderer.test.tsx tests/search-egress.test.ts",
     "test:storage": "node scripts/run-portable-vitest.mjs run tests/storage-root-paths.test.ts tests/storage-repository.test.ts tests/storage-concurrency.test.ts tests/storage-logging.test.ts tests/storage-db-paths.test.ts tests/storage-architecture.test.ts",
     "package:desktop": "npm run build:desktop && node scripts/package-desktop.mjs",
+    "package:clipper": "npm run build:clipper",
     "prepare:electron": "node scripts/ensure-electron-binary.mjs",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit --pretty false"
   },

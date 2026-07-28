@@ -1,3 +1,9 @@
+import type {
+  BrowserClipCreateV1,
+  BrowserClipReceiptV1,
+  BrowserClipResponseV1,
+} from '@mystery-operations/shared';
+
 export const LOCAL_API_VERSION = '1' as const;
 export const LOCAL_API_HOST = '127.0.0.1' as const;
 export const LOCAL_API_DEFAULT_PORT = 43_119 as const;
@@ -44,6 +50,10 @@ export const LOCAL_API_ERROR_CODES = Object.freeze([
   'LOCAL_API_SHUTTING_DOWN',
   'LOCAL_API_INTERNAL_ERROR',
   'LOCAL_API_REVISION_CONFLICT',
+  'CLIPPER_CAPTURE_CONFLICT',
+  'CLIPPER_RATE_LIMITED',
+  'CLIPPER_SCREENSHOT_INVALID',
+  'CLIPPER_STORAGE_FAILED',
 ] as const);
 export type LocalApiErrorCode = (typeof LOCAL_API_ERROR_CODES)[number];
 
@@ -72,6 +82,10 @@ const ERROR_MESSAGES: Readonly<Record<LocalApiErrorCode, string>> = Object.freez
   LOCAL_API_RATE_LIMITED: '请求过于频繁，请稍后重试。',
   LOCAL_API_REVISION_CONFLICT: '本地插件设置已更新，请刷新后重试。',
   LOCAL_API_SHUTTING_DOWN: '本地插件服务正在停止。',
+  CLIPPER_CAPTURE_CONFLICT: '收藏请求标识与既有内容冲突。',
+  CLIPPER_RATE_LIMITED: '收藏请求超过本地限额。',
+  CLIPPER_SCREENSHOT_INVALID: '截图内容无效。',
+  CLIPPER_STORAGE_FAILED: '收藏样本无法安全保存。',
 });
 
 export class LocalApiError extends Error {
@@ -196,11 +210,32 @@ export interface AuthenticatedStatusResponse {
 export interface CapabilitiesResponse {
   readonly apiVersion: typeof LOCAL_API_VERSION;
   readonly authenticatedStatus: true;
-  readonly clipperBusinessRoutes: false;
+  readonly browserClipContractVersion?: 'browser-clip-v1';
+  readonly clipperBusinessRoutes: boolean;
   readonly clipperIssue: '017';
+  readonly clipperLimits?: {
+    readonly maxBodyBytes: number;
+    readonly maxScreenshotBytes: number;
+    readonly maxSelectedTextCharacters: 12_000;
+    readonly maxTags: 10;
+    readonly receiptLookup: true;
+  };
   readonly maxJsonBodyBytes: typeof LOCAL_API_MAX_JSON_BODY_BYTES;
   readonly pairing: true;
   readonly supportedOriginScheme: 'chrome-extension';
+}
+
+export interface BrowserClipBusinessServiceV1 {
+  create(
+    client: LocalApiAuthClient,
+    extensionOrigin: string,
+    input: BrowserClipCreateV1,
+  ): Promise<BrowserClipResponseV1>;
+  getReceipt(
+    client: LocalApiAuthClient,
+    extensionOrigin: string,
+    captureId: string,
+  ): Promise<BrowserClipReceiptV1>;
 }
 
 export function assertLocalApiPort(port: number): number {

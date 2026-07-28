@@ -87,11 +87,43 @@ describe('five search adapters', () => {
     expect(batch.externalRequestCount).toBe(0);
   });
 
-  it('keeps BrowserClip product execution pending for Issue 017', async () => {
+  it('executes BrowserClip as passive local input without external requests', async () => {
     const adapter = new BrowserClipAdapter();
-    expect(adapter.describe().readiness).toBe('PENDING_LATER_ISSUE');
-    await expect(adapter.execute()).rejects.toMatchObject({
-      code: 'SEARCH_PROVIDER_NOT_READY',
+    const registry = new SearchProviderRegistry();
+    registry.register(adapter);
+    const request = searchRequest({
+      executionId: 'browser-clip-execution',
+      intent: 'USER_PROVIDED_CLIP',
+      localInput: {
+        capturedAt: NOW.toISOString(),
+        kind: 'BROWSER_CLIP',
+        note: null,
+        title: '用户收藏样本',
+        url: 'https://example.com/browser-clip',
+      },
+      maxResults: 1,
+      providerInstanceId: 'browser-clip-v1',
+      query: '',
+    });
+    const plan = await new SearchPlanner(registry, {
+      idFactory: () => 'browser-clip-plan',
+      now: () => NOW,
+    }).createPlan(
+      request,
+      { budgetIdentity: 'none', capabilityIdentity: 'none', settingsRevision: 1 },
+      null,
+      5_000,
+    );
+    const batch = await adapter.execute(request, context(plan, 'browser-clip-run'));
+    expect(adapter.describe()).toMatchObject({ mode: 'PASSIVE_LOCAL', readiness: 'READY' });
+    expect(batch).toMatchObject({ costState: 'NOT_INCURRED', externalRequestCount: 0 });
+    expect(batch.candidates[0]).toMatchObject({
+      evidenceEligibility: 'LEAD_ONLY',
+      factStatus: 'NOT_A_FACT',
+      fetchState: 'NOT_FETCHED',
+      previewText: null,
+      truthStatus: 'UNVERIFIED',
+      userSupplied: true,
     });
   });
 

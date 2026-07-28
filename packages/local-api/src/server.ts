@@ -4,6 +4,7 @@ import type { AddressInfo, Socket } from 'node:net';
 
 import {
   assertLocalApiPort,
+  type BrowserClipBusinessServiceV1,
   LOCAL_API_HOST,
   type LocalApiClientRepository,
   type LocalApiClock,
@@ -32,6 +33,7 @@ export interface LocalApiListenerInfo {
 }
 
 export interface LocalApiServerOptions {
+  readonly browserClipService?: BrowserClipBusinessServiceV1;
   readonly clock?: LocalApiClock;
   readonly pairingSessions?: PairingSessionManager;
   readonly port: number;
@@ -62,6 +64,9 @@ export class LocalApiServer {
       new PairingSessionManager(options.clock === undefined ? {} : { clock: options.clock });
     this.#shutdownTimeoutMilliseconds = options.shutdownTimeoutMilliseconds ?? 2_000;
     this.#router = new LocalApiRouter({
+      ...(options.browserClipService === undefined
+        ? {}
+        : { browserClipService: options.browserClipService }),
       ...(options.clock === undefined ? {} : { clock: options.clock }),
       listenerInstanceId: this.#listenerInstanceId,
       pairingSessions: this.#pairingSessions,

@@ -13,6 +13,7 @@ import {
   type DesktopBridge,
   type ExportDiagnosticReportInput,
   type GetCredentialStatusInput,
+  type GetBrowserClipInput,
   type GetProviderCapabilityProbeProgressInput,
   type NonSecretSettingsDraft,
   type PreviewProviderCapabilityProbeInput,
@@ -54,6 +55,9 @@ const desktopBridge: DesktopBridge = Object.freeze({
   getSettings: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSettings),
   getSearchState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSearchState),
   getFetchState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFetchState),
+  listBrowserClips: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.listBrowserClips),
+  getBrowserClip: (input: GetBrowserClipInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getBrowserClip, input),
   getSetupState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSetupState),
   getWindowState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getWindowState),
   listLocalApiClients: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.listLocalApiClients),

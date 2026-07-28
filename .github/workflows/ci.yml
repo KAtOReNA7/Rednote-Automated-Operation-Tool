@@ -86,6 +86,9 @@ jobs:
       - name: Run controlled public page fetch suites
         run: npm run test:fetch
 
+      - name: Run Chrome and Edge browser clipper suites
+        run: npm run test:clipper
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 
@@ -97,6 +100,9 @@ jobs:
 
       - name: Package Windows desktop directory
         run: npm run package:desktop
+
+      - name: Package Chrome and Edge unpacked extensions
+        run: npm run package:clipper
 
       - name: Run packaged executable smoke
         run: npm run test:packaged-smoke

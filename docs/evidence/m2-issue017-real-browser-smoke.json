@@ -1,0 +1,157 @@
+{
+  "browsers": [
+    {
+      "assertions": {
+        "activeTabFieldsMatched": true,
+        "cdpExactFixtureUrlAndNonce": true,
+        "desktopListDetailAndScreenshotRead": true,
+        "extensionLoadedUnpacked": true,
+        "idempotentReplay": true,
+        "isolatedProfile": true,
+        "noFetchJobOrModelRun": true,
+        "nullableMetricsPersisted": true,
+        "offlinePrompt": true,
+        "realActionGesture": true,
+        "screenshotMetadataVerified": true,
+        "serviceWorkerObserved": true
+      },
+      "browser": "Chrome",
+      "extensionVersion": "0.1.0",
+      "product": "Chrome/150.0.7871.126",
+      "requests": [
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/pairings/exchange"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/browser-clips"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/browser-clips"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/browser-clips"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        }
+      ]
+    },
+    {
+      "assertions": {
+        "activeTabFieldsMatched": true,
+        "cdpExactFixtureUrlAndNonce": true,
+        "desktopListDetailAndScreenshotRead": true,
+        "extensionLoadedUnpacked": true,
+        "idempotentReplay": true,
+        "isolatedProfile": true,
+        "noFetchJobOrModelRun": true,
+        "nullableMetricsPersisted": true,
+        "offlinePrompt": true,
+        "realActionGesture": true,
+        "screenshotMetadataVerified": true,
+        "serviceWorkerObserved": true
+      },
+      "browser": "Edge",
+      "extensionVersion": "0.1.0",
+      "product": "Edg/150.0.4078.99",
+      "requests": [
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/pairings/exchange"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/browser-clips"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/browser-clips"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "POST",
+          "path": "/v1/browser-clips"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        },
+        {
+          "authority": "127.0.0.1:<dynamic>",
+          "method": "GET",
+          "path": "/v1/status"
+        }
+      ]
+    }
+  ],
+  "completedAt": "2026-07-28T17:47:40.027Z",
+  "issue": "017",
+  "recovery": "CDP_REAL_BROWSER_SMOKE",
+  "safety": {
+    "credentialsWrittenToDisk": false,
+    "defaultProfileUsed": false,
+    "onlyConfiguredLoopbackObserved": true,
+    "realApiCalled": false,
+    "remoteAllowOriginsWildcardUsed": false,
+    "temporaryProfilesRemoved": true
+  }
+}

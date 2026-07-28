@@ -1,0 +1,98 @@
+:root {
+  color-scheme: light;
+  font-family: 'Segoe UI', 'Microsoft YaHei', sans-serif;
+}
+body {
+  margin: 0;
+  width: 420px;
+  background: #f7f7f8;
+  color: #18181b;
+}
+main {
+  padding: 16px;
+}
+header {
+  display: grid;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+header strong {
+  font-size: 18px;
+}
+header small {
+  color: #62626a;
+}
+#status {
+  padding: 10px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #ddd;
+}
+#status[data-kind='error'] {
+  color: #9f1239;
+  border-color: #fda4af;
+}
+form {
+  display: grid;
+  gap: 10px;
+}
+label {
+  display: grid;
+  gap: 4px;
+  font-size: 13px;
+}
+input,
+textarea,
+select,
+button {
+  font: inherit;
+  border-radius: 8px;
+  border: 1px solid #c8c8ce;
+  padding: 8px;
+}
+textarea {
+  min-height: 64px;
+  resize: vertical;
+}
+button {
+  background: #ff2442;
+  border-color: #ff2442;
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+}
+button:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 3px solid #7dd3fc;
+  outline-offset: 2px;
+}
+fieldset {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 8px;
+  border: 1px solid #ddd;
+  border-radius: 10px;
+}
+fieldset label,
+.confirm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+.actions button {
+  flex: 1;
+  background: #26262b;
+  border-color: #26262b;
+}
+#screenshot-preview {
+  max-width: 100%;
+  max-height: 180px;
+  object-fit: contain;
+  border: 1px solid #ddd;
+}

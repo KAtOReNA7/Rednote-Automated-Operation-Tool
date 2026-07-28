@@ -2567,6 +2567,133 @@ CREATE INDEX idx_fetch_robots_expiry ON fetch_robots_cache(expires_at);
 CREATE INDEX idx_fetch_redirect_to_hash ON fetch_redirect_hops(to_url_hash);
 `;
 
+const BROWSER_CLIPPER_SAMPLES = `
+ALTER TABLE clips ADD COLUMN normalized_url TEXT;
+ALTER TABLE clips ADD COLUMN url_hash TEXT;
+ALTER TABLE clips ADD COLUMN capture_id TEXT;
+ALTER TABLE clips ADD COLUMN local_api_client_id TEXT
+  REFERENCES local_api_clients(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE clips ADD COLUMN extension_origin TEXT;
+ALTER TABLE clips ADD COLUMN capture_source TEXT NOT NULL DEFAULT 'LEGACY'
+  CHECK (capture_source IN ('LEGACY', 'BROWSER_EXTENSION'));
+ALTER TABLE clips ADD COLUMN browser_family TEXT
+  CHECK (browser_family IS NULL OR browser_family IN ('CHROME', 'EDGE', 'CHROMIUM_UNKNOWN'));
+ALTER TABLE clips ADD COLUMN contract_version TEXT;
+ALTER TABLE clips ADD COLUMN extension_build_version TEXT;
+ALTER TABLE clips ADD COLUMN public_page_confirmed INTEGER NOT NULL DEFAULT 0
+  CHECK (public_page_confirmed IN (0, 1));
+ALTER TABLE clips ADD COLUMN selected_text_hash TEXT;
+ALTER TABLE clips ADD COLUMN screenshot_mime TEXT
+  CHECK (screenshot_mime IS NULL OR screenshot_mime IN ('image/png', 'image/jpeg'));
+ALTER TABLE clips ADD COLUMN screenshot_hash TEXT;
+ALTER TABLE clips ADD COLUMN screenshot_bytes INTEGER
+  CHECK (screenshot_bytes IS NULL OR screenshot_bytes BETWEEN 1 AND 6291456);
+ALTER TABLE clips ADD COLUMN screenshot_width INTEGER
+  CHECK (screenshot_width IS NULL OR screenshot_width > 0);
+ALTER TABLE clips ADD COLUMN screenshot_height INTEGER
+  CHECK (screenshot_height IS NULL OR screenshot_height > 0);
+ALTER TABLE clips ADD COLUMN status TEXT NOT NULL DEFAULT 'STORED'
+  CHECK (status = 'STORED');
+ALTER TABLE clips ADD COLUMN revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0);
+ALTER TABLE clips ADD COLUMN updated_at TEXT;
+
+CREATE UNIQUE INDEX idx_clips_extension_capture
+  ON clips(extension_origin, capture_id)
+  WHERE extension_origin IS NOT NULL AND capture_id IS NOT NULL;
+CREATE INDEX idx_clips_url_hash ON clips(url_hash);
+CREATE INDEX idx_clips_client_created ON clips(local_api_client_id, created_at DESC);
+CREATE INDEX idx_clips_origin_created ON clips(extension_origin, created_at DESC);
+CREATE INDEX idx_clips_status_updated ON clips(status, updated_at DESC);
+
+CREATE TRIGGER clips_browser_insert_guard
+BEFORE INSERT ON clips
+WHEN NEW.capture_source = 'BROWSER_EXTENSION'
+BEGIN
+  SELECT CASE WHEN
+    NEW.normalized_url IS NULL OR length(NEW.normalized_url) NOT BETWEEN 1 AND 4096 OR
+    NEW.url_hash IS NULL OR length(NEW.url_hash) <> 64 OR
+    NEW.url_hash GLOB '*[^0-9a-f]*' OR
+    NEW.capture_id IS NULL OR length(NEW.capture_id) <> 36 OR
+    NEW.local_api_client_id IS NULL OR
+    NEW.extension_origin IS NULL OR
+    NEW.extension_origin NOT GLOB 'chrome-extension://????????????????????????????????' OR
+    NEW.contract_version <> 'browser-clip-v1' OR
+    NEW.extension_build_version IS NULL OR
+    NEW.public_page_confirmed <> 1 OR
+    NEW.updated_at IS NULL OR
+    length(COALESCE(NEW.page_title, '')) NOT BETWEEN 1 AND 512 OR
+    length(COALESCE(NEW.account_name, '')) > 200 OR
+    length(COALESCE(NEW.selected_text, '')) > 12000 OR
+    length(COALESCE(NEW.user_note, '')) > 2000 OR
+    (NEW.selected_text IS NULL) <> (NEW.selected_text_hash IS NULL) OR
+    (NEW.selected_text_hash IS NOT NULL AND (
+      length(NEW.selected_text_hash) <> 64 OR NEW.selected_text_hash GLOB '*[^0-9a-f]*'
+    )) OR
+    (
+      (NEW.screenshot_path IS NULL) <>
+      (NEW.screenshot_mime IS NULL OR NEW.screenshot_hash IS NULL OR
+       NEW.screenshot_bytes IS NULL OR NEW.screenshot_width IS NULL OR NEW.screenshot_height IS NULL)
+    ) OR
+    (NEW.screenshot_hash IS NOT NULL AND (
+      length(NEW.screenshot_hash) <> 64 OR NEW.screenshot_hash GLOB '*[^0-9a-f]*'
+    ))
+  THEN RAISE(ABORT, 'browser clip invariant') END;
+END;
+
+CREATE TABLE clip_ingest_receipts (
+  extension_origin TEXT NOT NULL CHECK (
+    extension_origin GLOB 'chrome-extension://????????????????????????????????'
+  ),
+  capture_id TEXT NOT NULL CHECK (length(capture_id) = 36),
+  payload_hash TEXT NOT NULL CHECK (
+    length(payload_hash) = 64 AND payload_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  client_id TEXT NOT NULL
+    REFERENCES local_api_clients(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN ('IN_PROGRESS', 'SUCCEEDED', 'FAILED')),
+  clip_id TEXT REFERENCES clips(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  candidate_id TEXT REFERENCES search_result_candidates(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  stable_error TEXT,
+  PRIMARY KEY (extension_origin, capture_id),
+  CHECK (
+    (status = 'SUCCEEDED' AND clip_id IS NOT NULL AND candidate_id IS NOT NULL AND stable_error IS NULL)
+    OR (status = 'IN_PROGRESS' AND clip_id IS NULL AND candidate_id IS NULL AND stable_error IS NULL)
+    OR (status = 'FAILED' AND clip_id IS NULL AND candidate_id IS NULL AND stable_error IS NOT NULL)
+  )
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE clip_search_candidate_links (
+  clip_id TEXT PRIMARY KEY REFERENCES clips(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  candidate_id TEXT NOT NULL UNIQUE
+    REFERENCES search_result_candidates(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE clip_ingest_rate_states (
+  client_id TEXT PRIMARY KEY
+    REFERENCES local_api_clients(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  minute_started_at TEXT NOT NULL CHECK (minute_started_at ${UTC_REQUIRED}),
+  minute_count INTEGER NOT NULL CHECK (minute_count BETWEEN 0 AND 30),
+  day_started_at TEXT NOT NULL CHECK (day_started_at ${UTC_REQUIRED}),
+  day_count INTEGER NOT NULL CHECK (day_count BETWEEN 0 AND 500),
+  day_screenshot_bytes INTEGER NOT NULL CHECK (
+    day_screenshot_bytes BETWEEN 0 AND 104857600
+  ),
+  failed_count INTEGER NOT NULL CHECK (failed_count BETWEEN 0 AND 100),
+  in_flight INTEGER NOT NULL CHECK (in_flight IN (0, 1)),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX idx_clip_receipts_client_created
+  ON clip_ingest_receipts(client_id, created_at DESC);
+CREATE INDEX idx_clip_receipts_status_updated
+  ON clip_ingest_receipts(status, updated_at DESC);
+CREATE INDEX idx_clip_links_candidate ON clip_search_candidate_links(candidate_id);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -2614,5 +2741,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'controlled_public_page_fetch',
     sql: CONTROLLED_PUBLIC_PAGE_FETCH,
     version: 9,
+  }),
+  Object.freeze({
+    name: 'browser_clipper_samples',
+    sql: BROWSER_CLIPPER_SAMPLES,
+    version: 10,
   }),
 ]);

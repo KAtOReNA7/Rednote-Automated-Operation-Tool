@@ -1,5 +1,10 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
+export { SqliteBrowserClipRepository } from './browser-clip-repository.js';
+export type {
+  BrowserClipScreenshotRecordV1,
+  BrowserClipViewV1,
+} from './browser-clip-repository.js';
 export { JobQueueRepository, JobQueueRepositoryError } from './job-queue-repository.js';
 export { SqliteLocalApiRepository } from './local-api-repository.js';
 export { MigrationError, initializeDatabase, migrationChecksum } from './migration-runner.js';

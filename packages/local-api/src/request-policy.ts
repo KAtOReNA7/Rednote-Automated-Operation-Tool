@@ -2,6 +2,12 @@ import { TextDecoder } from 'node:util';
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 
 import {
+  BROWSER_CLIP_MAX_BODY_BYTES,
+  type BrowserClipCreateV1,
+  validateBrowserClipCreateV1,
+} from '@mystery-operations/shared';
+
+import {
   LOCAL_API_HOST,
   LOCAL_API_MAX_JSON_BODY_BYTES,
   LocalApiError,
@@ -48,6 +54,24 @@ export function parseSingleOrigin(rawHeaders: readonly string[]): string {
     throw new LocalApiError('LOCAL_API_INVALID_ORIGIN');
   }
   return normalizeExtensionOrigin(origins[0] ?? '');
+}
+
+export function parseAuthenticatedExtensionOrigin(rawHeaders: readonly string[]): string {
+  const origins = rawHeaderValues(rawHeaders, 'origin');
+  const claimedOrigins = rawHeaderValues(rawHeaders, 'x-rednote-extension-origin');
+  if (origins.length > 1 || claimedOrigins.length > 1) {
+    throw new LocalApiError('LOCAL_API_INVALID_ORIGIN');
+  }
+  if (origins.length === 0 && claimedOrigins.length === 0) {
+    throw new LocalApiError('LOCAL_API_INVALID_ORIGIN');
+  }
+  const origin = origins.length === 1 ? normalizeExtensionOrigin(origins[0] ?? '') : null;
+  const claimed =
+    claimedOrigins.length === 1 ? normalizeExtensionOrigin(claimedOrigins[0] ?? '') : null;
+  if (origin !== null && claimed !== null && origin !== claimed) {
+    throw new LocalApiError('LOCAL_API_INVALID_ORIGIN');
+  }
+  return origin ?? (claimed as string);
 }
 
 export function requestHasBody(headers: IncomingHttpHeaders): boolean {
@@ -133,4 +157,40 @@ export async function readPairingJson(request: IncomingMessage): Promise<Pairing
     throw new LocalApiError('LOCAL_API_INVALID_JSON', { cause: error });
   }
   return parsePairingObject(value);
+}
+
+export async function readBrowserClipJson(request: IncomingMessage): Promise<BrowserClipCreateV1> {
+  const contentTypes = rawHeaderValues(request.rawHeaders, 'content-type');
+  const contentLengths = rawHeaderValues(request.rawHeaders, 'content-length');
+  if (
+    contentTypes.length !== 1 ||
+    contentTypes[0]?.toLowerCase() !== 'application/json; charset=utf-8' ||
+    contentLengths.length > 1
+  ) {
+    throw new LocalApiError('LOCAL_API_INVALID_REQUEST');
+  }
+  const chunks: Buffer[] = [];
+  let total = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as Uint8Array);
+    total += buffer.length;
+    if (total > BROWSER_CLIP_MAX_BODY_BYTES) {
+      request.resume();
+      throw new LocalApiError('LOCAL_API_BODY_TOO_LARGE');
+    }
+    chunks.push(buffer);
+  }
+  if (total === 0) throw new LocalApiError('LOCAL_API_INVALID_JSON');
+  let value: unknown;
+  try {
+    const text = new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(chunks));
+    value = JSON.parse(text) as unknown;
+  } catch (error) {
+    throw new LocalApiError('LOCAL_API_INVALID_JSON', { cause: error });
+  }
+  try {
+    return validateBrowserClipCreateV1(value);
+  } catch (error) {
+    throw new LocalApiError('LOCAL_API_INVALID_JSON', { cause: error });
+  }
 }

@@ -39,6 +39,8 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getProviderCapabilityState: 'providers:get-capability-state',
   getSearchState: 'search:get-state',
   getFetchState: 'fetch:get-state',
+  listBrowserClips: 'clipper:list-clips',
+  getBrowserClip: 'clipper:get-clip',
   getModelAccounting: 'models:get-accounting',
   previewModelCacheClear: 'models:preview-cache-clear',
   confirmModelCacheClear: 'models:confirm-cache-clear',
@@ -127,6 +129,28 @@ export interface FoundationHealth {
 export interface WindowState {
   readonly isFullScreen: boolean;
   readonly isMaximized: boolean;
+}
+
+export interface BrowserClipView {
+  readonly accountName: string | null;
+  readonly candidateId: string;
+  readonly capturedAt: string;
+  readonly clientLabel: string | null;
+  readonly clipId: string;
+  readonly displayHost: string;
+  readonly hasScreenshot: boolean;
+  readonly pageTitle: string;
+  readonly pageUrl: string;
+  readonly platform: string;
+  readonly publishedAt: string | null;
+  readonly selectedText: string | null;
+  readonly tags: readonly string[];
+  readonly userNote: string | null;
+  readonly visibleMetrics: Readonly<Record<string, number | null>>;
+}
+
+export interface GetBrowserClipInput {
+  readonly clipId: string;
 }
 
 export interface DataRootSelection {
@@ -522,6 +546,8 @@ export interface DesktopBridge {
   getProviderCapabilityState(): Promise<DesktopResult<ProviderCapabilityStateView>>;
   getSearchState?(): Promise<DesktopResult<SearchStateView>>;
   getFetchState?(): Promise<DesktopResult<FetchStateView>>;
+  listBrowserClips?(): Promise<DesktopResult<readonly BrowserClipView[]>>;
+  getBrowserClip?(input: GetBrowserClipInput): Promise<DesktopResult<BrowserClipView | null>>;
   previewProviderCapabilityProbe(
     input: PreviewProviderCapabilityProbeInput,
   ): Promise<DesktopResult<ProviderCapabilityProbePreview>>;

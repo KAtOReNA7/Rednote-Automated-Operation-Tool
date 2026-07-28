@@ -2,12 +2,19 @@ import { randomUUID } from 'node:crypto';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 
 import {
+  BROWSER_CLIP_CONTRACT_VERSION,
+  BROWSER_CLIP_MAX_BODY_BYTES,
+  BROWSER_CLIP_MAX_SCREENSHOT_BYTES,
+} from '@mystery-operations/shared';
+
+import {
   LocalApiAuthenticator,
   digestRuntimeToken,
   parseBearerAuthorization,
 } from './authenticator.js';
 import {
   type AuthenticatedStatusResponse,
+  type BrowserClipBusinessServiceV1,
   type CapabilitiesResponse,
   LOCAL_API_MAX_JSON_BODY_BYTES,
   LOCAL_API_MAX_RESPONSE_BYTES,
@@ -23,21 +30,28 @@ import { normalizeExtensionOrigin } from './origin-policy.js';
 import type { PairingSessionManager } from './pairing-session.js';
 import { FixedWindowRateLimiter } from './rate-limiter.js';
 import {
+  parseAuthenticatedExtensionOrigin,
   parseSingleOrigin,
   rawHeaderValues,
   readPairingJson,
+  readBrowserClipJson,
   requestHasBody,
   validateHost,
   validateRemoteAddress,
 } from './request-policy.js';
 
 const ROUTES = Object.freeze({
+  '/v1/browser-clips': 'POST',
   '/v1/capabilities': 'GET',
   '/v1/pairings/exchange': 'POST',
   '/v1/status': 'GET',
 } as const);
 
 const STATUS_BY_ERROR: Readonly<Partial<Record<LocalApiErrorCode, number>>> = Object.freeze({
+  CLIPPER_CAPTURE_CONFLICT: 409,
+  CLIPPER_RATE_LIMITED: 429,
+  CLIPPER_SCREENSHOT_INVALID: 400,
+  CLIPPER_STORAGE_FAILED: 500,
   LOCAL_API_AUTH_INVALID: 401,
   LOCAL_API_AUTH_REQUIRED: 401,
   LOCAL_API_BODY_TOO_LARGE: 413,
@@ -58,6 +72,7 @@ const STATUS_BY_ERROR: Readonly<Partial<Record<LocalApiErrorCode, number>>> = Ob
 });
 
 export interface LocalApiRouterOptions {
+  readonly browserClipService?: BrowserClipBusinessServiceV1;
   readonly clock?: LocalApiClock;
   readonly listenerInstanceId: string;
   readonly pairingSessions: PairingSessionManager;
@@ -99,8 +114,12 @@ function sendJson(
   response.end(encoded);
 }
 
-function sendPreflight(response: ServerResponse, origin: string, method: 'GET' | 'POST'): void {
-  const allowHeaders = method === 'POST' ? 'content-type' : 'authorization';
+function sendPreflight(
+  response: ServerResponse,
+  origin: string,
+  method: 'GET' | 'POST',
+  allowHeaders: string,
+): void {
   response.writeHead(204, {
     ...safeHeaders(origin),
     'Access-Control-Allow-Headers': allowHeaders,
@@ -115,6 +134,7 @@ function errorStatus(error: LocalApiError): number {
 }
 
 export class LocalApiRouter {
+  readonly #browserClipService: BrowserClipBusinessServiceV1 | null;
   readonly #authenticator: LocalApiAuthenticator;
   readonly #clock: LocalApiClock;
   readonly #listenerInstanceId: string;
@@ -126,6 +146,7 @@ export class LocalApiRouter {
   #stopping = false;
 
   public constructor(options: LocalApiRouterOptions) {
+    this.#browserClipService = options.browserClipService ?? null;
     this.#repository = options.repository;
     this.#authenticator = new LocalApiAuthenticator(options.repository);
     this.#clock = options.clock ?? { now: () => new Date() };
@@ -145,7 +166,6 @@ export class LocalApiRouter {
       }
       validateRemoteAddress(request.socket.remoteAddress);
       validateHost(request.rawHeaders, this.#port);
-      const requestedOrigin = parseSingleOrigin(request.rawHeaders);
       const target = request.url ?? '';
       if (
         target.length === 0 ||
@@ -155,10 +175,16 @@ export class LocalApiRouter {
       ) {
         throw new LocalApiError('LOCAL_API_INVALID_REQUEST');
       }
-      const expectedMethod = ROUTES[target as keyof typeof ROUTES];
+      const receiptMatch = /^\/v1\/browser-clips\/receipts\/([0-9a-f-]{36})$/u.exec(target);
+      const expectedMethod =
+        receiptMatch === null ? ROUTES[target as keyof typeof ROUTES] : ('GET' as const);
       if (expectedMethod === undefined) {
         throw new LocalApiError('LOCAL_API_NOT_FOUND');
       }
+      const requestedOrigin =
+        request.method === 'OPTIONS' || target === '/v1/pairings/exchange'
+          ? parseSingleOrigin(request.rawHeaders)
+          : parseAuthenticatedExtensionOrigin(request.rawHeaders);
       if (request.method === 'OPTIONS') {
         this.#handlePreflight(request, response, target, requestedOrigin, expectedMethod);
         return;
@@ -179,7 +205,13 @@ export class LocalApiRouter {
       if (this.#repository.findActiveClientByOrigin(requestedOrigin) !== null) {
         corsOrigin = requestedOrigin;
       }
-      this.#handleAuthenticated(request, response, target, requestedOrigin);
+      await this.#handleAuthenticated(
+        request,
+        response,
+        target,
+        requestedOrigin,
+        receiptMatch?.[1] ?? null,
+      );
     } catch (caught) {
       const error =
         caught instanceof LocalApiError
@@ -225,12 +257,19 @@ export class LocalApiRouter {
     }
     const requestedMethods = rawHeaderValues(request.rawHeaders, 'access-control-request-method');
     const requestedHeaders = rawHeaderValues(request.rawHeaders, 'access-control-request-headers');
-    const expectedHeader = expectedMethod === 'POST' ? 'content-type' : 'authorization';
+    const allowedHeaders =
+      expectedMethod === 'POST' && target === '/v1/browser-clips'
+        ? ['authorization,content-type', 'authorization,content-type,x-rednote-extension-origin']
+        : expectedMethod === 'POST'
+          ? ['content-type']
+          : ['authorization', 'authorization,x-rednote-extension-origin'];
+    const requestedHeader = requestedHeaders[0]?.toLowerCase().replaceAll(' ', '');
     if (
       requestedMethods.length !== 1 ||
       requestedMethods[0] !== expectedMethod ||
       requestedHeaders.length !== 1 ||
-      requestedHeaders[0]?.toLowerCase().replaceAll(' ', '') !== expectedHeader
+      requestedHeader === undefined ||
+      !allowedHeaders.includes(requestedHeader)
     ) {
       throw new LocalApiError('LOCAL_API_CORS_REJECTED');
     }
@@ -241,7 +280,7 @@ export class LocalApiRouter {
     if (!allowed) {
       throw new LocalApiError('LOCAL_API_CORS_REJECTED');
     }
-    sendPreflight(response, origin, expectedMethod);
+    sendPreflight(response, origin, expectedMethod, requestedHeader);
   }
 
   async #handlePairing(
@@ -277,12 +316,13 @@ export class LocalApiRouter {
     sendJson(response, 201, body, { origin });
   }
 
-  #handleAuthenticated(
+  async #handleAuthenticated(
     request: IncomingMessage,
     response: ServerResponse,
     target: string,
     origin: string,
-  ): void {
+    receiptCaptureId: string | null,
+  ): Promise<void> {
     const authorization = rawHeaderValues(request.rawHeaders, 'authorization');
     let token: string;
     let client: LocalApiAuthClient;
@@ -297,6 +337,19 @@ export class LocalApiRouter {
     const now = this.#clock.now();
     const notAfter = new Date(now.getTime() - 60_000).toISOString();
     this.#repository.recordLastUsed(client.id, now.toISOString(), notAfter);
+    if (target === '/v1/browser-clips') {
+      if (this.#browserClipService === null) throw new LocalApiError('LOCAL_API_DISABLED');
+      const input = await readBrowserClipJson(request);
+      const body = await this.#browserClipService.create(client, origin, input);
+      sendJson(response, 201, body, { origin });
+      return;
+    }
+    if (receiptCaptureId !== null) {
+      if (this.#browserClipService === null) throw new LocalApiError('LOCAL_API_DISABLED');
+      const receipt = await this.#browserClipService.getReceipt(client, origin, receiptCaptureId);
+      sendJson(response, 200, { apiVersion: LOCAL_API_VERSION, receipt }, { origin });
+      return;
+    }
     if (target === '/v1/status') {
       const body: AuthenticatedStatusResponse = {
         apiVersion: LOCAL_API_VERSION,
@@ -312,7 +365,19 @@ export class LocalApiRouter {
     const body: CapabilitiesResponse = {
       apiVersion: LOCAL_API_VERSION,
       authenticatedStatus: true,
-      clipperBusinessRoutes: false,
+      ...(this.#browserClipService === null
+        ? {}
+        : {
+            browserClipContractVersion: BROWSER_CLIP_CONTRACT_VERSION,
+            clipperLimits: {
+              maxBodyBytes: BROWSER_CLIP_MAX_BODY_BYTES,
+              maxScreenshotBytes: BROWSER_CLIP_MAX_SCREENSHOT_BYTES,
+              maxSelectedTextCharacters: 12_000 as const,
+              maxTags: 10,
+              receiptLookup: true as const,
+            },
+          }),
+      clipperBusinessRoutes: this.#browserClipService !== null,
       clipperIssue: '017',
       maxJsonBodyBytes: LOCAL_API_MAX_JSON_BODY_BYTES,
       pairing: true,

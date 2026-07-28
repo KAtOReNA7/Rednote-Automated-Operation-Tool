@@ -8,6 +8,7 @@
     "noEmit": true,
     "paths": {
       "@mystery-operations/core": ["./packages/core/src/index.ts"],
+      "@mystery-operations/clipper": ["./apps/clipper/src/index.ts"],
       "@mystery-operations/db": ["./packages/db/src/index.ts"],
       "@mystery-operations/fetch": ["./packages/fetch/src/index.ts"],
       "@mystery-operations/local-api": ["./packages/local-api/src/index.ts"],

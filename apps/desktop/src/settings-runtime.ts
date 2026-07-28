@@ -11,6 +11,7 @@ import type {
 import {
   MIGRATIONS,
   SqliteModelAccountingRepository,
+  type BrowserClipViewV1,
   SqliteProviderCapabilityRepository,
   SqliteSettingsRepository,
   connectDatabase,
@@ -67,6 +68,7 @@ import { DesktopModelAccountingRuntime } from './model-accounting-runtime.js';
 import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import { DesktopSearchRuntime } from './search-runtime.js';
 import { DesktopFetchRuntime } from './fetch-runtime.js';
+import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -104,6 +106,7 @@ interface RuntimeVersions {
 interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
+  readonly clipper: DesktopBrowserClipRuntime;
   readonly database: DatabaseSync;
   readonly fetch: DesktopFetchRuntime;
   readonly root: ProjectDataRoot;
@@ -145,7 +148,7 @@ export class DesktopSettingsRuntime {
     }
     const root = await openProjectDataRoot(this.#locatorState.record.activeDataRoot);
     this.#active = await this.#openActiveProject(root);
-    await this.#localApi.attachProject(this.#active.database);
+    await this.#localApi.attachProject(this.#active.database, this.#active.clipper);
   }
 
   public async runIsolatedSmoke(
@@ -196,7 +199,7 @@ export class DesktopSettingsRuntime {
         new Date().toISOString(),
       );
       this.#active = prepared;
-      await this.#localApi.attachProject(prepared.database);
+      await this.#localApi.attachProject(prepared.database, prepared.clipper);
       this.#locatorState = { displayPath: root.rootPath, record, status: 'READY' };
       smokePhase = 'SET_CREDENTIAL';
       const configured = await prepared.service.setCredential(unusableRuntimeValue);
@@ -389,7 +392,7 @@ export class DesktopSettingsRuntime {
         new Date().toISOString(),
       );
       const previous = this.#active;
-      await this.#localApi.attachProject(prepared.database);
+      await this.#localApi.attachProject(prepared.database, prepared.clipper);
       this.#active = prepared;
       this.#locatorState = {
         displayPath: root.rootPath,
@@ -438,6 +441,20 @@ export class DesktopSettingsRuntime {
 
   public getFetchState(): FetchStateView {
     return this.#requireActive().fetch.getState();
+  }
+
+  public listBrowserClips(): readonly BrowserClipViewV1[] {
+    return this.#requireActive().clipper.listClips();
+  }
+
+  public getBrowserClip(clipId: string): BrowserClipViewV1 | null {
+    return this.#requireActive().clipper.getClip(clipId);
+  }
+
+  public readBrowserClipScreenshot(
+    clipId: string,
+  ): Promise<{ readonly bytes: Uint8Array; readonly mime: 'image/jpeg' | 'image/png' } | null> {
+    return this.#requireActive().clipper.readScreenshot(clipId);
   }
 
   public updateFetchPolicy(input: UpdateFetchPolicyInput): FetchStateView {
@@ -600,9 +617,10 @@ export class DesktopSettingsRuntime {
       },
     );
     const search = new DesktopSearchRuntime(database);
+    const clipper = new DesktopBrowserClipRuntime(database, root);
     const fetch = new DesktopFetchRuntime(database, root);
     accountingRepository.recoverInterrupted(new Date().toISOString());
-    return { accounting, capabilities, database, fetch, root, search, service };
+    return { accounting, capabilities, clipper, database, fetch, root, search, service };
   }
 
   #requireActive(): ActiveProject {

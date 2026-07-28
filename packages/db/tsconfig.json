@@ -25,6 +25,9 @@
     },
     {
       "path": "../settings"
+    },
+    {
+      "path": "../shared"
     }
   ],
   "include": ["src/**/*.ts"]

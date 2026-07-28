@@ -2,6 +2,7 @@ export { runFoundationHealthCheck } from './foundation-health.js';
 export { registerDesktopIpc } from './ipc.js';
 export { validateDesktopIpcRequest } from './ipc-policy.js';
 export { DesktopLocalApiRuntime } from './local-api-runtime.js';
+export { decodeBrowserClipScreenshot, DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
 export {
   attachWebContentsSecurity,
   installSessionSecurity,

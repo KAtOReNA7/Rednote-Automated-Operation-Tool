@@ -245,9 +245,9 @@ export class BrowserClipAdapter implements SearchProviderV1 {
     this.#descriptor = validateSearchProviderDescriptorV1({
       budgetState: 'NOT_APPLICABLE',
       capabilityState: 'NOT_APPLICABLE',
-      codecState: 'PENDING',
+      codecState: 'NOT_APPLICABLE',
       contractVersion: SEARCH_PROVIDER_CONTRACT_VERSION,
-      credentialState: 'PENDING',
+      credentialState: 'NOT_APPLICABLE',
       displayName: '浏览器收藏',
       features: LOCAL_FEATURES,
       kind: 'BROWSER_CLIP',
@@ -256,7 +256,7 @@ export class BrowserClipAdapter implements SearchProviderV1 {
       mode: 'PASSIVE_LOCAL',
       providerInstanceId,
       rateState: 'NOT_APPLICABLE',
-      readiness: 'PENDING_LATER_ISSUE',
+      readiness: 'READY',
       supportedIntents: ['USER_PROVIDED_CLIP'],
     });
   }
@@ -269,9 +269,36 @@ export class BrowserClipAdapter implements SearchProviderV1 {
     return createSearchPreview(this.#descriptor, validateSearchRequestV1(requestValue), 0);
   }
 
-  public async execute(): Promise<never> {
-    throw new SearchError('SEARCH_PROVIDER_NOT_READY', {
-      safeDetails: { readiness: 'PENDING_LATER_ISSUE' },
+  public async execute(requestValue: SearchRequestV1, context: SearchExecutionContextV1) {
+    const request = validateSearchRequestV1(requestValue);
+    if (request.localInput?.kind !== 'BROWSER_CLIP') {
+      throw new SearchError('SEARCH_INVALID_REQUEST');
+    }
+    canonicalizeSearchUrl(request.localInput.url);
+    const startedAt = context.now().toISOString();
+    return createSearchBatch({
+      appearances: [
+        {
+          citationState: 'NOT_APPLICABLE',
+          languageHint: request.localeHints[0] ?? null,
+          previewKind: 'NONE',
+          previewText: null,
+          publishedAt: null,
+          sourceMetadataKind: 'BROWSER_CLIP_INPUT',
+          title: request.localInput.title,
+          upstreamId: null,
+          upstreamRank: 0,
+          url: request.localInput.url,
+          userSupplied: true,
+          wasCited: null,
+          wasConsulted: null,
+        },
+      ],
+      descriptor: this.#descriptor,
+      executionContext: context,
+      externalRequestCount: 0,
+      request,
+      startedAt,
     });
   }
 }

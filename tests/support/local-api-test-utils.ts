@@ -4,7 +4,11 @@ import { createServer } from 'node:net';
 import type { DatabaseSync } from 'node:sqlite';
 
 import { SqliteLocalApiRepository } from '../../packages/db/src/index.js';
-import { type LocalApiClock, LocalApiServer } from '../../packages/local-api/src/index.js';
+import {
+  type BrowserClipBusinessServiceV1,
+  type LocalApiClock,
+  LocalApiServer,
+} from '../../packages/local-api/src/index.js';
 import { createInitializedDatabase } from './database-test-utils.js';
 
 export interface LocalApiHttpResponse {
@@ -54,6 +58,7 @@ export async function allocateLocalApiPort(): Promise<number> {
 
 export async function createLocalApiContext(
   options: {
+    readonly browserClipServiceFactory?: (database: DatabaseSync) => BrowserClipBusinessServiceV1;
     readonly clock?: LocalApiClock;
   } = {},
 ): Promise<LocalApiTestContext> {
@@ -61,6 +66,9 @@ export async function createLocalApiContext(
   const repository = new SqliteLocalApiRepository(database);
   const port = await allocateLocalApiPort();
   const server = new LocalApiServer({
+    ...(options.browserClipServiceFactory === undefined
+      ? {}
+      : { browserClipService: options.browserClipServiceFactory(database) }),
     ...(options.clock === undefined ? {} : { clock: options.clock }),
     port,
     repository,

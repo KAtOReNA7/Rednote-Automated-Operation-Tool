@@ -19,18 +19,25 @@ http://127.0.0.1:<configured-port>
 chrome-extension://<32 位 a-p 小写 Chromium extension id>
 ```
 
-Origin 不含尾随 `/`、path、query、fragment、userinfo。所有 route 都要求唯一 Origin。
+Origin 不含尾随 `/`、path、query、fragment、userinfo。配对交换和预检要求唯一
+`Origin`。已认证请求同时携带 `X-Rednote-Extension-Origin`：实际 `Origin` 存在时两者
+必须一致；Chromium 对 GET 省略 `Origin` 时，使用该显式绑定头恢复 origin-token 绑定。
+缺失、重复或冲突值均拒绝。
 
 ## Route allowlist
 
-| Method  | Path                    | 认证            | 作用                    |
-| ------- | ----------------------- | --------------- | ----------------------- |
-| OPTIONS | `/v1/pairings/exchange` | pairing session | 严格预检                |
-| POST    | `/v1/pairings/exchange` | pairing code    | 交换并保存 token digest |
-| OPTIONS | `/v1/status`            | active origin   | 严格预检                |
-| GET     | `/v1/status`            | Bearer + origin | 有限服务状态            |
-| OPTIONS | `/v1/capabilities`      | active origin   | 严格预检                |
-| GET     | `/v1/capabilities`      | Bearer + origin | 有限能力合同            |
+| Method  | Path                                     | 认证            | 作用                    |
+| ------- | ---------------------------------------- | --------------- | ----------------------- |
+| OPTIONS | `/v1/pairings/exchange`                  | pairing session | 严格预检                |
+| POST    | `/v1/pairings/exchange`                  | pairing code    | 交换并保存 token digest |
+| OPTIONS | `/v1/status`                             | active origin   | 严格预检                |
+| GET     | `/v1/status`                             | Bearer + origin | 有限服务状态            |
+| OPTIONS | `/v1/capabilities`                       | active origin   | 严格预检                |
+| GET     | `/v1/capabilities`                       | Bearer + origin | 有限能力合同            |
+| OPTIONS | `/v1/browser-clips`                      | active origin   | Issue 017 严格预检      |
+| POST    | `/v1/browser-clips`                      | Bearer + origin | 保存一个显式公开页样本  |
+| OPTIONS | `/v1/browser-clips/receipts/<captureId>` | active origin   | 收据预检                |
+| GET     | `/v1/browser-clips/receipts/<captureId>` | Bearer + origin | 幂等收据                |
 
 未知 route 为 404；已知 route 错误 method 为 405 并返回精确 `Allow`；query string、
 CONNECT、upgrade 和 request body（除 pairing POST）均拒绝。
@@ -89,14 +96,16 @@ SHA-256 digest，以 `timingSafeEqual` 与 active client digest 比较，并要�
   "apiVersion": "1",
   "pairing": true,
   "authenticatedStatus": true,
-  "clipperBusinessRoutes": false,
+  "clipperBusinessRoutes": true,
   "clipperIssue": "017",
   "maxJsonBodyBytes": 8192,
   "supportedOriginScheme": "chrome-extension"
 }
 ```
 
-Issue 011 不提供 `/clips`、`/sources`、`/books`、`/jobs`、模型、生成、上传或平台 route。
+Issue 017 只追加上述两个业务资源；仍不提供 `/sources`、`/books`、`/jobs`、模型、生成、
+上传、平台自动化或任意公网 route。未挂载当前项目业务服务时，capabilities 中
+`clipperBusinessRoutes` 为 `false`。
 
 ## CORS
 

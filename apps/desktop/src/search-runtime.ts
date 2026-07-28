@@ -217,7 +217,7 @@ export class DesktopSearchRuntime {
       },
       {
         descriptor: new BrowserClipAdapter().describe(),
-        enabled: false,
+        enabled: true,
         ratePolicy: null,
         timeoutMs: 5_000,
       },

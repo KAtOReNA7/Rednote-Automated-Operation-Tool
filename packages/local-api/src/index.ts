@@ -28,6 +28,7 @@ export { FixedWindowRateLimiter } from './rate-limiter.js';
 export {
   parseSingleOrigin,
   rawHeaderValues,
+  readBrowserClipJson,
   readPairingJson,
   requestHasBody,
   validateHost,
@@ -38,6 +39,7 @@ export { LOCAL_API_SERVER_LIMITS, LocalApiServer } from './server.js';
 
 export type {
   AuthenticatedStatusResponse,
+  BrowserClipBusinessServiceV1,
   CapabilitiesResponse,
   LocalApiAuthClient,
   LocalApiClientRepository,

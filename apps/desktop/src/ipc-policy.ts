@@ -15,6 +15,7 @@ export type DesktopIpcOperation =
   | 'getCredentialStatus'
   | 'getFoundationHealth'
   | 'getFetchState'
+  | 'getBrowserClip'
   | 'getModelAccounting'
   | 'getProviderCapabilityProbeProgress'
   | 'getProviderCapabilityState'
@@ -25,6 +26,7 @@ export type DesktopIpcOperation =
   | 'getSetupState'
   | 'getWindowState'
   | 'listLocalApiClients'
+  | 'listBrowserClips'
   | 'cancelLocalApiPairing'
   | 'revokeLocalApiClient'
   | 'selectDataRoot'
@@ -138,6 +140,7 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'getSettings':
     case 'getSearchState':
     case 'getFetchState':
+    case 'listBrowserClips':
     case 'getProviderCapabilityState':
     case 'getModelAccounting':
     case 'getSetupState':
@@ -149,6 +152,14 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'buildDiagnosticPreview':
     case 'previewModelCacheClear':
       return args.length === 0;
+    case 'getBrowserClip': {
+      const value = validateOneObject(args, ['clipId']);
+      return (
+        value !== null &&
+        typeof value.clipId === 'string' &&
+        /^clip-[0-9a-f-]{36}$/u.test(value.clipId)
+      );
+    }
     case 'updateFetchPolicy': {
       const value = validateOneObject(args, [
         'enabled',

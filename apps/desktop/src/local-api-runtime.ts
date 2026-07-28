@@ -4,6 +4,7 @@ import {
   assertLocalApiPort,
   LOCAL_API_HOST,
   type LocalApiClientView,
+  type BrowserClipBusinessServiceV1,
   type LocalApiClock,
   LocalApiError,
   type LocalApiServerOptions,
@@ -28,6 +29,7 @@ export class DesktopLocalApiRuntime {
   #errorCode: LocalApiError['code'] | undefined;
   #repository: SqliteLocalApiRepository | null = null;
   #server: LocalApiServer | null = null;
+  #browserClipService: BrowserClipBusinessServiceV1 | null = null;
   #state: LocalApiServiceState = 'DISABLED_NO_PROJECT';
 
   public constructor(options: DesktopLocalApiRuntimeOptions = {}) {
@@ -37,9 +39,13 @@ export class DesktopLocalApiRuntime {
       options.serverFactory ?? ((serverOptions) => new LocalApiServer(serverOptions));
   }
 
-  public async attachProject(database: DatabaseSync): Promise<void> {
+  public async attachProject(
+    database: DatabaseSync,
+    browserClipService?: BrowserClipBusinessServiceV1,
+  ): Promise<void> {
     await this.#stopServer();
     this.#repository = new SqliteLocalApiRepository(database);
+    this.#browserClipService = browserClipService ?? null;
     this.#errorCode = undefined;
     const settings = this.#repository.getSettings();
     if (!settings.enabled) {
@@ -56,6 +62,7 @@ export class DesktopLocalApiRuntime {
   public async detachProject(): Promise<void> {
     await this.#stopServer();
     this.#repository = null;
+    this.#browserClipService = null;
     this.#state = 'DISABLED_NO_PROJECT';
     this.#errorCode = undefined;
   }
@@ -194,6 +201,9 @@ export class DesktopLocalApiRuntime {
     const repository = this.#requireRepository();
     this.#state = 'STARTING';
     const server = this.#serverFactory({
+      ...(this.#browserClipService === null
+        ? {}
+        : { browserClipService: this.#browserClipService }),
       clock: this.#clock,
       pairingSessions: this.#pairingSessions,
       port,

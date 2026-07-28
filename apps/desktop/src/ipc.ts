@@ -17,6 +17,7 @@ import {
   type ExportDiagnosticReportInput,
   type FoundationHealth,
   type GetCredentialStatusInput,
+  type GetBrowserClipInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
   type RevokeLocalApiClientRequest,
@@ -154,6 +155,12 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('getFetchState', DESKTOP_IPC_CHANNELS.getFetchState, () =>
     options.settingsRuntime.getFetchState(),
+  );
+  register('listBrowserClips', DESKTOP_IPC_CHANNELS.listBrowserClips, () =>
+    options.settingsRuntime.listBrowserClips(),
+  );
+  register('getBrowserClip', DESKTOP_IPC_CHANNELS.getBrowserClip, (_event, args) =>
+    options.settingsRuntime.getBrowserClip((args[0] as GetBrowserClipInput).clipId),
   );
   register('previewModelCacheClear', DESKTOP_IPC_CHANNELS.previewModelCacheClear, (event) => {
     const window = options.getWindow();

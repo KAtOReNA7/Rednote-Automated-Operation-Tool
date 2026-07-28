@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>保存公开页面样本</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main>
+      <header><strong>收藏公开页面样本</strong><small>仅在你点击后读取当前页面</small></header>
+      <p id="status" role="status" aria-live="polite"></p>
+      <section id="pairing">
+        <form id="pair-form">
+          <label>本地端点<input id="endpoint" value="http://127.0.0.1:43119" required /></label>
+          <label>配对码<input id="pairing-code" autocomplete="off" required /></label>
+          <label
+            >客户端名称<input id="client-label" value="浏览器收藏插件" maxlength="120" required
+          /></label>
+          <button type="submit">配对</button>
+        </form>
+      </section>
+      <form id="clip-form" hidden>
+        <label>页面 URL<input id="page-url" readonly /></label>
+        <label>页面标题<input id="page-title" maxlength="512" required /></label>
+        <label
+          >平台
+          <select id="platform">
+            <option value="REDNOTE">小红书</option>
+            <option value="WECHAT">微信</option>
+            <option value="WEIBO">微博</option>
+            <option value="DOUYIN">抖音</option>
+            <option value="BILIBILI">哔哩哔哩</option>
+            <option value="OTHER">其他</option>
+          </select>
+        </label>
+        <label>账号名称<input id="account-name" maxlength="200" /></label>
+        <label
+          >发布时间（ISO 8601，可空）<input
+            id="published-at"
+            placeholder="2026-07-28T12:00:00.000Z"
+        /></label>
+        <label>选中文本<textarea id="selected-text" maxlength="12000"></textarea></label>
+        <label>备注<textarea id="user-note" maxlength="2000"></textarea></label>
+        <fieldset>
+          <legend>可见互动数据（均可空）</legend>
+          <label>浏览<input id="views" type="number" min="0" step="1" /></label>
+          <label>点赞<input id="likes" type="number" min="0" step="1" /></label>
+          <label>收藏<input id="favorites" type="number" min="0" step="1" /></label>
+          <label>评论<input id="comments" type="number" min="0" step="1" /></label>
+          <label>分享<input id="shares" type="number" min="0" step="1" /></label>
+        </fieldset>
+        <fieldset>
+          <legend>内容标签</legend>
+          <label><input type="checkbox" name="tag" value="REVIEW" />书评</label>
+          <label><input type="checkbox" name="tag" value="QUOTE" />摘录</label>
+          <label><input type="checkbox" name="tag" value="DISCUSSION" />讨论</label>
+          <label><input type="checkbox" name="tag" value="REFERENCE" />资料</label>
+        </fieldset>
+        <div class="actions">
+          <button id="capture" type="button">截取当前可见区域</button>
+          <button id="remove-screenshot" type="button" hidden>移除截图</button>
+        </div>
+        <img id="screenshot-preview" alt="当前可见区域截图预览" hidden />
+        <label class="confirm"
+          ><input
+            id="public-confirmed"
+            type="checkbox"
+            required
+          />这是我主动选择保存的公开页面样本</label
+        >
+        <button type="submit">保存样本</button>
+      </form>
+    </main>
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

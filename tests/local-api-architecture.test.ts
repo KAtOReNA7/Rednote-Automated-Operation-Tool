@@ -50,8 +50,9 @@ describe('Issue 011 architecture and forbidden scope', () => {
     );
   });
 
-  it('keeps the application route allowlist to status, capabilities, and pairing exchange', () => {
+  it('keeps the application route allowlist to Issue 011 plus the single Issue 017 ingest route', () => {
     expect(LOCAL_API_ROUTE_REGISTRY).toEqual({
+      '/v1/browser-clips': 'POST',
       '/v1/capabilities': 'GET',
       '/v1/pairings/exchange': 'POST',
       '/v1/status': 'GET',
@@ -64,7 +65,7 @@ describe('Issue 011 architecture and forbidden scope', () => {
       .map(source)
       .join('\n');
     expect(localApiSources).not.toMatch(
-      /\/(?:v1\/)?(?:clips|clip|save|generate|publish|comment|message|login|search)\b/iu,
+      /\/(?:v1\/)?(?:generate|publish|comment|message|login|search)\b/iu,
     );
   });
 

@@ -1,0 +1,407 @@
+M2 Issue 017：真实 Chrome / Edge smoke 中断恢复指令
+====================================================
+
+本文件不是新 Issue，也不替代 Issue 017 主指令。
+它只修复“Windows 浏览器控制工具无法可靠确认当前 URL”这一验收编排阻塞。
+
+完整遵守根级及作用域内 `AGENTS.md`、仓库根的 Issue 017 主指令和既有 110 项验收标准。
+
+目标仍为：
+
+`feat(clipper): add Chrome and Edge sample capture`
+
+
+一、当前状态与授权
+----------------
+
+已知状态：
+
+- Issue 017 核心实现、文档和专项测试已基本完成；
+- `test:clipper` 已通过；
+- Chrome/Edge 扩展包已生成；
+- 真实 Chrome 已成功侧载启动；
+- 中断原因仅为外部 Windows 控制工具不能可靠确认当前 URL；
+- 尚未完成 Chrome/Edge 全流程 smoke；
+- 尚未运行最终完整门禁；
+- 尚未创建本轮唯一提交；
+- 未进入 Issue 018。
+
+本轮授权：
+
+1. 保留并继续当前 Issue 017 未提交成果；
+2. 修复或新增仓库内的真实浏览器 smoke harness；
+3. 必要时为 MV3 action 增加标准 `_execute_action` 快捷键；
+4. 完成 Chrome 与 Edge 的真实侧载验证；
+5. 更新 Issue 017 实施计划、验收映射和 smoke 证据；
+6. 运行完整门禁；
+7. 创建 Issue 017 唯一一个本地提交并停止。
+
+
+二、工作树保护
+--------------
+
+开始后：
+
+- 完整读取适用 `AGENTS.md`、Issue 017 主指令和当前实施计划；
+- 动态记录当前分支、HEAD、远端和工作树；
+- 把现有未提交 Issue 017 文件视为待完成成果；
+- 不 reset、checkout、clean、stash、删除或重新生成整个实现；
+- 不为了获得“干净起点”覆盖当前修改；
+- 先核对中断前残留 Chrome、Edge、smoke host、listener 和临时 profile 已关闭；
+- 如发现明确不属于 Issue 017 的未知用户修改，停止并报告。
+
+不要创建中间提交。最终仍然只允许一个 Issue 017 本地提交。
+
+
+三、根因处理原则
+----------------
+
+不得降低以下要求：
+
+- Chrome 必须是真实安装的 Chrome，不用 Chromium mock 冒充；
+- Edge 必须是真实安装的 Microsoft Edge；
+- 两者必须真实侧载本轮生成的 unpacked extension；
+- 两者都必须完成配对、页面采集、可选截图、Local API 写入和桌面可见性验证；
+- `activeTab` 必须来自真实用户手势；
+- 插件业务请求只能发往配置的 `127.0.0.1` Local API。
+
+只替换不可靠的判断方式：
+
+```text
+禁止：
+把 Windows 地址栏 OCR、窗口标题猜测或浏览器控制工具返回值当作 URL 事实。
+
+改为：
+通过浏览器自身的 DevTools Protocol target + Runtime.evaluate
+读取并核对真实页面 URL、document 状态和 fixture nonce。
+```
+
+Windows 输入工具可以用于触发一次真实 action 手势，但不能再承担 URL、document 或成功状态判断。
+
+
+四、正式技术依据
+----------------
+
+实现前核对：
+
+- Chrome 远程调试与独立 user-data-dir：
+  https://developer.chrome.com/blog/remote-debugging-port
+- Chrome DevTools Protocol：
+  https://chromedevtools.github.io/devtools-protocol/
+- Chrome `_execute_action`：
+  https://developer.chrome.com/docs/extensions/reference/api/commands
+- Chrome `activeTab`：
+  https://developer.chrome.com/docs/extensions/develop/concepts/activeTab
+- Microsoft Edge DevTools Protocol：
+  https://learn.microsoft.com/en-us/microsoft-edge/devtools/protocol/
+
+不得运行 `npx ...@latest`、下载额外浏览器或依赖远程 MCP 服务。
+
+
+五、仓库内 CDP smoke harness
+---------------------------
+
+优先使用 Node.js 24 内置 `fetch`、`WebSocket`、`child_process` 和现有仓库能力。
+只有现有能力确实不足时才可增加最小 dev dependency，并按 AGENTS.md 完成审计。
+
+harness 必须：
+
+- 动态发现 Chrome/Edge executable；
+- 不把注册表结果、盘符或安装目录写入源码/fixture/文档；
+- 为每个浏览器创建不同的、位于仓库所在卷受控临时根中的 user-data-dir；
+- 不接触正式浏览器 profile；
+- 使用动态 remote debugging port；
+- Chrome 必须携带非默认 `--user-data-dir`；
+- Edge 也使用独立 `--user-data-dir`；
+- 只侧载当前 browser-specific unpacked output；
+- 不安装其他扩展；
+- 不使用正式用户登录、同步、Cookie 或历史；
+- 使用本机合成 fixture host 和临时 ProjectDataRoot；
+- 所有端口动态分配；
+- 结束后精确关闭进程、listener 并清理本轮 profile。
+
+通过 `DevToolsActivePort` 或当前浏览器官方等价机制发现调试 endpoint。
+不得扫描端口。
+
+CDP 只绑定 loopback。不得使用：
+
+- 固定 9222；
+- LAN/public bind；
+- 正式 profile；
+- `--remote-allow-origins=*`；
+- 无限制 target attach；
+- DevTools endpoint 日志外发。
+
+若当前 WebSocket client 出现 Origin 拒绝，只能使用当前浏览器支持的窄 loopback Origin
+或改用 remote-debugging-pipe；不得放宽为 wildcard。
+
+
+六、CDP URL 与 target 可信确认
+----------------------------
+
+fixture URL 必须包含每轮随机 nonce，例如：
+
+`http://127.0.0.1:<dynamic-port>/<fixed-path>?run=<random-nonce>`
+
+nonce：
+
+- 运行时随机；
+- 不含 secret；
+- 不写源文件；
+- 只用于当前 smoke 绑定。
+
+对每个浏览器必须：
+
+1. 从 `/json/version` 或 Browser CDP session 确认真实浏览器产品与版本；
+2. 用 `Target.getTargets` 或 `/json/list` 枚举 attachable targets；
+3. 精确选择 fixture page target；
+4. attach 后调用 `Runtime.evaluate`；
+5. 读取 `location.href`、`document.readyState` 和页面内 fixture nonce；
+6. 与预期 origin、path、query nonce 精确比较；
+7. 同时确认 target 处于前台 active page；
+8. 在任何插件 action 前完成以上检查。
+
+不得依据：
+
+- 窗口标题；
+- 地址栏文字；
+- OCR；
+- 截图肉眼推测；
+- Windows 浏览器控制工具报告的 URL。
+
+发现多个候选 target、URL 不一致、document 未稳定或 nonce 不符时立即停止该 smoke。
+
+
+七、真实 action 用户手势
+-----------------------
+
+优先流程：
+
+1. CDP 确认 fixture target 与 URL；
+2. Windows 输入工具只负责点击真实扩展 action；
+3. 立即用 CDP 确认出现当前 extension origin 的 popup target；
+4. 通过 popup target 的 DOM/CDP 继续操作。
+
+如果 action 图标定位本身不可靠，允许增加 MV3 标准：
+
+```json
+"commands": {
+  "_execute_action": {
+    "suggested_key": {
+      "default": "<选择一个低冲突快捷键>"
+    }
+  }
+}
+```
+
+要求：
+
+- `commands` 是 manifest key，不新增 manifest permission；
+- 不改变原有最小权限集合；
+- 快捷键必须是正常产品可接受的 action shortcut；
+- Chrome 与 Edge 使用同一语义；
+- isolated profile 中通过 `chrome.commands.getAll()` 确认该 shortcut 实际生效；
+- CDP 确认 fixture target 后，再由 Windows 输入工具发送该快捷键；
+- `_execute_action` 必须真实打开 popup 并取得 activeTab；
+- popup target、extension ID 和 origin 再由 CDP 验证。
+
+如果快捷键未分配或冲突，先尝试真实 toolbar action；两种方式都失败才停止。
+不得绕过 activeTab，不得临时添加 `<all_urls>`、`tabs` 或持久 content script。
+
+
+八、popup 的 CDP 交互
+--------------------
+
+attach 到精确的：
+
+`chrome-extension://<current-extension-id>/<actual-popup-path>`
+
+验证：
+
+- extension ID 与本轮侧载包一致；
+- origin 与 Local API client 绑定一致；
+- popup 属于本轮浏览器实例；
+- 没有第二个同名扩展 target。
+
+优先使用 CDP DOM/Input domain 进行真实表单输入和 click：
+
+- 不把 pairing code、token、Authorization、selected text 或截图打印到日志；
+- 不在命令行参数中传递敏感运行时值；
+- CDP transcript 只保留 allowlist 状态和计数；
+- pairing code 仅驻 harness 内存；
+- client token 仍只由扩展 Service Worker 生成和保存；
+- harness 不能读取 token。
+
+可以通过 CDP 在合成 fixture 页面创建明确文本 selection；这是测试输入，不是页面采集绕过。
+
+
+九、每个浏览器的完整 smoke
+-------------------------
+
+Chrome 与 Edge 分别使用独立：
+
+- browser process；
+- user-data-dir；
+- extension origin/client；
+- pairing session；
+- runtime token；
+- captureId；
+- fixture nonce；
+- 临时数据库与 ProjectDataRoot。
+
+每个 smoke 必须按顺序证明：
+
+1. 浏览器产品身份正确；
+2. unpacked extension 已加载；
+3. extension Service Worker target 存在；
+4. fixture URL/nonce 经 CDP 精确确认；
+5. 用户手势真实打开 action popup；
+6. activeTab 读取 title/selection 成功；
+7. popup 完成 Local API 配对；
+8. nullable metrics 语义正确；
+9. public-page confirmation 明确勾选；
+10. 可选 viewport screenshot 成功；
+11. 保存请求只到配置的 loopback endpoint；
+12. SQLite 中生成 Clip 与 receipt；
+13. `CLIP_SCREENSHOT` 文件存在且 hash/MIME/尺寸正确；
+14. BrowserClipAdapter 生成 linked `LEAD_ONLY` Candidate；
+15. Candidate 仍为四项冻结状态；
+16. 未创建 Fetch Job；
+17. 桌面样本列表/详情可见；
+18. screenshot 安全 protocol 可读取；
+19. 同 capture replay 不重复写入；
+20. 关闭桌面 host 后，popup 显示明确离线提示；
+21. 浏览器、host、listener 和临时目录全部清理。
+
+Chrome 的结果不能代替 Edge，Edge 的结果不能代替 Chrome。
+
+
+十、网络与证据口径
+------------------
+
+只声明并证明：
+
+> 插件业务请求只连接当前 smoke 配置的 `127.0.0.1:<port>`。
+
+证据来自：
+
+- 合成 fixture host request log；
+- Local API request log 的 allowlist 摘要；
+- extension fetch instrumentation；
+- CDP target/network 的有限目标审计，如当前实现安全可用。
+
+不要把浏览器厂商自身后台流量误报为插件业务，也不要在无法观察整个进程时声称浏览器
+`externalConnections=0`。
+
+既有 Electron source/packaged smoke 的外连口径保持不变。
+
+
+十一、允许修改范围
+------------------
+
+只允许为完成当前 Issue 017 修改：
+
+- browser smoke harness；
+- clipper build/test script；
+- 必要的 `_execute_action` manifest key；
+- fixture 与 smoke 专项测试；
+- Issue 017 实施计划、验收映射、egress 证据；
+- README/AGENTS 当前进度事实；
+- 因真实 smoke 暴露的 Issue 017 根因缺陷。
+
+不得：
+
+- 重写已通过的核心架构；
+- 改变 token、Local API、Clip、SearchCandidate 或 screenshot 安全合同；
+- 放宽权限、Origin、CORS、Host、body、storage 或 egress 限制；
+- 修改历史 migration；
+- 新增 migration v11；
+- 进入 Issue 018；
+- 把 Windows 控制工具失败包装为产品缺陷；
+- 用静态 manifest test 或 Chromium mock 代替真实浏览器。
+
+
+十二、恢复验收清单
+------------------
+
+以下项目是原 110 项之外的恢复证据，不重新编号或替代原映射：
+
+1. 当前未提交 Issue 017 成果完整保留。
+2. 中断前浏览器/host/listener 无残留。
+3. Chrome executable 动态发现。
+4. Edge executable 动态发现。
+5. 两者均使用独立临时 user-data-dir。
+6. 两者均使用动态 CDP endpoint。
+7. 未使用固定盘符、安装路径或调试端口。
+8. 未使用默认用户 profile。
+9. 未使用 `remote-allow-origins=*`。
+10. fixture URL 由 CDP + nonce 精确确认。
+11. Windows 工具不再承担 URL 判断。
+12. extension Service Worker target 被精确识别。
+13. extension origin 与 Local API client 精确一致。
+14. action 由真实 toolbar click 或 `_execute_action` 用户手势触发。
+15. 未增加任何新 manifest permission。
+16. activeTab 未被 `<all_urls>` 或 tabs 替代。
+17. popup 通过 CDP target 确认。
+18. smoke harness 未读取长期 token。
+19. CDP 日志不含 pairing code 或业务正文。
+20. Chrome 全流程真实 smoke 通过。
+21. Edge 全流程真实 smoke 通过。
+22. 两者均验证 Clip/receipt/screenshot/Candidate。
+23. 两者均验证应用离线提示。
+24. 插件业务请求目标仅为本轮 loopback。
+25. 两个隔离 profile 和全部进程均清理。
+26. 原 Issue 017 的 110/110 证据仍全部成立。
+27. 最终完整门禁从最新 `npm ci` 开始通过。
+28. 最终只创建一个 Issue 017 本地提交。
+
+
+十三、失败与停止条件
+--------------------
+
+出现以下任一情况停止并报告，不得伪造 PASS：
+
+- CDP 无法精确确认 fixture URL/nonce；
+- CDP 暴露多个无法区分的页面或扩展 target；
+- Chrome 或 Edge 不支持当前扩展 API；
+- 两种真实 action 手势方式均失败；
+- 必须扩大 manifest permission 才能继续；
+- 必须使用正式浏览器 profile；
+- 必须用 wildcard remote debugging Origin；
+- 必须读取 token 或把 pairing code 写入日志；
+- 必须用 mock/Chromium 替代真实 Chrome/Edge；
+- 真实 smoke 暴露的修复需要扩大到 Issue 018；
+- 工作树出现不属于 Issue 017 的未知修改。
+
+
+十四、完成顺序
+-------------
+
+1. 读取规则并保护当前工作树。
+2. 清理中断残留。
+3. 审计现有 smoke harness 与失败证据。
+4. 实现 CDP target/URL/nonce 可信确认。
+5. 接通真实 action 手势。
+6. 完成 Chrome smoke。
+7. 完成 Edge smoke。
+8. 回填原 110 项及本恢复清单证据。
+9. 从最新 `npm ci` 开始运行 Issue 017 主指令要求的全部最终门禁。
+10. 核对 diff、敏感值、进程、listener、临时 profile 和 Git 范围。
+11. 创建唯一一个本地提交：
+    `feat(clipper): add Chrome and Edge sample capture`
+12. 报告并停止，不进入 Issue 018。
+
+
+最终启动指令
+------------
+
+继续执行当前 M2 Issue 017，不要重开或丢弃现有工作。
+
+完整读取本恢复指令、Issue 017 主指令和适用 AGENTS.md。保留当前未提交成果，只把失败的
+浏览器 smoke URL 判定改为 CDP target + Runtime.evaluate + 随机 nonce 精确验证。
+
+Windows 浏览器控制工具最多只触发真实 action 用户手势，不再作为 URL 事实来源。分别完成
+真实 Chrome 与 Edge 的配对、采集、截图、保存、桌面查看和离线提示验证。
+
+全部门禁通过后创建 Issue 017 唯一一个本地提交
+`feat(clipper): add Chrome and Edge sample capture`，随后停止，不得进入 Issue 018。
