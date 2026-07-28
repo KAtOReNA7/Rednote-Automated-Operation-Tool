@@ -1,4 +1,5 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
+export { SqliteFetchRepository } from './fetch-repository.js';
 export { JobQueueRepository, JobQueueRepositoryError } from './job-queue-repository.js';
 export { SqliteLocalApiRepository } from './local-api-repository.js';
 export { MigrationError, initializeDatabase, migrationChecksum } from './migration-runner.js';
@@ -11,6 +12,7 @@ export { SqliteSearchRepository } from './search-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
+export type { FetchRunSummaryRecordV1 } from './fetch-repository.js';
 export type {
   ClaimStoredJobInput,
   EnqueueStoredJobInput,

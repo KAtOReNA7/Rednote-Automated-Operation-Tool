@@ -24,6 +24,7 @@ import {
   type SetCredentialInput,
   type StartProviderCapabilityProbeInput,
   type UpdateLocalApiSettingsRequest,
+  type UpdateFetchPolicyInput,
   type UpdateSearchProviderConfigInput,
   type WindowState,
 } from '@mystery-operations/shared';
@@ -151,6 +152,9 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   register('getSearchState', DESKTOP_IPC_CHANNELS.getSearchState, () =>
     options.settingsRuntime.getSearchState(),
   );
+  register('getFetchState', DESKTOP_IPC_CHANNELS.getFetchState, () =>
+    options.settingsRuntime.getFetchState(),
+  );
   register('previewModelCacheClear', DESKTOP_IPC_CHANNELS.previewModelCacheClear, (event) => {
     const window = options.getWindow();
     if (window === null || window.webContents.id !== event.sender.id) {
@@ -251,6 +255,9 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
     DESKTOP_IPC_CHANNELS.updateNonSecretSettings,
     (_event, args) =>
       options.settingsRuntime.updateNonSecretSettings(args[0] as NonSecretSettingsDraft),
+  );
+  register('updateFetchPolicy', DESKTOP_IPC_CHANNELS.updateFetchPolicy, (_event, args) =>
+    options.settingsRuntime.updateFetchPolicy(args[0] as UpdateFetchPolicyInput),
   );
   register(
     'updateSearchProviderConfig',

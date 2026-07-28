@@ -2228,6 +2228,345 @@ CREATE INDEX idx_search_candidates_run_rank
 CREATE INDEX idx_search_candidates_domain ON search_result_candidates(domain, discovered_at DESC);
 `;
 
+const CONTROLLED_PUBLIC_PAGE_FETCH = `
+CREATE TABLE fetch_profiles (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  contract_version TEXT NOT NULL CHECK (contract_version = 'fetch-profile-v1'),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (typeof(revision) = 'integer' AND revision > 0),
+  global_max_concurrent INTEGER NOT NULL CHECK (
+    typeof(global_max_concurrent) = 'integer' AND global_max_concurrent BETWEEN 1 AND 8
+  ),
+  connect_timeout_ms INTEGER NOT NULL CHECK (
+    typeof(connect_timeout_ms) = 'integer' AND connect_timeout_ms BETWEEN 100 AND 60000
+  ),
+  body_timeout_ms INTEGER NOT NULL CHECK (
+    typeof(body_timeout_ms) = 'integer' AND body_timeout_ms BETWEEN 100 AND 120000
+  ),
+  header_timeout_ms INTEGER NOT NULL CHECK (
+    typeof(header_timeout_ms) = 'integer' AND header_timeout_ms BETWEEN 100 AND 60000
+  ),
+  total_timeout_ms INTEGER NOT NULL CHECK (
+    typeof(total_timeout_ms) = 'integer' AND total_timeout_ms BETWEEN 500 AND 300000
+  ),
+  header_bytes INTEGER NOT NULL CHECK (
+    typeof(header_bytes) = 'integer' AND header_bytes BETWEEN 1024 AND 32768
+  ),
+  header_count INTEGER NOT NULL CHECK (
+    typeof(header_count) = 'integer' AND header_count BETWEEN 1 AND 100
+  ),
+  raw_bytes INTEGER NOT NULL CHECK (
+    typeof(raw_bytes) = 'integer' AND raw_bytes BETWEEN 1024 AND 2097152
+  ),
+  decoded_bytes INTEGER NOT NULL CHECK (
+    typeof(decoded_bytes) = 'integer' AND decoded_bytes BETWEEN raw_bytes AND 4194304
+  ),
+  dom_nodes INTEGER NOT NULL CHECK (
+    typeof(dom_nodes) = 'integer' AND dom_nodes BETWEEN 100 AND 50000
+  ),
+  dom_depth INTEGER NOT NULL CHECK (
+    typeof(dom_depth) = 'integer' AND dom_depth BETWEEN 4 AND 64
+  ),
+  sanitized_bytes INTEGER NOT NULL CHECK (
+    typeof(sanitized_bytes) = 'integer' AND sanitized_bytes BETWEEN 1024 AND 2097152
+  ),
+  text_bytes INTEGER NOT NULL CHECK (
+    typeof(text_bytes) = 'integer' AND text_bytes BETWEEN 1024 AND 2097152
+  ),
+  redirect_count INTEGER NOT NULL CHECK (
+    typeof(redirect_count) = 'integer' AND redirect_count BETWEEN 0 AND 3
+  ),
+  max_external_requests INTEGER NOT NULL CHECK (
+    typeof(max_external_requests) = 'integer' AND max_external_requests BETWEEN 3 AND 6
+  ),
+  min_interval_ms INTEGER NOT NULL CHECK (
+    typeof(min_interval_ms) = 'integer' AND min_interval_ms BETWEEN 0 AND 86400000
+  ),
+  max_requests_per_window INTEGER NOT NULL CHECK (
+    typeof(max_requests_per_window) = 'integer' AND max_requests_per_window BETWEEN 1 AND 10000
+  ),
+  window_ms INTEGER NOT NULL CHECK (
+    typeof(window_ms) = 'integer' AND window_ms BETWEEN 1000 AND 86400000
+  ),
+  rate_policy_revision INTEGER NOT NULL CHECK (
+    typeof(rate_policy_revision) = 'integer' AND rate_policy_revision > 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (max_external_requests >= redirect_count + 3)
+) STRICT;
+
+CREATE TABLE fetch_origin_rate_states (
+  origin TEXT PRIMARY KEY CHECK (
+    length(origin) BETWEEN 8 AND 512 AND
+    (origin GLOB 'http://*' OR origin GLOB 'https://*')
+  ),
+  policy_revision INTEGER NOT NULL CHECK (
+    typeof(policy_revision) = 'integer' AND policy_revision > 0
+  ),
+  window_started_at TEXT NOT NULL CHECK (window_started_at ${UTC_REQUIRED}),
+  request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(request_count) = 'integer' AND request_count BETWEEN 0 AND 10000
+  ),
+  in_flight INTEGER NOT NULL DEFAULT 0 CHECK (in_flight IN (0, 1)),
+  last_started_at TEXT CHECK (last_started_at IS NULL OR last_started_at ${UTC_REQUIRED}),
+  next_allowed_at TEXT NOT NULL CHECK (next_allowed_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (typeof(revision) = 'integer' AND revision > 0),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE fetch_robots_cache (
+  origin TEXT NOT NULL CHECK (
+    length(origin) BETWEEN 8 AND 512 AND
+    (origin GLOB 'http://*' OR origin GLOB 'https://*')
+  ),
+  user_agent_hash TEXT NOT NULL CHECK (
+    length(user_agent_hash) = 64 AND user_agent_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  policy_version TEXT NOT NULL CHECK (policy_version = 'robots-rfc9309-subset-v1'),
+  result TEXT NOT NULL CHECK (result IN ('ALLOWED', 'DISALLOWED', 'UNKNOWN')),
+  body_hash TEXT CHECK (
+    body_hash IS NULL OR
+    (length(body_hash) = 64 AND body_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  parsed_rules_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(parsed_rules_json) AND json_type(parsed_rules_json) = 'array' AND
+    length(CAST(parsed_rules_json AS BLOB)) BETWEEN 2 AND 131072
+  ),
+  crawl_delay_ms INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(crawl_delay_ms) = 'integer' AND crawl_delay_ms BETWEEN 0 AND 3600000
+  ),
+  checked_at TEXT NOT NULL CHECK (checked_at ${UTC_REQUIRED}),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (typeof(revision) = 'integer' AND revision > 0),
+  PRIMARY KEY (origin, user_agent_hash, policy_version),
+  CHECK (expires_at > checked_at)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE fetched_documents (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  final_canonical_url TEXT NOT NULL CHECK (length(final_canonical_url) BETWEEN 1 AND 4096),
+  final_canonical_url_hash TEXT NOT NULL CHECK (
+    length(final_canonical_url_hash) = 64 AND
+    final_canonical_url_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  raw_body_hash TEXT NOT NULL CHECK (
+    length(raw_body_hash) = 64 AND raw_body_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  mime_type TEXT NOT NULL CHECK (
+    mime_type IN ('text/html', 'application/xhtml+xml', 'text/plain')
+  ),
+  charset TEXT NOT NULL CHECK (
+    charset IN ('utf-8', 'gb18030', 'big5', 'shift_jis', 'euc-jp', 'iso-2022-jp')
+  ),
+  language_hint TEXT CHECK (language_hint IS NULL OR length(language_hint) BETWEEN 1 AND 32),
+  sanitizer_version TEXT NOT NULL CHECK (sanitizer_version = 'fetch-sanitizer-v1'),
+  extractor_version TEXT NOT NULL CHECK (extractor_version = 'fetch-extractor-v1'),
+  privacy_policy_version TEXT NOT NULL CHECK (privacy_policy_version = 'fetch-privacy-v1'),
+  sanitized_html_hash TEXT NOT NULL CHECK (
+    length(sanitized_html_hash) = 64 AND sanitized_html_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  sanitized_html_bytes INTEGER NOT NULL CHECK (
+    typeof(sanitized_html_bytes) = 'integer' AND sanitized_html_bytes BETWEEN 1 AND 2097152
+  ),
+  sanitized_html_path TEXT NOT NULL CHECK (
+    length(sanitized_html_path) BETWEEN 1 AND 1024 AND
+    sanitized_html_path GLOB 'sources/snapshots/??/*' AND
+    instr(sanitized_html_path, '..') = 0 AND instr(sanitized_html_path, char(92)) = 0
+  ),
+  extracted_text_hash TEXT NOT NULL CHECK (
+    length(extracted_text_hash) = 64 AND extracted_text_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  extracted_text_bytes INTEGER NOT NULL CHECK (
+    typeof(extracted_text_bytes) = 'integer' AND extracted_text_bytes BETWEEN 1 AND 2097152
+  ),
+  extracted_text_path TEXT NOT NULL CHECK (
+    length(extracted_text_path) BETWEEN 1 AND 1024 AND
+    extracted_text_path GLOB 'sources/snapshots/??/*' AND
+    instr(extracted_text_path, '..') = 0 AND instr(extracted_text_path, char(92)) = 0
+  ),
+  normalized_content_hash TEXT NOT NULL CHECK (
+    length(normalized_content_hash) = 64 AND normalized_content_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  redacted_email_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redacted_email_count) = 'integer' AND redacted_email_count >= 0
+  ),
+  redacted_phone_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redacted_phone_count) = 'integer' AND redacted_phone_count >= 0
+  ),
+  redacted_address_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redacted_address_count) = 'integer' AND redacted_address_count >= 0
+  ),
+  evidence_eligibility TEXT NOT NULL DEFAULT 'FETCHED_NOT_EVIDENCE'
+    CHECK (evidence_eligibility = 'FETCHED_NOT_EVIDENCE'),
+  truth_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (truth_status = 'UNVERIFIED'),
+  fact_status TEXT NOT NULL DEFAULT 'NOT_A_FACT' CHECK (fact_status = 'NOT_A_FACT'),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (
+    normalized_content_hash, sanitizer_version, extractor_version, privacy_policy_version
+  )
+) STRICT;
+
+CREATE TABLE fetch_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 128),
+  job_id TEXT CHECK (job_id IS NULL OR length(job_id) BETWEEN 1 AND 128),
+  search_candidate_id TEXT NOT NULL
+    REFERENCES search_result_candidates(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  expected_canonical_url_hash TEXT NOT NULL CHECK (
+    length(expected_canonical_url_hash) = 64 AND
+    expected_canonical_url_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  candidate_url_hash TEXT NOT NULL CHECK (
+    length(candidate_url_hash) = 64 AND candidate_url_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  request_semantic_hash TEXT NOT NULL CHECK (
+    length(request_semantic_hash) = 64 AND request_semantic_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  plan_hash TEXT NOT NULL CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  selection_kind TEXT NOT NULL CHECK (
+    selection_kind IN ('USER_SELECTED', 'RESEARCH_PLAN_SELECTED', 'FIXTURE_SELECTED')
+  ),
+  selection_reason_code TEXT NOT NULL CHECK (length(selection_reason_code) BETWEEN 1 AND 128),
+  fetch_profile_id TEXT NOT NULL
+    REFERENCES fetch_profiles(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  profile_revision INTEGER NOT NULL CHECK (
+    typeof(profile_revision) = 'integer' AND profile_revision > 0
+  ),
+  origin TEXT NOT NULL CHECK (
+    length(origin) BETWEEN 8 AND 512 AND
+    (origin GLOB 'http://*' OR origin GLOB 'https://*')
+  ),
+  status TEXT NOT NULL CHECK (status IN (
+    'PLANNED', 'RECOVERABLE_PRE_SEND', 'ROBOTS_CHECKING', 'ROBOTS_BLOCKED',
+    'RATE_LIMITED_BEFORE_SEND',
+    'FETCHING', 'RECEIVED', 'SANITIZING', 'EXTRACTING', 'PERSISTING', 'SUCCEEDED',
+    'REJECTED', 'CANCELLED_BEFORE_SEND', 'CANCELLED_AFTER_SEND',
+    'FAILED_BEFORE_SEND', 'FAILED_AFTER_SEND', 'AMBIGUOUS'
+  )),
+  send_state TEXT NOT NULL CHECK (send_state IN (
+    'NOT_SENT', 'ROBOTS_SENT', 'PAGE_SENT', 'UNKNOWN'
+  )),
+  rate_reserved INTEGER NOT NULL DEFAULT 0 CHECK (rate_reserved IN (0, 1)),
+  active_rate_origin TEXT CHECK (
+    active_rate_origin IS NULL OR
+    (length(active_rate_origin) BETWEEN 8 AND 512 AND
+      (active_rate_origin GLOB 'http://*' OR active_rate_origin GLOB 'https://*'))
+  ),
+  robots_dispatch_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(robots_dispatch_count) = 'integer' AND robots_dispatch_count BETWEEN 0 AND 2
+  ),
+  page_dispatch_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(page_dispatch_count) = 'integer' AND page_dispatch_count BETWEEN 0 AND 4
+  ),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    external_request_count = robots_dispatch_count + page_dispatch_count AND
+    external_request_count BETWEEN 0 AND 6
+  ),
+  final_canonical_url TEXT CHECK (
+    final_canonical_url IS NULL OR length(final_canonical_url) BETWEEN 1 AND 4096
+  ),
+  final_canonical_url_hash TEXT CHECK (
+    final_canonical_url_hash IS NULL OR
+    (length(final_canonical_url_hash) = 64 AND
+      final_canonical_url_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  response_mime TEXT CHECK (
+    response_mime IS NULL OR
+    response_mime IN ('text/html', 'application/xhtml+xml', 'text/plain')
+  ),
+  response_charset TEXT CHECK (
+    response_charset IS NULL OR
+    response_charset IN ('utf-8', 'gb18030', 'big5', 'shift_jis', 'euc-jp', 'iso-2022-jp')
+  ),
+  received_bytes INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(received_bytes) = 'integer' AND received_bytes BETWEEN 0 AND 4194304
+  ),
+  redirect_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redirect_count) = 'integer' AND redirect_count BETWEEN 0 AND 3
+  ),
+  redacted_email_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redacted_email_count) = 'integer' AND redacted_email_count >= 0
+  ),
+  redacted_phone_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redacted_phone_count) = 'integer' AND redacted_phone_count >= 0
+  ),
+  redacted_address_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(redacted_address_count) = 'integer' AND redacted_address_count >= 0
+  ),
+  evidence_eligibility TEXT NOT NULL DEFAULT 'FETCHED_NOT_EVIDENCE'
+    CHECK (evidence_eligibility = 'FETCHED_NOT_EVIDENCE'),
+  truth_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (truth_status = 'UNVERIFIED'),
+  fact_status TEXT NOT NULL DEFAULT 'NOT_A_FACT' CHECK (fact_status = 'NOT_A_FACT'),
+  document_id TEXT REFERENCES fetched_documents(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 96
+  ),
+  started_at TEXT NOT NULL CHECK (started_at ${UTC_REQUIRED}),
+  finished_at TEXT CHECK (finished_at IS NULL OR finished_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (typeof(revision) = 'integer' AND revision > 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (expected_canonical_url_hash = candidate_url_hash),
+  CHECK (
+    (status IN (
+      'PLANNED', 'RECOVERABLE_PRE_SEND', 'ROBOTS_CHECKING', 'FETCHING', 'RECEIVED',
+      'SANITIZING', 'EXTRACTING', 'PERSISTING'
+    ) AND finished_at IS NULL) OR
+    (status NOT IN (
+      'PLANNED', 'RECOVERABLE_PRE_SEND', 'ROBOTS_CHECKING', 'FETCHING', 'RECEIVED',
+      'SANITIZING', 'EXTRACTING', 'PERSISTING'
+    ) AND finished_at IS NOT NULL)
+  ),
+  CHECK ((status = 'SUCCEEDED' AND document_id IS NOT NULL) OR
+         (status <> 'SUCCEEDED' AND document_id IS NULL)),
+  CHECK (
+    (status IN (
+      'PLANNED', 'RECOVERABLE_PRE_SEND', 'ROBOTS_CHECKING', 'FETCHING',
+      'RECEIVED', 'SANITIZING', 'EXTRACTING', 'PERSISTING', 'SUCCEEDED'
+    ) AND stable_error_code IS NULL) OR
+    (status NOT IN (
+      'PLANNED', 'RECOVERABLE_PRE_SEND', 'ROBOTS_CHECKING', 'FETCHING',
+      'RECEIVED', 'SANITIZING', 'EXTRACTING', 'PERSISTING', 'SUCCEEDED'
+    ) AND stable_error_code IS NOT NULL)
+  ),
+  CHECK ((rate_reserved = 0 AND active_rate_origin IS NULL) OR
+         (rate_reserved = 1 AND active_rate_origin IS NOT NULL)),
+  CHECK ((final_canonical_url IS NULL) = (final_canonical_url_hash IS NULL))
+) STRICT;
+
+CREATE TABLE fetch_redirect_hops (
+  fetch_run_id TEXT NOT NULL
+    REFERENCES fetch_runs(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  hop INTEGER NOT NULL CHECK (typeof(hop) = 'integer' AND hop BETWEEN 1 AND 3),
+  status_code INTEGER NOT NULL CHECK (status_code IN (301, 302, 303, 307, 308)),
+  from_host TEXT NOT NULL CHECK (length(from_host) BETWEEN 1 AND 255),
+  from_url_hash TEXT NOT NULL CHECK (
+    length(from_url_hash) = 64 AND from_url_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  to_host TEXT NOT NULL CHECK (length(to_host) BETWEEN 1 AND 255),
+  to_url_hash TEXT NOT NULL CHECK (
+    length(to_url_hash) = 64 AND to_url_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  policy_result TEXT NOT NULL CHECK (policy_result IN ('FOLLOWED', 'REJECTED')),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (fetch_run_id, hop)
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX idx_fetch_runs_candidate_status_time
+  ON fetch_runs(search_candidate_id, status, started_at DESC);
+CREATE INDEX idx_fetch_runs_origin_status_time ON fetch_runs(origin, status, started_at DESC);
+CREATE INDEX idx_fetch_runs_status_time ON fetch_runs(status, started_at DESC);
+CREATE INDEX idx_fetch_runs_document ON fetch_runs(document_id);
+CREATE INDEX idx_fetch_runs_job ON fetch_runs(job_id);
+CREATE INDEX idx_fetch_documents_url_hash ON fetched_documents(final_canonical_url_hash);
+CREATE INDEX idx_fetch_documents_content_hash ON fetched_documents(normalized_content_hash);
+CREATE INDEX idx_fetch_robots_expiry ON fetch_robots_cache(expires_at);
+CREATE INDEX idx_fetch_redirect_to_hash ON fetch_redirect_hops(to_url_hash);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -2270,5 +2609,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'search_provider_runs_and_rate_limits',
     sql: SEARCH_PROVIDER_RUNS_AND_RATE_LIMITS,
     version: 8,
+  }),
+  Object.freeze({
+    name: 'controlled_public_page_fetch',
+    sql: CONTROLLED_PUBLIC_PAGE_FETCH,
+    version: 9,
   }),
 ]);

@@ -9,9 +9,9 @@ function source(path: string): string {
 }
 
 describe('Issue 015 architecture boundaries', () => {
-  it('adds exactly migration v8 without changing the historical sequence', () => {
-    expect(MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
-    expect(MIGRATIONS.at(-1)?.name).toBe('search_provider_runs_and_rate_limits');
+  it('keeps migration v8 unchanged when later migrations are appended', () => {
+    expect(MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+    expect(MIGRATIONS[7]?.name).toBe('search_provider_runs_and_rate_limits');
   });
 
   it('keeps the renderer free of Node, Electron, SQLite, network and credential imports', () => {

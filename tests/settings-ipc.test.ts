@@ -75,6 +75,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getAppInfo: [],
   getCredentialStatus: [{ slot: 'CONTENT_AI_API_KEY' }],
   getFoundationHealth: [],
+  getFetchState: [],
   getModelAccounting: [],
   getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
   getProviderCapabilityState: [],
@@ -132,6 +133,16 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
         writing: null,
       },
       providerBaseUrl: null,
+    },
+  ],
+  updateFetchPolicy: [
+    {
+      enabled: false,
+      expectedRevision: 1,
+      globalMaxConcurrent: 2,
+      maxRequestsPerWindow: 30,
+      minIntervalMs: 2_000,
+      windowMs: 60_000,
     },
   ],
   updateSearchProviderConfig: [

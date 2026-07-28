@@ -18,6 +18,10 @@ export * from './model-execution/service.js';
 export * from './model-execution/sqlite-persistence.js';
 export * from './model-execution/types.js';
 export {
+  createFetchExecutionJobHandler,
+  registerFetchExecutionJob,
+} from './fetch-execution-handler.js';
+export {
   createSearchExecutionJobHandler,
   registerSearchExecutionJob,
 } from './search-execution-handler.js';
@@ -44,3 +48,4 @@ export type {
   RetryFailedJobOptions,
 } from './queue/types.js';
 export type { JobWorkerOptions } from './queue/worker.js';
+export type { FetchPlanReaderV1 } from './fetch-execution-handler.js';

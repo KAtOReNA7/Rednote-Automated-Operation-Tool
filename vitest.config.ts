@@ -11,6 +11,9 @@ export default defineConfig({
       '@mystery-operations/db': fileURLToPath(
         new URL('./packages/db/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/fetch': fileURLToPath(
+        new URL('./packages/fetch/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/local-api': fileURLToPath(
         new URL('./packages/local-api/src/index.ts', import.meta.url),
       ),

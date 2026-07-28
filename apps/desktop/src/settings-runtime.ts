@@ -32,10 +32,12 @@ import type {
   ModelCacheClearPreview,
   ModelPriceScheduleView,
   ModelUnitPolicyView,
+  FetchStateView,
   SearchStateView,
   SetupStateView,
   StartProviderCapabilityProbeInput,
   UpdateSearchProviderConfigInput,
+  UpdateFetchPolicyInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -64,6 +66,7 @@ import { DesktopLocalApiRuntime } from './local-api-runtime.js';
 import { DesktopModelAccountingRuntime } from './model-accounting-runtime.js';
 import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import { DesktopSearchRuntime } from './search-runtime.js';
+import { DesktopFetchRuntime } from './fetch-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -102,6 +105,7 @@ interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
   readonly database: DatabaseSync;
+  readonly fetch: DesktopFetchRuntime;
   readonly root: ProjectDataRoot;
   readonly search: DesktopSearchRuntime;
   readonly service: SettingsService;
@@ -432,6 +436,14 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().search.getState();
   }
 
+  public getFetchState(): FetchStateView {
+    return this.#requireActive().fetch.getState();
+  }
+
+  public updateFetchPolicy(input: UpdateFetchPolicyInput): FetchStateView {
+    return this.#requireActive().fetch.update(input);
+  }
+
   public updateSearchProviderConfig(input: UpdateSearchProviderConfigInput): SearchStateView {
     return this.#requireActive().search.update(input);
   }
@@ -588,8 +600,9 @@ export class DesktopSettingsRuntime {
       },
     );
     const search = new DesktopSearchRuntime(database);
+    const fetch = new DesktopFetchRuntime(database, root);
     accountingRepository.recoverInterrupted(new Date().toISOString());
-    return { accounting, capabilities, database, root, search, service };
+    return { accounting, capabilities, database, fetch, root, search, service };
   }
 
   #requireActive(): ActiveProject {

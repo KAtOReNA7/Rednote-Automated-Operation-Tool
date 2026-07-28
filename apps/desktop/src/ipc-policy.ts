@@ -14,6 +14,7 @@ export type DesktopIpcOperation =
   | 'getAppInfo'
   | 'getCredentialStatus'
   | 'getFoundationHealth'
+  | 'getFetchState'
   | 'getModelAccounting'
   | 'getProviderCapabilityProbeProgress'
   | 'getProviderCapabilityState'
@@ -34,6 +35,7 @@ export type DesktopIpcOperation =
   | 'startLocalApiPairing'
   | 'updateLocalApiSettings'
   | 'updateNonSecretSettings'
+  | 'updateFetchPolicy'
   | 'updateSearchProviderConfig';
 
 const MAX_IPC_BYTES = 32 * 1024;
@@ -135,6 +137,7 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'getRuntimeCapabilities':
     case 'getSettings':
     case 'getSearchState':
+    case 'getFetchState':
     case 'getProviderCapabilityState':
     case 'getModelAccounting':
     case 'getSetupState':
@@ -146,6 +149,34 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'buildDiagnosticPreview':
     case 'previewModelCacheClear':
       return args.length === 0;
+    case 'updateFetchPolicy': {
+      const value = validateOneObject(args, [
+        'enabled',
+        'expectedRevision',
+        'globalMaxConcurrent',
+        'maxRequestsPerWindow',
+        'minIntervalMs',
+        'windowMs',
+      ]);
+      return (
+        value !== null &&
+        typeof value.enabled === 'boolean' &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        Number(value.expectedRevision) >= 1 &&
+        Number.isSafeInteger(value.globalMaxConcurrent) &&
+        Number(value.globalMaxConcurrent) >= 1 &&
+        Number(value.globalMaxConcurrent) <= 8 &&
+        Number.isSafeInteger(value.maxRequestsPerWindow) &&
+        Number(value.maxRequestsPerWindow) >= 1 &&
+        Number(value.maxRequestsPerWindow) <= 10_000 &&
+        Number.isSafeInteger(value.minIntervalMs) &&
+        Number(value.minIntervalMs) >= 0 &&
+        Number(value.minIntervalMs) <= 86_400_000 &&
+        Number.isSafeInteger(value.windowMs) &&
+        Number(value.windowMs) >= 1_000 &&
+        Number(value.windowMs) <= 86_400_000
+      );
+    }
     case 'confirmModelCacheClear': {
       const value = validateOneObject(args, [
         'confirmation',

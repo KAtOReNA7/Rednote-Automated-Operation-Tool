@@ -393,10 +393,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8],
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9],
         backupPath: null,
         databasePath,
-        schemaVersion: 8,
+        schemaVersion: 9,
       });
       expect(tables).toEqual(
         [
@@ -410,6 +410,12 @@ describe('SQLite initialization and migrations', () => {
           'provider_capability_entries',
           'provider_capability_probe_runs',
           'schema_migrations',
+          'fetch_profiles',
+          'fetch_origin_rate_states',
+          'fetch_robots_cache',
+          'fetched_documents',
+          'fetch_runs',
+          'fetch_redirect_hops',
           'search_provider_configs',
           'search_rate_limit_states',
           'search_result_candidates',
@@ -474,9 +480,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 8,
+        schemaVersion: 9,
       });
-      expect(row.count).toBe(8);
+      expect(row.count).toBe(9);
     } finally {
       database.close();
     }

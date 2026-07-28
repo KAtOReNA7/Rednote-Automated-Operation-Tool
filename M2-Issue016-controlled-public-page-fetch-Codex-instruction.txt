@@ -1,0 +1,743 @@
+M2 Issue 016：定向公开页面抓取与文本抽取——精简增量开发指令
+================================================================
+
+本文件是 Issue 016 的唯一增量指令；如存在其他 Issue 016 草稿，以本文件为准。
+
+完整遵守仓库根级及作用域内 AGENTS.md，尤其是
+`<!-- CODEX_COMMON_RULES: v1 -->` 公共规则块。本文件不重复公共门禁。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；SSRF、DNS、重定向、HTML 净化、恢复和 migration 使用 XHigh
+目标提交信息：feat(fetch): add controlled public page extraction
+
+
+一、授权目标
+------------
+
+只实现 Roadmap Issue 016：
+
+- 对研究流程明确选中的单个公开页面执行受控抓取；
+- 从 Issue 015 的 SearchCandidate 建立不可跨越的 Fetch 计划；
+- 校验 URL、DNS、连接目标、重定向、robots、MIME、编码和大小；
+- 对 HTML 做惰性解析、净化和确定性正文抽取；
+- 保存必要的离线净化快照与纯文本，不保存原始响应；
+- 以内容哈希去重，记录 FetchRun、文档、robots、重定向和限速状态；
+- 增加 `FETCH_PUBLIC_PAGE_V1` 队列处理器，但不自动入队；
+- 增加 migration v9、专项测试、文档和 100 项增量验收映射。
+
+完成后停止，不进入 Issue 017、018、019。
+
+
+二、Issue 特有语义基线
+---------------------
+
+编码前以当前仓库实际实现确认：
+
+- Issue 015 SearchProvider V1、migration v8、SearchRun、SearchCandidate、持久限速和
+  `SEARCH_EXECUTE_V1` 完整；
+- SearchCandidate 四项语义仍固定为
+  `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`；
+- `SOURCE_SNAPSHOT` 与 `sources/snapshots/` 内容寻址仓库可用；
+- Queue 仍为 at-least-once，外部请求具备保守的 before/after-send 语义；
+- 产品中尚不存在页面 Fetch 服务、HTML parser/sanitizer 或 Fetch Job；
+- `sources`、`claims`、`claim_evidence` 和研究档案仍属于后续 Issue。
+
+Issue 015 的候选合同和历史 migration 不得修改。Fetch 成功通过新表表达，不把
+`search_result_candidates.fetchState` 从 `NOT_FETCHED` 改为其他值。
+
+
+三、本 Issue 明确不做
+--------------------
+
+- 不运行搜索、不选择候选、不自动入队；
+- 不全站遍历，不读 sitemap、RSS、Atom、站内链接队列或下一页；
+- 不抓取页面中的图片、CSS、字体、脚本、iframe、视频、附件或 favicon；
+- 不支持 PDF、Office、电子书、ZIP、图片 OCR 或媒体转码；
+- 不执行 JavaScript，不使用 Electron renderer、webview、Playwright 或无头浏览器抓页；
+- 不登录，不保存或发送 Cookie，不处理账号会话；
+- 不绕过登录、付费墙、验证码、WAF、robots 或其他访问控制；
+- 不提供代理、自定义 DNS、自定义 Host、自定义 header、任意 method 或任意 HTTP 模板；
+- 不创建或更新 `sources`、`claims`、`claim_evidence`、`books`、`clips`、
+  `research_dossiers`；
+- 不把标题、正文、搜索摘要或抽取文本升级为事实或证据；
+- 不调用模型做摘要、翻译、分类、事实抽取或隐私识别；
+- 不进入 BrowserClip、书目发现、来源分级或事实冲突处理；
+- 不增加真实网络验收、真实站点 fixture 或生产后台抓取开关。
+
+
+四、Search / Fetch / Evidence 边界
+--------------------------------
+
+建立 Electron 无关的 `packages/fetch`，依赖方向不得形成循环。
+
+输入只能绑定一个已持久化 SearchCandidate：
+
+- candidate 必须存在；
+- URL 与 URL hash 必须和 FetchRequest/FetchPlan 精确匹配；
+- candidate 必须保持四个 Issue 015 冻结状态；
+- provider provenance 只能读取，不能改写；
+- ManualUrl 也必须先成为 SearchCandidate，不能绕过 Search 合同直接传任意 URL。
+
+Fetch 成功只产生：
+
+- FetchRun；
+- FetchedDocument；
+- 离线净化 HTML；
+- 确定性抽取纯文本；
+- 有限响应与策略元数据。
+
+Fetch 输出状态固定：
+
+- `evidenceEligibility = FETCHED_NOT_EVIDENCE`
+- `truthStatus = UNVERIFIED`
+- `factStatus = NOT_A_FACT`
+
+Issue 019 前不得创建 Source、Claim、证据摘录、置信度或冲突结论。
+
+
+五、ControlledFetch V1 合同
+--------------------------
+
+定义显式版本化、严格 runtime validation 的：
+
+- `FetchRequestV1`
+- `FetchPlanV1`
+- `FetchProfileV1`
+- `FetchRunV1`
+- `FetchOutcomeV1`
+- `FetchedDocumentV1`
+- `RedirectHopV1`
+- `RobotsDecisionV1`
+- `FetchStableErrorV1`
+
+所有对象 exact-object 校验，额外字段拒绝；数组、字符串、对象深度和序列化字节有硬上限。
+
+`FetchRequestV1` 至少包含：
+
+- contractVersion；
+- executionId；
+- searchCandidateId；
+- expectedCanonicalUrlHash；
+- selectionKind：`USER_SELECTED / RESEARCH_PLAN_SELECTED / FIXTURE_SELECTED`；
+- selectionReasonCode；
+- fetchProfileId/profileRevision；
+- requestedAt；
+- jobId，可空。
+
+本轮产品 composition 不产生 `RESEARCH_PLAN_SELECTED`；该枚举只冻结未来合同。
+测试只使用 `FIXTURE_SELECTED`。不得接受 raw URL、header、Cookie、credential、proxy 或脚本。
+
+`FetchPlanV1` 至少绑定：
+
+- request semantic hash；
+- candidate ID、canonical URL hash、origin；
+- profile snapshot/revision；
+- robots、redirect、DNS、MIME、charset 和 privacy policy versions；
+- rate-policy identity；
+- raw/decoded/DOM/sanitized/text 大小上限；
+- connect/header/body/total timeout；
+- 最大 redirect 和最大外部请求数；
+- storage estimate；
+- expiry。
+
+plan 过期或任一绑定变化时，发送前返回 `FETCH_PLAN_STALE`。
+
+
+六、Fetch 状态与确定性
+---------------------
+
+有限状态至少覆盖：
+
+- `PLANNED`
+- `ROBOTS_CHECKING`
+- `ROBOTS_BLOCKED`
+- `RATE_LIMITED_BEFORE_SEND`
+- `FETCHING`
+- `RECEIVED`
+- `SANITIZING`
+- `EXTRACTING`
+- `PERSISTING`
+- `SUCCEEDED`
+- `REJECTED`
+- `CANCELLED_BEFORE_SEND`
+- `CANCELLED_AFTER_SEND`
+- `FAILED_BEFORE_SEND`
+- `FAILED_AFTER_SEND`
+- `AMBIGUOUS`
+
+`externalRequestCount` 精确包含 robots 和页面/redirect 请求。
+
+每个 execution 只允许一个页面获取 attempt；robots 检查是独立的策略请求。
+V1 自动 retry 固定为 `NONE`。任何 after-send 终态不明都进入 `AMBIGUOUS`，不得自动重发。
+
+同一 executionId：
+
+- 相同 request 返回既有终态；
+- 不得重复网络、写文件或建文档；
+- request hash 不同则 `FETCH_EXECUTION_CONFLICT`。
+
+
+七、URL、DNS、SSRF 与连接固定
+----------------------------
+
+复用 Issue 015 的 HTTP/HTTPS canonical URL 语义，但 Fetch 必须增加网络目标验证。
+
+产品网络策略：
+
+- 只允许 `http:` 和 `https:`；
+- 拒绝 userinfo、fragment、非法 percent encoding、控制字符和混淆空白；
+- query 出现 token、session、auth、password、key、signature 等凭据型字段时拒绝，
+  不记录原值，也不通过静默删除参数改变请求语义；
+- 拒绝 localhost、`.localhost`、`.local`、单标签 host 和 IP zone identifier；
+- 拒绝 IP literal 指向非公网地址；
+- 每次请求和每次 redirect 都重新执行 host、DNS 与地址策略；
+- A/AAAA 结果只要包含任一非公网地址即 fail closed；
+- 只从验证通过的地址集合选择一个地址并固定到 socket；
+- TLS SNI 与 HTTP Host 保持原始规范 host；
+- 连接后核对 remote address 与固定地址；
+- 不信任代理环境变量、PAC、系统代理、Alt-Svc 或代理 header；
+- HTTPS 必须验证证书和主机名，不允许关闭 TLS 校验。
+
+拒绝 IPv4/IPv6 的 unspecified、loopback、private、shared、link-local、multicast、
+documentation、benchmark、reserved、IPv4-mapped private 等非公网范围。
+
+DNS resolver、connector、clock 和 network transport 必须可注入，以便测试 DNS rebinding、
+多地址和连接固定；产品 composition 只能安装严格实现。
+
+loopback 仅可用于测试 transport。架构测试必须证明测试放宽策略未进入产品 composition。
+
+
+八、HTTP 方法、重定向与请求边界
+------------------------------
+
+页面请求只使用 GET：
+
+- 不先发 HEAD；
+- 不发送 Cookie、Authorization、Proxy-Authorization、Referer 或 Origin；
+- 不接受用户自定义请求 header；
+- 使用固定、诚实、版本化 User-Agent，不伪装浏览器；
+- 只声明有限 HTML/text Accept；
+- 不读取或持久化 Set-Cookie；
+- 不复用带认证状态的连接池。
+
+默认 redirect 策略：
+
+- 最多 3 跳；
+- 每跳完整执行 URL/DNS/SSRF/MIME 前置验证；
+- 禁止 HTTPS 降级；
+- 允许同 host 的路径跳转与 HTTP→HTTPS；
+- 跨 host 默认拒绝；
+- 不把 Location 中的 userinfo、fragment 或非法 URL 传入下一跳；
+- 每跳只保存有限状态码、host、URL hash 和策略结果，不保存 header。
+
+出现跨 host redirect 时返回稳定结果，由后续人工/研究计划把目标作为新 SearchCandidate；
+不得静默跟随或自动 fallback。
+
+
+九、robots、访问控制与频率
+------------------------
+
+实现保守的 RFC 9309 robots 子集，并在合同中记录解析版本：
+
+- 只请求同 origin `/robots.txt`；
+- robots redirect 最多 1 跳且仍限同 host/HTTP→HTTPS；
+- body、时间、MIME 和编码有更小独立上限；
+- 精确处理适用 User-Agent group、Allow、Disallow、`*`、`$` 和最长匹配；
+- 支持有界 Crawl-delay；
+- 404/410 表示无规则；
+- 401/403 表示禁止；
+- 429、5xx、超时、超限、无法解析或冲突时为 `ROBOTS_UNKNOWN` 并阻止页面请求；
+- robots 结果按 origin、User-Agent、policy version 和过期时间持久缓存；
+- 不保存 robots 原文，只保存 body hash、有限解析结果和时间。
+
+页面响应出现 401、403、407、429，或被有限规则识别为登录、付费、验证码/WAF challenge 时：
+
+- 停止；
+- 不提交表单；
+- 不执行 JS；
+- 不切换 User-Agent、IP、代理或 Provider；
+- 不自动 retry。
+
+新增 Fetch 专用持久化 origin rate policy/state：
+
+- 全局并发有界；
+- 每 origin 并发默认 1；
+- min interval、window 和 timeout 显式版本化；
+- robots 与页面请求都计入；
+- 重启不清空窗口；
+- Retry-After 只更新 `nextAllowedAt`，不 sleep/retry。
+
+
+十、响应、MIME、压缩和字符编码
+-----------------------------
+
+只接受：
+
+- `text/html`
+- `application/xhtml+xml`
+- `text/plain`
+
+拒绝缺失或矛盾的 MIME、multipart、XML 非 XHTML、JSON、PDF、图片、音视频、压缩档案、
+可执行内容和附件下载。
+
+要求流式执行并同时限制：
+
+- header 数量与总字节；
+- Content-Length；
+- raw wire bytes；
+- decoded bytes；
+- 压缩比；
+- DOM node/depth；
+- sanitized HTML bytes；
+- extracted text bytes；
+- total duration。
+
+支持的 Content-Encoding 和 charset 必须是代码 allowlist。编码按 BOM、HTTP charset 和有限
+HTML meta 的明确优先级解析；冲突、未知编码或 fatal decode 失败时停止，不猜测。
+
+至少覆盖 UTF-8、中文和日文常见编码的 fixture，但不得调用模型修复乱码。
+
+MIME 与前置字节明显冲突时 fail closed。不得因扩展名或上游标题推断 MIME。
+
+
+十一、HTML 净化与正文抽取
+------------------------
+
+使用惰性、不会执行脚本的标准 HTML parser；选择及理由写入 ADR。
+
+禁止使用真实 BrowserWindow、renderer、webview、Playwright 或 JSDOM 加载远程页面。
+
+净化输出采用极小 allowlist：
+
+- 仅保留正文语义所需的 heading、paragraph、list、blockquote、table、time 和简单 inline tag；
+- 删除 script、style、noscript、template、iframe、object、embed、form、input、button、
+  select、textarea、canvas、svg、math、audio、video、source、picture；
+- 删除 event handler、style、class、id、src、srcset、href、action、formaction、meta refresh、
+  base 和其他可发起导航/加载/执行的属性；
+- 不保留 CSS、data URL、blob URL、remote resource 或 HTML comment；
+- 序列化必须确定、UTF-8、离线、不可执行。
+
+正文抽取必须确定且不使用模型：
+
+- 优先 main/article 与明确正文结构；
+- 排除导航、页头页尾、侧栏、推荐、广告、评论、登录、分享和 Cookie banner；
+- 保留标题、byline、发布时间、段落、标题层级、列表、引用和表格文本；
+- 规范 Unicode、空白和换行；
+- 不生成摘要、不改写、不翻译、不判断事实；
+- 抽取不足返回有限状态，不用整页 DOM 兜底伪装正文。
+
+净化 HTML 与纯文本必须由独立 validator 再次检查，保证不存在 active content、远程资源引用、
+脚本协议、NUL 或超限结构。
+
+
+十二、最小化无关个人信息
+----------------------
+
+V1 采用确定性最小化，不使用模型或 NER：
+
+- 不保存完整 DOM、header、Cookie、表单值、脚本状态或追踪标识；
+- 排除评论区、用户列表、登录区、社交 widget 和联系表单；
+- 对抽取文本中的明显邮箱、电话号码和精确地址型 contact block 做版本化替换；
+- 不从 URL query 保存 token、session、email 或其他 credential-like 值；
+- 只记录各类 redaction count，不保存被删除的原值；
+- 无法确认正文边界或页面以用户生成内容为主时，标为
+  `PRIVACY_REVIEW_REQUIRED`，不保存正文快照。
+
+人名、作者名和作品名不因名称本身自动删除；V1 不做人物身份推断。
+
+
+十三、文件、哈希与去重
+---------------------
+
+不保存原始响应 body。
+
+成功文档只保存：
+
+1. 净化后的离线 HTML；
+2. 确定性抽取纯文本。
+
+两者均通过现有 `SOURCE_SNAPSHOT` 内容寻址仓库写入 `sources/snapshots/`，数据库只保存
+`ManagedRelativePath`。
+
+至少记录：
+
+- raw body hash，仅用于一致性和审计；
+- 最终规范 URL 与 URL hash；URL 必须通过同一凭据型 query 拒绝规则，且不得进入 UI、日志或错误；
+- sanitizer/extractor/profile version；
+- sanitized HTML hash/bytes/path；
+- extracted text hash/bytes/path；
+- normalized document content hash；
+- language/charset hint，保持未验证；
+- privacy redaction counts；
+- createdAt。
+
+同一 normalized document content hash 与处理版本复用一个 FetchedDocument；不同 FetchRun
+保留各自 provenance。文件先不可变发布、数据库后关联；数据库失败产生可检测 orphan，
+不得删除可能共享的内容寻址文件。
+
+不得把快照路径写入 `sources.local_snapshot_path`，因为 Issue 019 前不创建 Source。
+
+
+十四、migration v9 与仓储
+------------------------
+
+只追加当前连续 migration，建议名称：
+
+`controlled_public_page_fetch`
+
+新增 STRICT 语义：
+
+- `fetch_profiles`
+- `fetch_origin_rate_states`
+- `fetch_robots_cache`
+- `fetch_runs`
+- `fetch_redirect_hops`
+- `fetched_documents`
+
+关键约束：
+
+- executionId 唯一；
+- FetchRun 必须引用既有 search candidate；
+- request/plan/candidate URL hash 一致；
+- FetchRun 只允许保存校验后的最终规范 URL，不保存 redirect header 或未经校验的 Location；
+- document 两个路径必须属于 `sources/snapshots/`；
+- 三项 Fetch 输出状态由 CHECK 固定为
+  `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`；
+- raw body、raw header、Cookie、credential、完整 robots、完整 DOM 不落库；
+- `sources/claims/books/clips` 不因 Fetch 改变；
+- origin/rate/status/time/content hash 有索引；
+- redirect hop 次数和顺序有限；
+- revision、时间和删除策略明确。
+
+升级、回滚、备份、换行规范化和历史 migration 保护直接遵守 AGENTS.md。
+
+
+十五、Queue、取消与崩溃恢复
+--------------------------
+
+新增 Job type：
+
+`FETCH_PUBLIC_PAGE_V1`
+
+payload 只保存：
+
+- executionId；
+- searchCandidateId；
+- expected URL hash；
+- selection kind/reason code；
+- fetch profile/revision；
+- plan identity；
+- jobId。
+
+result 只保存：
+
+- fetchRunId；
+- documentId，可空；
+- terminal status；
+- bytes/counts；
+- stable error。
+
+不得保存 URL 正文、页面正文、净化 HTML、纯文本、header、robots 原文或绝对路径。
+
+执行顺序：
+
+1. validate + semantic hash；
+2. executionId 幂等检查；
+3. 读取并绑定 candidate；
+4. plan/profile/rate policy 检查；
+5. robots cache 或 robots 请求；
+6. origin rate reservation；
+7. 事务外单次页面请求及有限 redirect；
+8. MIME/size/charset 验证；
+9. 内存中惰性 parse、sanitize、extract、privacy minimize；
+10. 内容寻址文件发布；
+11. 短事务保存 document/run/hops/rate settlement；
+12. 完成 Job。
+
+网络期间不得持有数据库事务。取消必须区分 before/after-send。崩溃恢复只恢复可证明
+pre-send 的运行；收到响应但尚未持久化的未知情况保持 `AMBIGUOUS`，不自动重抓。
+
+本轮只注册 handler，不启动生产自动入队来源。
+
+
+十六、Issue 特有 UI 与 IPC
+-------------------------
+
+设置页只增加有限 Fetch 状态：
+
+- Fetch V1 是否 ready；
+- profile/revision；
+- robots/rate/redirect/MIME/size policy 摘要；
+- 全局与 per-origin 有界设置；
+- ProjectDataRoot/storage readiness。
+
+任务中心只显示：
+
+- run stage/status；
+- candidate ID；
+- origin 的有限 display host；
+- response MIME/charset；
+- bytes、redirect、redaction 和 external request counts；
+- document 是否已保存；
+- stable error。
+
+不得显示或提供：
+
+- 页面正文、原始/净化 HTML；
+-完整 URL/query；
+- raw header、Cookie、DNS 地址或内部路径；
+- 任意 URL 抓取框；
+- 自动抓取/遍历按钮；
+- proxy、header、User-Agent、robots override、TLS override；
+- Issue 017/018/019 功能。
+
+IPC 仅增加上述只读状态与有限 policy 配置所需窄方法；不增加执行 Fetch 的 renderer IPC。
+
+
+十七、稳定错误
+--------------
+
+至少定义并测试：
+
+- `FETCH_INVALID_REQUEST`
+- `FETCH_CANDIDATE_NOT_FOUND`
+- `FETCH_CANDIDATE_BINDING_MISMATCH`
+- `FETCH_PLAN_STALE`
+- `FETCH_EXECUTION_CONFLICT`
+- `FETCH_URL_INVALID`
+- `FETCH_HOST_DISALLOWED`
+- `FETCH_DNS_FAILED`
+- `FETCH_DNS_NON_PUBLIC`
+- `FETCH_DNS_REBINDING`
+- `FETCH_REMOTE_ADDRESS_MISMATCH`
+- `FETCH_TLS_FAILED`
+- `FETCH_REDIRECT_INVALID`
+- `FETCH_REDIRECT_CROSS_HOST`
+- `FETCH_REDIRECT_LIMIT`
+- `FETCH_HTTPS_DOWNGRADE`
+- `FETCH_ROBOTS_DISALLOWED`
+- `FETCH_ROBOTS_UNKNOWN`
+- `FETCH_RATE_LIMITED`
+- `FETCH_ACCESS_CONTROLLED`
+- `FETCH_CHALLENGE_DETECTED`
+- `FETCH_HEADERS_TOO_LARGE`
+- `FETCH_RESPONSE_TOO_LARGE`
+- `FETCH_COMPRESSION_LIMIT`
+- `FETCH_MIME_MISSING`
+- `FETCH_MIME_UNSUPPORTED`
+- `FETCH_MIME_MISMATCH`
+- `FETCH_CHARSET_UNSUPPORTED`
+- `FETCH_DECODE_FAILED`
+- `FETCH_HTML_LIMIT`
+- `FETCH_SANITIZE_FAILED`
+- `FETCH_EXTRACTION_EMPTY`
+- `FETCH_PRIVACY_REVIEW_REQUIRED`
+- `FETCH_STORAGE_FAILED`
+- `FETCH_CANCELLED_BEFORE_SEND`
+- `FETCH_CANCELLED_AFTER_SEND`
+- `FETCH_TIMEOUT_BEFORE_SEND`
+- `FETCH_TIMEOUT_AFTER_SEND`
+- `FETCH_FAILED_BEFORE_SEND`
+- `FETCH_FAILED_AFTER_SEND`
+- `FETCH_AMBIGUOUS`
+- `FETCH_INTERNAL`
+
+错误 DTO 不含 URL query、IP、绝对路径、正文、header、Cookie、robots 规则或 stack。
+
+
+十八、Issue 特有测试与文档
+------------------------
+
+新增 `npm run test:fetch`，纳入全量测试与 Windows CI。
+
+专项测试至少覆盖：
+
+- contracts/exact validators/state machine；
+- candidate/plan/profile binding；
+- URL/DNS/SSRF/IP range/IPv4-mapped；
+- DNS rebinding、多地址和 remote peer 固定；
+- TLS、Host/SNI、proxy 环境忽略；
+- redirect、downgrade、跨 host、loop limit；
+- RFC 9309 robots、cache、expiry、Crawl-delay；
+- origin rate/concurrency/restart/429；
+- status/header/MIME/Content-Length/chunked；
+- gzip/deflate/br、raw/decoded/ratio limit；
+- UTF-8、中文、日文 charset 与冲突；
+- HTML parser/sanitizer/XSS/active resource；
+- main-content extraction 与不足状态；
+- privacy minimization；
+- storage/hash/dedup/orphan；
+- migration v9；
+- Queue replay/cancel/crash/AMBIGUOUS；
+- UI/IPC/egress；
+- Windows 中文、空格、emoji、长路径；
+- source/packaged Electron smoke 保持外部连接 0。
+
+所有网络测试使用 Scripted transport 或本机 loopback，并以注入方式绕过测试目标的公网限制；
+产品 strict composition 必须仍拒绝 loopback。
+
+新增：
+
+- `docs/adr/0012-controlled-public-page-fetch.md`
+- `docs/contracts/controlled-fetch-v1.md`
+- `docs/contracts/html-sanitization-v1.md`
+- `docs/m2-issue016-implementation-plan.md`
+- `docs/m2-issue016-acceptance-map.md`
+- `docs/m2-issue016-egress-matrix.md`
+
+如 ADR 编号已占用，按仓库实际顺延。同步 README 和 AGENTS 的进度事实，但不要复制本指令。
+
+
+十九、100 项增量验收矩阵
+-----------------------
+
+1. 只实现 Issue 016。
+2. 依赖能力由当前代码动态确认。
+3. SearchCandidate 四项冻结状态未改。
+4. 未修改历史 migration。
+5. 未进入 Issue 017/018/019。
+6. `packages/fetch` 不依赖 Electron renderer。
+7. Search/Fetch/Evidence 分层有合同和架构测试。
+8. Fetch 不写 sources/claims/books/clips。
+9. Fetch 输出固定 FETCHED_NOT_EVIDENCE。
+10. Fetch 输出 truth/fact 仍 UNVERIFIED/NOT_A_FACT。
+11. ControlledFetch V1 全部显式版本化。
+12. 所有请求/计划/结果 exact-object 校验。
+13. raw URL 不能绕过 candidate 输入。
+14. candidate ID、URL hash 和 plan 精确绑定。
+15. stale plan 在发送前阻断。
+16. request/plan/profile 大小和深度有界。
+17. executionId 唯一且可重放。
+18. executionId 冲突 fail closed。
+19. 每 execution 最多一次页面 attempt。
+20. after-send 未知进入 AMBIGUOUS。
+21. URL 仅接受 HTTP/HTTPS。
+22. userinfo/control/invalid encoding/凭据型 query 被拒绝。
+23. localhost/.local/single-label 被拒绝。
+24. 非公网 IPv4 全部拒绝。
+25. 非公网 IPv6 与 IPv4-mapped 全部拒绝。
+26. 任一 DNS 答案非公网即 fail closed。
+27. DNS 结果固定到 socket。
+28. remote address 与固定地址不符被拒绝。
+29. redirect 每跳重新执行 SSRF 检查。
+30. 产品 composition 不包含 loopback 放宽。
+31. HTTPS 证书和主机名验证不可关闭。
+32. proxy/PAC/Alt-Svc 不参与 Fetch。
+33. 页面请求只使用 GET。
+34. 不发送 Cookie/Auth/Referer/Origin。
+35. User-Agent 固定诚实且不可配置。
+36. 不读取或持久化 Set-Cookie。
+37. redirect 最多 3 跳。
+38. HTTPS downgrade 被拒绝。
+39. 跨 host redirect 被拒绝。
+40. redirect hop 只保存有限元数据。
+41. robots 按 RFC 9309 有限子集解析。
+42. robots 只请求同 origin 固定路径。
+43. robots 401/403 明确禁止。
+44. robots unknown fail closed。
+45. robots 缓存绑定 origin/agent/version/expiry。
+46. robots 原文不落库。
+47. Crawl-delay 进入 rate policy。
+48. 页面 401/403/407/429 不绕过。
+49. challenge/paywall/login 命中后停止。
+50. 不切换代理、UA、IP 或 Provider。
+51. rate state 跨重启持久。
+52. per-origin 并发默认 1。
+53. robots 和页面请求都计入限速。
+54. Retry-After 只更新状态不重试。
+55. 网络期间不持有数据库长事务。
+56. 只接受 HTML/XHTML/plain text。
+57. 缺失/冲突 MIME fail closed。
+58. PDF/图片/附件/档案被拒绝。
+59. header 与 Content-Length 有界。
+60. raw/decoded/ratio/total time 均有界。
+61. chunked 超限及时取消。
+62. DOM nodes/depth 有界。
+63. sanitized HTML/text bytes 有界。
+64. charset allowlist 与优先级确定。
+65. UTF-8、中文、日文 fixture 正确。
+66. 编码冲突或 fatal decode 不猜测。
+67. HTML parser 永不执行脚本。
+68. active tags 全部删除。
+69. event/style/resource/navigation attrs 全部删除。
+70. 净化 HTML 不含远程加载能力。
+71. 序列化确定且 UTF-8。
+72. 正文抽取不调用模型。
+73. 导航/广告/评论/登录区被排除。
+74. 抽取不足不以整页 DOM 兜底。
+75. 不生成摘要、翻译或事实。
+76. 二次 validator 拒绝残留 active content。
+77. 不保存完整 DOM/header/cookie/form。
+78. 联系方式型个人信息按版本化规则替换。
+79. redaction 只保存计数。
+80. UGC/正文边界不明进入 privacy review。
+81. 原始 response body 不持久化。
+82. 只保存净化 HTML 和纯文本。
+83. 两个文件均为受控 ManagedRelativePath。
+84. 最终规范 URL 与 raw/sanitized/text/document hash 准确。
+85. 相同内容与处理版本复用 FetchedDocument。
+86. 多 FetchRun provenance 独立保留。
+87. DB 失败只留下可检测 orphan。
+88. 不写 sources.local_snapshot_path。
+89. migration v9 只增加 Fetch 语义。
+90. Fetch 表均 STRICT 且约束/索引完整。
+91. v8→v9 数据保留、备份和回滚通过。
+92. `FETCH_PUBLIC_PAGE_V1` payload/result 有界。
+93. Job replay 不产生第二次请求或文档。
+94. cancel before/after-send 语义正确。
+95. crash 只恢复可证明 pre-send。
+96. 本轮没有自动入队来源。
+97. UI/IPC 只暴露有限状态和 policy。
+98. `test:fetch` 独立并纳入全量/Windows CI。
+99. Fetch egress、smoke、恶意 fixture 全部通过。
+100. 创建唯一一个本地提交并停止。
+
+
+二十、实施顺序
+-------------
+
+1. 按 AGENTS.md 建立动态基线，创建实施计划和 100 项验收草案。
+2. 冻结 Search/Fetch/Evidence、V1 合同和候选绑定。
+3. 实现 URL/DNS/SSRF/连接固定及恶意 fixture。
+4. 实现 HTTP/redirect/robots/rate transport。
+5. 实现 MIME/size/compression/charset 边界。
+6. 选择惰性 HTML parser，完成 sanitizer、extractor 和 privacy minimizer。
+7. 追加 migration v9、repository 与内容寻址存储集成。
+8. 实现 FetchExecutionService、Job handler、幂等和恢复。
+9. 实现有限 UI/IPC 状态。
+10. 完成 `test:fetch`、egress、smoke、文档和 100 项证据映射。
+11. 运行 AGENTS.md 定义的全部最终门禁，创建唯一提交。
+12. 报告并停止。
+
+
+二十一、Issue 特有停止条件
+------------------------
+
+除 AGENTS.md 停止条件外，出现以下任一情况立即停止：
+
+- 必须使用真实站点或真实业务网络才能验收；
+- 必须接收 raw URL 才能工作；
+- 无法对 DNS 结果、redirect hop 或 remote peer 做 fail-closed 校验；
+- 必须执行 JS、加载远程资源或使用登录 Cookie；
+- 必须绕过 robots、登录、付费、验证码或 challenge；
+- 必须保存原始响应、完整 DOM、Cookie 或无关个人信息；
+- 必须把抽取文本当事实、证据或 Source；
+- 必须修改 Issue 015 候选冻结状态；
+- 必须自动 retry、fallback、遍历或入队；
+- 必须进入 Issue 017、018、019。
+
+
+最终启动指令
+------------
+
+现在开始执行 M2 Issue 016。
+
+完整遵守根级及作用域内 AGENTS.md；本文件只定义受控公开页面 Fetch 增量。先完成语义基线、
+实施计划和 100 项验收草案，再开发。
+
+本轮网络测试只使用 Scripted transport 或本机 loopback；产品 composition 必须拒绝 loopback，
+不得访问真实站点。Fetch 只接受已持久化 SearchCandidate，不改变其四项冻结状态，不创建
+Source/Claim/Book。
+
+通过全部门禁后创建本地提交
+`feat(fetch): add controlled public page extraction`，报告并停止，不得进入 Issue 017。

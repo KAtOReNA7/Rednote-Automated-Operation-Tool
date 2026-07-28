@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 
 import { NAVIGATION_ITEMS, resolveRoute } from './routes.js';
 import { ModelAccountingCenter } from './model-accounting-center.js';
+import { FetchRunPanel } from './fetch-run-panel.js';
 import { SettingsPage } from './settings-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
@@ -146,7 +147,10 @@ export function App(): React.JSX.Element {
           ) : route.path === '/settings' ? (
             <SettingsPage />
           ) : route.path === '/tasks' ? (
-            <ModelAccountingCenter />
+            <div className="overview-grid">
+              <ModelAccountingCenter />
+              <FetchRunPanel />
+            </div>
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">

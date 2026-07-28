@@ -27,6 +27,8 @@ export type {
   ExportDiagnosticReportInput,
   FoundationCheckKey,
   FoundationHealth,
+  FetchRunView,
+  FetchStateView,
   GetProviderCapabilityProbeProgressInput,
   GetCredentialStatusInput,
   ModelAccountingRunView,
@@ -48,6 +50,7 @@ export type {
   SetCredentialInput,
   StartProviderCapabilityProbeInput,
   UpdateSearchProviderConfigInput,
+  UpdateFetchPolicyInput,
   SetupStateView,
   WindowState,
 } from './desktop-api.js';

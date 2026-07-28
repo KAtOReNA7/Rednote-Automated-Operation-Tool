@@ -13,6 +13,7 @@ import {
   SearchError,
   validateCuratedSourceEntriesV1,
   validateSearchBatchV1,
+  validateSearchCandidateV1,
   validateSearchProviderDescriptorV1,
   validateSearchRatePolicyV1,
 } from '@mystery-operations/search';
@@ -681,6 +682,51 @@ export class SqliteSearchRepository implements SearchRunPersistenceV1 {
           status: row.status as string,
         }),
       ),
+    );
+  }
+
+  public findCandidate(candidateId: string): SearchCandidateV1 | null {
+    if (typeof candidateId !== 'string' || candidateId.length < 1 || candidateId.length > 128) {
+      throw new SearchError('SEARCH_INVALID_REQUEST');
+    }
+    const row = this.#database
+      .prepare('SELECT * FROM search_result_candidates WHERE id = ?')
+      .get(candidateId) as Row | undefined;
+    if (row === undefined) return null;
+    return validateSearchCandidateV1(
+      Object.freeze({
+        candidateId: row.id as string,
+        canonicalUrl: row.canonical_url as string,
+        citationState: row.citation_state as SearchCandidateV1['citationState'],
+        discoveredAt: row.discovered_at as string,
+        displayHost: row.display_host as string,
+        domain: row.domain as string,
+        duplicateOfCandidateId: row.duplicate_of_candidate_id as string | null,
+        evidenceEligibility: 'LEAD_ONLY',
+        factStatus: 'NOT_A_FACT',
+        fetchState: 'NOT_FETCHED',
+        languageHint: row.language_hint as string | null,
+        originKind: row.origin_kind as SearchCandidateV1['originKind'],
+        previewKind: row.preview_kind as SearchCandidateV1['previewKind'],
+        previewText: row.preview_text as string | null,
+        provenanceAppearances: JSON.parse(
+          row.provenance_json as string,
+        ) as SearchCandidateV1['provenanceAppearances'],
+        providerInstanceId: row.provider_instance_id as string,
+        providerKind: row.provider_kind as SearchCandidateV1['providerKind'],
+        publishedAt: row.published_at as string | null,
+        searchRunId: row.search_run_id as string,
+        sourceMetadataKind: row.source_metadata_kind as SearchCandidateV1['sourceMetadataKind'],
+        title: row.title as string | null,
+        truthStatus: 'UNVERIFIED',
+        upstreamIdHash: row.upstream_id_hash as string | null,
+        upstreamRank: row.upstream_rank as number | null,
+        urlHash: row.url_hash as string,
+        userSupplied: row.user_supplied === 1,
+        warnings: JSON.parse(row.warnings_json as string) as readonly string[],
+        wasCited: row.was_cited === null ? null : row.was_cited === 1,
+        wasConsulted: row.was_consulted === null ? null : row.was_consulted === 1,
+      }),
     );
   }
 

@@ -91,17 +91,18 @@ describe('search migration v8 and SQLite persistence', () => {
     const result = await initializeDatabase({
       backupDirectory: join(dirname(databasePath), 'backups'),
       databasePath,
+      migrations: MIGRATIONS.slice(0, 8),
     });
     expect(result.appliedVersions).toEqual([8]);
     const reopened = connectDatabase(databasePath);
     expect(
       reopened.prepare("SELECT bio FROM account_profiles WHERE id = 'account-before-v8'").get(),
     ).toEqual({ bio: 'kept' });
-    expect(MIGRATIONS.at(-1)).toMatchObject({
+    expect(MIGRATIONS[7]).toMatchObject({
       name: 'search_provider_runs_and_rate_limits',
       version: 8,
     });
-    expect(migrationChecksum(MIGRATIONS.at(-1) as (typeof MIGRATIONS)[number])).toBe(
+    expect(migrationChecksum(MIGRATIONS[7] as (typeof MIGRATIONS)[number])).toBe(
       '74a0da30be52302edf3c1d2f8574250514c2914fc9f64265f46b689c7075d78c',
     );
     reopened.close();

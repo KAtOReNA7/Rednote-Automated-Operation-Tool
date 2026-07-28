@@ -38,6 +38,7 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getSettings: 'settings:get-settings',
   getProviderCapabilityState: 'providers:get-capability-state',
   getSearchState: 'search:get-state',
+  getFetchState: 'fetch:get-state',
   getModelAccounting: 'models:get-accounting',
   previewModelCacheClear: 'models:preview-cache-clear',
   confirmModelCacheClear: 'models:confirm-cache-clear',
@@ -51,6 +52,7 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   confirmDataRootSelection: 'settings:confirm-data-root-selection',
   updateNonSecretSettings: 'settings:update-non-secret',
   updateSearchProviderConfig: 'search:update-provider-config',
+  updateFetchPolicy: 'fetch:update-policy',
   setCredential: 'settings:set-credential',
   clearCredential: 'settings:clear-credential',
   getCredentialStatus: 'settings:get-credential-status',
@@ -355,6 +357,55 @@ export interface SearchStateView {
   readonly recentRuns: readonly SearchRunView[];
 }
 
+export interface FetchRunView {
+  readonly candidateId: string;
+  readonly charset: string | null;
+  readonly displayHost: string;
+  readonly documentSaved: boolean;
+  readonly externalRequestCount: number;
+  readonly fetchRunId: string;
+  readonly mimeType: string | null;
+  readonly receivedBytes: number;
+  readonly redactionCount: number;
+  readonly redirectCount: number;
+  readonly stableError: string | null;
+  readonly stage: string;
+}
+
+export interface FetchStateView {
+  readonly policy: {
+    readonly charset: 'ALLOWLIST';
+    readonly maxDecodedBytes: number;
+    readonly maxRedirects: number;
+    readonly maxRawBytes: number;
+    readonly mime: 'HTML_XHTML_TEXT_ONLY';
+    readonly rate: 'PERSISTENT_PER_ORIGIN';
+    readonly robots: 'RFC9309_FAIL_CLOSED';
+  };
+  readonly profile: {
+    readonly enabled: boolean;
+    readonly globalMaxConcurrent: number;
+    readonly id: string;
+    readonly maxRequestsPerWindow: number;
+    readonly minIntervalMs: number;
+    readonly perOriginMaxConcurrent: 1;
+    readonly revision: number;
+    readonly windowMs: number;
+  };
+  readonly ready: boolean;
+  readonly recentRuns: readonly FetchRunView[];
+  readonly storageReady: boolean;
+}
+
+export interface UpdateFetchPolicyInput {
+  readonly enabled: boolean;
+  readonly expectedRevision: number;
+  readonly globalMaxConcurrent: number;
+  readonly maxRequestsPerWindow: number;
+  readonly minIntervalMs: number;
+  readonly windowMs: number;
+}
+
 export interface SearchRatePolicyInput {
   readonly contractVersion: 'search-rate-policy-v1';
   readonly maxConcurrent: number;
@@ -470,6 +521,7 @@ export interface DesktopBridge {
   getModelAccounting(): Promise<DesktopResult<ModelAccountingView>>;
   getProviderCapabilityState(): Promise<DesktopResult<ProviderCapabilityStateView>>;
   getSearchState?(): Promise<DesktopResult<SearchStateView>>;
+  getFetchState?(): Promise<DesktopResult<FetchStateView>>;
   previewProviderCapabilityProbe(
     input: PreviewProviderCapabilityProbeInput,
   ): Promise<DesktopResult<ProviderCapabilityProbePreview>>;
@@ -511,4 +563,5 @@ export interface DesktopBridge {
   updateSearchProviderConfig?(
     input: UpdateSearchProviderConfigInput,
   ): Promise<DesktopResult<SearchStateView>>;
+  updateFetchPolicy?(input: UpdateFetchPolicyInput): Promise<DesktopResult<FetchStateView>>;
 }

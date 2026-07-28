@@ -1,18 +1,10 @@
 <p align="center">
-  <img
-    src="./docs/assets/readme-hero-issue015.png"
-    alt="小红书推理小说内容运营工作台：已完成 Issues 001–015，下一步 Issue 016 受控网页抓取"
-    width="100%"
-  />
-</p>
-
-<p align="center">
   <a href="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml">
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
   <img alt="M2 in progress" src="https://img.shields.io/badge/M2-进行中-ff2442" />
-  <img alt="Issues 001–015 completed" src="https://img.shields.io/badge/已完成-Issues%20001--015-2ea44f" />
-  <img alt="Next Issue 016" src="https://img.shields.io/badge/下一步-Issue%20016-ff2442" />
+  <img alt="Issues 001–016 completed" src="https://img.shields.io/badge/已完成-Issues%20001--016-2ea44f" />
+  <img alt="Next Issue 017" src="https://img.shields.io/badge/下一步-Issue%20017-ff2442" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
 </p>
@@ -39,16 +31,16 @@
 | 你想知道的                   | 当前答案                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------- |
 | **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认 |
-| **做到哪一步？**             | M0、M1 已完成；M2 已完成 Issue 012–015                                          |
-| **下一步是什么？**           | Issue 016：受控网页抓取（本轮未开始）                                           |
+| **做到哪一步？**             | M0、M1 已完成；M2 已完成 Issue 012–016                                          |
+| **下一步是什么？**           | Issue 017：浏览器收藏插件                                                       |
 | **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                              |
 | **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                        |
 | **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                      |
 
 > [!TIP]
-> 里程碑快照：M1（Issue 006—011）与 M2 Issue 012—015 均已完成验收；下一步是
-> Issue 016：受控网页抓取。当前搜索层只生成 `LEAD_ONLY / NOT_FETCHED` 候选，
-> 不会访问候选网页，也不会自动调用模型或真实搜索服务。
+> 里程碑快照：M1（Issue 006—011）与 M2 Issue 012—016 均已完成验收；下一步是
+> Issue 017。Fetch 只处理研究流程明确选择的单个已持久化候选；结果仍是
+> `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`，不会自动入队或升级为事实。
 
 > [!IMPORTANT]
 > 本项目是**非官方开发项目**，不代表小红书或任何平台立场。当前版本没有接通真实内容工作流、
@@ -60,7 +52,7 @@
 flowchart LR
     M0["M0<br/>Issue 001–005<br/>基础与硬约束"] --> M1["M1<br/>Issue 006–011<br/>本地应用基础设施"]
     M1 --> M2["M2<br/>Issue 012–019<br/>模型、搜索、书库与研究"]
-    M2 --> NEXT["NEXT<br/>Issue 016<br/>受控网页抓取"]
+    M2 --> NEXT["NEXT<br/>Issue 017<br/>浏览器收藏插件"]
     NEXT -.-> FUTURE["M3–M6<br/>内容、视觉、运营与发布"]
 
     classDef done fill:#fff0f2,stroke:#ff2442,color:#111,stroke-width:2px;
@@ -78,7 +70,7 @@ flowchart LR
 | ------ | ---------: | -------------------------------------- | :--------------- |
 | M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**       |
 | M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**       |
-| M2     |    012–019 | 模型接口、搜索、书库与研究             | **进行中 · 4/8** |
+| M2     |    012–019 | 模型接口、搜索、书库与研究             | **进行中 · 5/8** |
 | M3–M6  |       后续 | 内容生产、视觉、审批、导出与发布       | **未开始**       |
 
 ### 最近完成
@@ -89,7 +81,8 @@ flowchart LR
 |   013 | 用户显式预览、预算确认、串行无重试的 Provider 能力探测   |   已完成   |
 |   014 | 模型执行幂等、本地结果缓存、成本账本、预算预留与恢复语义 |   已完成   |
 |   015 | 统一 `SearchProvider`、候选归一化、持久限速与 SearchRun  |   已完成   |
-|   016 | 受控网页抓取                                             | **下一步** |
+|   016 | 候选绑定、SSRF/DNS/robots/限速、HTML 净化与离线快照      |   已完成   |
+|   017 | 浏览器收藏插件                                           | **下一步** |
 
 > [!NOTE]
 > “下一步”只表示路线图顺序，不表示已经开始开发。仓库不会自动进入后续 Issue。
@@ -99,13 +92,14 @@ flowchart LR
 | 已经具备                                                                  | 尚未接通                                                  |
 | ------------------------------------------------------------------------- | --------------------------------------------------------- |
 | 安全的 Electron + React 中文桌面壳                                        | 内容工作流中的真实 Provider wiring                        |
-| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                        | 公开页面抓取、正文抽取与联网研究                          |
+| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                        | 来源分级、事实冲突与研究档案                              |
 | 支持暂停、取消、租约和重启恢复的持久化任务队列                            | Chrome / Edge 收藏插件业务                                |
 | 受控 ProjectDataRoot、本地文件仓库、中文/空格/长路径                      | 选题、文案、质量编排、审批、排期、发布包与复盘            |
 | 本机设置、凭据引用、脱敏诊断与默认关闭的 `127.0.0.1` 本地 API             | 面向最终用户的安装器、自动更新与正式发布版本              |
 | Provider-neutral 接口、显式能力探测、统一 usage、有限重试与 Scripted Mock | 小红书自动登录、发布、评论、私信、验证码或风控处理        |
 | 模型执行幂等、本地结果缓存、singleflight、成本账本与预算控制              | 任何未经用户显式授权的真实模型、搜索、图片或付费 API 调用 |
-| 五类 SearchProvider、URL/domain 归一化、SearchRun、持久限速和被动本地输入 | 候选 URL 抓取、Search API 生产 codec、浏览器插件业务      |
+| 五类 SearchProvider、URL/domain 归一化、SearchRun、持久限速和被动本地输入 | Search API 生产 codec、浏览器插件业务                     |
+| 单候选受控 Fetch、DNS/socket 固定、robots、净化 HTML 与文本内容寻址快照   | 自动抓取、站点遍历、Source/Claim 或把抓取结果当作证据     |
 
 ## 快速开始
 
@@ -149,11 +143,13 @@ flowchart LR
     MAIN --> API["本地 API"]
     MAIN --> MODEL["模型执行内核"]
     MAIN --> SEARCH["SearchProvider<br/>只发现 LEAD_ONLY 候选"]
+    MAIN --> FETCH["Controlled Fetch<br/>单候选、未核验、非证据"]
     MODEL --> PROBE["用户显式能力探测"]
     PROBE --> PROVIDERS["Provider 接口"]
     API -.-> CLIPPER["浏览器插件"]
     QUEUE -.-> PROVIDERS
     SEARCH -.-> MODEL
+    SEARCH --> FETCH
 ```
 
 关键边界：
@@ -164,7 +160,8 @@ flowchart LR
 - 本地 API 默认关闭，只允许显式绑定 `127.0.0.1`，不扫描端口、不暴露到 LAN 或公网。
 - Provider 探测必须由用户在设置页显式预览并确认；无自动 fallback、重试或后台触发。
 - 本地缓存命中不会访问凭据、预留预算、写成本账本或发出外部请求。
-- 搜索结果只是不可信候选；Issue 016 前不会连接候选 URL，Issue 019 前不会成为事实或证据。
+- 搜索结果只是不可信候选；Fetch 必须绑定一个已持久化候选并显式执行，Issue 019 前不会成为
+  Source、事实或证据。
 
 ## 仓库结构
 
@@ -181,6 +178,7 @@ flowchart LR
 | `packages/local-api` | loopback HTTP、配对、认证、CORS 与限流                |
 | `packages/providers` | 模型接口、能力、usage、错误、transport、codec 与 Mock |
 | `packages/search`    | SearchProvider 合同、五类适配器、URL/域名、计划与执行 |
+| `packages/fetch`     | 单候选抓取合同、SSRF/DNS、robots、传输、净化与抽取    |
 | `packages/shared`    | renderer / preload / main 共享 DTO                    |
 | `docs`               | ADR、稳定合同、验收映射和安全证据                     |
 | `tests`              | 领域、架构、SQLite、Electron、安全与回归测试          |
@@ -188,7 +186,7 @@ flowchart LR
 ## 质量与安全
 
 <p>
-  <img alt="Automated tests" src="https://img.shields.io/badge/自动化测试-900%2B-2ea44f" />
+  <img alt="Automated tests" src="https://img.shields.io/badge/自动化测试-1000%2B-2ea44f" />
   <img alt="External smoke connections" src="https://img.shields.io/badge/Smoke%20外部连接-0-2ea44f" />
   <img alt="Dependency vulnerabilities" src="https://img.shields.io/badge/依赖漏洞-0-2ea44f" />
   <img alt="AI disclosure" src="https://img.shields.io/badge/aiDisclosure-false-111111" />
@@ -220,6 +218,7 @@ npm run test:providers
 npm run test:capabilities
 npm run test:model-accounting
 npm run test:search
+npm run test:fetch
 npm run test:electron-smoke
 npm run package:desktop
 npm run audit:dependencies
@@ -288,6 +287,12 @@ npm run test:packaged-smoke
 - [Issue 015 实施计划](./docs/m2-issue015-implementation-plan.md)
 - [Issue 015 验收映射](./docs/m2-issue015-acceptance-map.md)
 - [Issue 015 外发矩阵](./docs/m2-issue015-egress-matrix.md)
+- [ADR 0012：受控公开页面抓取](./docs/adr/0012-controlled-public-page-fetch.md)
+- [Controlled Fetch V1 合同](./docs/contracts/controlled-fetch-v1.md)
+- [HTML Sanitization V1 合同](./docs/contracts/html-sanitization-v1.md)
+- [Issue 016 实施计划](./docs/m2-issue016-implementation-plan.md)
+- [Issue 016 验收映射](./docs/m2-issue016-acceptance-map.md)
+- [Issue 016 外发矩阵](./docs/m2-issue016-egress-matrix.md)
 
 </details>
 
@@ -301,5 +306,5 @@ npm run test:packaged-smoke
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  下一步仅推荐 Issue 016；仓库不会自动开始后续开发。
+  下一步仅推荐 Issue 017；仓库不会自动开始后续开发。
 </p>

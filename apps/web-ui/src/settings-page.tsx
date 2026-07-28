@@ -10,6 +10,7 @@ import type {
 import { LocalApiSettings } from './local-api-settings.js';
 import { ProviderCapabilitySettings } from './provider-capability-settings.js';
 import { SearchProviderSettings } from './search-provider-settings.js';
+import { FetchPolicySettings } from './fetch-policy-settings.js';
 import { useSettings } from './use-settings.js';
 
 interface DraftFields {
@@ -635,6 +636,8 @@ export function SettingsPage(): React.JSX.Element {
       />
 
       <SearchProviderSettings />
+
+      <FetchPolicySettings />
 
       <LocalApiSettings />
     </div>
