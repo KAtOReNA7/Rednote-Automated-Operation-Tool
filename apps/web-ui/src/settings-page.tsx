@@ -9,6 +9,7 @@ import type {
 
 import { LocalApiSettings } from './local-api-settings.js';
 import { ProviderCapabilitySettings } from './provider-capability-settings.js';
+import { SearchProviderSettings } from './search-provider-settings.js';
 import { useSettings } from './use-settings.js';
 
 interface DraftFields {
@@ -632,6 +633,8 @@ export function SettingsPage(): React.JSX.Element {
         disabled={bundle === null || busy}
         revision={bundle?.settings.revision ?? -1}
       />
+
+      <SearchProviderSettings />
 
       <LocalApiSettings />
     </div>

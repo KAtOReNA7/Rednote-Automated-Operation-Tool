@@ -376,7 +376,7 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
   };
 
 describe('SQLite initialization and migrations', () => {
-  it('creates a new database with all 25 PRD tables plus app_settings', async () => {
+  it('creates a new database with all PRD and published infrastructure tables', async () => {
     const databasePath = createTemporaryDatabasePath('empty directory');
     const result = await initializeDatabase({ databasePath });
     const database = connectDatabase(databasePath);
@@ -393,10 +393,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7],
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8],
         backupPath: null,
         databasePath,
-        schemaVersion: 7,
+        schemaVersion: 8,
       });
       expect(tables).toEqual(
         [
@@ -410,6 +410,10 @@ describe('SQLite initialization and migrations', () => {
           'provider_capability_entries',
           'provider_capability_probe_runs',
           'schema_migrations',
+          'search_provider_configs',
+          'search_rate_limit_states',
+          'search_result_candidates',
+          'search_runs',
         ].sort(),
       );
     } finally {
@@ -470,9 +474,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 7,
+        schemaVersion: 8,
       });
-      expect(row.count).toBe(7);
+      expect(row.count).toBe(8);
     } finally {
       database.close();
     }

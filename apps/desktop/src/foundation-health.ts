@@ -97,7 +97,10 @@ export async function runFoundationHealthCheck(): Promise<FoundationHealth> {
       !capabilities.nodeSqlite ||
       !capabilities.timeoutOption ||
       migration.schemaVersion !== MIGRATIONS.length ||
-      migration.appliedVersions.join(',') !== '3,4,5,6,7' ||
+      migration.appliedVersions.join(',') !==
+        MIGRATIONS.slice(2)
+          .map(({ version }) => version)
+          .join(',') ||
       migration.backupPath === null ||
       isAbsolute(relative(dataRoot.backupDatabaseDirectory, migration.backupPath)) ||
       relative(dataRoot.backupDatabaseDirectory, migration.backupPath).startsWith('..') ||

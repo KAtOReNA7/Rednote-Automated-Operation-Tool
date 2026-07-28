@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 
 import type { ModelAccountingView, ModelCacheClearPreview } from '@mystery-operations/shared';
+import { SearchRunPanel } from './search-run-panel.js';
 
 function usd(microUsd: string): string {
   const value = BigInt(microUsd);
@@ -149,6 +150,8 @@ export function ModelAccountingCenter(): React.JSX.Element {
       </section>
 
       {message.length > 0 && <p className="settings-message">{message}</p>}
+
+      <SearchRunPanel />
 
       <section className="accounting-metrics" aria-label="成本摘要">
         <article>

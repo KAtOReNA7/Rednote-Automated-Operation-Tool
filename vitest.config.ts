@@ -17,6 +17,9 @@ export default defineConfig({
       '@mystery-operations/providers': fileURLToPath(
         new URL('./packages/providers/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/search': fileURLToPath(
+        new URL('./packages/search/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/shared/storage': fileURLToPath(
         new URL('./packages/shared/src/storage-contracts.ts', import.meta.url),
       ),

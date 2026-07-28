@@ -26,7 +26,7 @@ afterEach(cleanTemporaryDatabases);
 describe('Issue 010 migration v4', () => {
   it('keeps v1-v3 immutable and appends one stable consecutive migration', () => {
     expect(MIGRATIONS.slice(0, 3).map(migrationChecksum)).toEqual(HISTORICAL_HASHES);
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
     expect(MIGRATIONS[3]).toMatchObject({
       name: 'local_settings_and_credential_reference',
       version: 4,
@@ -148,7 +148,7 @@ describe('Issue 010 migration v4', () => {
     await expect(initializeDatabase({ databasePath: path })).resolves.toMatchObject({
       appliedVersions: [],
       backupPath: null,
-      schemaVersion: 7,
+      schemaVersion: 8,
     });
   });
 
@@ -170,7 +170,7 @@ describe('Issue 010 migration v4', () => {
     before.close();
 
     const result = await initializeDatabase({ databasePath: path });
-    expect(result.appliedVersions).toEqual([4, 5, 6, 7]);
+    expect(result.appliedVersions).toEqual([4, 5, 6, 7, 8]);
     expect(existsSync(result.backupPath ?? '')).toBe(true);
     const upgraded = connectDatabase(path);
     try {
@@ -217,11 +217,11 @@ describe('Issue 010 migration v4', () => {
     const failing: Migration = {
       name: 'issue010_failure_probe',
       sql: 'CREATE TABLE issue010_probe(id TEXT) STRICT; SELECT * FROM missing_issue010;',
-      version: 8,
+      version: 9,
     };
     await expect(
       initializeDatabase({ databasePath: path, migrations: [...MIGRATIONS, failing] }),
-    ).rejects.toMatchObject({ migrationVersion: 8 });
+    ).rejects.toMatchObject({ migrationVersion: 9 });
     const database = connectDatabase(path);
     try {
       expect(

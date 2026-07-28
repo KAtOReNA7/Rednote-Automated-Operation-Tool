@@ -1984,6 +1984,250 @@ BEGIN
 END;
 `;
 
+const SEARCH_PROVIDER_RUNS_AND_RATE_LIMITS = `
+CREATE TABLE search_provider_configs (
+  provider_instance_id TEXT PRIMARY KEY CHECK (length(provider_instance_id) BETWEEN 1 AND 128),
+  provider_kind TEXT NOT NULL CHECK (provider_kind IN (
+    'MODEL_WEB_SEARCH', 'SEARCH_API', 'CURATED_SOURCE', 'BROWSER_CLIP', 'MANUAL_URL'
+  )),
+  provider_mode TEXT NOT NULL CHECK (provider_mode IN (
+    'ACTIVE_REMOTE', 'PASSIVE_LOCAL', 'FIXTURE_ONLY'
+  )),
+  enabled INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0, 1)),
+  max_results INTEGER NOT NULL CHECK (max_results BETWEEN 1 AND 20),
+  timeout_ms INTEGER NOT NULL CHECK (timeout_ms BETWEEN 100 AND 600000),
+  rate_policy_version INTEGER CHECK (
+    rate_policy_version IS NULL OR
+    (typeof(rate_policy_version) = 'integer' AND rate_policy_version > 0)
+  ),
+  max_concurrent INTEGER CHECK (
+    max_concurrent IS NULL OR (typeof(max_concurrent) = 'integer' AND max_concurrent BETWEEN 1 AND 32)
+  ),
+  min_interval_ms INTEGER CHECK (
+    min_interval_ms IS NULL OR
+    (typeof(min_interval_ms) = 'integer' AND min_interval_ms BETWEEN 0 AND 86400000)
+  ),
+  max_requests_per_window INTEGER CHECK (
+    max_requests_per_window IS NULL OR
+    (typeof(max_requests_per_window) = 'integer' AND max_requests_per_window BETWEEN 1 AND 10000)
+  ),
+  window_ms INTEGER CHECK (
+    window_ms IS NULL OR (typeof(window_ms) = 'integer' AND window_ms BETWEEN 1 AND 86400000)
+  ),
+  max_response_bytes INTEGER CHECK (
+    max_response_bytes IS NULL OR
+    (typeof(max_response_bytes) = 'integer' AND max_response_bytes BETWEEN 1 AND 2097152)
+  ),
+  curated_entries_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(curated_entries_json) AND
+    json_type(curated_entries_json) = 'array' AND
+    length(CAST(curated_entries_json AS BLOB)) BETWEEN 2 AND 65536
+  ),
+  settings_revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(settings_revision) = 'integer' AND settings_revision > 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (
+    (provider_mode = 'ACTIVE_REMOTE' AND rate_policy_version IS NOT NULL AND
+      max_concurrent IS NOT NULL AND min_interval_ms IS NOT NULL AND
+      max_requests_per_window IS NOT NULL AND window_ms IS NOT NULL AND
+      max_response_bytes IS NOT NULL) OR
+    (provider_mode <> 'ACTIVE_REMOTE' AND rate_policy_version IS NULL AND
+      max_concurrent IS NULL AND min_interval_ms IS NULL AND
+      max_requests_per_window IS NULL AND window_ms IS NULL AND
+      max_response_bytes IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE search_rate_limit_states (
+  provider_instance_id TEXT PRIMARY KEY
+    REFERENCES search_provider_configs(provider_instance_id)
+      ON UPDATE CASCADE ON DELETE CASCADE,
+  policy_version INTEGER NOT NULL CHECK (typeof(policy_version) = 'integer' AND policy_version > 0),
+  window_started_at TEXT NOT NULL CHECK (window_started_at ${UTC_REQUIRED}),
+  request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(request_count) = 'integer' AND request_count BETWEEN 0 AND 10000
+  ),
+  in_flight INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(in_flight) = 'integer' AND in_flight BETWEEN 0 AND 32
+  ),
+  last_started_at TEXT CHECK (last_started_at IS NULL OR last_started_at ${UTC_REQUIRED}),
+  next_allowed_at TEXT NOT NULL CHECK (next_allowed_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (typeof(revision) = 'integer' AND revision > 0),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE search_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 128),
+  job_id TEXT CHECK (job_id IS NULL OR length(job_id) BETWEEN 1 AND 128),
+  provider_kind TEXT NOT NULL CHECK (provider_kind IN (
+    'MODEL_WEB_SEARCH', 'SEARCH_API', 'CURATED_SOURCE', 'BROWSER_CLIP', 'MANUAL_URL'
+  )),
+  provider_instance_id TEXT NOT NULL
+    REFERENCES search_provider_configs(provider_instance_id)
+      ON UPDATE CASCADE ON DELETE RESTRICT,
+  provider_mode TEXT NOT NULL CHECK (provider_mode IN (
+    'ACTIVE_REMOTE', 'PASSIVE_LOCAL', 'FIXTURE_ONLY'
+  )),
+  provider_readiness TEXT NOT NULL CHECK (provider_readiness IN (
+    'READY', 'DISABLED', 'NOT_CONFIGURED', 'CAPABILITY_UNKNOWN',
+    'CAPABILITY_UNSUPPORTED', 'CAPABILITY_STALE', 'RATE_POLICY_REQUIRED',
+    'BUDGET_POLICY_REQUIRED', 'CODEC_UNAVAILABLE', 'PENDING_LATER_ISSUE', 'ERROR'
+  )),
+  request_semantic_hash TEXT NOT NULL CHECK (
+    length(request_semantic_hash) = 64 AND request_semantic_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  plan_hash TEXT NOT NULL CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  query_hash TEXT NOT NULL CHECK (
+    length(query_hash) = 64 AND query_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  intent TEXT NOT NULL CHECK (intent IN (
+    'BOOK_DISCOVERY', 'BIBLIOGRAPHIC_LOOKUP', 'AUTHOR_RESEARCH',
+    'AWARD_RESEARCH', 'PUBLISHING_NEWS', 'REVIEW_LANDSCAPE',
+    'CULTURAL_CONTEXT', 'USER_PROVIDED_URL', 'USER_PROVIDED_CLIP'
+  )),
+  status TEXT NOT NULL CHECK (status IN (
+    'IN_FLIGHT', 'RECOVERABLE_PRE_SEND', 'SUCCEEDED', 'PARTIAL', 'EMPTY',
+    'RATE_LIMITED_BEFORE_SEND',
+    'BUDGET_BLOCKED', 'CAPABILITY_BLOCKED', 'CANCELLED_BEFORE_SEND',
+    'CANCELLED_AFTER_SEND', 'FAILED_BEFORE_SEND', 'FAILED_AFTER_SEND', 'AMBIGUOUS'
+  )),
+  certainty TEXT NOT NULL CHECK (certainty IN (
+    'NOT_SENT', 'REJECTED_BEFORE_EXECUTION', 'MAY_HAVE_EXECUTED',
+    'COMPLETED_INVALID_OUTPUT'
+  )),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (external_request_count IN (0, 1)),
+  rate_reserved INTEGER NOT NULL DEFAULT 0 CHECK (rate_reserved IN (0, 1)),
+  model_run_id TEXT REFERENCES model_runs(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  candidate_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(candidate_count) = 'integer' AND candidate_count BETWEEN 0 AND 20
+  ),
+  rejected_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(rejected_count) = 'integer' AND rejected_count >= 0
+  ),
+  duplicate_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(duplicate_count) = 'integer' AND duplicate_count >= 0
+  ),
+  total_appearance_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(total_appearance_count) = 'integer' AND total_appearance_count >= 0
+  ),
+  truncated INTEGER NOT NULL DEFAULT 0 CHECK (truncated IN (0, 1)),
+  cursor TEXT CHECK (cursor IS NULL OR length(CAST(cursor AS BLOB)) <= 2048),
+  rate_policy_version INTEGER CHECK (
+    rate_policy_version IS NULL OR
+    (typeof(rate_policy_version) = 'integer' AND rate_policy_version > 0)
+  ),
+  cost_state TEXT CHECK (cost_state IS NULL OR cost_state IN (
+    'NOT_INCURRED', 'PROVIDER_REPORTED_USD', 'UNKNOWN_POSSIBLY_INCURRED',
+    'UNPRICED_USAGE', 'USER_PRICE_TABLE_ESTIMATE'
+  )),
+  usage_json TEXT CHECK (
+    usage_json IS NULL OR
+    (json_valid(usage_json) AND json_type(usage_json) = 'object' AND
+      length(CAST(usage_json AS BLOB)) <= 4096)
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) <= 4096
+  ),
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 96
+  ),
+  started_at TEXT NOT NULL CHECK (started_at ${UTC_REQUIRED}),
+  finished_at TEXT CHECK (finished_at IS NULL OR finished_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (typeof(revision) = 'integer' AND revision > 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (
+    (status IN ('IN_FLIGHT', 'RECOVERABLE_PRE_SEND') AND finished_at IS NULL) OR
+    (status NOT IN ('IN_FLIGHT', 'RECOVERABLE_PRE_SEND') AND finished_at IS NOT NULL)
+  ),
+  CHECK (
+    (provider_mode = 'ACTIVE_REMOTE' AND rate_policy_version IS NOT NULL) OR
+    (provider_mode <> 'ACTIVE_REMOTE' AND rate_policy_version IS NULL)
+  ),
+  CHECK (rate_reserved = 0 OR provider_mode = 'ACTIVE_REMOTE')
+) STRICT;
+
+CREATE TABLE search_result_candidates (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  search_run_id TEXT NOT NULL
+    REFERENCES search_runs(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  provider_instance_id TEXT NOT NULL CHECK (length(provider_instance_id) BETWEEN 1 AND 128),
+  provider_kind TEXT NOT NULL CHECK (provider_kind IN (
+    'MODEL_WEB_SEARCH', 'SEARCH_API', 'CURATED_SOURCE', 'BROWSER_CLIP', 'MANUAL_URL'
+  )),
+  origin_kind TEXT NOT NULL CHECK (origin_kind IN (
+    'MODEL_WEB_SEARCH', 'SEARCH_API', 'CURATED_SOURCE', 'BROWSER_CLIP', 'MANUAL_URL'
+  )),
+  canonical_url TEXT NOT NULL CHECK (length(canonical_url) BETWEEN 1 AND 4096),
+  url_hash TEXT NOT NULL CHECK (
+    length(url_hash) = 64 AND url_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  domain TEXT NOT NULL CHECK (length(domain) BETWEEN 1 AND 255),
+  display_host TEXT NOT NULL CHECK (length(display_host) BETWEEN 1 AND 255),
+  title TEXT CHECK (title IS NULL OR length(title) BETWEEN 1 AND 512),
+  preview_text TEXT CHECK (preview_text IS NULL OR length(preview_text) BETWEEN 1 AND 2000),
+  preview_kind TEXT NOT NULL CHECK (preview_kind IN ('NONE', 'UPSTREAM_SNIPPET', 'USER_NOTE')),
+  upstream_rank INTEGER CHECK (
+    upstream_rank IS NULL OR
+    (typeof(upstream_rank) = 'integer' AND upstream_rank BETWEEN 0 AND 1000000)
+  ),
+  upstream_id_hash TEXT CHECK (
+    upstream_id_hash IS NULL OR
+    (length(upstream_id_hash) = 64 AND upstream_id_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  published_at TEXT CHECK (published_at IS NULL OR published_at ${UTC_REQUIRED}),
+  language_hint TEXT CHECK (language_hint IS NULL OR length(language_hint) BETWEEN 1 AND 32),
+  discovered_at TEXT NOT NULL CHECK (discovered_at ${UTC_REQUIRED}),
+  user_supplied INTEGER NOT NULL CHECK (user_supplied IN (0, 1)),
+  source_metadata_kind TEXT NOT NULL CHECK (source_metadata_kind IN (
+    'WEB_SEARCH_SOURCE', 'URL_CITATION', 'SEARCH_API_RESULT', 'CURATED_ENTRY',
+    'BROWSER_CLIP_INPUT', 'MANUAL_URL_INPUT'
+  )),
+  citation_state TEXT NOT NULL CHECK (citation_state IN (
+    'NOT_APPLICABLE', 'CONSULTED_ONLY', 'CITED', 'UNKNOWN'
+  )),
+  was_consulted INTEGER CHECK (was_consulted IS NULL OR was_consulted IN (0, 1)),
+  was_cited INTEGER CHECK (was_cited IS NULL OR was_cited IN (0, 1)),
+  evidence_eligibility TEXT NOT NULL DEFAULT 'LEAD_ONLY' CHECK (evidence_eligibility = 'LEAD_ONLY'),
+  fetch_state TEXT NOT NULL DEFAULT 'NOT_FETCHED' CHECK (fetch_state = 'NOT_FETCHED'),
+  truth_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (truth_status = 'UNVERIFIED'),
+  fact_status TEXT NOT NULL DEFAULT 'NOT_A_FACT' CHECK (fact_status = 'NOT_A_FACT'),
+  duplicate_of_candidate_id TEXT
+    REFERENCES search_result_candidates(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  provenance_json TEXT NOT NULL CHECK (
+    json_valid(provenance_json) AND json_type(provenance_json) = 'array' AND
+    length(CAST(provenance_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 4096
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE(search_run_id, canonical_url),
+  UNIQUE(search_run_id, url_hash),
+  CHECK (
+    (preview_kind = 'NONE' AND preview_text IS NULL) OR
+    (preview_kind <> 'NONE' AND preview_text IS NOT NULL)
+  ),
+  CHECK (duplicate_of_candidate_id IS NULL OR duplicate_of_candidate_id <> id)
+) STRICT;
+
+CREATE INDEX idx_search_runs_provider_status_time
+  ON search_runs(provider_instance_id, status, started_at DESC);
+CREATE INDEX idx_search_runs_status_time ON search_runs(status, started_at DESC);
+CREATE INDEX idx_search_runs_job ON search_runs(job_id);
+CREATE INDEX idx_search_candidates_url_hash ON search_result_candidates(url_hash);
+CREATE INDEX idx_search_candidates_run_rank
+  ON search_result_candidates(search_run_id, upstream_rank, id);
+CREATE INDEX idx_search_candidates_domain ON search_result_candidates(domain, discovered_at DESC);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -2021,5 +2265,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'model_execution_cache_and_cost_ledger',
     sql: MODEL_EXECUTION_CACHE_AND_COST_LEDGER,
     version: 7,
+  }),
+  Object.freeze({
+    name: 'search_provider_runs_and_rate_limits',
+    sql: SEARCH_PROVIDER_RUNS_AND_RATE_LIMITS,
+    version: 8,
   }),
 ]);

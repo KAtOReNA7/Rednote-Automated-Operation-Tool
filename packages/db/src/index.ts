@@ -7,6 +7,7 @@ export { SqliteModelAccountingRepository } from './model-accounting-repository.j
 export { assertSqliteRuntimeCapabilities } from './runtime-capabilities.js';
 export { SqliteSettingsRepository } from './settings-repository.js';
 export { SqliteProviderCapabilityRepository } from './provider-capability-repository.js';
+export { SqliteSearchRepository } from './search-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
@@ -37,3 +38,8 @@ export type {
   ProviderCapabilityRunHistoryRecord,
   ProviderCapabilityStateRecord,
 } from './provider-capability-repository.js';
+export type {
+  SearchProviderConfigRecordV1,
+  SearchRunSummaryV1,
+  StoredSearchProviderConfigV1,
+} from './search-repository.js';

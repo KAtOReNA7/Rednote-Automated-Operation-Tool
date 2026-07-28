@@ -80,6 +80,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getProviderCapabilityState: [],
   getLocalApiStatus: [],
   getRuntimeCapabilities: [],
+  getSearchState: [],
   getSettings: [],
   getSetupState: [],
   getWindowState: [],
@@ -131,6 +132,17 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
         writing: null,
       },
       providerBaseUrl: null,
+    },
+  ],
+  updateSearchProviderConfig: [
+    {
+      curatedEntries: [],
+      enabled: true,
+      expectedRevision: 1,
+      maxResults: 1,
+      providerInstanceId: 'manual-url-v1',
+      ratePolicy: null,
+      timeoutMs: 5_000,
     },
   ],
 };

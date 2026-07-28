@@ -23,6 +23,9 @@
       "path": "../../packages/providers"
     },
     {
+      "path": "../../packages/search"
+    },
+    {
       "path": "../../packages/shared"
     },
     {

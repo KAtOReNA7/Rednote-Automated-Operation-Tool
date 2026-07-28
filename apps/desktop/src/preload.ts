@@ -20,6 +20,7 @@ import {
   type SetCredentialInput,
   type StartProviderCapabilityProbeInput,
   type UpdateLocalApiSettingsRequest,
+  type UpdateSearchProviderConfigInput,
 } from '@mystery-operations/shared';
 
 const desktopBridge: DesktopBridge = Object.freeze({
@@ -50,6 +51,7 @@ const desktopBridge: DesktopBridge = Object.freeze({
   getLocalApiStatus: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getLocalApiStatus),
   getRuntimeCapabilities: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getRuntimeCapabilities),
   getSettings: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSettings),
+  getSearchState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSearchState),
   getSetupState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSetupState),
   getWindowState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getWindowState),
   listLocalApiClients: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.listLocalApiClients),
@@ -70,6 +72,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.updateLocalApiSettings, input),
   updateNonSecretSettings: (input: NonSecretSettingsDraft) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.updateNonSecretSettings, input),
+  updateSearchProviderConfig: (input: UpdateSearchProviderConfigInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.updateSearchProviderConfig, input),
 });
 
 contextBridge.exposeInMainWorld(DESKTOP_BRIDGE_KEY, desktopBridge);

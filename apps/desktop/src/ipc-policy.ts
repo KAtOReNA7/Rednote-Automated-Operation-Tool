@@ -19,6 +19,7 @@ export type DesktopIpcOperation =
   | 'getProviderCapabilityState'
   | 'getLocalApiStatus'
   | 'getRuntimeCapabilities'
+  | 'getSearchState'
   | 'getSettings'
   | 'getSetupState'
   | 'getWindowState'
@@ -32,7 +33,8 @@ export type DesktopIpcOperation =
   | 'startProviderCapabilityProbe'
   | 'startLocalApiPairing'
   | 'updateLocalApiSettings'
-  | 'updateNonSecretSettings';
+  | 'updateNonSecretSettings'
+  | 'updateSearchProviderConfig';
 
 const MAX_IPC_BYTES = 32 * 1024;
 const MAX_IPC_DEPTH = 6;
@@ -132,6 +134,7 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'getFoundationHealth':
     case 'getRuntimeCapabilities':
     case 'getSettings':
+    case 'getSearchState':
     case 'getProviderCapabilityState':
     case 'getModelAccounting':
     case 'getSetupState':
@@ -405,6 +408,102 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         return false;
       }
       return true;
+    }
+    case 'updateSearchProviderConfig': {
+      const value = validateOneObject(args, [
+        'curatedEntries',
+        'enabled',
+        'expectedRevision',
+        'maxResults',
+        'providerInstanceId',
+        'ratePolicy',
+        'timeoutMs',
+      ]);
+      if (
+        value === null ||
+        ![
+          'browser-clip-v1',
+          'curated-source-v1',
+          'manual-url-v1',
+          'model-web-search-v1',
+          'search-api-v1',
+        ].includes(String(value.providerInstanceId)) ||
+        typeof value.enabled !== 'boolean' ||
+        typeof value.expectedRevision !== 'number' ||
+        !Number.isSafeInteger(value.expectedRevision) ||
+        value.expectedRevision < 1 ||
+        typeof value.maxResults !== 'number' ||
+        !Number.isSafeInteger(value.maxResults) ||
+        value.maxResults < 1 ||
+        value.maxResults > 20 ||
+        typeof value.timeoutMs !== 'number' ||
+        !Number.isSafeInteger(value.timeoutMs) ||
+        value.timeoutMs < 100 ||
+        value.timeoutMs > 600_000 ||
+        !Array.isArray(value.curatedEntries) ||
+        value.curatedEntries.length > 100
+      ) {
+        return false;
+      }
+      const entriesValid = value.curatedEntries.every(
+        (entry) =>
+          isRecord(entry) &&
+          exactKeys(entry, ['entryId', 'intent', 'languageHint', 'title', 'urlTemplate']) &&
+          typeof entry.entryId === 'string' &&
+          /^[A-Za-z0-9._:-]{1,128}$/u.test(entry.entryId) &&
+          [
+            'AUTHOR_RESEARCH',
+            'AWARD_RESEARCH',
+            'BIBLIOGRAPHIC_LOOKUP',
+            'BOOK_DISCOVERY',
+            'CULTURAL_CONTEXT',
+            'PUBLISHING_NEWS',
+            'REVIEW_LANDSCAPE',
+          ].includes(String(entry.intent)) &&
+          (entry.languageHint === null ||
+            (typeof entry.languageHint === 'string' && entry.languageHint.length <= 32)) &&
+          typeof entry.title === 'string' &&
+          entry.title.length >= 1 &&
+          entry.title.length <= 512 &&
+          typeof entry.urlTemplate === 'string' &&
+          entry.urlTemplate.length >= 1 &&
+          entry.urlTemplate.length <= 4_096,
+      );
+      if (!entriesValid) return false;
+      if (value.providerInstanceId !== 'curated-source-v1' && value.curatedEntries.length !== 0) {
+        return false;
+      }
+      if (value.ratePolicy === null) return true;
+      if (
+        !isRecord(value.ratePolicy) ||
+        !exactKeys(value.ratePolicy, [
+          'contractVersion',
+          'maxConcurrent',
+          'maxRequestsPerWindow',
+          'maxResponseBytes',
+          'maxResults',
+          'minIntervalMs',
+          'revision',
+          'timeoutMs',
+          'windowMs',
+        ])
+      ) {
+        return false;
+      }
+      const policy = value.ratePolicy;
+      return (
+        policy.contractVersion === 'search-rate-policy-v1' &&
+        [
+          policy.maxConcurrent,
+          policy.maxRequestsPerWindow,
+          policy.maxResponseBytes,
+          policy.maxResults,
+          policy.minIntervalMs,
+          policy.revision,
+          policy.timeoutMs,
+          policy.windowMs,
+        ].every((item) => typeof item === 'number' && Number.isSafeInteger(item) && item >= 0)
+      );
     }
   }
 }

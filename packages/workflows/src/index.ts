@@ -17,6 +17,10 @@ export * from './model-execution/money.js';
 export * from './model-execution/service.js';
 export * from './model-execution/sqlite-persistence.js';
 export * from './model-execution/types.js';
+export {
+  createSearchExecutionJobHandler,
+  registerSearchExecutionJob,
+} from './search-execution-handler.js';
 
 export type { BackoffPolicy, ExponentialBackoffOptions } from './queue/backoff.js';
 export type { QueueClock, QueueScheduler } from './queue/clock.js';

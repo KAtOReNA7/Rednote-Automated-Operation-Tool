@@ -38,8 +38,10 @@ const MODEL_CAPABILITIES = new Set<ModelCapability>([
   'imageGeneration',
   'structuredJson',
   'text',
+  'toolCalling',
   'usage',
   'vision',
+  'webSearch',
 ]);
 
 export interface PersistedCacheEntryV1 {

@@ -1,0 +1,892 @@
+M2 Issue 015：通用 SearchProvider——精简增量开发指令
+=====================================================
+
+本文件替代此前的长版 Issue 015 指令。
+
+完整遵守根级及作用域内 AGENTS.md；本指令仅定义当前 Issue 的增量规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；URL、安全执行、限流、幂等和 migration 使用 XHigh
+目标提交信息：feat(search): add unified search providers
+
+
+一、授权目标
+------------
+
+只实现 Roadmap Issue 015：
+
+- 定义版本化 SearchProvider V1；
+- 支持模型联网、独立 Search API 扩展点、定向来源、浏览器收藏输入合同和手工 URL；
+- 五类来源返回统一 SearchCandidate/SearchBatch；
+- 实现显式 Registry、Readiness、SearchPlan 和 SearchExecutionService；
+- 请求具备有限速、超时、响应大小、结果数量、并发和幂等边界；
+- 增加持久化 SearchRun、SearchResultCandidate 和 rate-limit state；
+- 接入 Job Queue、CapabilityGuard 和 Issue 014 accounting；
+- 增加设置/任务中心的有限状态展示；
+- migration v8、专项测试、文档、120 项验收映射和一个本地提交。
+
+完成后停止，不进入 Issue 016。
+
+
+二、本 Issue 明确不做
+--------------------
+
+- 不抓取任何搜索结果 URL；
+- 不下载或解析 HTML、PDF、图片、RSS、站点地图或附件；
+- 不做正文抽取、HTML 净化、页面快照或内容 hash；
+- 不做全站遍历、自动翻页或爬虫；
+- 不实现 Chrome/Edge 插件或插件 Local API 业务 route；
+- 不保存浏览器截图、选中文本或可见指标；
+- 不实现书目发现、50 本去重、来源事实、研究档案或文案；
+- 不把模型回答、snippet、标题或搜索排名当事实证据；
+- 不写入 sources、claims、claim_evidence、clips、books 或 research_dossiers；
+- 不配置具体独立 Search API 供应商或 credential；
+- 不提供任意 HTTP method/path/header/body/解析脚本；
+- 不实现自动 fallback、自动 retry 或多 Provider 并行聚合；
+- 不进入 Issue 016、017、018 或后续范围。
+
+真实密钥、真实模型、真实搜索服务、真实页面和真实费用继续按 AGENTS.md 保持为 0。
+
+
+三、Issue 特有语义基线
+---------------------
+
+编码前除 AGENTS.md 规定的通用检查外，确认：
+
+- `<!-- CODEX_COMMON_RULES: v1 -->` 与结束标记各恰好一次；
+- `tests/agents-governance.test.ts` 已被 constraints 和全量测试覆盖；
+- Issue 013 的三态 capability matrix、Probe Runner 和 CapabilityGuard 完整；
+- Issue 014 的 ModelExecutionService、BYPASS、NONESSENTIAL、model_runs、usage、预算、
+  reservation 和 cost ledger 完整；
+- 当前 Schema 语义为 v7，已有 migration 不变；
+- Job Queue 保持 at-least-once；
+- Local API 仍没有插件业务 route；
+- 尚未存在完整 SearchProvider 或页面抓取器。
+
+Issue 特有事实来源：
+
+- PRD 7.1—7.5、9.2、18.2—18.3；
+- Roadmap Issue 015—018；
+- provider-v1、capability 和 model-execution/model-accounting 合同；
+- Queue、Local API、Settings、DB、Desktop/Web UI 的现有实现；
+- 当前 Issue 014 ADR、计划和验收映射。
+
+如参考 OpenAI-compatible Web Search，只把结构化 tool call、sources 和 URL citation 映射为
+provider-neutral 合同；不得写死当前模型、参数、价格或某个供应商路径。
+
+
+四、Search、Fetch、Evidence 边界
+-------------------------------
+
+SearchProvider 只发现候选：
+
+- `evidenceEligibility = LEAD_ONLY`
+- `fetchState = NOT_FETCHED`
+- `truthStatus = UNVERIFIED`
+- `factStatus = NOT_A_FACT`
+
+Issue 016 才能请求候选 URL、校验重定向/MIME/大小、净化 HTML 和保存快照。
+
+Issue 019 才能创建原子事实、证据关系和冲突状态。
+
+以上四个候选状态必须由 TypeScript 合同、数据库 CHECK 和架构测试共同冻结。
+
+
+五、SearchProvider V1
+--------------------
+
+优先建立 Electron 无关的 `packages/search`；若现有依赖图要求其他位置，在 ADR 中解释且不得
+形成循环依赖。
+
+核心接口：
+
+```ts
+interface SearchProviderV1 {
+  describe(): SearchProviderDescriptorV1
+  preview(request: SearchRequestV1): Promise<SearchPreviewV1>
+  execute(
+    request: SearchRequestV1,
+    context: SearchExecutionContextV1,
+  ): Promise<SearchBatchV1>
+}
+```
+
+`SearchProviderKind`：
+
+- `MODEL_WEB_SEARCH`
+- `SEARCH_API`
+- `CURATED_SOURCE`
+- `BROWSER_CLIP`
+- `MANUAL_URL`
+
+`SearchProviderMode`：
+
+- `ACTIVE_REMOTE`
+- `PASSIVE_LOCAL`
+- `FIXTURE_ONLY`
+
+`SearchProviderReadiness`：
+
+- `READY`
+- `DISABLED`
+- `NOT_CONFIGURED`
+- `CAPABILITY_UNKNOWN`
+- `CAPABILITY_UNSUPPORTED`
+- `CAPABILITY_STALE`
+- `RATE_POLICY_REQUIRED`
+- `BUDGET_POLICY_REQUIRED`
+- `CODEC_UNAVAILABLE`
+- `PENDING_LATER_ISSUE`
+- `ERROR`
+
+所有合同使用 discriminated union、显式版本和严格 runtime validator；输入、输出、数组、深度和
+序列化大小均有限。
+
+
+六、SearchRequest 与 ProviderDescriptor
+--------------------------------------
+
+`SearchIntent`：
+
+- `BOOK_DISCOVERY`
+- `BIBLIOGRAPHIC_LOOKUP`
+- `AUTHOR_RESEARCH`
+- `AWARD_RESEARCH`
+- `PUBLISHING_NEWS`
+- `REVIEW_LANDSCAPE`
+- `CULTURAL_CONTEXT`
+- `USER_PROVIDED_URL`
+- `USER_PROVIDED_CLIP`
+
+主动搜索请求至少包含：
+
+- contractVersion；
+- executionId；
+- providerInstanceId；
+- intent；
+- query；
+- maxResults；
+- localeHints；
+- countryHint，可空；
+- publishedAfter/publishedBefore，可空；
+- allowedDomains/blockedDomains；
+- liveAccess：`LIVE/CACHED_ONLY/UNSPECIFIED`；
+- cursor，可空；
+- ratePolicyRef；
+- jobId，可空。
+
+建议上限：
+
+- query 512 字符；
+- maxResults 20；
+- locale 4 个；
+- allowed/blocked 各 100 个；
+- cursor 2 KiB；
+- URL 4,096 字符；
+- title 512 字符；
+- preview/note 2,000 字符。
+
+Descriptor 必须逐项声明：
+
+- 支持的 intent；
+- query/manual URL；
+- allowlist/blocklist；
+- date、locale、country；
+- live access；
+- cursor；
+- structured sources；
+- max results/response bytes；
+- capability、rate、budget、credential readiness。
+
+调用方要求未支持功能时返回 `SEARCH_FEATURE_UNSUPPORTED`，不得静默忽略或写进自然语言
+query 后声称已应用硬过滤。
+
+
+七、统一 SearchCandidate/SearchBatch
+-----------------------------------
+
+`SearchCandidateV1` 至少包含：
+
+- candidateId/searchRunId；
+- providerInstanceId/providerKind/originKind；
+- canonicalUrl/urlHash/domain/displayHost；
+- title/previewText，可空且有限；
+- previewKind；
+- upstreamRank/upstreamIdHash，可空；
+- publishedAt/languageHint，可空且标记为上游未验证；
+- discoveredAt；
+- userSupplied；
+- sourceMetadataKind；
+- citationState；
+- wasConsulted/wasCited，可空；
+- 四个冻结的 LEAD_ONLY 状态；
+- duplicateOfCandidateId，可空；
+- bounded warnings。
+
+`SourceMetadataKind`：
+
+- `WEB_SEARCH_SOURCE`
+- `URL_CITATION`
+- `SEARCH_API_RESULT`
+- `CURATED_ENTRY`
+- `BROWSER_CLIP_INPUT`
+- `MANUAL_URL_INPUT`
+
+`SearchBatchV1` 至少包含：
+
+- searchRunId/executionId/requestSemanticHash；
+- provider snapshot；
+- status/certainty；
+- candidates 和 counts；
+- truncated/cursor；
+- externalRequestCount；
+- modelRunId/usage/costState，可空；
+- startedAt/finishedAt；
+- warnings/stableError。
+
+Batch status：
+
+- `SUCCEEDED`
+- `PARTIAL`
+- `EMPTY`
+- `RATE_LIMITED_BEFORE_SEND`
+- `BUDGET_BLOCKED`
+- `CAPABILITY_BLOCKED`
+- `CANCELLED_BEFORE_SEND`
+- `CANCELLED_AFTER_SEND`
+- `FAILED_BEFORE_SEND`
+- `FAILED_AFTER_SEND`
+- `AMBIGUOUS`
+
+`PARTIAL` 只允许“远程响应确定完整，但部分 item 因字段不合法被拒绝”；连接截断或终态不明
+必须是 FAILED/AMBIGUOUS。
+
+
+八、URL 与域名规则
+------------------
+
+候选 URL 只接受 HTTP/HTTPS。
+
+拒绝：
+
+- 其他 scheme；
+- userinfo；
+- 控制字符/NUL/混淆空白；
+- 无效 percent encoding；
+- Windows/UNC/device/drive-relative path；
+- 缺失 host；
+- 超长 URL。
+
+规范化：
+
+- scheme/host 小写；
+- 标准 IDNA；
+- 移除默认端口和 fragment；
+- 规范 dot segment；
+- 保持 path 和 query 语义；
+- 不删除 tracking 参数；
+- 不排序 query；
+- 不自动 HTTP→HTTPS；
+- 不请求 canonical link；
+- 不跟随结果 URL；
+- 规则显式版本化。
+
+同一 Batch 按 canonical URL 去重并保留所有 provenance appearance；不得按标题、书名、ISBN 或
+模型判断做作品级合并。
+
+域名过滤：
+
+- 输入只能是 host；
+- 标准化 IDNA、小写和尾点；
+- 使用 label-boundary 匹配；
+- blocked 优先；
+- 不使用 regex；
+- 只有上游协议真正支持时才标 `hardFilterApplied`。
+
+
+九、五类适配器
+--------------
+
+## 9.1 ModelWebSearchAdapter
+
+执行条件：
+
+- 精确 research model/modelId/protocol 的 webSearch 当前为 `SUPPORTED` 且非 stale；
+- ModelExecutionService、budget 和 rate policy ready。
+
+执行规则：
+
+- 固定版本化 search prompt，query 明确作为数据；
+- 只允许 Web Search tool；
+- 必须搜索时使用 required/specific tool choice；
+- 只接受 codec 识别的 completed search event；
+- 只从结构化 source list 或 URL citation 建候选；
+- 模型正文中的 URL、事实和总结全部丢弃；
+- source 与 citation 分别保存 `consulted/cited`；
+- 不启用 unlimited/deep research/background；
+- 每个 SearchRun 最多一个 model execution；
+- `cachePolicy=BYPASS`；
+- `budgetClassification=NONESSENTIAL`；
+- 复用 Issue 014 usage/cost/ambiguous，不重复记账、不自动重试。
+
+协议不支持 requested domain/date/live/source 功能时 fail closed。
+
+## 9.2 SearchApiAdapter
+
+本轮只实现：
+
+- `SearchApiCodecV1`
+- request encoder/response decoder；
+- transport interface；
+- credential resolver interface；
+- Scripted codec；
+- loopback codec，仅测试。
+
+产品运行时没有具体生产 codec，因此 readiness 必须为 `CODEC_UNAVAILABLE` 或
+`NOT_CONFIGURED`。
+
+禁止用户自定义 method、path、header、body、JSONPath、JavaScript、curl 模板或 credential
+注入。未来生产 codec 必须代码 allowlist 并单独审查。
+
+Transport 合同冻结：
+
+- 生产仅 HTTPS，loopback HTTP 仅测试；
+- request/response headers 有界；
+- connect/header/body/total timeout 有界；
+- raw/decompressed bytes 双限；
+- redirects 默认 0，codec 明确声明时最多一个 same-origin；
+- cross-origin、downgrade、invalid MIME/schema 拒绝；
+- 不连接 result URL。
+
+## 9.3 CuratedSourceAdapter
+
+纯本地 catalog：
+
+- 返回明确配置的出版社、作者、奖项、书目或站内搜索入口；
+- 不请求 URL、RSS、sitemap 或 HTML；
+- 不翻页；
+- externalRequestCount=0；
+- 仍为 LEAD_ONLY。
+
+如支持 query template，只允许代码审查过的单一 percent-encoded placeholder；scheme、host、
+path 固定。
+
+## 9.4 BrowserClipAdapter
+
+本轮只定义输入合同和 fixture。产品 readiness 固定 `PENDING_LATER_ISSUE`：
+
+- 不新增 Local API route；
+- 不接收插件请求；
+- 不保存 selectedText、metrics 或 screenshot；
+- UI 明确留待 Issue 017。
+
+## 9.5 ManualUrlAdapter
+
+立即可用的被动本地输入：
+
+- 校验并规范化用户 URL；
+- 可接收有限 title/note；
+- 不访问 URL、不调用模型、不产生费用；
+- externalRequestCount=0；
+- userSupplied=true；
+- LEAD_ONLY。
+
+
+十、Registry、SearchPlan 与 Readiness
+------------------------------------
+
+Registry 只在 main/composition root 构造：
+
+- providerInstanceId 唯一；
+- renderer 不能注册适配器；
+- 不加载任意动态 JS/远程 codec。
+
+总体 readiness：
+
+- `ACTIVE_SEARCH_READY`
+- `PASSIVE_ONLY`
+- `NOT_READY`
+- `DEGRADED`
+
+Manual/Curated、interface-only Search API 和 pending BrowserClip 均不能证明 active search ready。
+
+SearchPlan 包含：
+
+- planId/planHash/request hash；
+- provider；
+- estimated external requests/internal search calls；
+- feature application matrix；
+- timeout/rate/budget verdict；
+- max results；
+- settings/capability binding；
+- expiry。
+
+产品 fallback 固定 `NONE`。empty、429、5xx、invalid response、ambiguous、budget blocked、
+capability stale 和 unsupported filter 均不得自动换 Provider。
+
+
+十一、SearchExecution、限速与 Queue
+---------------------------------
+
+每个远程 Provider 必须有版本化 SearchRatePolicy：
+
+- maxConcurrent；
+- minIntervalMs；
+- maxRequestsPerWindow/windowMs；
+- timeoutMs；
+- maxResponseBytes/maxResults；
+- revision。
+
+Rate policy 缺失时不 READY。状态持久化；重启不清窗；多 worker 原子检查。429 的 allowlisted
+Retry-After 只更新 nextAllowedAt，不自动 sleep/retry。每次远程 execution 最多一次 attempt。
+
+新增 Job type：
+
+`SEARCH_EXECUTE_V1`
+
+Job payload 保存有限 request/plan/settings/capability identity，不含 secret、任意 endpoint/header、
+页面正文或截图；Job result 只保存 searchRunId、终态、counts 和 stable error。
+
+SearchExecutionService 顺序：
+
+1. validate + semantic hash；
+2. executionId 幂等检查；
+3. provider/readiness；
+4. plan/settings/capability binding；
+5. 本地 adapter 直接执行，或远程原子领取 SearchRun；
+6. 远程 rate reservation；
+7. ModelWebSearch 进入 Issue 014 budget；
+8. 事务外至多一次外部调用；
+9. decode/normalize；
+10. 短事务保存 run/candidates/rate settlement；
+11. 完成 Job。
+
+相同 executionId 重放不得产生第二请求。可证明 pre-send 才可恢复；after-send 未知转
+`AMBIGUOUS` 且不自动恢复。
+
+本轮不自动 enqueue 搜索任务；Issue 018 才创建书目发现计划。
+
+
+十二、SearchRun、Candidate 与 migration v8
+----------------------------------------
+
+只新增 migration v8，建议名称：
+
+`search_provider_runs_and_rate_limits`
+
+新增语义：
+
+- `search_provider_configs`
+- `search_rate_limit_states`
+- `search_runs`
+- `search_result_candidates`
+
+`search_runs` 至少保存：
+
+- executionId/jobId；
+- provider kind/instance；
+- request/plan/query hash；
+- intent/status/certainty；
+- external request count/modelRunId；
+- candidate/rejected/duplicate/truncated；
+- rate policy version；
+- stable error/timestamps/revision。
+
+`search_result_candidates` 保存第七节有限字段，并由 DB CHECK 固定：
+
+- LEAD_ONLY；
+- NOT_FETCHED；
+- UNVERIFIED；
+- NOT_A_FACT。
+
+不保存 query 正文、模型正文、raw response/header、页面正文、selected text、screenshot、
+credential 或内部 endpoint。
+
+Issue 特有 migration 验证：
+
+- v7→v8 保留全部数据；
+- search run/candidate/rate 的 STRICT、FK、CHECK、唯一约束和索引；
+- executionId 唯一；
+- 多 worker rate 原子；
+- 四个候选状态不能升级；
+- 不写 sources/claims/clips/books；
+- 查询计划覆盖 provider/status/time/URL hash；
+- 不新增 v9。
+
+其余 migration 通则直接遵守 AGENTS.md。
+
+
+十三、Accounting 集成
+--------------------
+
+ModelWebSearch：
+
+- 通过 ModelExecutionService；
+- BYPASS/NONESSENTIAL；
+- 预留 token 与 Web Search unit；
+- 记录实际内部 search calls；
+- SearchRun 关联 modelRunId；
+- SearchProvider 不重复写 cost ledger；
+- 未知价格/usage 沿用 Issue 014 的 UNKNOWN/NULL 和 unit policy。
+
+本轮 SearchApiAdapter 没有生产 codec：
+
+- 不创建真实费用或 credential；
+- 未接入可审计 accounting 前不得生产 READY；
+- 不把 Search API 强塞进 model_runs。
+
+Local adapters：
+
+- NOT_INCURRED；
+- 不创建 model_run/ledger/reservation。
+
+
+十四、Issue 特有 UI/IPC
+----------------------
+
+设置页增加搜索适配器状态：
+
+- 五类 adapter/mode/readiness；
+- capability、feature、rate、budget、credential 枚举状态；
+- 总体 active/passive/degraded；
+- 明确 Issue 016 才抓网页、Issue 017 才接插件。
+
+可配置：
+
+- app-side rate policy；
+- enabled；
+- maxResults/timeout；
+- 有限 CuratedSource entries。
+
+不得提供：
+
+- 搜索执行框或自动建库按钮；
+- URL 抓取；
+- 插件业务；
+- Search API endpoint/key/raw JSON；
+- fallback、翻页、预算绕过。
+
+任务中心只显示 SearchRun 状态和 counts，不显示 query、preview、完整 URL、endpoint 或 secret。
+
+IPC 只新增完成上述状态/有限配置所需的窄方法；其余安全通则由 AGENTS.md 管理。
+
+
+十五、稳定错误
+--------------
+
+至少定义：
+
+- `SEARCH_INVALID_REQUEST`
+- `SEARCH_QUERY_TOO_LARGE`
+- `SEARCH_URL_INVALID`
+- `SEARCH_DOMAIN_INVALID`
+- `SEARCH_FEATURE_UNSUPPORTED`
+- `SEARCH_PROVIDER_NOT_FOUND`
+- `SEARCH_PROVIDER_NOT_READY`
+- `SEARCH_CAPABILITY_UNKNOWN`
+- `SEARCH_CAPABILITY_UNSUPPORTED`
+- `SEARCH_CAPABILITY_STALE`
+- `SEARCH_RATE_POLICY_REQUIRED`
+- `SEARCH_RATE_LIMITED`
+- `SEARCH_BUDGET_BLOCKED`
+- `SEARCH_CODEC_UNAVAILABLE`
+- `SEARCH_TIMEOUT_BEFORE_SEND`
+- `SEARCH_TIMEOUT_AFTER_SEND`
+- `SEARCH_RESPONSE_TOO_LARGE`
+- `SEARCH_RESPONSE_INVALID`
+- `SEARCH_RESULT_INVALID`
+- `SEARCH_CANCELLED_BEFORE_SEND`
+- `SEARCH_CANCELLED_AFTER_SEND`
+- `SEARCH_AMBIGUOUS`
+- `SEARCH_EXECUTION_CONFLICT`
+- `SEARCH_PLAN_STALE`
+- `SEARCH_INTERNAL`
+
+`retryable` 只作业务提示，不触发自动重试。
+
+
+十六、Issue 特有测试
+-------------------
+
+新增 `npm run test:search` 并纳入全量测试和 Windows CI。
+
+至少覆盖：
+
+- contracts/validators；
+- URL/IDNA/domain/canonicalization；
+- candidate/batch/dedup/provenance；
+- structured source list 与 URL citation；
+- 模型正文伪造 URL；
+- tool 未执行/incomplete event；
+- 五类 adapter；
+- Search API codec/transport；
+- response raw/decompressed size；
+- MIME/schema/redirect；
+- Registry/Readiness/SearchPlan；
+- no fallback/no retry；
+- persistent rate limit/concurrency/restart；
+- Job replay/executionId/crash/AMBIGUOUS；
+- migration v8；
+- Issue 014 accounting 集成；
+- UI/IPC；
+- 70 项 search/network/content egress；
+- Windows 中文、空格、emoji、长路径；
+- source/packaged smoke；
+- 外部真实连接、结果 URL 请求和费用均为 0。
+
+恶意 fixture 包含：
+
+- invalid schemes/userinfo/control chars；
+- evil suffix domain；
+- excessive items/body/decompression；
+- invalid JSON/schema/MIME；
+- partial socket close；
+- before/after-send timeout；
+- 429/5xx；
+- same-origin/cross-origin/downgrade redirect；
+- HTML/script/formula text；
+- secret-looking body；
+- absolute-path error。
+
+通用门禁发现、执行顺序和零失败要求直接遵守 AGENTS.md。
+
+
+十七、文档
+----------
+
+新增：
+
+- `docs/adr/0011-search-provider-and-discovery-boundary.md`
+- `docs/contracts/search-provider-v1.md`
+- `docs/contracts/search-fixture-v1.md`
+- `docs/m2-issue015-implementation-plan.md`
+- `docs/m2-issue015-acceptance-map.md`
+
+如 ADR 编号已占用，按仓库实际顺延，不覆盖。
+
+ADR 必须解释：
+
+- Search/Fetch/Evidence 分层；
+- 五类 adapter；
+- structured sources/citations；
+- no arbitrary HTTP；
+- no production Search API codec；
+- readiness/no fallback；
+- persistent rate/idempotency/ambiguous；
+- migration v8；
+- accounting；
+- BrowserClip pending；
+- 被否决方案。
+
+
+十八、120 项增量验收矩阵
+-----------------------
+
+acceptance map 按 1—120 连续编号。AGENTS.md 已覆盖的通用 Git、路径、磁盘、密钥、migration
+通则、Electron 通则、全局门禁和报告规则不重复列入。
+
+A. 范围与分层
+
+1. 只实现 Issue 015。
+2. 未抓取任何结果 URL。
+3. 未实现 HTML/PDF/正文抽取。
+4. 未实现插件或 Local API 业务 route。
+5. 未实现书目发现/事实/研究业务。
+6. SearchCandidate 固定 LEAD_ONLY。
+7. fetchState 固定 NOT_FETCHED。
+8. truthStatus 固定 UNVERIFIED。
+9. factStatus 固定 NOT_A_FACT。
+10. 未写 sources/claims/clips/books。
+
+B. 合同与请求
+
+11. SearchProvider V1 版本化且严格校验。
+12. 五种 ProviderKind 有限。
+13. Mode/Readiness 有限且派生真实。
+14. SearchIntent 有限。
+15. query/maxResults/locale/domain/cursor 有界。
+16. query 不能控制 endpoint/header/tool/budget。
+17. Descriptor 逐项声明 features。
+18. unsupported feature fail closed。
+19. hard filter 与 query hint 分开。
+20. NOT_CONFIGURED 不伪装 READY。
+
+C. Candidate/Batch
+
+21. Candidate provenance 完整。
+22. URL/title/preview 字段有界。
+23. consulted 与 cited 分开。
+24. upstream metadata 标未验证。
+25. userSupplied 明确。
+26. Batch counts 自洽。
+27. externalRequestCount 准确。
+28. EMPTY 与 FAILED 分开。
+29. PARTIAL 只用于确定完整响应中的无效 item。
+30. raw/model narrative 不进入 Candidate。
+
+D. URL/Domain
+
+31. 只接受 HTTP/HTTPS。
+32. 非法 scheme/userinfo/control/path 被拒绝。
+33. IDNA/默认端口/fragment/dot segment 正确。
+34. path/query 语义保持。
+35. 不删除 tracking、不排序 query。
+36. 不自动 HTTP→HTTPS。
+37. 不访问 result/canonical link。
+38. canonical URL 去重且保留 provenance。
+39. label-boundary domain 正确。
+40. hard domain filter 必须由协议证明。
+
+E. ModelWebSearch
+
+41. 精确 capability SUPPORTED 且非 stale 才执行。
+42. 固定 prompt 且 query 作为数据。
+43. 只允许 Web Search tool。
+44. 必须搜索时 tool choice required/specific。
+45. completed structured event 必需。
+46. source list/citation 分开解析。
+47. 模型正文 URL 被忽略。
+48. 不启用 unlimited/deep/background。
+49. 每 Run 最多一个 model execution。
+50. BYPASS/NONESSENTIAL/accounting 正确。
+
+F. SearchApi
+
+51. codec/encoder/decoder/transport 接口存在。
+52. Scripted/loopback codec 完整。
+53. 产品无生产 codec 且不伪装 READY。
+54. 无真实 Search API credential slot。
+55. 无任意 HTTP/JSON/script 配置。
+56. 生产 HTTPS、loopback 仅测试。
+57. headers/timeouts/raw/decompressed size 有界。
+58. redirects 默认 0。
+59. cross-origin/downgrade/MIME/schema 被拒绝。
+60. Transport 不连接 result URL。
+
+G. Local adapters
+
+61. Curated 纯本地且不读 RSS/HTML。
+62. Curated template host/path 固定。
+63. Curated 仍 LEAD_ONLY。
+64. BrowserClip 合同/fixture 存在。
+65. BrowserClip runtime 保持 pending。
+66. 未保存 selectedText/metrics/screenshot。
+67. ManualUrl 可用。
+68. ManualUrl 不访问网络/模型。
+69. Local adapters externalRequestCount=0。
+70. Local adapters不写 model ledger。
+
+H. Registry/Plan/Rate
+
+71. providerInstanceId 唯一。
+72. renderer 不能注册动态 adapter。
+73. 总体 active/passive/degraded 正确。
+74. passive/interface-only 不证明 active ready。
+75. SearchPlan 绑定 request/settings/capability。
+76. stale plan 外部请求 0。
+77. fallback 固定 NONE。
+78. empty/429/5xx/ambiguous 不 fallback。
+79. rate policy 缺失不 READY。
+80. rate state 跨重启持久。
+81. 多 worker 原子限速。
+82. Retry-After 只更新 nextAllowedAt。
+83. 每次远程 execution 最多一次 attempt。
+84. after-send 不自动 retry。
+85. network call 不持长事务。
+
+I. Queue/Run/Persistence
+
+86. SEARCH_EXECUTE_V1 payload/result 有界。
+87. Job result 不重复 candidates。
+88. executionId 唯一幂等。
+89. replay 不产生第二请求。
+90. executionId/request 冲突 fail closed。
+91. pre-send 可安全恢复。
+92. post-send 未知标 AMBIGUOUS。
+93. AMBIGUOUS 不自动恢复。
+94. 不自动 enqueue 搜索任务。
+95. SearchRun 状态机/revision 完整。
+96. migration v8 只增加 search config/rate/run/candidate。
+97. v7→v8 数据保留和失败回滚通过。
+98. 四个候选冻结状态有 DB CHECK。
+99. provider/status/time/URL hash 索引有效。
+100. 未新增 v9。
+
+J. Accounting/UI/Security
+
+101. ModelWebSearch 复用 Issue 014 预算和账本。
+102. SearchProvider 不重复记账。
+103. 未知成本保持 UNKNOWN/NULL。
+104. SearchApi accounting 未完成前不 READY。
+105. 设置页真实显示五类 readiness。
+106. UI 明确 Issue 016/017 边界。
+107. UI 无搜索执行/抓取/key/raw JSON/fallback 按钮。
+108. 任务中心不显示 query/preview/完整 URL/secret。
+109. IPC 只增加有限状态/配置方法。
+110. 70 项 egress 全部通过。
+
+K. 测试与停止
+
+111. test:search 独立通过并纳入全量/CI。
+112. structured source/citation fixture 完整。
+113. malicious URL/domain/content fixture 完整。
+114. rate/concurrency/restart fixture 完整。
+115. job replay/crash/ambiguous fixture 完整。
+116. migration/accounting/UI/IPC fixture 完整。
+117. source/packaged smoke 通过。
+118. 真实搜索、页面连接和费用为 0。
+119. 未进入 Issue 016/017/018。
+120. 创建一个本地提交并停止。
+
+
+十九、实施顺序
+--------------
+
+1. 按 AGENTS.md 完成开工与语义基线。
+2. 创建 implementation plan 和 120 项草案。
+3. 冻结 Search/Fetch/Evidence 与 V1 合同。
+4. 实现 URL/domain 和统一 normalization。
+5. 追加 migration v8/repositories/rate state。
+6. 实现 Registry/Plan 和三个本地 adapter 边界。
+7. 实现 Scripted ModelWebSearch。
+8. 实现 fixture-only SearchApi codec/transport。
+9. 实现 SearchExecution/Job/idempotency。
+10. 接入 Issue 014 accounting。
+11. 实现有限 UI/IPC。
+12. 完成 egress、专项测试、smoke、文档和证据。
+13. 按 AGENTS.md 运行最终门禁并创建唯一提交。
+14. 报告并停止。
+
+
+二十、Issue 特有停止条件
+-----------------------
+
+除 AGENTS.md 停止条件外，出现以下任一情况立即停止：
+
+- 必须抓取结果页面才能通过；
+- 必须从模型正文提取 URL；
+- 必须把 snippet/summary 当证据；
+- 必须增加 BrowserClip Local API route；
+- 必须提供任意 HTTP 模板或真实 Search API credential；
+- 必须静默忽略 filter；
+- 必须自动 fallback、翻页或 retry；
+- 无法持久化 rate/idempotency；
+- Search API 未接 accounting 就要标 READY；
+- 需要写 sources/claims/books；
+- 需要进入 Issue 016 或后续。
+
+
+最终启动指令
+------------
+
+现在开始执行 M2 Issue 015。
+
+完整遵守根级及作用域内 AGENTS.md；本指令只定义 SearchProvider 增量。先完成语义基线、
+implementation plan 和 120 项验收草案，再开发。
+
+本轮只使用 Scripted fixture 和 127.0.0.1 loopback；所有候选固定为 LEAD_ONLY、
+NOT_FETCHED、UNVERIFIED、NOT_A_FACT。不得抓取结果页面，不得从模型正文提取 URL，不得自动
+fallback、翻页或 retry。
+
+通过全部门禁后创建本地提交 `feat(search): add unified search providers`，报告并停止，
+不得进入 Issue 016。

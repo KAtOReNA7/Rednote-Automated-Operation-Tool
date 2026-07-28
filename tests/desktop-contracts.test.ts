@@ -31,6 +31,7 @@ describe('desktop process contracts', () => {
       getLocalApiStatus: 'local-api:get-status',
       getModelAccounting: 'models:get-accounting',
       getRuntimeCapabilities: 'desktop:get-runtime-capabilities',
+      getSearchState: 'search:get-state',
       getSettings: 'settings:get-settings',
       getSetupState: 'settings:get-setup-state',
       getWindowState: 'desktop:get-window-state',
@@ -45,6 +46,7 @@ describe('desktop process contracts', () => {
       startProviderCapabilityProbe: 'providers:start-capability-probe',
       updateLocalApiSettings: 'local-api:update-settings',
       updateNonSecretSettings: 'settings:update-non-secret',
+      updateSearchProviderConfig: 'search:update-provider-config',
     });
     expect(Object.isFrozen(DESKTOP_IPC_CHANNELS)).toBe(true);
   });

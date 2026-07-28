@@ -37,6 +37,7 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getSetupState: 'settings:get-setup-state',
   getSettings: 'settings:get-settings',
   getProviderCapabilityState: 'providers:get-capability-state',
+  getSearchState: 'search:get-state',
   getModelAccounting: 'models:get-accounting',
   previewModelCacheClear: 'models:preview-cache-clear',
   confirmModelCacheClear: 'models:confirm-cache-clear',
@@ -49,6 +50,7 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   selectDataRoot: 'settings:select-data-root',
   confirmDataRootSelection: 'settings:confirm-data-root-selection',
   updateNonSecretSettings: 'settings:update-non-secret',
+  updateSearchProviderConfig: 'search:update-provider-config',
   setCredential: 'settings:set-credential',
   clearCredential: 'settings:clear-credential',
   getCredentialStatus: 'settings:get-credential-status',
@@ -303,6 +305,98 @@ export interface ModelAccountingView {
   readonly warningLimitMicroUsd: string;
 }
 
+export interface SearchAdapterView {
+  readonly budgetState: string;
+  readonly capabilityState: string;
+  readonly codecState: string;
+  readonly credentialState: string;
+  readonly displayName: string;
+  readonly enabled: boolean;
+  readonly features: readonly string[];
+  readonly kind:
+    'BROWSER_CLIP' | 'CURATED_SOURCE' | 'MANUAL_URL' | 'MODEL_WEB_SEARCH' | 'SEARCH_API';
+  readonly mode: 'ACTIVE_REMOTE' | 'FIXTURE_ONLY' | 'PASSIVE_LOCAL';
+  readonly maxResults: number;
+  readonly providerInstanceId:
+    | 'browser-clip-v1'
+    | 'curated-source-v1'
+    | 'manual-url-v1'
+    | 'model-web-search-v1'
+    | 'search-api-v1';
+  readonly ratePolicy: SearchRatePolicyInput | null;
+  readonly rateState: string;
+  readonly readiness: string;
+  readonly settingsRevision: number;
+  readonly timeoutMs: number;
+  readonly curatedEntries: readonly CuratedSearchEntryInput[];
+}
+
+export interface SearchRunView {
+  readonly candidateCount: number;
+  readonly duplicateCount: number;
+  readonly executionId: string;
+  readonly finishedAt: string | null;
+  readonly providerInstanceId: string;
+  readonly rejectedCount: number;
+  readonly searchRunId: string;
+  readonly stableError: string | null;
+  readonly startedAt: string;
+  readonly status: string;
+}
+
+export interface SearchStateView {
+  readonly adapters: readonly SearchAdapterView[];
+  readonly boundaries: {
+    readonly browserClip: string;
+    readonly discovery: string;
+    readonly fetching: string;
+  };
+  readonly overallReadiness: 'ACTIVE_SEARCH_READY' | 'DEGRADED' | 'NOT_READY' | 'PASSIVE_ONLY';
+  readonly recentRuns: readonly SearchRunView[];
+}
+
+export interface SearchRatePolicyInput {
+  readonly contractVersion: 'search-rate-policy-v1';
+  readonly maxConcurrent: number;
+  readonly maxRequestsPerWindow: number;
+  readonly maxResponseBytes: number;
+  readonly maxResults: number;
+  readonly minIntervalMs: number;
+  readonly revision: number;
+  readonly timeoutMs: number;
+  readonly windowMs: number;
+}
+
+export interface CuratedSearchEntryInput {
+  readonly entryId: string;
+  readonly intent:
+    | 'AUTHOR_RESEARCH'
+    | 'AWARD_RESEARCH'
+    | 'BIBLIOGRAPHIC_LOOKUP'
+    | 'BOOK_DISCOVERY'
+    | 'CULTURAL_CONTEXT'
+    | 'PUBLISHING_NEWS'
+    | 'REVIEW_LANDSCAPE';
+  readonly languageHint: string | null;
+  readonly title: string;
+  readonly urlTemplate: string;
+}
+
+export interface UpdateSearchProviderConfigInput {
+  readonly curatedEntries: readonly CuratedSearchEntryInput[];
+  readonly enabled: boolean;
+  readonly expectedRevision: number;
+  readonly maxResults: number;
+  readonly providerInstanceId:
+    | 'browser-clip-v1'
+    | 'curated-source-v1'
+    | 'manual-url-v1'
+    | 'model-web-search-v1'
+    | 'search-api-v1';
+  readonly ratePolicy: SearchRatePolicyInput | null;
+  readonly timeoutMs: number;
+}
+
 export interface ModelCacheClearPreview {
   readonly bytes: number;
   readonly count: number;
@@ -375,6 +469,7 @@ export interface DesktopBridge {
   getFoundationHealth(): Promise<DesktopResult<FoundationHealth>>;
   getModelAccounting(): Promise<DesktopResult<ModelAccountingView>>;
   getProviderCapabilityState(): Promise<DesktopResult<ProviderCapabilityStateView>>;
+  getSearchState?(): Promise<DesktopResult<SearchStateView>>;
   previewProviderCapabilityProbe(
     input: PreviewProviderCapabilityProbeInput,
   ): Promise<DesktopResult<ProviderCapabilityProbePreview>>;
@@ -413,4 +508,7 @@ export interface DesktopBridge {
     input: UpdateLocalApiSettingsRequest,
   ): Promise<DesktopResult<LocalApiStatusView>>;
   updateNonSecretSettings(input: NonSecretSettingsDraft): Promise<DesktopResult<SettingsBundle>>;
+  updateSearchProviderConfig?(
+    input: UpdateSearchProviderConfigInput,
+  ): Promise<DesktopResult<SearchStateView>>;
 }

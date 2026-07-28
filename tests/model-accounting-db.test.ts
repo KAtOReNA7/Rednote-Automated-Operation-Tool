@@ -41,11 +41,13 @@ function identity(executionId: string): ModelRunIdentityInput {
 
 describe('Issue 014 SQLite v7 accounting and cache state', () => {
   it('adds only migration v7 and makes its normalized checksum newline-stable', () => {
-    expect(MIGRATIONS.at(-1)).toMatchObject({
+    expect(MIGRATIONS.find((migration) => migration.version === 7)).toMatchObject({
       name: 'model_execution_cache_and_cost_ledger',
       version: 7,
     });
-    const migration = MIGRATIONS.at(-1) as (typeof MIGRATIONS)[number];
+    const migration = MIGRATIONS.find(
+      (candidate) => candidate.version === 7,
+    ) as (typeof MIGRATIONS)[number];
     expect(migrationChecksum({ ...migration, sql: migration.sql.replaceAll('\n', '\r\n') })).toBe(
       migrationChecksum(migration),
     );

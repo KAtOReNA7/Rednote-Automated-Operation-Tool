@@ -24,6 +24,7 @@ import {
   type SetCredentialInput,
   type StartProviderCapabilityProbeInput,
   type UpdateLocalApiSettingsRequest,
+  type UpdateSearchProviderConfigInput,
   type WindowState,
 } from '@mystery-operations/shared';
 import type { NonSecretSettingsDraft } from '@mystery-operations/settings';
@@ -147,6 +148,9 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   register('getModelAccounting', DESKTOP_IPC_CHANNELS.getModelAccounting, () =>
     options.settingsRuntime.getModelAccounting(),
   );
+  register('getSearchState', DESKTOP_IPC_CHANNELS.getSearchState, () =>
+    options.settingsRuntime.getSearchState(),
+  );
   register('previewModelCacheClear', DESKTOP_IPC_CHANNELS.previewModelCacheClear, (event) => {
     const window = options.getWindow();
     if (window === null || window.webContents.id !== event.sender.id) {
@@ -247,6 +251,14 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
     DESKTOP_IPC_CHANNELS.updateNonSecretSettings,
     (_event, args) =>
       options.settingsRuntime.updateNonSecretSettings(args[0] as NonSecretSettingsDraft),
+  );
+  register(
+    'updateSearchProviderConfig',
+    DESKTOP_IPC_CHANNELS.updateSearchProviderConfig,
+    (_event, args) =>
+      options.settingsRuntime.updateSearchProviderConfig(
+        args[0] as UpdateSearchProviderConfigInput,
+      ),
   );
   register('setCredential', DESKTOP_IPC_CHANNELS.setCredential, (_event, args) => {
     const input = args[0] as SetCredentialInput;

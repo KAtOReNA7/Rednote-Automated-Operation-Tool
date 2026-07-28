@@ -29,7 +29,8 @@ export const MODEL_EXECUTION_STATUSES = Object.freeze([
 export type ModelExecutionStatus = (typeof MODEL_EXECUTION_STATUSES)[number];
 
 export type ModelOutputType = 'IMAGE' | 'STRUCTURED' | 'TEXT' | 'VISION';
-export type ModelCapability = 'imageGeneration' | 'structuredJson' | 'text' | 'usage' | 'vision';
+export type ModelCapability =
+  'imageGeneration' | 'structuredJson' | 'text' | 'toolCalling' | 'usage' | 'vision' | 'webSearch';
 
 export interface ContentIdentityV1 {
   readonly contentHash: string;

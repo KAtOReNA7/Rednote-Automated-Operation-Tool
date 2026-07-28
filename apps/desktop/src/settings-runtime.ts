@@ -32,8 +32,10 @@ import type {
   ModelCacheClearPreview,
   ModelPriceScheduleView,
   ModelUnitPolicyView,
+  SearchStateView,
   SetupStateView,
   StartProviderCapabilityProbeInput,
+  UpdateSearchProviderConfigInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -61,6 +63,7 @@ import { DataRootSelectionBroker, type DirectoryDialog } from './data-root-selec
 import { DesktopLocalApiRuntime } from './local-api-runtime.js';
 import { DesktopModelAccountingRuntime } from './model-accounting-runtime.js';
 import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
+import { DesktopSearchRuntime } from './search-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -100,6 +103,7 @@ interface ActiveProject {
   readonly capabilities: ProviderCapabilityRuntime;
   readonly database: DatabaseSync;
   readonly root: ProjectDataRoot;
+  readonly search: DesktopSearchRuntime;
   readonly service: SettingsService;
 }
 
@@ -424,6 +428,14 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().accounting.getView();
   }
 
+  public getSearchState(): SearchStateView {
+    return this.#requireActive().search.getState();
+  }
+
+  public updateSearchProviderConfig(input: UpdateSearchProviderConfigInput): SearchStateView {
+    return this.#requireActive().search.update(input);
+  }
+
   public previewModelCacheClear(senderId: number, windowId: number): ModelCacheClearPreview {
     return this.#requireActive().accounting.previewCacheClear(senderId, windowId);
   }
@@ -575,8 +587,9 @@ export class DesktopSettingsRuntime {
         }
       },
     );
+    const search = new DesktopSearchRuntime(database);
     accountingRepository.recoverInterrupted(new Date().toISOString());
-    return { accounting, capabilities, database, root, service };
+    return { accounting, capabilities, database, root, search, service };
   }
 
   #requireActive(): ActiveProject {
