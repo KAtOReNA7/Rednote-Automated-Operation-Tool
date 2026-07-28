@@ -1,0 +1,526 @@
+一次性仓库治理任务：将重复开发规则固化到根级 AGENTS.md
+========================================================
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High
+授权范围：只固化仓库级长期开发规则及其回归测试
+目标提交信息：chore(repo): centralize Codex development rules
+
+
+一、目标
+--------
+
+当前各 Issue 指令反复包含相同的：
+
+- 可迁移路径与动态 Git 基线；
+- 工作树保护；
+- 项目卷临时目录；
+- 密钥、网络和费用边界；
+- 数据库迁移规则；
+- Job Queue 与外部副作用规则；
+- Electron、IPC 和 renderer 安全；
+- 两项产品硬约束；
+- 测试、CI、文档、Git 和最终报告规则。
+
+本轮将这些长期规则一次性合并进仓库根目录 AGENTS.md，并增加轻量回归测试。
+
+完成后，后续 Issue 指令只需写：
+
+- Issue 目标；
+- Issue 特有依赖和语义基线；
+- Issue 特有合同、状态机、迁移与 UI；
+- Issue 特有测试和验收映射；
+- Issue 特有停止边界；
+- 提交信息。
+
+后续 Issue 不再重复 AGENTS.md 已覆盖的共同规则。
+
+
+二、本轮唯一授权范围
+--------------------
+
+允许：
+
+- 动态发现仓库根目录；
+- 读取现有根级和嵌套 AGENTS.md；
+- 读取 PRD、Roadmap、总开发指令、README、package.json、CI 和约束测试；
+- 在根级 AGENTS.md 中幂等合并“Codex common development rules”区块；
+- 新建或扩展一个轻量 AGENTS 治理回归测试；
+- 必要时把该测试纳入现有 test:constraints 或全量测试；
+- 运行全部既有本地门禁；
+- 创建一个本地提交。
+
+禁止：
+
+- 不执行 Issue 015；
+- 不实现 SearchProvider；
+- 不修改任何业务功能；
+- 不修改数据库 Schema 或 migration；
+- 不修改 Provider、Capability、Accounting、Queue、Storage 或 Electron 业务；
+- 不读取真实密钥；
+- 不调用真实 API、模型、搜索、图片或页面；
+- 不产生费用；
+- 不 push、PR、merge、rebase、amend 或 squash；
+- 不覆盖未知用户修改；
+- 不把当前机器路径、当前 HEAD、文件 SHA-256 或 migration hash 写进 AGENTS.md。
+
+完成后必须停止。
+
+
+三、动态起点
+------------
+
+本指令执行时 AGENTS.md 尚未包含全部共同规则，因此本轮先按以下一次性起点执行：
+
+1. 使用 git rev-parse --show-toplevel 动态发现仓库根目录。
+2. 切换到该目录，后续只使用仓库相对路径。
+3. 当前分支应为 main；若不是，不自动切换，停止并报告。
+4. 动态记录当前 HEAD 为 BASELINE_HEAD，不与任何预置值比较。
+5. 工作树应干净；允许仅本指令 TXT 为未跟踪文件。
+6. 除本指令外有未知修改时停止，不 reset、不覆盖、不删除。
+7. 远端可以不存在，本地 main 可以领先远端。
+8. 不因盘符、用户名、父目录、换行符或文件散列变化失败。
+9. 动态确认 Issue 014 已通过语义基线，Issue 015 尚未实现。
+10. 使用仓库所在卷的受控 temp、npm cache 和打包临时目录。
+11. 不清理系统盘、用户缓存、下载目录、其他项目或正式 ProjectDataRoot。
+12. 完整读取适用的所有嵌套 AGENTS.md。
+
+
+四、必须读取
+------------
+
+至少完整读取：
+
+- 当前根级 AGENTS.md；
+- 所有适用的嵌套 AGENTS.md；
+- xiaohongshu-mystery-account-prd-v1.md；
+- xiaohongshu-development-roadmap-v1.md；
+- codex-master-development-instruction-v1.md；
+- README.md；
+- package.json；
+- package-lock.json；
+- .github/workflows/ci.yml；
+- 既有两项硬约束测试；
+- 既有 forbidden-scope 架构测试；
+- 既有 portability 测试；
+- 既有 secret/egress 测试；
+- Issue 014 的 ADR、合同、实施计划和验收映射；
+- 本指令。
+
+保留根级 AGENTS.md 中现有且不冲突的内容。嵌套 AGENTS.md 继续只对对应子树增加更具体规则，
+不得被根级文件覆盖或删除。
+
+
+五、根级 AGENTS.md 合并方式
+--------------------------
+
+在根级 AGENTS.md 中增加一个且只能有一个长期区块：
+
+<!-- CODEX_COMMON_RULES: v1 -->
+
+## Codex common development rules
+
+区块结束标记：
+
+<!-- END_CODEX_COMMON_RULES -->
+
+要求：
+
+- 若标记不存在，插入一次；
+- 若已存在，按语义更新原区块，不重复追加；
+- 若旧 AGENTS 已有等价规则，合并去重；
+- 保留不冲突的项目说明和人工规则；
+- 不把整份 PRD 或 Roadmap复制进去；
+- 不写当前 Issue 编号；
+- 不写当前 schema 版本；
+- 不写当前测试数量；
+- 不写当前 HEAD；
+- 不写当前盘符或绝对路径；
+- 不写任何固定 40/64 位散列；
+- 不写容易随库升级变化的模型、Electron 或 Node 具体版本；
+- 区块应保持紧凑、可读，建议不超过 300 行。
+
+区块必须包含以下内容。允许根据仓库既有措辞调整，但不得改变语义。
+
+
+六、AGENTS 共同规则：适用与优先级
+--------------------------------
+
+写入：
+
+1. 根级 AGENTS.md 适用于整个仓库。
+2. 更深目录的 AGENTS.md 可以增加更具体规则，但不能放宽冻结硬约束、安全边界或当前用户
+   明确指令。
+3. 每次任务开始前，必须完整读取根级及作用域内全部 AGENTS.md。
+4. 规则优先级：
+   - 当前用户明确指令；
+   - 冻结 PRD/Roadmap 硬约束和禁止事项；
+   - 根级及嵌套 AGENTS.md；
+   - 当前 Issue 指令；
+   - ADR 和其他文档。
+5. 如规则冲突且无法通过“更严格规则优先”解决，停止并报告，不自行猜测。
+6. Issue 指令只描述相对于 AGENTS.md 的增量；AGENTS.md 共同规则无需在每个 Issue 重复。
+7. Issue 指令可以增加更严格的边界，但不能静默放宽共同规则。
+
+
+七、AGENTS 共同规则：冻结产品约束
+--------------------------------
+
+写入：
+
+1. ai_disclosure 默认且固定为 false。
+2. AI 参与程度不得影响门禁、评分、审批、优先级、排期或导出。
+3. copyright 不得参与门禁、评分、审批、优先级、排期或导出。
+4. 不新增版权风险字段、检查类型、状态、分数、提醒或审批层级。
+5. 素材来源只用于资料管理和追溯，不转化为版权判断。
+6. 不增加小红书自动登录、发布、评论、私信、验证码、风控或非公开 API。
+7. 不使用开卷。
+8. 不读取、上传、解析、保存或索引盗版电子书。
+9. 不使用磨铁内部经营、采买或历史项目数据。
+10. 不把云服务器、云数据库、云存储或远程队列作为必需依赖。
+11. 最终平台动作保持人工。
+12. 任何新 Domain、Schema、UI、IPC、算法和测试均必须回归这些约束。
+
+
+八、AGENTS 共同规则：可迁移路径与动态基线
+----------------------------------------
+
+写入：
+
+1. 使用 git rev-parse --show-toplevel 动态发现仓库根目录。
+2. 源码、测试、fixture、文档和报告使用仓库相对路径。
+3. 运行时数据使用 ProjectDataRoot 下的受控相对路径。
+4. 不硬编码盘符、Windows 用户名、桌面目录、旧电脑目录或其他机器绝对路径。
+5. 不把某次 HEAD、parent、commit ID、文件 SHA-256 或 migration hash 作为跨任务/跨电脑
+   开工条件。
+6. Git HEAD 和实际校验值可以在本次最终报告中记录，但只作结果，不是未来门禁。
+7. 开工使用语义基线：核对依赖能力、文档、Schema 语义和既有门禁，而不是对象 ID。
+8. LF、CRLF 和 lone CR 不得改变规范化 migration 身份。
+9. 路径测试应在运行时动态构造中文、空格、emoji 和长路径。
+10. 不把实际绝对路径写入日志、诊断、快照、fixture、文档或提交。
+
+
+九、AGENTS 共同规则：Git 与用户工作树
+------------------------------------
+
+写入：
+
+1. 开工动态记录当前分支、HEAD、log、远端和工作树。
+2. 正常开发分支按项目当前约定；若当前任务要求 main 而实际不是，不自动切换。
+3. 远端可以不存在，本地可以合法领先远端。
+4. 未明确授权时不 fetch、pull、push、创建 PR、merge、rebase、amend 或 squash。
+5. 工作树应干净；允许当前任务指令 TXT 是唯一未跟踪输入。
+6. 发现未知修改时停止，不覆盖、不删除、不 reset。
+7. 不使用 git reset --hard、git checkout -- 或其他破坏性恢复处理用户文件。
+8. 每个 Issue 默认只创建一个本地提交，除非当前用户明确授权不同提交策略。
+9. 指令 TXT 保留在仓库根目录并纳入对应提交，除非当前用户另有要求。
+10. 提交后验证 parent、工作树、范围和未执行远端操作。
+
+
+十、AGENTS 共同规则：磁盘与临时目录
+----------------------------------
+
+写入：
+
+1. 系统盘可能没有可用空间，不得假设系统盘可写或空间充足。
+2. 动态发现仓库所在卷并检查可用空间。
+3. npm cache、TEMP、TMP、Electron 打包目录和大型测试临时文件使用仓库卷上的受控临时根。
+4. 不硬编码系统盘或项目盘盘符。
+5. 不修改用户全局 npm 配置。
+6. 不执行全局磁盘清理。
+7. 不删除用户缓存、下载、其他项目、正式 ProjectDataRoot 或未知目录。
+8. 只清理由当前运行创建且已验证位于受控临时根下的精确目录。
+9. 空间不足时停止并报告，不通过删除用户数据继续。
+10. 结束时验证受控临时目录、进程、listener、socket 和 timer 无残留。
+
+
+十一、AGENTS 共同规则：授权范围与停止
+------------------------------------
+
+写入：
+
+1. 每次只实现当前明确授权的 Issue/任务。
+2. 开工前列出 in-scope、out-of-scope、依赖和停止边界。
+3. 不因“顺手”“未来会需要”提前实现后续 Issue。
+4. 当前任务未授权的 UI、Schema、API、后台 handler、网络能力和平台动作均不预留隐藏入口。
+5. 遇到需要扩大范围、真实凭据、真实费用、外部协调、破坏性操作或产品选择时停止并报告。
+6. 完成验收和提交后立即停止，不自动进入下一 Issue。
+7. 停止时保留证据，不 reset、不删除用户数据、不伪造 PASS。
+
+
+十二、AGENTS 共同规则：密钥、网络、费用与外部副作用
+--------------------------------------------------
+
+写入：
+
+1. 不要求用户在聊天、指令、代码、fixture 或截图中粘贴密钥。
+2. 不打印、回显、记录或持久化明文 credential、Authorization、token、pairing code 或
+   request headers。
+3. SQLite 只保存非秘密引用；secret 使用已冻结的 main-process CredentialStore/safeStorage。
+4. renderer/preload 不接收 secret、raw request、raw response 或内部 endpoint。
+5. 未获用户对当前任务的明确授权，不调用真实 API、模型、搜索、图片、Batch 或付费服务。
+6. 默认开发和验收使用 Scripted Mock、fixture 和 127.0.0.1 loopback。
+7. 测试不得读取环境中偶然存在的真实 key。
+8. 费用未知时保持 UNKNOWN/NULL，不写 0、不猜测价格。
+9. 不硬编码模型名、Base URL、供应商价格或供应商速率。
+10. 可能已发送/已产生副作用的外部调用不得自动重试。
+11. 所有外部调用必须有有限 timeout、size、concurrency、rate、idempotency 和取消边界。
+12. 网络调用期间不持有长 SQLite 事务。
+13. 真实网络、密钥和费用使用情况必须在最终报告中明确为实际值。
+
+
+十三、AGENTS 共同规则：数据库与 migration
+---------------------------------------
+
+写入：
+
+1. Schema 变更必须追加连续、不可变、版本化 migration。
+2. 不修改既有 migration 的非换行语义。
+3. migration 身份使用规范化内容校验；换行差异兼容，实质修改 fail closed。
+4. 不在任务指令中预置未来必须匹配的 migration hash。
+5. 迁移前生成本地备份；备份失败时不迁移。
+6. migration 在事务内执行；失败完整回滚，不删除或重建用户数据库解决失败。
+7. 迁移后运行 quick_check、foreign_key_check 和必要业务不变量。
+8. 新表优先 STRICT，并明确主键、外键、唯一约束、CHECK、索引和删除策略。
+9. 每个外键查询路径应有合适索引。
+10. 网络或模型调用期间不持数据库事务。
+11. 新库初始化、上一版本升级、失败回滚、备份独立打开、中文/空格/长路径必须测试。
+12. 用户数据和 fixture 必须隔离。
+
+
+十四、AGENTS 共同规则：Queue、幂等与恢复
+---------------------------------------
+
+写入：
+
+1. Job Queue 交付语义是 at-least-once，不宣称 exactly-once。
+2. 具有外部副作用的 handler 必须有业务 executionId/idempotency key。
+3. 相同 executionId 重放不得重复调用、重复记账或重复写业务结果。
+4. 可证明 pre-send 的失败才可安全自动恢复。
+5. after-send、timeout-after-send、连接中断或崩溃后不确定状态必须标 AMBIGUOUS。
+6. AMBIGUOUS 不自动重试、takeover 或 fallback。
+7. 长任务支持协作暂停、取消、lease、heartbeat 和受控 shutdown。
+8. Job payload/result 有界且不得含 secret、raw headers、完整正文或 absolute path。
+
+
+十五、AGENTS 共同规则：本地文件与内容
+------------------------------------
+
+写入：
+
+1. 文件只能写入显式 ProjectDataRoot 的受控类别。
+2. SQLite 和 DTO 只保存 ManagedRelativePath，不保存机器绝对路径。
+3. 拒绝 traversal、absolute、UNC、device、drive-relative、file URL、symlink 和 junction。
+4. 写入使用临时文件、流式 hash、sync、关闭和原子发布。
+5. 不先删除旧目标，不覆盖共享内容寻址文件。
+6. 大小、深度、数量和并发必须有限。
+7. 失败、取消和超限不产生正式文件，并只清理本操作精确临时文件。
+8. cache、日志、诊断、导出和安装包必须有明确内容边界。
+9. 不宣称所有断电场景绝对没有 orphan；orphan 必须可检测和安全处理。
+
+
+十六、AGENTS 共同规则：Electron、IPC 与 UI
+-----------------------------------------
+
+写入：
+
+1. 保持 nodeIntegration=false、contextIsolation=true、sandbox=true、webSecurity=true。
+2. 不放宽 CSP、navigation、new window、webview、permission 或 Electron fuses。
+3. renderer 不直接访问 Node、SQLite、文件系统、网络、Provider 或 CredentialStore。
+4. preload 只暴露固定、窄、版本化方法。
+5. IPC 使用 allowlist、exact-object、senderFrame/origin/window 绑定、大小限制和 expected
+   revision。
+6. IPC/错误 DTO 不返回 stack、secret、raw request/response、完整内部路径或 SQL。
+7. UI 只显示真实状态；未实现、未配置、未知、stale 和 unsupported 不伪装为 ready。
+8. 不提供当前 Issue 未授权的隐藏按钮、登录入口、发布入口、任意请求编辑器或绕过开关。
+9. Source 和 packaged smoke 必须验证安全设置、外部连接、进程退出和资源释放。
+10. 不得出现未处理的系统 Error launching app 弹窗。
+
+
+十七、AGENTS 共同规则：测试、CI 与依赖
+-------------------------------------
+
+写入：
+
+1. 开工前和最终提交前都必须运行适用门禁。
+2. 实际门禁从 package.json、workspace scripts 和 .github/workflows/ci.yml 动态发现。
+3. 不在 AGENTS.md 固定会随 Issue 增长的完整脚本清单或测试数量。
+4. 保留所有既有门禁；当前 Issue 只能增加，不能删除或弱化。
+5. 新能力必须有独立专项测试，并纳入全量测试和 Windows CI。
+6. 测试覆盖正常、失败、边界、并发、恢复、硬约束、Windows 路径和 egress。
+7. 测试使用 Mock/loopback/临时数据，不依赖真实付费 API。
+8. 最终门禁从一次最新 npm ci 开始按 CI 顺序执行。
+9. 最终要求 failure=0、skip=0、todo=0、lint warning=0、dependency vulnerability=0。
+10. 发现缺陷后修复根因，并从 npm ci 重新运行最终门禁。
+11. 不删除、跳过、放宽或改写测试只为获得 PASS。
+12. GitHub 托管 CI 未实际运行时必须明确不能声称已通过。
+
+
+十八、AGENTS 共同规则：文档、验收与报告
+-------------------------------------
+
+写入：
+
+1. 编码前创建当前 Issue implementation plan 和逐项 acceptance map 草案。
+2. 验收编号必须连续、唯一、不可合并、不可预填 PASS。
+3. 每项回填真实代码、测试、命令或文档证据，不写“同上”。
+4. 架构选择、被否决方案、状态机、安全边界和迁移写入 ADR/合同。
+5. 文档使用仓库相对路径，不写机器绝对路径。
+6. 最终报告只报告实际执行结果，不把计划值伪装为事实。
+7. 报告至少包括结论、动态基线/Git、实现、迁移、测试、Windows/Electron/CI、硬约束、
+   范围和下一步。
+8. 实际 commit ID、测试数量和 migration 校验值可以记录，但明确只作本次结果。
+9. 未运行的 GitHub CI、真实 API 或费用不得声称完成。
+10. 最终只推荐下一项，不自动开始。
+
+
+十九、AGENTS 共同规则：未来 Issue 指令格式
+----------------------------------------
+
+写入：
+
+后续 Issue 指令默认只包含以下章节：
+
+1. Issue 目标和提交信息；
+2. 本 Issue 必须交付；
+3. 本 Issue 明确不做；
+4. Issue 特有事实来源和语义依赖；
+5. Issue 特有合同/状态机/数据模型；
+6. Issue 特有安全边界；
+7. Issue 特有 migration；
+8. Issue 特有 UI/IPC；
+9. Issue 特有测试和验收矩阵；
+10. Issue 特有实施顺序；
+11. Issue 特有停止条件；
+12. 启动指令。
+
+未来 Issue 指令以一句话引用：
+
+“完整遵守根级及作用域内 AGENTS.md；本指令仅定义当前 Issue 的增量规则。”
+
+AGENTS.md 已覆盖的 Git、路径、磁盘、密钥、迁移、测试、Electron、硬约束和报告规则不再
+逐段复制。
+
+
+二十、治理回归测试
+------------------
+
+新建或扩展一个轻量测试，建议名称：
+
+tests/agents-governance.test.ts
+
+测试至少验证：
+
+1. 根级 AGENTS.md 存在。
+2. CODEX_COMMON_RULES v1 起止标记各恰好一次。
+3. 共同区块包含上述主要主题。
+4. ai_disclosure=false 语义存在。
+5. copyright 不参与门禁/评分/审批/排期语义存在。
+6. 禁止小红书自动动作语义存在。
+7. 动态 git rev-parse 语义存在。
+8. 不使用固定 HEAD/file SHA/migration hash 作为门禁语义存在。
+9. 项目卷动态 temp/cache 语义存在。
+10. secret/network/fee 默认禁止语义存在。
+11. migration、Queue、Electron、IPC 和测试规则存在。
+12. future Issue delta-only 格式存在。
+13. common block 不包含 Windows 盘符绝对路径。
+14. common block 不包含 /Users、/home 或旧机器 workspace 路径。
+15. common block 不包含独立 40/64 位十六进制散列。
+16. common block 不包含当前 HEAD。
+17. common block 不包含某个具体 schema 版本。
+18. common block 不包含某个具体 Issue 的提交 ID。
+19. common block 标记重复时测试失败。
+20. 既有硬约束和 forbidden-scope 测试仍通过。
+
+测试不得逐字符冻结整个 AGENTS 区块，也不得依赖换行风格；应验证稳定语义和禁止模式。
+
+把测试纳入现有最合适门禁：
+
+- 优先 test:constraints；
+- 同时必须被 npm run test 覆盖；
+- Windows CI 必须运行。
+
+不要为了本任务新建一个长期独立 npm script，除非现有架构明确需要。
+
+
+二十一、验收
+------------
+
+本轮验收要求：
+
+- 根级 AGENTS.md 原有内容完整保留；
+- common block 恰好一次；
+- common block 不超过建议规模，内容紧凑；
+- 规则不绑定当前 Issue、schema、HEAD、盘符或测试数量；
+- 治理测试通过；
+- 所有既有门禁从最新 npm ci 开始通过；
+- failure、skip、todo、lint warning、dependency vulnerability 均为 0；
+- 真实 credential/API/model/search/page/费用均为 0；
+- 没有业务代码、Schema 或 migration 修改；
+- 没有 Issue 015 实现；
+- 没有远端操作；
+- 提交后工作树干净。
+
+
+二十二、Git
+-----------
+
+全部通过后创建唯一一个本地提交：
+
+chore(repo): centralize Codex development rules
+
+要求：
+
+- parent 为动态 BASELINE_HEAD；
+- 不与预置提交散列比较；
+- 把本指令 TXT 保留在仓库根目录并纳入提交；
+- 不 push、PR、merge、rebase、amend 或 squash；
+- 最终工作树干净。
+
+
+二十三、最终报告
+----------------
+
+报告保持简洁，只包含：
+
+1. PASS/FAIL 和是否停止；
+2. 动态 baseline、最终 commit、分支和工作树；
+3. AGENTS common block 的位置、行数和主题；
+4. 治理测试文件及覆盖主题；
+5. 实际运行的门禁及结果；
+6. 真实密钥、网络、费用和业务改动均为 0；
+7. 确认未进入 Issue 015；
+8. 下一步只推荐使用精简版 Issue 015 指令。
+
+实际 commit ID 只作本次结果，不是 Issue 015 的固定门禁。
+
+
+二十四、停止条件
+----------------
+
+出现以下任一情况立即停止：
+
+- 除本指令外起点工作树有未知修改；
+- 无法完整读取现有 AGENTS/PRD/Roadmap/总指令；
+- 现有 AGENTS 与冻结硬约束存在无法解决的冲突；
+- 必须修改业务代码或 Schema 才能完成；
+- 必须删除现有 AGENTS 内容；
+- 必须写入机器路径、固定 HEAD 或固定散列；
+- 必须读取真实密钥或调用真实服务；
+- 必须执行 Issue 015；
+- 既有门禁无法在不削弱测试的情况下通过；
+- 需要远端操作。
+
+停止时保留证据，不 reset、不删除用户数据、不伪造 PASS。
+
+
+最终启动指令
+------------
+
+现在执行一次性 AGENTS.md 共同规则固化任务。
+
+先动态发现仓库根目录和语义基线，完整读取现有根级及嵌套 AGENTS.md，再幂等合并
+CODEX_COMMON_RULES v1 区块并增加轻量治理回归测试。不得修改业务代码、Schema 或 migration，
+不得进入 Issue 015，不得读取真实密钥或调用真实服务。
+
+全部既有门禁通过后创建一个本地提交并报告，然后停止。

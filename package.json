@@ -24,7 +24,7 @@
     "lint": "eslint . --max-warnings=0",
     "test": "node scripts/run-portable-vitest.mjs run",
     "test:capabilities": "node scripts/run-portable-vitest.mjs run tests/provider-capability-plan.test.ts tests/provider-capability-classifier.test.ts tests/provider-capability-transport.test.ts tests/provider-capability-runner.test.ts tests/provider-capability-guard.test.ts tests/provider-capability-db.test.ts tests/provider-capability-runtime.test.ts tests/provider-capability-renderer.test.tsx tests/provider-capability-secret-egress.test.ts tests/provider-capability-architecture.test.ts",
-    "test:constraints": "node scripts/run-portable-vitest.mjs run tests/hard-constraints.test.ts tests/db-hard-constraints.test.ts tests/forbidden-scope.architecture.test.ts",
+    "test:constraints": "node scripts/run-portable-vitest.mjs run tests/hard-constraints.test.ts tests/db-hard-constraints.test.ts tests/forbidden-scope.architecture.test.ts tests/agents-governance.test.ts",
     "test:db": "node scripts/run-portable-vitest.mjs run tests/db-migrations.test.ts tests/db-recovery.test.ts tests/db-persistence-windows.test.ts tests/db-hard-constraints.test.ts tests/provider-capability-db.test.ts",
     "test:desktop": "node scripts/run-portable-vitest.mjs run tests/desktop-contracts.test.ts tests/desktop-security.test.ts tests/desktop-window-state.test.ts tests/desktop-renderer.test.tsx tests/desktop-architecture.test.ts tests/provider-capability-renderer.test.tsx",
     "test:electron-smoke": "npm run build:desktop && npm run prepare:electron && node scripts/run-electron-smoke.mjs",
