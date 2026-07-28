@@ -119,12 +119,14 @@ export function assertSocketSnapshot(snapshot, mode, expectedPort, capabilityPor
       `Electron smoke opened an external TCP connection: ${JSON.stringify(externalConnections)}`,
     );
   }
-  const allowedRemotePorts = new Set([
-    capabilityPort,
-    ...(mode === 'enabled' ? [expectedPort] : []),
-  ]);
   const unexpectedLoopbackConnections = nonListeners.filter(
-    (connection) => !allowedRemotePorts.has(Number(connection.RemotePort)),
+    (connection) =>
+      Number(connection.RemotePort) !== capabilityPort &&
+      !(
+        mode === 'enabled' &&
+        (Number(connection.LocalPort) === expectedPort ||
+          Number(connection.RemotePort) === expectedPort)
+      ),
   );
   if (unexpectedLoopbackConnections.length !== 0) {
     throw new Error(
