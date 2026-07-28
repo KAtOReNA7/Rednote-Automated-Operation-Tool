@@ -6,11 +6,15 @@ export type DesktopIpcOperation =
   | 'buildDiagnosticPreview'
   | 'cancelProviderCapabilityProbe'
   | 'clearCredential'
+  | 'confirmModelCacheClear'
   | 'confirmDataRootSelection'
+  | 'createModelPriceSchedule'
+  | 'createModelUnitPolicy'
   | 'exportDiagnosticReport'
   | 'getAppInfo'
   | 'getCredentialStatus'
   | 'getFoundationHealth'
+  | 'getModelAccounting'
   | 'getProviderCapabilityProbeProgress'
   | 'getProviderCapabilityState'
   | 'getLocalApiStatus'
@@ -24,6 +28,7 @@ export type DesktopIpcOperation =
   | 'selectDataRoot'
   | 'setCredential'
   | 'previewProviderCapabilityProbe'
+  | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
   | 'startLocalApiPairing'
   | 'updateLocalApiSettings'
@@ -92,6 +97,25 @@ function optionalString(value: unknown): boolean {
   return value === null || (typeof value === 'string' && value.length <= 2_048);
 }
 
+function nullableDecimal(value: unknown): boolean {
+  return (
+    value === null ||
+    (typeof value === 'string' &&
+      value.length <= 48 &&
+      /^(?:0|[1-9][0-9]*)(?:\.[0-9]{1,12})?$/u.test(value))
+  );
+}
+
+function boundedUnit(value: unknown, nullable = true): boolean {
+  return (
+    (nullable && value === null) ||
+    (typeof value === 'number' &&
+      Number.isSafeInteger(value) &&
+      value >= 0 &&
+      value <= 1_000_000_000)
+  );
+}
+
 function validateOneObject(
   args: readonly unknown[],
   keys: readonly string[],
@@ -109,6 +133,7 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'getRuntimeCapabilities':
     case 'getSettings':
     case 'getProviderCapabilityState':
+    case 'getModelAccounting':
     case 'getSetupState':
     case 'getWindowState':
     case 'getLocalApiStatus':
@@ -116,7 +141,108 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'selectDataRoot':
     case 'startLocalApiPairing':
     case 'buildDiagnosticPreview':
+    case 'previewModelCacheClear':
       return args.length === 0;
+    case 'confirmModelCacheClear': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'expectedBytes',
+        'expectedCount',
+        'previewToken',
+      ]);
+      return (
+        value?.confirmation === 'CLEAR_MODEL_RESULT_CACHE' &&
+        typeof value.previewToken === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.previewToken) &&
+        boundedUnit(value.expectedBytes, false) &&
+        boundedUnit(value.expectedCount, false)
+      );
+    }
+    case 'createModelPriceSchedule': {
+      const value = validateOneObject(args, [
+        'cachedInputPerMillionUsd',
+        'cacheWritePerMillionUsd',
+        'callUsd',
+        'expectedSettingsRevision',
+        'imageGenerationCallUsd',
+        'imageUsd',
+        'inputPerMillionUsd',
+        'inputTokensIncludeCachedInput',
+        'modelId',
+        'operationKind',
+        'outputPerMillionUsd',
+        'protocolMode',
+        'searchCallUsd',
+        'toolUnitUsd',
+        'usageSemanticsVersion',
+      ]);
+      return (
+        value !== null &&
+        [
+          value.cachedInputPerMillionUsd,
+          value.cacheWritePerMillionUsd,
+          value.callUsd,
+          value.imageGenerationCallUsd,
+          value.imageUsd,
+          value.inputPerMillionUsd,
+          value.outputPerMillionUsd,
+          value.searchCallUsd,
+          value.toolUnitUsd,
+        ].every(nullableDecimal) &&
+        typeof value.expectedSettingsRevision === 'number' &&
+        Number.isSafeInteger(value.expectedSettingsRevision) &&
+        value.expectedSettingsRevision >= 0 &&
+        typeof value.inputTokensIncludeCachedInput === 'boolean' &&
+        typeof value.modelId === 'string' &&
+        /^[A-Za-z0-9._:/-]{1,256}$/u.test(value.modelId) &&
+        typeof value.operationKind === 'string' &&
+        /^[A-Z][A-Z0-9_]{0,63}$/u.test(value.operationKind) &&
+        (value.protocolMode === null ||
+          ['CHAT_COMPLETIONS', 'IMAGES_GENERATIONS', 'MOCK', 'RESPONSES'].includes(
+            String(value.protocolMode),
+          )) &&
+        typeof value.usageSemanticsVersion === 'string' &&
+        /^[A-Za-z0-9._-]{1,64}$/u.test(value.usageSemanticsVersion)
+      );
+    }
+    case 'createModelUnitPolicy': {
+      const value = validateOneObject(args, [
+        'expectedSettingsRevision',
+        'maxExternalCallsMonthly',
+        'maxExternalCallsWeekly',
+        'maxImageGenerationCalls',
+        'maxImages',
+        'maxInputTokens',
+        'maxOutputTokens',
+        'maxToolCalls',
+        'maxWebSearchCalls',
+        'scopeKind',
+        'scopeValue',
+      ]);
+      return (
+        value !== null &&
+        typeof value.expectedSettingsRevision === 'number' &&
+        Number.isSafeInteger(value.expectedSettingsRevision) &&
+        value.expectedSettingsRevision >= 0 &&
+        boundedUnit(value.maxExternalCallsMonthly, false) &&
+        boundedUnit(value.maxExternalCallsWeekly, false) &&
+        (value.maxExternalCallsMonthly as number) > 0 &&
+        (value.maxExternalCallsWeekly as number) > 0 &&
+        [
+          value.maxImageGenerationCalls,
+          value.maxImages,
+          value.maxInputTokens,
+          value.maxOutputTokens,
+          value.maxToolCalls,
+          value.maxWebSearchCalls,
+        ].every((entry) => boundedUnit(entry)) &&
+        ['GLOBAL', 'MODEL_ROLE', 'TASK_KIND'].includes(String(value.scopeKind)) &&
+        ((value.scopeKind === 'GLOBAL' && value.scopeValue === null) ||
+          (value.scopeKind !== 'GLOBAL' &&
+            typeof value.scopeValue === 'string' &&
+            /^[A-Za-z0-9._:-]{1,128}$/u.test(value.scopeValue)))
+      );
+    }
     case 'previewProviderCapabilityProbe': {
       const value = validateOneObject(args, [
         'includeToolCalling',

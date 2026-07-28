@@ -13,6 +13,12 @@
     },
     {
       "path": "../db"
+    },
+    {
+      "path": "../providers"
+    },
+    {
+      "path": "../storage"
     }
   ],
   "include": ["src/**/*.ts"]

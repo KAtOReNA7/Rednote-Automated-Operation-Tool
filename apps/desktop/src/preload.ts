@@ -7,6 +7,9 @@ import {
   DESKTOP_IPC_CHANNELS,
   type ClearCredentialInput,
   type ConfirmDataRootSelectionInput,
+  type ConfirmModelCacheClearInput,
+  type CreateModelPriceScheduleInput,
+  type CreateModelUnitPolicyInput,
   type DesktopBridge,
   type ExportDiagnosticReportInput,
   type GetCredentialStatusInput,
@@ -25,14 +28,21 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelProviderCapabilityProbe, input),
   clearCredential: (input: ClearCredentialInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.clearCredential, input),
+  confirmModelCacheClear: (input: ConfirmModelCacheClearInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmModelCacheClear, input),
   confirmDataRootSelection: (input: ConfirmDataRootSelectionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmDataRootSelection, input),
   exportDiagnosticReport: (input: ExportDiagnosticReportInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.exportDiagnosticReport, input),
+  createModelPriceSchedule: (input: CreateModelPriceScheduleInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.createModelPriceSchedule, input),
+  createModelUnitPolicy: (input: CreateModelUnitPolicyInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.createModelUnitPolicy, input),
   getAppInfo: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getAppInfo),
   getCredentialStatus: (input: GetCredentialStatusInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCredentialStatus, input),
   getFoundationHealth: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFoundationHealth),
+  getModelAccounting: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getModelAccounting),
   getProviderCapabilityProbeProgress: (input: GetProviderCapabilityProbeProgressInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getProviderCapabilityProbeProgress, input),
   getProviderCapabilityState: () =>
@@ -46,6 +56,7 @@ const desktopBridge: DesktopBridge = Object.freeze({
   selectDataRoot: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.selectDataRoot),
   previewProviderCapabilityProbe: (input: PreviewProviderCapabilityProbeInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewProviderCapabilityProbe, input),
+  previewModelCacheClear: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewModelCacheClear),
   setCredential: (input: SetCredentialInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.setCredential, input),
   startLocalApiPairing: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.startLocalApiPairing),

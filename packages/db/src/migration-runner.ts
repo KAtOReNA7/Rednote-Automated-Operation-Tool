@@ -56,11 +56,12 @@ export class MigrationError extends Error {
 }
 
 export function migrationChecksum(migration: Migration): string {
+  const normalizedSql = migration.sql.replace(/\r\n?|\n/gu, '\n');
   return createHash('sha256')
     .update(
       `${migration.version}\n${migration.name}\n${
         migration.foreignKeysDisabled === true ? 'foreign_keys_disabled\n' : ''
-      }${migration.sql}`,
+      }${normalizedSql}`,
       'utf8',
     )
     .digest('hex');

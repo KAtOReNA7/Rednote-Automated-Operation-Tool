@@ -40,6 +40,8 @@ export const REQUIRED_DATA_DIRECTORIES = Object.freeze([
   'backups',
   'backups/database',
   'logs',
+  'cache',
+  'cache/model-results',
 ] as const);
 
 export interface DataRootMarker {

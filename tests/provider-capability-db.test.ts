@@ -45,7 +45,9 @@ function plan() {
 describe('Issue 013 capability persistence migration', () => {
   it('appends only v6 and freezes every previous migration checksum', () => {
     const migrationV6 = MIGRATIONS.at(5);
-    expect(MIGRATIONS.map((migration) => migration.version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(MIGRATIONS.slice(0, 6).map((migration) => migration.version)).toEqual([
+      1, 2, 3, 4, 5, 6,
+    ]);
     expect(MIGRATIONS.slice(0, 5).map(migrationChecksum)).toEqual(FROZEN_V1_TO_V5);
     expect(migrationV6).toMatchObject({
       name: 'provider_capability_probing',
@@ -93,7 +95,7 @@ describe('Issue 013 capability persistence migration', () => {
   it('backs up a v5 database before applying v6', async () => {
     const databasePath = createTemporaryDatabasePath();
     await initializeDatabase({ databasePath, migrations: MIGRATIONS.slice(0, 5) });
-    const result = await initializeDatabase({ databasePath });
+    const result = await initializeDatabase({ databasePath, migrations: MIGRATIONS.slice(0, 6) });
     expect(result.appliedVersions).toEqual([6]);
     expect(result.backupPath).not.toBeNull();
   });

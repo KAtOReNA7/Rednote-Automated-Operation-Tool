@@ -124,6 +124,12 @@ export class CapabilityProbeRunner {
         status: 'RUNNING',
       });
       let stepObservations: readonly CapabilityProbeObservation[];
+      try {
+        await options.beforeExternalRequest?.(step);
+      } catch {
+        stopReason = 'INTERNAL_ERROR';
+        break;
+      }
       sentRequestCount += 1;
       try {
         const response = await this.#transport.request(
@@ -139,6 +145,7 @@ export class CapabilityProbeRunner {
       } catch (error) {
         stepObservations = [classifyCapabilityProbeFailure(step, error, now().toISOString())];
       }
+      await options.afterExternalRequest?.(step, stepObservations);
       completedRequestCount += 1;
       for (const observation of stepObservations) {
         observations.push(observation);

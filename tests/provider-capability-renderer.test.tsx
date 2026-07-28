@@ -46,6 +46,7 @@ function installBridge(overrides: Partial<DesktopBridge> = {}): void {
     previewProviderCapabilityProbe: async () => ({
       ok: true as const,
       value: {
+        budgetCheck: 'UNIT_POLICY_READY' as const,
         credentialBindingVersion: 2,
         expiresAt: '2099-01-01T00:00:00.000Z',
         feeEstimate: 'UNKNOWN' as const,

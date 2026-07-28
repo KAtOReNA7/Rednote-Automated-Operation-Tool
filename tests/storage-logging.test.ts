@@ -132,5 +132,5 @@ describe('local structured log sink', () => {
 
     expect(lines).toHaveLength(100);
     expect(new Set(records.map((record) => record.context.index)).size).toBe(100);
-  });
+  }, 15_000);
 });

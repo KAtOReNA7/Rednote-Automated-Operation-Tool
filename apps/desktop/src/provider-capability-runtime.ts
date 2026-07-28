@@ -1,7 +1,8 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 
 import type {
   ProviderCapabilityStateRecord,
+  SqliteModelAccountingRepository,
   SqliteProviderCapabilityRepository,
 } from '@mystery-operations/db';
 import {
@@ -17,6 +18,7 @@ import {
   type CapabilityProbeProgress,
   type CapabilityProbeSelection,
   type CapabilityProbeTransport,
+  type CapabilityProbeStep,
   type ProbeCapability,
   type ProbeModelSlot,
   type ProbeProtocolMode,
@@ -35,6 +37,7 @@ export const PROVIDER_CAPABILITY_CONTROL_ERROR_CODES = Object.freeze([
   'PROBE_STALE',
   'PROBE_ALREADY_RUNNING',
   'PROBE_NOT_RUNNING',
+  'BUDGET_UNPRICED_LIMIT_REQUIRED',
 ] as const);
 export type ProviderCapabilityControlErrorCode =
   (typeof PROVIDER_CAPABILITY_CONTROL_ERROR_CODES)[number];
@@ -66,6 +69,7 @@ interface ActiveProbe {
 }
 
 export interface ProviderCapabilityRuntimeOptions {
+  readonly accountingRepository?: SqliteModelAccountingRepository;
   readonly now?: () => Date;
   readonly randomId?: () => string;
   readonly randomToken?: () => string;
@@ -80,6 +84,7 @@ export class ProviderCapabilityRuntime {
   readonly #repository: SqliteProviderCapabilityRepository;
   readonly #resolveCredential: () => Promise<string>;
   readonly #runner: CapabilityProbeRunner;
+  readonly #accounting: SqliteModelAccountingRepository | null;
   readonly #leases = new Map<string, PreviewLease>();
   readonly #progress = new Map<string, ProviderCapabilityProbeProgressView>();
   #active: ActiveProbe | null = null;
@@ -92,6 +97,7 @@ export class ProviderCapabilityRuntime {
     options: ProviderCapabilityRuntimeOptions = {},
   ) {
     this.#repository = repository;
+    this.#accounting = options.accountingRepository ?? null;
     this.#readSettings = readSettings;
     this.#resolveCredential = resolveCredential;
     this.#now = options.now ?? (() => new Date());
@@ -128,6 +134,10 @@ export class ProviderCapabilityRuntime {
       windowId,
     });
     return {
+      budgetCheck:
+        this.#accounting === null || this.#probeUnitPolicyReady(plan)
+          ? 'UNIT_POLICY_READY'
+          : 'UNIT_POLICY_REQUIRED',
       credentialBindingVersion: plan.credentialBindingVersion,
       expiresAt: new Date(expiresAtMilliseconds).toISOString(),
       feeEstimate: 'UNKNOWN',
@@ -167,6 +177,9 @@ export class ProviderCapabilityRuntime {
       input.credentialBindingVersion !== lease.plan.credentialBindingVersion
     ) {
       throw new ProviderCapabilityControlError('PROBE_STALE');
+    }
+    if (this.#accounting !== null && !this.#probeUnitPolicyReady(rebuilt)) {
+      throw new ProviderCapabilityControlError('BUDGET_UNPRICED_LIMIT_REQUIRED');
     }
 
     const credential = await this.#resolveCredential();
@@ -245,6 +258,10 @@ export class ProviderCapabilityRuntime {
     };
   }
 
+  public getConfigFingerprint(): string {
+    return capabilityConfigFingerprint(this.#snapshot());
+  }
+
   public clearWindow(windowId: number): void {
     for (const [token, lease] of this.#leases) {
       if (lease.windowId === windowId) {
@@ -276,6 +293,59 @@ export class ProviderCapabilityRuntime {
     try {
       const snapshotAtStart = this.#snapshot();
       const result = await this.#runner.run(plan, snapshotAtStart.baseUrl, credential, {
+        afterExternalRequest: (step, observations) => {
+          if (this.#accounting === null) return;
+          const now = this.#now().toISOString();
+          const executionId = `${runId}:${step.id}`;
+          const ambiguous = observations.some((observation) =>
+            ['AMBIGUOUS_OUTCOME', 'TIMEOUT'].includes(observation.reasonCode),
+          );
+          const first = observations[0];
+          this.#accounting.settle({
+            cache: null,
+            comparisonEstimateMicroUsd: null,
+            costAmountMicroUsd: null,
+            costSource: 'NO_PRICE',
+            costState: ambiguous ? 'UNKNOWN_POSSIBLY_INCURRED' : 'UNPRICED_USAGE',
+            executionId,
+            now,
+            outcomeCertainty: ambiguous ? 'MAY_HAVE_EXECUTED' : 'COMPLETED_INVALID_OUTPUT',
+            priceSchedule: null,
+            status: ambiguous ? 'AMBIGUOUS' : 'SUCCEEDED',
+            usage: {
+              cacheWriteTokens: null,
+              cachedInputTokens: null,
+              imageGenerationCalls: step.kind === 'IMAGE' ? 1 : 0,
+              images: first?.safeDetails.imageCount ?? (step.kind === 'IMAGE' ? 1 : 0),
+              inputTokens: first?.safeDetails.inputTokens ?? null,
+              outputTokens: first?.safeDetails.outputTokens ?? null,
+              reasoningTokens: null,
+              toolCalls: step.kind === 'TOOL' ? 1 : 0,
+              totalTokens: first?.safeDetails.totalTokens ?? null,
+              webSearchCalls: step.kind === 'WEB_SEARCH' ? 1 : 0,
+            },
+          });
+        },
+        beforeExternalRequest: (step) => {
+          if (this.#accounting === null) return;
+          const now = this.#now();
+          this.#accounting.reserveAndCreateRun({
+            billingMonth: now.toISOString().slice(0, 7),
+            identity: this.#probeIdentity(runId, plan, step),
+            now: now.toISOString(),
+            reservedAmountMicroUsd: null,
+            unitDemandJson: JSON.stringify({
+              externalCalls: 1,
+              imageGenerationCalls: step.kind === 'IMAGE' ? 1 : 0,
+              images: step.kind === 'IMAGE' ? 1 : 0,
+              inputTokens: null,
+              outputTokens: null,
+              toolCalls: step.kind === 'TOOL' ? 1 : 0,
+              webSearchCalls: step.kind === 'WEB_SEARCH' ? 1 : 0,
+            }),
+            weekKey: this.#utcWeekKey(now),
+          });
+        },
         isConfigCurrent: () => {
           try {
             const current = this.#snapshot();
@@ -419,6 +489,49 @@ export class ProviderCapabilityRuntime {
       protocol: settings.providerProtocol,
       settingsRevision: settings.revision,
     };
+  }
+
+  #probeUnitPolicyReady(plan: CapabilityProbePlan): boolean {
+    return plan.steps.every(
+      (step) =>
+        this.#accounting?.findApplicableUnitPolicy(
+          `CAPABILITY_PROBE_${step.kind}`,
+          step.modelSlots[0] ?? 'PROVIDER',
+        ) !== null,
+    );
+  }
+
+  #probeIdentity(runId: string, plan: CapabilityProbePlan, step: CapabilityProbeStep) {
+    const hash = (value: string): string =>
+      createHash('sha256').update(value, 'utf8').digest('hex');
+    return {
+      cacheKey: hash(`probe-bypass:${plan.hash}:${step.id}`),
+      cachePolicy: 'BYPASS' as const,
+      executionId: `${runId}:${step.id}`,
+      inputHash: hash(`probe-input:${step.id}`),
+      jobId: null,
+      modelId: step.modelId ?? 'provider-metadata',
+      modelRole: step.modelSlots[0] ?? 'PROVIDER',
+      modelSlot: step.modelSlots[0] ?? 'PROVIDER',
+      promptContentHash: hash(`probe-prompt:${plan.contractVersion}:${step.kind}`),
+      promptTemplateId: 'provider-capability-probe',
+      promptVersion: 1,
+      protocolMode:
+        step.protocolMode === 'CHAT_COMPLETIONS'
+          ? ('CHAT_COMPLETIONS' as const)
+          : ('RESPONSES' as const),
+      providerConfigFingerprint: plan.configFingerprint,
+      taskKind: `CAPABILITY_PROBE_${step.kind}`,
+    };
+  }
+
+  #utcWeekKey(now: Date): string {
+    const date = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    const day = date.getUTCDay() || 7;
+    date.setUTCDate(date.getUTCDate() + 4 - day);
+    const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+    const week = Math.ceil(((date.getTime() - yearStart.getTime()) / 86_400_000 + 1) / 7);
+    return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
   }
 
   #removeExpiredLeases(): void {

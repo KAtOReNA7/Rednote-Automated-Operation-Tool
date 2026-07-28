@@ -162,11 +162,23 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
     ],
     cost_ledger: [
       'id',
+      'settlement_identity',
+      'execution_id',
       'model_run_id',
+      'entry_kind',
+      'adjustment_of_id',
+      'adjustment_reason',
       'billing_month',
+      'provider_config_fingerprint',
+      'model_id',
+      'operation_kind',
+      'cost_state',
       'cost_source',
-      'amount_usd',
-      'token_or_call_units_json',
+      'amount_microusd',
+      'comparison_estimate_microusd',
+      'price_schedule_id',
+      'price_schedule_version',
+      'usage_summary_json',
       'created_at',
     ],
     drafts: [
@@ -232,20 +244,47 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
     ],
     model_runs: [
       'id',
-      'role',
-      'provider',
-      'model',
+      'execution_id',
+      'job_id',
+      'task_kind',
+      'model_role',
+      'model_slot',
+      'provider_config_fingerprint',
+      'model_id',
+      'protocol_mode',
+      'prompt_template_id',
       'prompt_version',
+      'prompt_content_hash',
       'input_hash',
+      'cache_key',
+      'cache_entry_id',
       'output_hash',
-      'cached',
-      'input_tokens',
-      'output_tokens',
-      'image_count',
-      'estimated_cost_usd',
+      'local_cache_hit',
+      'cache_policy',
       'status',
+      'outcome_certainty',
+      'external_request_count',
+      'usage_input_tokens',
+      'usage_output_tokens',
+      'usage_total_tokens',
+      'usage_cached_input_tokens',
+      'usage_cache_write_tokens',
+      'usage_reasoning_tokens',
+      'usage_images',
+      'usage_image_generation_calls',
+      'usage_web_search_calls',
+      'usage_tool_calls',
+      'cost_state',
+      'cost_source',
+      'cost_amount_microusd',
+      'price_schedule_version',
+      'stable_error_code',
+      'duration_ms',
       'started_at',
-      'completed_at',
+      'finished_at',
+      'created_at',
+      'updated_at',
+      'revision',
     ],
     post_packages: [
       'id',
@@ -354,16 +393,20 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6],
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7],
         backupPath: null,
         databasePath,
-        schemaVersion: 6,
+        schemaVersion: 7,
       });
       expect(tables).toEqual(
         [
           ...BUSINESS_TABLE_NAMES,
           'local_api_clients',
           'local_api_settings',
+          'model_budget_reservations',
+          'model_cache_entries',
+          'model_price_schedules',
+          'model_unit_budget_policies',
           'provider_capability_entries',
           'provider_capability_probe_runs',
           'schema_migrations',
@@ -427,9 +470,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 6,
+        schemaVersion: 7,
       });
-      expect(row.count).toBe(6);
+      expect(row.count).toBe(7);
     } finally {
       database.close();
     }
@@ -573,18 +616,32 @@ describe('SQLite initialization and migrations', () => {
       database
         .prepare(
           `INSERT INTO model_runs(
-             id, role, provider, model, prompt_version, input_hash, status, started_at
+             id, execution_id, task_kind, model_role, model_slot,
+             provider_config_fingerprint, model_id, protocol_mode, prompt_template_id,
+             prompt_version, prompt_content_hash, input_hash, cache_key, cache_policy,
+             status, outcome_certainty, cost_state, started_at, finished_at, created_at, updated_at
            ) VALUES (
-             'run-1', 'TEXT', 'fixture', 'fixture-model', 'v1', 'hash', 'DONE',
-             '2026-07-27T01:02:03.000Z'
+             'run-1', 'execution-1', 'TEXT', 'WRITER', 'WRITING',
+             '0000000000000000000000000000000000000000000000000000000000000000',
+             'fixture-model', 'MOCK', 'fixture-prompt', 1, 'prompt-hash', 'input-hash',
+             '1111111111111111111111111111111111111111111111111111111111111111',
+             'BYPASS', 'SUCCEEDED', 'COMPLETED_INVALID_OUTPUT', 'UNPRICED_USAGE',
+             '2026-07-27T01:02:03.000Z', '2026-07-27T01:02:04.000Z',
+             '2026-07-27T01:02:03.000Z', '2026-07-27T01:02:04.000Z'
            )`,
         )
         .run();
       database
         .prepare(
           `INSERT INTO cost_ledger(
-             id, model_run_id, billing_month, cost_source, amount_usd
-           ) VALUES ('cost-1', 'run-1', '2026-07', 'REPORTED', 0)`,
+             id, settlement_identity, execution_id, model_run_id, billing_month,
+             provider_config_fingerprint, model_id, operation_kind, cost_state,
+             cost_source, usage_summary_json
+           ) VALUES (
+             'cost-1', 'settlement:execution-1', 'execution-1', 'run-1', '2026-07',
+             '0000000000000000000000000000000000000000000000000000000000000000',
+             'fixture-model', 'TEXT', 'UNPRICED_USAGE', 'NO_PRICE', '{}'
+           )`,
         )
         .run();
       expect(() => database.prepare("DELETE FROM model_runs WHERE id = 'run-1'").run()).toThrow(

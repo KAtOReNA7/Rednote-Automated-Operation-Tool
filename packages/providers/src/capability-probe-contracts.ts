@@ -201,6 +201,11 @@ export interface CapabilityProbeTransport {
 }
 
 export interface CapabilityProbeRunnerOptions {
+  readonly afterExternalRequest?: (
+    step: CapabilityProbeStep,
+    observations: readonly CapabilityProbeObservation[],
+  ) => void | Promise<void>;
+  readonly beforeExternalRequest?: (step: CapabilityProbeStep) => void | Promise<void>;
   readonly isConfigCurrent: () => boolean;
   readonly now?: () => Date;
   readonly onObservation?: (observation: CapabilityProbeObservation) => void | Promise<void>;

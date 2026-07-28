@@ -96,6 +96,8 @@ export function assertIssue013CapabilityFixture(fixture, report) {
         report: {
           context: report.context,
           error: report.error,
+          errorCode: report.errorCode,
+          errorName: report.errorName,
           ok: report.ok,
         },
         requests: fixture.requests,

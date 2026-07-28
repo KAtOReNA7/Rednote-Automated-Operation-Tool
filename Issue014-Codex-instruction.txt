@@ -1,0 +1,2264 @@
+M2 Issue 014：模型运行记录、本地结果缓存与成本账本——可迁移 Codex 完整开发指令
+================================================================================
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；数据库迁移、并发账本、金额精度、安全边界和最终验收使用 XHigh
+授权范围：只实现 Roadmap Issue 014
+基线方式：运行时发现仓库根目录，以语义能力确认 Issue 013 基线；不固定盘符、绝对路径、
+          提交散列、迁移散列或指令文件 SHA-256
+目标提交信息：feat(models): add execution cache and cost ledger
+
+
+零、任务授权与停止边界
+----------------------
+
+你现在获得的唯一开发授权是：
+
+Issue 014：实现模型运行记录、本地结果缓存、成本账本、价格表、用量限额和预算硬停止。
+
+本轮必须交付：
+
+- 一个供应商无关、可测试、可恢复的 ModelExecutionService；
+- 每次模型执行的有限、脱敏、可审计运行记录；
+- 相同语义输入和相同版本重复执行时的本地结果缓存；
+- 模型、提示词、参数、Schema、来源内容或媒体内容变化时的确定性失效；
+- 文本、结构化输出、视觉和图片生成结果的本地缓存能力；
+- 本地缓存命中与供应商 Prompt Cache 的明确区分；
+- 同一缓存键并发执行时的 singleflight、防重复扣费和不确定结果保护；
+- 精确整数金额、可空成本、来源明确的追加式成本账本；
+- 用户配置、版本化、不可追溯改写历史的价格表；
+- 中转站没有费用时的 token、图片、搜索和调用次数限额；
+- 月度 80 美元预警、100 美元硬停止以及每周、每任务预算；
+- 并发调用前的 SQLite 原子预算预留与执行后结算；
+- 未知价格、未知用量和“可能已执行”状态的诚实表达；
+- 到达硬上限后阻止新的非必要外部调用，但保留本地缓存命中和全部本地操作；
+- Issue 013 能力探测接入统一运行记录和预算控制，但继续禁用结果缓存；
+- SQLite migration v7、迁移前备份、失败回滚和数据保留；
+- 受控 ProjectDataRoot 缓存目录、内容寻址和安全清理；
+- 成本与任务中心 UI、严格 IPC、价格表和用量政策配置；
+- 60 项 secret/content/accounting egress 矩阵；
+- 独立 test:model-accounting 门禁、全量回归、Windows CI、文档、240 项验收映射；
+- 一个本地提交，然后严格停止。
+
+本轮开发与验收明确不做：
+
+- 不读取用户真实密钥；
+- 不调用用户真实中转站；
+- 不调用真实 API、模型、联网搜索、图片生成或 Batch；
+- 不产生任何真实费用；
+- 不打开或修改用户正式 ProjectDataRoot；
+- 不把供应商 Prompt Cache 当成本地结果缓存；
+- 不硬编码任何供应商或 OpenAI 的当前价格；
+- 不联网抓取价格；
+- 不自动兑换非美元货币；
+- 不把未知费用写成 0；
+- 不使用 JavaScript 浮点数或 SQLite REAL 做金额决策；
+- 不缓存失败、拒答、取消、部分输出、搜索结果、工具调用结果或能力探测结果；
+- 不保存完整原始 prompt、用户正文、图片字节、供应商原始响应或请求头到运行记录和账本；
+- 不实现 Issue 015 通用 SearchProvider；
+- 不实现 Issue 016 网页抓取；
+- 不实现 Issue 017 浏览器收藏业务；
+- 不实现书库、研究、选题、写作、审核、图片资产或发布包业务；
+- 不增加小红书登录、发布、评论、私信、验证码或风控动作；
+- 不增加云数据库、云存储、云队列或远程服务；
+- 不使用开卷、盗版电子书或磨铁内部业务数据；
+- 不修改 AI 标识与版权两项冻结硬约束。
+
+完成后必须停止，不得自动进入 Issue 015。
+
+
+一、必须完整读取的仓库事实来源
+--------------------------------
+
+开始前完整读取，不得只看摘要：
+
+1. xiaohongshu-mystery-account-prd-v1.md
+2. xiaohongshu-development-roadmap-v1.md
+3. codex-master-development-instruction-v1.md
+4. README.md
+5. 根目录及适用子目录中的全部 AGENTS.md
+6. package.json
+7. package-lock.json
+8. docs/adr/0001-m0-foundation.md
+9. docs/adr/0002-sqlite-schema-and-migrations.md
+10. docs/adr/0003-persistent-local-job-queue.md
+11. docs/adr/0004-electron-react-desktop-shell.md
+12. docs/adr/0005-local-file-repository.md
+13. docs/adr/0006-settings-and-local-credential-reference.md
+14. docs/adr/0007-local-loopback-api-and-plugin-authentication.md
+15. docs/adr/0008-provider-neutral-model-interfaces.md
+16. docs/adr/0009-provider-capability-probing.md
+17. docs/contracts/provider-v1.md
+18. docs/contracts/local-api-v1.md
+19. docs/m2-issue012-implementation-plan.md
+20. docs/m2-issue012-acceptance-map.md
+21. docs/m2-issue013-implementation-plan.md
+22. docs/m2-issue013-acceptance-map.md
+23. Issue 013 指令 TXT
+24. packages/providers 下全部合同、codec、transport、mock 和 capability 文件
+25. packages/settings 下全部合同与实现
+26. packages/db 下 migrations、model_runs、cost_ledger、settings 和事务代码
+27. packages/workflows 下 Job Queue 合同和幂等语义
+28. packages/storage 下 ProjectDataRoot、ManagedRelativePath、内容寻址、日志和临时目录代码
+29. packages/shared 下 desktop API、DTO、错误和脱敏合同
+30. apps/desktop 下 main、CredentialStore、IPC、preload、smoke 和 capability runtime
+31. apps/web-ui 下设置、任务中心、路由和状态组件
+32. tests 下全部既有数据库、队列、Provider、Capability、Portability、Electron 测试
+33. .github/workflows/ci.yml
+34. 本指令文件
+
+若文件实际名称与以上语义一致但编号略有不同，以仓库事实为准并记录差异。
+
+若冻结文档、Issue 013 ADR、合同或验收材料缺失、损坏或无法完整读取，停止并报告，不得
+凭记忆补造。
+
+需求优先级：
+
+1. 用户当前明确要求；
+2. PRD 冻结硬约束；
+3. Roadmap 禁止事项；
+4. 本 Issue 014 指令；
+5. PRD 其他内容；
+6. Roadmap 其他内容；
+7. 既有 ADR。
+
+
+二、可迁移仓库发现与动态语义基线
+----------------------------------
+
+不得假设仓库位于任何固定盘符、用户名目录、桌面或绝对路径。
+
+从用户当前打开的工作区开始：
+
+1. 使用 git rev-parse --show-toplevel 发现仓库根目录。
+2. 将结果只保存在本次进程变量 REPO_ROOT 中并切换到该目录。
+3. 后续路径、命令、文档和报告使用仓库相对路径。
+4. 如果当前路径不是 Git 工作树，停止并报告；不得擅自 git init。
+5. 不把实际绝对路径写入源代码、fixture、快照、日志、诊断、文档或提交。
+
+Git 只读检查：
+
+- 记录当前分支；
+- 正常本地流程应在 main；若不是 main，不自动 checkout，报告并停止；
+- 运行时记录当前 HEAD 为 BASELINE_HEAD；
+- 记录 git log --oneline --decorate -20；
+- 远端可以不存在，也可以已经配置；
+- 本地 main 可以领先 origin/main；
+- 不要求 fetch、pull、push、PR、merge、rebase、amend 或 squash；
+- 不将 BASELINE_HEAD 与本指令中的任何预置值比较；
+- 本指令不得包含要求匹配的固定提交 ID。
+
+开工时工作树规则：
+
+- 理想状态为干净；
+- 若本指令刚由用户放入仓库根目录，允许仅本指令 TXT 为未跟踪文件；
+- 本指令属于本轮授权输入，最终与 Issue 014 一起进入提交；
+- 除本指令外出现任何未知修改或未跟踪文件，停止并报告；
+- 不覆盖、不删除、不 reset 用户修改。
+
+不得因为以下变化单独判定失败：
+
+- 仓库盘符或父目录改变；
+- Windows 用户名改变；
+- 从旧电脑复制到新电脑；
+- 用户合法重建 Git 历史导致对象 ID 变化；
+- main 相对远端领先；
+- instruction TXT 的本机文件 SHA-256 改变；
+- checkout 使用 LF、CRLF 或 lone CR；
+- 系统临时目录、npm cache 或打包目录位置改变；
+- 历史报告中记录的提交 ID 或迁移校验值与当前检出不同。
+
+当前基线改用语义验收。必须同时满足：
+
+- PRD、Roadmap、总指令和 ADR 0001 至 Issue 013 最新 ADR 完整；
+- provider-v1 与 capability 相关合同存在；
+- Issue 012 的文本、结构化、视觉和图片生成四类供应商无关接口存在；
+- Responses、Chat Completions、Images codecs、可注入 HTTP transport 和 Scripted Mock 存在；
+- Issue 013 的九项三态能力、ProbePlan、Runner、Guard、设置 UI 和 migration v6 存在；
+- schema 最新版本语义上为 v6；
+- migration v1—v6 的版本、名称和 SQL 语义完整；
+- migration checksum 对 LF、CRLF 和 lone CR 稳定，或既有 portability 门禁能证明等价；
+- model_runs 和 cost_ledger 可能已有早期占位表，但尚无完整 Issue 014 业务；
+- 尚未存在完整本地结果缓存、价格表、预算预留或硬停止；
+- 所有既有本地门禁通过。
+
+开工门禁至少包含 package.json 和 CI 中现有的：
+
+- npm run format-check
+- npm run lint
+- npm run typecheck
+- npm run test:constraints
+- npm run test:db
+- npm run test:queue
+- npm run test:desktop
+- npm run test:storage
+- npm run test:settings
+- npm run test:local-api
+- npm run test:portability
+- npm run test:providers
+- npm run test:capabilities
+- npm run test:electron-smoke
+- npm run test
+- npm run build
+- npm run package:desktop
+- npm run audit:dependencies
+- npm run test:packaged-smoke
+
+若实际仓库中还有已纳入 CI 的门禁，全部保留并运行。
+
+语义基线满足时，即使路径、HEAD、parent、远端状态或文件散列与旧电脑不同，也必须继续。
+
+语义基线不满足时，只报告缺少的具体能力、文档或失败门禁；不得只报告“路径不一致”、
+“SHA 不匹配”或“不是旧提交”。
+
+
+二-A、长期可迁移规则
+--------------------
+
+本轮及后续新增代码必须遵守：
+
+- 使用 git rev-parse --show-toplevel 发现仓库根；
+- 源码和文档使用 repo-relative path 或运行时 ProjectDataRoot 相对路径；
+- 不硬编码盘符、用户名、桌面目录或旧电脑绝对路径；
+- 不把某次 checkout 的文件 SHA-256 作为跨电脑开工条件；
+- Git HEAD 只作为一次执行内的动态审计记录；
+- 历史迁移按版本、名称、规范化校验和和运行时完整性验证；
+- LF、CRLF 或 lone CR 不改变迁移身份；
+- 运行时测试路径由安全临时目录 API 动态生成；
+- 中文、空格、emoji 和长路径在运行时构造；
+- 最终报告中的实际提交 ID 或迁移校验值只作结果记录；
+- 任何实际散列都不得成为下一任务的固定前置条件；
+- 历史 ADR 中的旧机器路径或旧提交记录可保留为历史，但不复制进新活动代码和新门禁。
+
+
+二-B、磁盘空间与临时目录
+------------------------
+
+用户机器的系统盘可能没有可用空间。已有的项目卷动态临时目录策略必须保持。
+
+实施前：
+
+1. 动态获取 REPO_ROOT 所在卷；
+2. 检查项目卷可用空间；
+3. 将本轮 npm cache、TEMP、TMP、Electron packager 临时目录和测试大型临时文件放在项目卷
+   的运行时受控临时目录；
+4. 不硬编码系统盘或项目盘盘符；
+5. 不更改全局 npm 配置；
+6. 不清理系统盘、用户缓存、下载目录、其他项目或正式 ProjectDataRoot；
+7. 只删除本轮创建、已验证位于受控临时根下的精确目录；
+8. 结束时验证本轮临时目录残留为 0。
+
+若项目卷空间不足以安全执行 npm ci、测试和打包，停止并报告预计需求，不得做破坏性清理。
+
+
+三、冻结产品硬约束
+------------------
+
+以下约束是数据库、Domain、UI、IPC、缓存键、评分、预算、测试和架构门禁：
+
+1. ai_disclosure 默认且固定为 false。
+2. AI 参与程度不参与门禁、评分、审批、优先级、排期或导出。
+3. copyright 不参与门禁、评分、审批、优先级、排期或导出。
+4. 不新增版权风险字段、检查类型、状态、分数或审批级别。
+5. AI 标识和版权不得进入缓存键。
+6. AI 标识和版权不得改变缓存命中、预算、成本或模型运行状态。
+7. 不增加小红书自动登录、发布、评论、私信、验证码或风控。
+8. 不使用开卷。
+9. 不处理、上传、解析、保存或索引盗版电子书。
+10. 不使用磨铁内部经营数据。
+11. 不增加云端必需依赖。
+12. 最终平台动作保持人工。
+
+新增或修改任何测试时，不得削弱这些约束。
+
+
+四、本 Issue 的核心术语与不可混淆语义
+--------------------------------------
+
+4.1 本地结果缓存
+
+“本地结果缓存”指：
+
+- 应用在 ProjectDataRoot 内保存已经完成且通过运行时验证的完整供应商无关输出；
+- 相同语义输入再次执行时直接返回本地结果；
+- 命中时不解析 credential；
+- 命中时不发起任何外部网络请求；
+- 命中时不产生新费用；
+- 命中时仍创建一个有限 model_run 记录，状态为 CACHE_HIT；
+- 命中时不新增 cost_ledger 项，也不占用预算预留。
+
+4.2 供应商 Prompt Cache
+
+“供应商 Prompt Cache”指：
+
+- 外部供应商可能对相同前缀减少输入 token 计费或加速；
+- 应用仍会向外部供应商发出真实请求；
+- 仍可能产生费用；
+- usage 可能返回 cached input tokens；
+- 这不是本地结果缓存；
+- 即使供应商返回 cached input tokens，model_runs.local_cache_hit 必须为 false；
+- 供应商 cached input usage 只进入 usage 和价格计算，不改变本地缓存命中率。
+
+不得把上述两种缓存合并为一个布尔字段。
+
+4.3 费用与预算
+
+- “费用”是已经发生或供应商明确报告的金额；
+- “估算费用”是根据用户配置的版本化价格表和明确 usage 计算的金额；
+- “预算预留”是外部请求开始前为并发安全保留的最大潜在金额或单位；
+- “未知费用”必须保存为 NULL 和明确状态，不得保存为 0；
+- “可能已执行”表示请求可能已经到达供应商，但本地没有确定终态；
+- 可能已执行的调用不得自动重试；
+- 可能已执行的预留在本计费周期内继续占用，除非有明确、可审计的供应商证据完成结算。
+
+4.4 金额单位
+
+所有美元金额决策使用整数 micro-USD：
+
+- 1 USD = 1,000,000 micro-USD；
+- 1 cent = 10,000 micro-USD；
+- SQLite 使用 INTEGER 或可验证十进制字符串，不使用 REAL；
+- TypeScript 计算使用 bigint 或经过范围证明的安全整数；
+- UI 输入使用十进制字符串；
+- 估算金额为保护预算而向上取整到 1 micro-USD；
+- 不接受科学计数法、NaN、Infinity、负数、逗号分组或隐式区域格式；
+- 不进行非美元外汇换算。
+
+
+五、架构与包边界
+----------------
+
+优先在现有包内最小扩展；若创建新包，必须先证明边界必要。
+
+建议职责：
+
+- packages/providers：
+  - 保持供应商无关请求、响应和 usage 合同；
+  - 增加有限、可空、来源明确的 cost observation；
+  - 不保存 credential；
+  - 不负责 SQLite、缓存文件、预算或 UI。
+
+- packages/workflows 或独立 packages/model-execution：
+  - ModelExecutionService；
+  - cache identity builder；
+  - cache policy；
+  - singleflight coordination；
+  - 运行状态机；
+  - capability guard、预算、Provider 调用的编排；
+  - 不直接处理 Electron IPC。
+
+- packages/db：
+  - model_runs repository；
+  - cache entries repository；
+  - cost ledger repository；
+  - price schedule repository；
+  - unit budget policy repository；
+  - budget reservation repository；
+  - migration v7；
+  - 原子检查、预留、结算和 expected revision。
+
+- packages/storage：
+  - 新的受控缓存类别；
+  - 内容寻址写入、读取校验和安全清理；
+  - 只返回 ManagedRelativePath；
+  - 不理解模型业务和金额。
+
+- packages/settings：
+  - 价格表、预算和单位限额的纯合同、校验和诊断摘要；
+  - 不处理 credential 明文。
+
+- apps/desktop main：
+  - composition root；
+  - late credential resolution；
+  - strict IPC；
+  - 应用生命周期和 controlled cache clear；
+  - 不把 secret 或内容发送给 renderer。
+
+- apps/web-ui：
+  - 成本与任务中心展示；
+  - 价格表、单位预算和缓存清理 UI；
+  - 不直接访问 SQLite、文件系统、Provider 或 credential。
+
+renderer 和 preload 不得获得：
+
+- Node 文件能力；
+- SQLite 连接；
+- provider transport；
+- credential 或 Authorization；
+- Base URL 完整值；
+- 原始 prompt；
+- 原始模型输出；
+- 原始供应商 envelope；
+- 缓存文件绝对路径或内容；
+- 账本内部 reservation token。
+
+
+六、统一模型执行合同
+--------------------
+
+定义版本化 ModelExecutionRequestV1，至少包含：
+
+- executionId：调用方稳定生成的幂等 ID；
+- taskKind：有限枚举；
+- modelRole 或 modelSlot：有限枚举；
+- providerConfigFingerprint；
+- modelId：有限长度，不含 secret；
+- protocolMode；
+- requiredCapabilities；
+- promptIdentity；
+- input；
+- generationOptions；
+- outputSchemaIdentity，可空；
+- sourceContentIdentities，有界数组；
+- mediaContentIdentities，有界数组；
+- cachePolicy；
+- budgetClassification；
+- unitDemandUpperBound；
+- timeout/deadline；
+- jobId，可空；
+- abort signal 只在运行时，不持久化。
+
+定义版本化 ModelExecutionResultV1，至少区分：
+
+- CACHE_HIT；
+- SUCCEEDED；
+- FAILED_BEFORE_SEND；
+- FAILED_AFTER_SEND；
+- CANCELLED_BEFORE_SEND；
+- CANCELLED_AFTER_SEND；
+- AMBIGUOUS；
+- BUDGET_BLOCKED；
+- CAPABILITY_BLOCKED；
+- CACHE_CORRUPT。
+
+合同必须：
+
+- 使用严格 runtime validator；
+- 拒绝未知顶层字段；
+- 对数组长度、字符串长度、对象深度和总序列化大小设上限；
+- 不允许调用方伪造 localCacheHit、cost、usage、requestCount 或运行状态；
+- 不允许调用方绕过 capability guard 或预算；
+- 不允许任意 provider endpoint、header 或 credential；
+- 不把 absolute path 作为身份；
+- 不用 Git HEAD 作为执行身份。
+
+
+七、本地缓存键
+--------------
+
+缓存键版本必须显式，例如 cache-key-v1。缓存键至少包含以下语义字段：
+
+1. taskKind；
+2. modelRole 或 modelSlot；
+3. providerConfigFingerprint；
+4. modelId；
+5. protocolMode；
+6. Provider 合同版本；
+7. prompt template ID；
+8. prompt template version；
+9. prompt template content hash；
+10. 规范化但不损失信息的 exact input hash；
+11. parameter version；
+12. canonical generation options；
+13. output schema ID、version 和 schema hash；
+14. 按稳定规则排序的 source content hashes；
+15. 按稳定规则排序的 media content hashes；
+16. cache key version。
+
+缓存键不得包含：
+
+- executionId；
+- jobId；
+- requestId；
+- traceId；
+- 时间戳；
+- retry count；
+- 运行机器路径；
+- Windows 用户名；
+- Git HEAD；
+- credential、credential digest 或 binding envelope；
+- Authorization；
+- 供应商原始响应；
+- AI 标识；
+- 版权状态；
+- UI 展示状态；
+- 不影响结果的数据库 row ID。
+
+当以下任一语义变化时必须 miss：
+
+- 任务类型；
+- 模型角色或槽位；
+- Provider 配置指纹；
+- 模型 ID；
+- protocol mode；
+- Provider 合同版本；
+- prompt ID、版本或内容；
+- exact input；
+- 参数版本或实际生成参数；
+- 输出 Schema ID、版本或内容；
+- 任一来源内容 hash；
+- 任一媒体内容 hash；
+- cache key version。
+
+仅仓库位置、盘符、用户名、Git HEAD、换行 checkout、运行时间或 executionId 变化不得导致 miss。
+
+
+八、规范序列化与内容身份
+------------------------
+
+实现单一 canonical structural encoding：
+
+- object key 按确定性规则排序；
+- array 顺序保持；
+- number 只接受有限、可安全表达的 JSON number；
+- 金额不走 JSON number，使用十进制字符串或整数 micro-USD；
+- 拒绝 NaN、Infinity、BigInt 未编码对象、Date 隐式字符串化、Map、Set、函数、Symbol、
+  prototype 污染键和循环引用；
+- undefined 的处理必须显式，禁止静默丢字段造成碰撞；
+- 严格区分 null、空字符串、缺失字段、0 和 false；
+- UTF-8 编码；
+- 不静默 trim 用户正文；
+- 不静默 Unicode normalize 用户正文；
+- 不静默把 CRLF、CR 和 LF 统一为同一正文；
+- 正文中不同字节或不同 Unicode code point 必须产生不同内容 hash；
+- 只有被合同明确声明为非语义的结构性字段才允许规范化；
+- 规范化规则必须版本化并写入合同。
+
+hash 在运行时从 canonical bytes 计算 SHA-256，作为内容身份和完整性校验。
+
+这里的运行时内容 hash 是业务数据，不是跨电脑的开工门禁。不得把某次实际 hash 预写进本
+指令、ADR 或下一任务的固定前置条件。
+
+
+九、缓存策略
+------------
+
+支持有限 CachePolicy：
+
+- READ_WRITE：默认；先读，miss 后成功结果可写；
+- READ_ONLY：只读；miss 后可以执行，但不得写缓存，是否允许执行必须由调用合同明确；
+- BYPASS：不读、不写；
+- REFRESH：不读旧 READY 结果；获得 singleflight 后执行并以新不可变 entry 取代 active
+  pointer，旧文件按 GC 规则处理。
+
+默认策略：
+
+- 常规确定性文本/结构化/视觉/图片调用：READ_WRITE；
+- Issue 013 capability probe：BYPASS；
+- 联网搜索：BYPASS；
+- 工具调用：BYPASS；
+- 流式未完整聚合输出：BYPASS；
+- 调试和诊断：BYPASS；
+- 用户明确刷新：REFRESH；
+- 未来业务不得在未审查情况下新增可缓存类型。
+
+只有同时满足以下条件才能写缓存：
+
+- Provider 请求确定已成功；
+- 供应商无关输出已完整；
+- runtime schema 验证通过；
+- 输出不是 refusal；
+- 输出不是 partial；
+- 输出不是 truncated；
+- 没有工具副作用；
+- 没有联网搜索内容；
+- 没有 ambiguous outcome；
+- 没有用户取消；
+- 文件完整落盘并校验；
+- 数据库 finalize 事务成功。
+
+以下永不缓存：
+
+- error；
+- refusal；
+- cancelled；
+- partial；
+- invalid structured output；
+- timeout-after-send；
+- connection-lost-after-send；
+- ambiguous；
+- capability probe；
+- web search；
+- tool call 或 tool result；
+- 原始供应商 envelope。
+
+
+十、缓存条目与文件安全
+----------------------
+
+缓存 payload 使用 ProjectDataRoot 中受控类别，例如：
+
+cache/model-results
+
+实际目录名称由现有 storage 合同以仓库风格确定，但必须满足：
+
+- 调用方不能传任意目录；
+- SQLite 只保存 ManagedRelativePath；
+- 数据库和 DTO 路径统一使用 /；
+- 目标在 ProjectDataRoot 内；
+- 拒绝 absolute、UNC、device、drive-relative、file URL、..、symlink 和 junction；
+- 使用内容寻址；
+- 文件名不含书名、用户正文、模型输出或 secret；
+- 写入采用既有流式 hash、独占临时文件、sync、关闭和原子发布语义；
+- 不先删除旧目标；
+- 文件最大值有限；
+- 全局缓存配额有限且可配置；
+- 默认配额必须在 ADR 中明确，不能无限；
+- 读取时验证内容 hash、字节数、format version 和 runtime schema；
+- 缺失或损坏不返回内容；
+- 损坏条目标记 CORRUPT；
+- cache payload 不进入日志、audit、诊断、普通导出、安装包或 Git。
+
+建议缓存 envelope 只包含：
+
+- format/version；
+- provider-neutral output type；
+- validated provider-neutral output；
+- output content hash；
+- createdAt；
+- schema identity；
+- 必要且有限的媒体 metadata。
+
+不得包含：
+
+- credential；
+- Authorization；
+- Base URL；
+- 原始 prompt；
+- 原始用户来源正文；
+- 原始请求头；
+- 原始供应商 response envelope；
+- Web Search 正文或 URL；
+- tool arguments；
+- stack；
+- absolute path。
+
+
+十一、缓存生命周期与安全清理
+----------------------------
+
+缓存状态至少包括：
+
+- IN_FLIGHT；
+- READY；
+- CORRUPT；
+- EVICTED；
+- AMBIGUOUS。
+
+用户清理缓存必须两阶段：
+
+1. preview：
+   - 精确条目数；
+   - 精确或安全估算字节数；
+   - 受影响结果类型；
+   - 不返回内容或绝对路径；
+   - 生成短期、单次、sender/window/settings revision 绑定 token。
+
+2. confirm：
+   - exact-object 校验；
+   - token 单次使用；
+   - 先在数据库中 tombstone 或标记 EVICTED；
+   - 只删除精确、已验证、未被 READY entry 引用的 managed cache file；
+   - 删除失败保留可检测 orphan；
+   - 不自动删除可能被共享引用的内容寻址文件；
+   - 不扫描或删除受控缓存目录以外的任何路径。
+
+清理缓存不得删除或改变：
+
+- books；
+- authors；
+- reading_states；
+- sources；
+- claims；
+- clips；
+- drafts；
+- assets；
+- post_packages；
+- publications；
+- metric_snapshots；
+- account/settings；
+- jobs；
+- price schedules；
+- cost ledger；
+- model run 历史；
+- ProjectDataRoot 根标记；
+- SQLite 数据库和备份。
+
+缓存 GC：
+
+- 只处理 EVICTED、CORRUPT 或无引用 orphan；
+- 有限批次；
+- 可取消；
+- 失败可重试；
+- 不在 app startup 无界扫描；
+- 不持有长事务；
+- 不宣称所有断电场景绝对无 orphan。
+
+
+十二、singleflight 与至少一次任务语义
+-------------------------------------
+
+同一 cache key 的并发执行必须防止重复付费。
+
+实现：
+
+- cache entry 或独立 coordination row 的 lease；
+- owner token；
+- lease expires at；
+- heartbeat；
+- revision；
+- 原子 acquire；
+- bounded waiter；
+- no long transaction during Provider call。
+
+流程：
+
+1. 事务内查 READY；
+2. 没有 READY 时尝试原子领取 IN_FLIGHT；
+3. 领取者才可进入预算预留；
+4. 其他调用成为 waiter；
+5. waiter 有界等待或轮询；
+6. READY 后从本地读取；
+7. 超时但 owner lease 未过期时返回稳定 PENDING/IN_FLIGHT，不得自行发第二次请求；
+8. owner 在“确定未发送”前崩溃，过期后可以安全回收；
+9. owner 在“可能已发送”后失联，条目标记 AMBIGUOUS；
+10. AMBIGUOUS 不自动 takeover、retry 或 refresh；
+11. 用户未来显式决定前，不能产生第二次外部调用。
+
+Job Queue 是 at-least-once。ModelExecutionService 必须用 executionId 实现业务幂等：
+
+- 相同 executionId 再次调用返回已有 run；
+- 不新建第二笔 cost ledger；
+- 不新建第二个 reservation；
+- 不发第二次外部请求；
+- executionId 与不同语义 cache key 冲突时 fail closed；
+- 不宣称 exactly-once；
+- 外部副作用不确定时保持 AMBIGUOUS。
+
+
+十三、统一执行顺序
+------------------
+
+ModelExecutionService 的顺序必须固定并有测试：
+
+1. 严格校验 ModelExecutionRequest；
+2. 构造 prompt identity 和 canonical input；
+3. 计算 cache key；
+4. 检查相同 executionId；
+5. 按 policy 查询本地 READY cache；
+6. cache hit 时校验文件并直接返回；
+7. cache miss 时运行 CapabilityGuard；
+8. 获取 singleflight lease 并再次检查 READY；
+9. 执行预算 preflight；
+10. 在 SQLite 事务中原子创建 reservation；
+11. 创建或更新 model_run 为 IN_FLIGHT；
+12. 仅在 main process 最后阶段解析 credential；
+13. 在数据库事务外执行一次 Provider 调用；
+14. 解析、验证 provider-neutral result；
+15. 若可缓存，先不可变写入 managed cache file；
+16. 在一个短事务中完成 run、cache entry、cost ledger 和 reservation 结算；
+17. 清理本次 lease；
+18. 返回有限结果。
+
+cache hit 必须发生在 CapabilityGuard 和预算外部请求检查之前，因此：
+
+- 当前能力 stale 不得阻止读取一个已经存在、身份完整且通过校验的本地结果；
+- 达到硬预算不得阻止本地缓存命中；
+- cache hit 不解析 credential；
+- cache hit 不创建 reservation；
+- cache hit 不写 cost ledger；
+- cache hit external request count 为 0。
+
+但 cache miss 必须先通过当前、非 stale 的 SUPPORTED CapabilityGuard。
+
+
+十四、model_runs 生命周期
+------------------------
+
+复用并受控重建现有 model_runs。不得丢失已有行。
+
+model_runs 至少记录有限字段：
+
+- id；
+- execution_id，唯一幂等；
+- job_id，可空；
+- task_kind；
+- model_role/model_slot；
+- provider_config_fingerprint；
+- model_id；
+- protocol_mode；
+- prompt_template_id；
+- prompt_version；
+- prompt_content_hash；
+- input_hash；
+- cache_key；
+- cache_entry_id，可空；
+- output_hash，可空；
+- local_cache_hit，严格布尔；
+- cache_policy；
+- status；
+- outcome_certainty；
+- external_request_count；
+- usage_input_tokens，可空；
+- usage_output_tokens，可空；
+- usage_total_tokens，可空；
+- usage_cached_input_tokens，可空；
+- usage_cache_write_tokens，可空；
+- usage_reasoning_tokens，可空；
+- usage_images，可空；
+- usage_image_generation_calls，可空；
+- usage_web_search_calls，可空；
+- usage_tool_calls，可空；
+- cost_state；
+- cost_source，可空；
+- cost_amount_microusd，可空；
+- price_schedule_version，可空；
+- stable_error_code，可空；
+- duration_ms，可空；
+- started_at、finished_at、created_at、updated_at；
+- revision。
+
+有限 status 至少覆盖：
+
+- PLANNED；
+- BUDGET_BLOCKED；
+- CAPABILITY_BLOCKED；
+- CACHE_HIT；
+- IN_FLIGHT；
+- SUCCEEDED；
+- FAILED；
+- CANCELLED；
+- AMBIGUOUS；
+- CORRUPT。
+
+状态机必须：
+
+- 有显式允许转换；
+- 终态不可回 IN_FLIGHT；
+- expected revision；
+- 相同 executionId 幂等；
+- 旧 IN_FLIGHT 在启动恢复时不自动重发；
+- 只有能证明请求未发送的运行才可安全转回可执行；
+- 请求可能发送则转 AMBIGUOUS；
+- 不因本地写缓存失败掩盖已经产生的外部 usage/cost；
+- 无完整 usage 时保持 NULL；
+- 不用 0 代替缺失。
+
+model_runs 不得保存：
+
+- credential；
+- Authorization；
+- Base URL 完整值；
+- prompt 正文；
+- input 正文；
+- output 正文；
+- 图片字节；
+- 搜索内容；
+- tool arguments；
+- 原始供应商 envelope；
+- 原始请求/响应 headers；
+- stack；
+- absolute path。
+
+
+十五、Provider usage 与 cost observation
+----------------------------------------
+
+在 provider-neutral 合同中定义有限 UsageObservationV1：
+
+- inputTokens；
+- outputTokens；
+- totalTokens；
+- cachedInputTokens；
+- cacheWriteTokens；
+- reasoningTokens；
+- images；
+- imageGenerationCalls；
+- webSearchCalls；
+- toolCalls；
+- source/provenance；
+- 每个字段可空；
+- 只接受非负整数和有限上限。
+
+不得：
+
+- 缺失时写 0；
+- 自行估算 token；
+- 假设 total = input + output；
+- 将 cachedInputTokens 重复计入 input 价格，除非价格表明确说明 inputTokens 是否已经包含；
+- 将供应商 Prompt Cache 当本地 cache hit。
+
+定义有限 ProviderCostObservationV1：
+
+- currency；
+- decimalAmountString；
+- source evidence kind；
+- provider request identity 的有限 hash 或 opaque ID；
+- 不含完整 header 或 envelope。
+
+只有同时满足以下条件才能视为 PROVIDER_REPORTED_USD：
+
+- codec 为当前协议显式 allowlist；
+- 字段语义明确是本次请求费用；
+- currency 精确为 USD；
+- 金额十进制字符串通过严格解析；
+- 金额非负且在上限内；
+- 不来自自然语言正文；
+- 不来自模型猜测；
+- 不来自 rate limit header；
+- 不来自累计账户余额；
+- 不来自非美元币种。
+
+非 USD 金额保持 UNKNOWN，不做 FX 换算。
+
+
+十六、精确金额与十进制解析
+--------------------------
+
+实现单一 DecimalMoney parser：
+
+- 输入必须是有限长度 ASCII 十进制字符串；
+- 允许形式由合同明确，例如 0、0.1、12.345678；
+- 拒绝 +、-、空白、逗号、货币符号、科学计数法、NaN、Infinity；
+- 小数超过 6 位时：
+  - 供应商报告金额不得静默改变，应按合同拒绝或采用明确、可测试的安全舍入；
+  - 本地估算统一向上取整到 micro-USD；
+- 转换使用字符串分解和 bigint；
+- 写入 SQLite 前验证在 INTEGER 安全范围；
+- 从 SQLite 读取后验证非负；
+- 所有加减乘除使用整数或有理数；
+- UI 格式化不反向参与账本计算。
+
+现有 settings 中：
+
+- warning 8000 cents = 80 USD；
+- hard limit 10000 cents = 100 USD。
+
+转换必须通过精确整数关系完成。不得先转 Number 美元再乘。
+
+
+十七、版本化价格表
+------------------
+
+用户价格表是可选配置，不是供应商价格事实。
+
+价格表至少按以下维度作用：
+
+- providerConfigFingerprint；
+- modelId；
+- operationKind；
+- protocolMode，可空；
+- effective billing period 或 createdAt；
+- immutable version；
+- currency，V1 只允许 USD；
+- usage semantics version。
+
+可配置费率：
+
+- 每百万 input tokens；
+- 每百万 output tokens；
+- 每百万 cached input tokens；
+- 每百万 cache write tokens；
+- 每张图片或图片单位；
+- 每次图片生成；
+- 每次 Web Search；
+- 每次 tool unit；
+- 每次普通调用，可空。
+
+所有费率使用十进制字符串保存并编译为精确有理数/整数规则。
+
+必须明确：
+
+- inputTokens 是否包含 cachedInputTokens；
+- cachedInputTokens 的独立费率；
+- 缺失某个费率时对应部分不可计算；
+- 任何组成部分不可计算，则总金额不得伪装为完整；
+- 可以保存“已知部分金额”，但 UI 必须显示 partial；
+- 不自动从互联网加载价格；
+- 不硬编码官方 OpenAI 价格；
+- 不根据模型名称猜价格；
+- 不根据旧价格版本回算新账；
+- 修改价格创建新版本；
+- 历史 model_run 和 cost_ledger 固定引用当时版本；
+- 删除价格版本只能停用，不能破坏历史引用；
+- 当前版本切换使用 expected revision。
+
+
+十八、成本状态与追加式账本
+--------------------------
+
+cost state/source 至少区分：
+
+- PROVIDER_REPORTED_USD；
+- USER_PRICE_TABLE_ESTIMATE；
+- UNPRICED_USAGE；
+- UNKNOWN_POSSIBLY_INCURRED；
+- NOT_INCURRED。
+
+语义：
+
+- 本地 cache hit：NOT_INCURRED，不新增 cost_ledger；
+- 发送前被 capability/budget/validation 阻止：NOT_INCURRED，不新增 cost_ledger；
+- Provider 明确报告合法 USD：PROVIDER_REPORTED_USD；
+- 未报告费用但 usage 与完整用户价格表可计算：USER_PRICE_TABLE_ESTIMATE；
+- 有 usage 但价格表缺失或不完整：UNPRICED_USAGE，amount NULL；
+- 请求可能已发送但无确定 usage/cost：UNKNOWN_POSSIBLY_INCURRED，amount NULL；
+- response 验证失败但请求已执行：仍记录可得 usage/cost，不缓存结果。
+
+cost_ledger 必须：
+
+- append-only；
+- 每次外部 execution 只有一个不可重复的 settlement identity；
+- 与 execution_id 唯一关联；
+- 幂等重放不重复记账；
+- amount_microusd 可空；
+- unknown 绝不写 0；
+- 记录 source；
+- 记录 provider/model/operation 的有限身份；
+- 记录 price schedule version，可空；
+- 记录 billing month；
+- 记录 usage 摘要；
+- 记录 createdAt；
+- 不允许 update 金额来掩盖历史；
+- 如需更正，使用显式 adjustment entry、原 entry 引用和理由枚举；
+- V1 UI 不必开放任意 adjustment；
+- 不保存 prompt/output/credential/raw response。
+
+如果供应商合法报告 USD：
+
+- provider-reported 为账本主金额；
+- 用户价格表估算可作为 comparison metadata；
+- comparison 不重复计入总支出；
+- UI 明确标“供应商报告”和“本地估算”。
+
+
+十九、预算周期、预警和硬停止
+--------------------------
+
+计费月必须确定且跨机器稳定：
+
+- V1 使用 UTC 的 YYYY-MM；
+- UI 明确显示“按 UTC 月统计”；
+- fake clock 可测试；
+- 不根据 Windows 本机区域或夏令时改变归属；
+- 未来如支持用户计费时区必须单独迁移，不在本 Issue 隐式加入。
+
+预算聚合至少区分：
+
+- provider-reported known spend；
+- local estimated known spend；
+- outstanding reservations；
+- uncertain committed reservations；
+- unknown-cost call count；
+- unit usage；
+- local cache hits。
+
+预警：
+
+- known committed total >= warning threshold 时触发；
+- 默认 warning 为 80 USD；
+- 等于 80 时必须触发；
+- 不把 unknown 当 0；
+- 若存在 unknown 调用，即使 known 未到 80，也显示独立未知费用警告。
+
+硬停止：
+
+- 新请求的 conservative reservation 加入后可能超过 hard limit，则发送前阻止；
+- 默认 hard limit 为 100 USD；
+- 等于或超过 100 后阻止新的非必要外部调用；
+- 并发请求通过 SQLite 原子预留，不能各自看到旧余额后共同越界；
+- 当前 Issue 没有 essential 外部调用 allowlist；
+- 包括 capability probe 在内的所有当前外部 Provider 调用均为 NONESSENTIAL；
+- 未来只有独立 Issue 明确授权和测试后才能增加极窄 ESSENTIAL allowlist；
+- 调用方不能自报 essential 绕过预算。
+
+硬停止不得阻止：
+
+- 本地结果 cache hit；
+- 查看书库、资料和既有内容；
+- 审批；
+- 本地导出；
+- 数据录入；
+- 查看模型运行、成本和缓存；
+- 清理缓存；
+- 修改预算或单位政策；
+- 不产生外部请求的本地功能。
+
+
+二十、预算预留与并发结算
+------------------------
+
+已知价格时，请求前计算 conservative max reservation：
+
+- 已知输入 tokens 或安全上限；
+- allowed max output tokens；
+- 最大图片数量/尺寸单位；
+- 最大图片生成次数；
+- 最大 Web Search 次数；
+- 最大 tool unit；
+- 每次调用固定费率；
+- 所有适用组成部分的向上取整 micro-USD。
+
+若无法为某个可收费组成部分给出有限上限，不能创建虚假的美元预留；转入无价格单位政策。
+
+原子流程：
+
+1. BEGIN IMMEDIATE 或现有重要写事务；
+2. 聚合当月 known ledger；
+3. 聚合 ACTIVE/UNCERTAIN reservation；
+4. 校验 warning/hard 和 per-week/per-task policy；
+5. 校验 unit policies；
+6. 创建唯一 reservation；
+7. commit；
+8. 事务外调用 Provider；
+9. 终态短事务结算。
+
+reservation 状态至少包括：
+
+- ACTIVE；
+- SETTLED；
+- RELEASED_BEFORE_SEND；
+- UNCERTAIN_COMMITTED；
+- EXPIRED_SAFE；
+- CANCELLED_BEFORE_SEND。
+
+规则：
+
+- 只有能证明未发送时才能释放；
+- 已发送且响应确定时用实际/估算金额结算，释放差额；
+- actual > reserved 时仍记录 actual，并阻止后续调用；
+- timeout-after-send、connection-lost-after-send 或 crash-after-send 转 UNCERTAIN_COMMITTED；
+- UNCERTAIN_COMMITTED 在计费周期内继续占用原 reservation；
+- 不因应用重启自动释放 uncertain；
+- 重启恢复只释放有证明的 pre-send reservation；
+- 所有转换 expected revision；
+- 相同 executionId 不能有多个 active reservation。
+
+
+二十一、无价格时的单位限额
+--------------------------
+
+没有完整价格表时不得伪造美元金额。
+
+允许外部非必要调用的前提是存在适用的用户配置单位限额，至少包括：
+
+- 月度外部调用次数；
+- 每周外部调用次数；
+- 每 taskKind 或 modelRole 调用次数；
+- input tokens 上限，可空；
+- output tokens 上限，可空；
+- 图片数/图片生成调用上限；
+- Web Search 调用上限；
+- tool unit 上限。
+
+按调用类型要求相应限额：
+
+- 文本：至少有外部调用次数上限；若 max output 已知则同时检查 output token 上限；
+- 图片：必须有外部调用次数和图片数/图片生成次数上限；
+- Web Search：必须有外部调用次数和 Web Search 次数上限；
+- Tool：必须有外部调用次数和 tool unit 上限；
+- Capability probe：至少有外部调用次数上限，并按计划中的 image/search 单位检查。
+
+如果美元价格未知且没有适用单位限额，发送前阻止：
+
+BUDGET_UNPRICED_LIMIT_REQUIRED
+
+未知 usage 字段保持 NULL。单位政策不能假装美元成本。
+
+单位计数必须：
+
+- 只计算外部请求；
+- 本地 cache hit 不计；
+- 发送前失败不计；
+- 可能已发送计一次；
+- 幂等重放不重复计；
+- 与 executionId 和 ledger/reservation 对齐；
+- 并发原子检查；
+- 按 UTC 月和确定性周键统计；
+- 不用本机 locale。
+
+
+二十二、Issue 013 Capability Probe 接入
+--------------------------------------
+
+Issue 013 Runner 是当前仓库第一个可能产生真实外部调用的产品路径。Issue 014 完成后：
+
+- 每个 probe step 通过 ModelExecutionService 或其同一运行/预算内核；
+- cachePolicy 固定 BYPASS；
+- budgetClassification 固定 NONESSENTIAL；
+- 保持 Issue 013 每 step 一次、不重试、不 fallback；
+- 保持单 run 请求数上限；
+- 保持 preview 和用户显式确认；
+- plan preview 增加已知预算/单位检查摘要；
+- start 前执行原子预算预留；
+- 每 step 记录有限 model_run；
+- 若有 usage/cost，进入账本；
+- 未知费用保持 unknown；
+- 可能已发送保持 ambiguous/uncertain；
+- 达到硬上限或无价格且无单位政策时，不发送；
+- 不把 capability 输出写入本地结果缓存；
+- 不改变 capability_entries 的保守证据合同；
+- 不向 renderer 暴露 prompt、credential、响应或缓存 payload。
+
+本轮测试 probe 只使用 Scripted Mock 或 127.0.0.1 loopback，真实请求和费用必须为 0。
+
+
+二十三、migration v7
+--------------------
+
+只新增连续 migration v7。
+
+建议语义名称：
+
+model_execution_cache_and_cost_ledger
+
+不得在指令中预置或要求匹配某个 migration SHA-256。实施后报告可记录本次规范化校验值，但
+必须注明只作结果记录，不是未来门禁。
+
+v7 至少完成：
+
+- 受控重建或扩展 model_runs；
+- 受控重建或扩展 cost_ledger；
+- 新建 model_cache_entries；
+- 新建 model_budget_reservations；
+- 新建 model_price_schedules；
+- 新建 model_unit_budget_policies；
+- 必要的严格索引、唯一约束、外键和 CHECK；
+- storage managed cache path 的字段级约束；
+- 旧占位表数据迁移；
+- 保留所有既有业务表和数据；
+- v1—v6 version/name/SQL 语义不变；
+- 规范化迁移校验跨 LF/CRLF/lone CR 稳定；
+- 非换行 SQL 变化 fail closed；
+- 升级前本地备份；
+- 失败单事务回滚；
+- foreign_keys 重新验证；
+- quick_check；
+- foreign_key_check；
+- 新库直达 v7；
+- v6 数据库升 v7；
+- 中文、空格和长路径；
+- 备份可独立打开。
+
+约束要求：
+
+- 所有业务表 STRICT；
+- 外键首列有显式索引；
+- 金额字段 INTEGER 且非负或 NULL；
+- 不新增金额 REAL；
+- 布尔值严格 0/1；
+- 状态和枚举有 CHECK；
+- JSON 有效且有界；
+- ManagedRelativePath 只允许受控 cache/model-results 前缀；
+- cost ledger settlement identity 唯一；
+- execution_id 唯一；
+- 同 cache key 只有一个 active/ready identity；
+- 同 executionId 只有一个 active reservation；
+- 删除策略明确；
+- 历史 ledger 不 CASCADE 丢失；
+- 网络调用期间不持事务。
+
+不得新增 migration v8。
+
+
+二十四、数据库一致性与失败边界
+------------------------------
+
+测试以下组合：
+
+- Provider 成功、cache file 成功、finalize 成功；
+- Provider 成功、cache file 写失败；
+- Provider 成功、cache file 成功、DB finalize 失败；
+- Provider 失败前未发送；
+- Provider 失败且确定已发送；
+- Provider 结果 schema invalid；
+- app 在 reservation 后、发送前崩溃；
+- app 在发送后、响应前崩溃；
+- app 在响应后、cache 写前崩溃；
+- app 在 cache 写后、DB finalize 前崩溃；
+- app 在 ledger commit 后返回前崩溃；
+- 幂等 executionId 重放；
+- 同 cache key 多 executionId 并发；
+- 月度边界并发；
+- migration 失败。
+
+要求：
+
+- 不重复外部调用；
+- 不重复 ledger；
+- 不把已产生费用当作 0；
+- 不把 ambiguous 自动变成 free；
+- 不返回未提交 cache；
+- 内容寻址 orphan 可检测；
+- 不自动删除可能共享的文件；
+- 原数据库和迁移前备份可恢复；
+- 不破坏已有 Job Queue。
+
+
+二十五、UI 与 IPC
+-----------------
+
+激活现有“任务中心”的成本与缓存区域，或按现有路由最小扩展；不要实现后续业务页面。
+
+UI 至少显示：
+
+- 当前 UTC 计费月；
+- 已知供应商报告金额；
+- 已知本地估算金额；
+- 未知费用调用数；
+- outstanding reservation；
+- uncertain committed reservation；
+- 80 美元预警状态；
+- 100 美元硬停止状态；
+- 月/周/任务单位使用；
+- 本地缓存命中数和命中率；
+- 本地缓存条目数和字节数；
+- 最近有限 model run 列表；
+- status、model slot、有限 model ID、protocol、cache hit、usage、cost source；
+- 用户价格表及版本；
+- 单位政策；
+- cache clear preview 和确认；
+- loading、empty、error、conflict、blocked、corrupt 状态。
+
+UI 表述：
+
+- 未知金额显示“未知”，不显示 $0；
+- USER_PRICE_TABLE_ESTIMATE 标“本地估算”；
+- PROVIDER_REPORTED_USD 标“供应商报告”；
+- Prompt Cache tokens 标“供应商缓存输入”，不计入本地命中率；
+- 本地缓存命中明确显示“未发起外部请求”；
+- 预警和硬停止说明本地审批、导出和数据录入仍可使用；
+- 价格输入为十进制字符串；
+- 不显示完整 Base URL；
+- 不显示 credential 状态以外的 secret 信息；
+- 不显示 prompt、output、cache payload 或绝对路径。
+
+本 Issue 不提供：
+
+- 任意 prompt 执行框；
+- “测试模型”按钮；
+- 真正生成内容按钮；
+- 搜索按钮；
+- 图片生成按钮；
+- 自动价格抓取按钮；
+- 预算绕过开关；
+- essential 分类开关；
+- 清空整个 ProjectDataRoot 的按钮。
+
+IPC 必须：
+
+- 固定 allowlist；
+- 每方法独立 channel；
+- exact-object；
+- sender origin、senderFrame 和 window 绑定；
+- 数字/字符串/数组大小上限；
+- expected revision；
+- cache clear token 短期、单次、绑定；
+- 返回有限 DTO；
+- 不返回 secret、raw content、raw response、absolute path 或 reservation token；
+- 错误稳定且脱敏；
+- preload 只暴露窄方法。
+
+
+二十六、日志、诊断、Audit 与 Egress
+-----------------------------------
+
+允许持久化到本地 ProjectDataRoot 的内容：
+
+- 通过验证的 provider-neutral cache payload；
+- cache entry metadata；
+- hashes；
+- model run 有限 metadata；
+- usage；
+- cost ledger；
+- price schedule；
+- unit policy；
+- reservation；
+- 有限 audit 事件。
+
+cache payload 是用户本地数据，但仍必须排除：
+
+- 应用日志；
+- audit event payload；
+- 诊断报告；
+- crash report；
+- 普通发布包导出；
+- 设置导出；
+- 安装包；
+- source/package smoke artifact；
+- Git。
+
+日志、audit 和诊断只允许有限摘要：
+
+- event type；
+- run ID/client-safe ID；
+- task kind；
+- state；
+- cache hit boolean；
+- known/unknown cost state；
+- stable error code；
+- counts；
+- hash 的有限前缀仅在确有诊断必要且不造成关联泄漏时使用。
+
+不得保存：
+
+- credential；
+- Authorization；
+- pairing token/code；
+- raw prompt；
+- 用户正文；
+- 模型完整输出；
+- 图片字节；
+- search body；
+- tool arguments；
+- provider raw envelope；
+- request/response headers；
+- Base URL 完整值；
+- username；
+- absolute path；
+- SQL；
+- stack。
+
+建立至少 60 项 secret/content/accounting egress 矩阵，覆盖：
+
+- SQLite 主库；
+- WAL/SHM；
+- cache files；
+- logs；
+- audit_events；
+- diagnostics；
+- exports；
+- backups；
+- temp；
+- package/asar；
+- Git diff；
+- renderer/preload DTO；
+- IPC errors；
+- Electron source smoke；
+- packaged smoke；
+- test snapshots；
+- CI output。
+
+
+二十七、安全、可靠性和性能边界
+------------------------------
+
+必须设置有限上限：
+
+- canonical input bytes；
+- prompt identity bytes；
+- source/media identity count；
+- cache payload bytes；
+- cache entry count/total quota；
+- cache clear batch size；
+- recent runs page size；
+- ledger page size；
+- price versions；
+- unit policies；
+- concurrent ModelExecutionService calls；
+- singleflight wait time；
+- lease duration/heartbeat；
+- decimal string length；
+- token/image/search/tool unit upper bounds；
+- SQLite query time and index coverage。
+
+至少验证：
+
+- 1,000 model runs 查询使用预期索引；
+- 1,000 cache entries 查 key 使用唯一索引；
+- 1,000 ledger rows 的月聚合使用索引；
+- 并发 reservation 不越 hard limit；
+- 20 路相同 cache key 只有一次 loopback 外部请求；
+- 20 路不同 key 都受全局并发和预算限制；
+- 长任务期间无 SQLite 长事务；
+- app shutdown 受控；
+- listener/socket/timer/worker/temp 全部释放。
+
+不宣称：
+
+- exactly-once；
+- 所有断电场景没有 orphan；
+- 未知中转站计费可被准确估算；
+- Prompt Cache 一定存在；
+- 当前模型价格永久不变。
+
+
+二十八、测试与零真实调用
+------------------------
+
+新增独立脚本：
+
+npm run test:model-accounting
+
+名称如因现有命名规范需要微调，必须在 package.json、CI、README 和最终报告中统一。
+
+测试全部使用：
+
+- Scripted Mock；
+- 127.0.0.1 loopback fixture；
+- fake clock；
+- synthetic credential；
+- 临时 userData；
+- 临时 ProjectDataRoot；
+- 动态项目卷 temp/cache；
+- 合成文本、结构化结果和微型合成图片。
+
+禁止：
+
+- 用户真实 credential；
+- 环境中的真实 API key；
+- 用户真实 Base URL；
+- 真实模型 ID；
+- 真实外网；
+- 真实费用；
+- 真实搜索；
+- 真实图片生成；
+- 真实 Batch。
+
+测试至少覆盖：
+
+- cache key 每个组成字段；
+- 所有失效条件；
+- 所有排除字段；
+- canonical JSON 的 key 顺序；
+- null/empty/missing/false/0 区分；
+- Unicode、emoji、CRLF、CR、LF 内容差异；
+- unsupported types；
+- 文本、结构化、vision、image cache；
+- refusal/error/partial/ambiguous 不缓存；
+- READ_WRITE/READ_ONLY/BYPASS/REFRESH；
+- cache corruption/missing/orphan；
+- cache clear preview/token/confirm；
+- 20 路 singleflight；
+- lease/heartbeat/crash；
+- executionId 幂等；
+- capability guard 顺序；
+- hard limit 下 cache hit；
+- exact decimal parsing；
+- micro-USD rounding；
+- provider-reported vs estimate；
+- unknown/partial/unpriced；
+- Prompt Cache usage 与 local cache hit 区分；
+- price version immutability；
+- $79.999、$80、$99.999、$100 边界；
+- UTC 月末和周边界；
+- 并发 reservation；
+- unknown price + unit policy；
+- unknown price + no unit policy；
+- image/search/tool units；
+- MAY_HAVE_EXECUTED；
+- migration v6 to v7；
+- migration rollback/backup；
+- Windows 中文、空格、emoji、长路径；
+- strict IPC；
+- source Electron smoke；
+- packaged smoke；
+- egress matrix；
+- 硬约束；
+- external connection 0；
+- fee 0。
+
+
+二十九、文档交付
+----------------
+
+新增：
+
+- docs/adr/0010-model-execution-cache-and-cost-ledger.md
+- docs/contracts/model-execution-v1.md
+- docs/contracts/model-accounting-v1.md
+- docs/m2-issue014-implementation-plan.md
+- docs/m2-issue014-acceptance-map.md
+
+按实际 ADR 编号顺延；若仓库已有同号文件，停止并核对，不覆盖。
+
+ADR 至少记录：
+
+- 本地结果缓存与供应商 Prompt Cache 的差异；
+- cache key 和 canonicalization；
+- singleflight 与 ambiguous；
+- executionId 幂等；
+- ProjectDataRoot cache files；
+- exact micro-USD；
+- provider cost、用户估算、unknown；
+- price version；
+- budget reservation；
+- unpriced unit limits；
+- UTC billing month；
+- Issue 013 probe 集成；
+- SQLite v7；
+- UI/IPC/egress；
+- 被否决方案。
+
+被否决方案至少包括：
+
+- 用 SQLite REAL/JS float 记钱；
+- 缺失价格时显示 0；
+- 硬编码官方价格；
+- 每次启动联网更新价格；
+- 把 Provider Prompt Cache 当本地 cache hit；
+- 只用 input hash、不含 prompt/model/schema/source；
+- cache 直接放数据库大 BLOB；
+- cache 写到任意用户路径；
+- 请求时持有长 SQLite 事务；
+- 无 reservation 的“先调用后检查”；
+- ambiguous 自动重试；
+- 用 Git HEAD/绝对路径/固定文件 SHA 做 cache key 或开工门禁；
+- 到达硬上限后禁用全部本地功能。
+
+Implementation plan 必须在编码前创建，列出文件级改动、迁移策略、状态机、测试和停止边界；
+实施中持续回填真实差异。
+
+
+三十、240 项最低验收矩阵
+------------------------
+
+docs/m2-issue014-acceptance-map.md 必须按 1—240 逐项映射真实代码、测试、文档或命令证据。
+不得合并编号、跳号、重复编号、预填 PASS 或只写“同上”。
+
+A. 可迁移基线
+
+1. 使用 git rev-parse 动态发现仓库根。
+2. 未硬编码盘符、用户名或旧绝对路径。
+3. BASELINE_HEAD 只在本轮动态记录。
+4. 未比较预置提交散列。
+5. instruction 文件 SHA-256 不作为门禁。
+6. 迁移实际散列不作为未来开工门禁。
+7. 允许 main 合法领先远端。
+8. 除本指令外起点工作树无未知修改。
+9. Issue 013 ADR、合同、计划和验收文档完整。
+10. Issue 013 能力矩阵、Runner 和 Guard 完整。
+11. schema 起点语义为 v6。
+12. 尚无完成的 Issue 014。
+13. 尚无 Issue 015 业务。
+14. 全部旧门禁开工前通过。
+15. 根级 Portable development 规则保持。
+
+B. 磁盘与环境
+
+16. 临时目录按仓库所在卷动态选择。
+17. npm cache 不固定系统盘。
+18. packager temp 不固定盘符。
+19. 系统盘不足但项目卷可用时可继续。
+20. 项目卷不足时安全停止。
+21. 不执行全局清理。
+22. 只清理本轮精确临时目录。
+23. 临时目录不进入 Git。
+24. 中文、空格、emoji、长路径动态测试。
+25. 新代码和文档无机器绝对路径。
+
+C. 范围与硬约束
+
+26. 只实现 Issue 014。
+27. 未实现 Issue 015 SearchProvider。
+28. 未实现 Issue 016 网页抓取。
+29. 未实现 Issue 017 插件业务。
+30. 未读取真实 credential。
+31. 未连接真实中转站。
+32. 未调用真实模型、搜索、图片或 Batch。
+33. 真实费用为 0。
+34. ai_disclosure 固定 false。
+35. copyright 不参与门禁、评分、审批、优先级、排期或导出。
+36. AI 标识和版权不进入 cache key。
+37. 无小红书自动动作。
+38. 无云端必需依赖。
+39. 无开卷、盗版或内部经营数据。
+40. 未打开正式 ProjectDataRoot。
+
+D. 术语与合同
+
+41. 本地结果缓存定义明确。
+42. Provider Prompt Cache 定义明确。
+43. 两种缓存使用不同字段和指标。
+44. local cache hit 外部请求数为 0。
+45. provider cached tokens 不标 local hit。
+46. ModelExecutionRequest runtime 校验。
+47. ModelExecutionResult 有限终态。
+48. executionId 为稳定幂等 ID。
+49. 调用方不能伪造 cost/usage/cache hit。
+50. 调用方不能自报 essential 绕过预算。
+51. DTO 大小、深度和数组有界。
+52. 不允许任意 endpoint/header/credential。
+53. absolute path 不进入身份。
+54. Git HEAD 不进入身份。
+55. Provider 合同版本显式。
+
+E. 缓存键
+
+56. cache key version 显式。
+57. taskKind 进入 key。
+58. model role/slot 进入 key。
+59. provider config fingerprint 进入 key。
+60. model ID 进入 key。
+61. protocol mode 进入 key。
+62. prompt template ID 进入 key。
+63. prompt version 进入 key。
+64. prompt content hash 进入 key。
+65. exact input hash 进入 key。
+66. parameter version/options 进入 key。
+67. schema ID/version/hash 进入 key。
+68. source content hashes 进入 key。
+69. media content hashes 进入 key。
+70. executionId/jobId/requestId 不进入 key。
+71. timestamps/retry/trace 不进入 key。
+72. path/username/HEAD 不进入 key。
+73. credential 不进入 key。
+74. AI 标识和版权不进入 key。
+75. 所有语义变化均有 miss 测试。
+
+F. 规范序列化
+
+76. object key 确定性排序。
+77. array 顺序保持。
+78. null/empty/missing/0/false 区分。
+79. undefined 处理显式。
+80. 拒绝 NaN/Infinity。
+81. 拒绝循环引用和不支持对象。
+82. 拒绝 prototype 污染键。
+83. UTF-8 编码确定。
+84. 不静默 trim 正文。
+85. 不静默 Unicode normalize 正文。
+86. CRLF/CR/LF 正文差异可区分。
+87. canonicalization 版本化。
+88. hash 从运行时 canonical bytes 计算。
+89. 运行时内容 hash 不作跨电脑门禁。
+90. property/table tests 覆盖碰撞边界。
+
+G. 缓存策略与资格
+
+91. READ_WRITE 实现。
+92. READ_ONLY 实现。
+93. BYPASS 实现。
+94. REFRESH 实现。
+95. 文本成功结果可缓存。
+96. 结构化成功且 schema-valid 结果可缓存。
+97. vision 成功结果可缓存。
+98. image inline 有效结果可缓存。
+99. refusal 不缓存。
+100. error 不缓存。
+101. cancelled 不缓存。
+102. partial/truncated 不缓存。
+103. ambiguous 不缓存。
+104. capability probe 固定 BYPASS。
+105. web search/tool outputs 固定 BYPASS。
+106. 原始 provider envelope 不缓存。
+107. cache hit 不读取 credential。
+108. cache hit 不做 budget reservation。
+109. cache hit 不写 cost ledger。
+110. cache hit 仍创建有限 model_run。
+
+H. 缓存文件与清理
+
+111. cache 文件位于受控 ProjectDataRoot 类别。
+112. SQLite 只保存 ManagedRelativePath。
+113. 拒绝 absolute/UNC/device/drive-relative/file URL。
+114. 拒绝 traversal/symlink/junction。
+115. 内容寻址和流式 hash。
+116. 临时写、sync、关闭、原子发布。
+117. 文件和总配额有限。
+118. 读取校验 hash/bytes/version/schema。
+119. 缺失或损坏标 CORRUPT 且不返回。
+120. cache payload 不进日志、诊断、导出、package 或 Git。
+121. clear preview 返回 count/bytes 不返回内容路径。
+122. clear confirm token 短期、单次、sender/window 绑定。
+123. 先 tombstone 再删除精确无引用文件。
+124. 删除失败留下可检测 orphan。
+125. 清理不删除书库、草稿、资产、发布、账本或数据库。
+126. GC 有界、可取消、不无界启动扫描。
+127. 不宣称断电绝对无 orphan。
+128. 共享内容寻址文件不被误删。
+129. 中文、空格、emoji、长路径通过。
+130. 缓存文件无用户可识别名称。
+
+I. Singleflight 与幂等
+
+131. IN_FLIGHT/READY/CORRUPT/EVICTED/AMBIGUOUS 状态有限。
+132. lease owner token、expiresAt、heartbeat、revision 完整。
+133. 原子 acquire。
+134. Provider 调用期间不持数据库事务。
+135. waiter 有界等待。
+136. owner 活跃时 waiter 不发第二请求。
+137. 20 路同 key 仅一次 loopback 外部请求。
+138. 可证明 pre-send 崩溃后才可安全回收。
+139. post-send 失联标 AMBIGUOUS。
+140. AMBIGUOUS 不自动 retry/takeover。
+141. 相同 executionId 返回已有 run。
+142. executionId 与不同 cache key 冲突 fail closed。
+143. 幂等重放不重复 ledger。
+144. 幂等重放不重复 reservation。
+145. 不宣称 exactly-once。
+
+J. 执行顺序与运行记录
+
+146. request 校验先于 hash。
+147. executionId 检查先于外部动作。
+148. cache lookup 先于 capability/budget 外部检查。
+149. miss 后 CapabilityGuard。
+150. acquire lease 后再次查 READY。
+151. budget preflight 与 reservation 在 send 前。
+152. credential 只在 main 最后阶段解析。
+153. Provider 调用在事务外且最多一次。
+154. provider-neutral result runtime 验证。
+155. cache file 先发布、DB 后 finalize。
+156. run/cache/ledger/reservation 短事务一致结算。
+157. model_runs execution_id 唯一。
+158. 状态机转换有限且 expected revision。
+159. local_cache_hit 严格布尔。
+160. usage 每字段可空且不伪造 0。
+161. external_request_count 准确。
+162. invalid result 仍记录已发生 usage/cost。
+163. model_runs 不保存 prompt/output/secret/raw envelope。
+164. 旧 IN_FLIGHT 不自动重发。
+165. run 查询有索引和分页。
+
+K. Usage、Prompt Cache 与精确金额
+
+166. UsageObservation 字段有限。
+167. cached input/cache write/reasoning 独立。
+168. 缺失 usage 保持 NULL。
+169. 不自行估算 token。
+170. 不假设 total=input+output。
+171. cached input 不重复计费。
+172. Provider Prompt Cache 不计本地命中率。
+173. DecimalMoney 拒绝科学计数法/NaN/Infinity/负数。
+174. 金额使用 integer micro-USD 或精确十进制。
+175. 新金额字段不使用 SQLite REAL。
+176. 计算不使用 JS 浮点决策。
+177. 估算向上取整到 micro-USD。
+178. 8000/10000 cents 精确转换。
+179. 非 USD 不自动换汇。
+180. 边界和溢出测试完整。
+
+L. 价格表与账本
+
+181. 价格表按 provider/model/operation/version 作用。
+182. 价格表币种 V1 仅 USD。
+183. input/output/cached/cache-write 费率独立。
+184. image/search/tool/call 费率可配。
+185. usage semantics 显式。
+186. 不硬编码官方价格。
+187. 不联网抓取价格。
+188. 不根据模型名猜价格。
+189. 编辑创建新版本。
+190. 历史 ledger 固定引用旧版本。
+191. provider-reported USD 强证据校验。
+192. 自然语言金额不当作 provider cost。
+193. PROVIDER_REPORTED_USD 状态正确。
+194. USER_PRICE_TABLE_ESTIMATE 状态正确。
+195. UNPRICED_USAGE amount 为 NULL。
+196. UNKNOWN_POSSIBLY_INCURRED amount 为 NULL。
+197. local hit/pre-send failure 不新增 ledger。
+198. cost_ledger append-only。
+199. settlement identity 唯一且幂等。
+200. provider amount 与 comparison estimate 不重复聚合。
+
+M. 预算、预留与单位限额
+
+201. billing month 使用 UTC YYYY-MM。
+202. warning 在 known committed >= 80 USD 触发。
+203. hard 在 100 USD 阻止新非必要外部调用。
+204. $79.999/$80/$99.999/$100 边界测试。
+205. 并发 reservation 原子且不越限。
+206. reservation 使用 conservative max。
+207. actual 结算释放差额。
+208. actual 超 reserve 仍完整记录并阻止后续。
+209. pre-send reservation 可安全释放。
+210. post-send ambiguous 转 UNCERTAIN_COMMITTED。
+211. uncertain 不因重启自动释放。
+212. 当前所有 Provider 调用均 NONESSENTIAL。
+213. 调用方不能选择 essential。
+214. hard limit 不阻止 cache hit。
+215. hard limit 不阻止本地审批、导出或数据录入。
+216. 无价格时不显示伪造美元。
+217. 无价格且无适用单位政策时 pre-send 阻止。
+218. 月/周/task 调用次数政策。
+219. 图片/search/tool 对应单位政策。
+220. 可能已发送只计一次单位。
+
+N. Probe 集成、UI 与 IPC
+
+221. capability probe 走统一运行/预算内核。
+222. probe cachePolicy 固定 BYPASS。
+223. probe budgetClassification 固定 NONESSENTIAL。
+224. probe 保持一次、串行、无自动重试。
+225. probe usage/cost/unknown 正确记录。
+226. probe 不改变保守能力证据合同。
+227. 任务中心显示 UTC 月、known/estimate/unknown/reservation。
+228. UI 区分 local cache 与 Provider Prompt Cache。
+229. UI 未知金额不显示 $0。
+230. UI 价格输入使用十进制字符串。
+231. UI 有 warning/hard/cache/ledger 状态。
+232. cache clear UI 两阶段。
+233. IPC allowlist、exact-object、sender/window/revision 验证。
+234. renderer/preload 不接收 secret/content/raw response/path。
+235. UI 不提供任意模型调用或预算绕过。
+
+O. 回归、证据与停止
+
+236. migration v7、备份、回滚、完整性和数据保留通过。
+237. 60 项 egress/accounting 矩阵全部通过。
+238. test:model-accounting、全量、source/package smoke、CI 和 audit 全部通过。
+239. 失败、skip、todo、lint warning、漏洞、真实外部连接和真实费用均为 0。
+240. 创建一个本地提交后严格停止在 Issue 014。
+
+
+三十一、建议测试文件
+--------------------
+
+建议新增或按现有结构合并：
+
+- tests/model-execution-contracts.test.ts
+- tests/model-cache-key.test.ts
+- tests/model-cache-canonicalization.test.ts
+- tests/model-cache-storage.test.ts
+- tests/model-cache-policy.test.ts
+- tests/model-cache-singleflight.test.ts
+- tests/model-cache-recovery.test.ts
+- tests/model-run-state-machine.test.ts
+- tests/model-money-decimal.test.ts
+- tests/model-price-schedule.test.ts
+- tests/model-cost-ledger.test.ts
+- tests/model-budget-reservations.test.ts
+- tests/model-unit-budgets.test.ts
+- tests/model-capability-probe-accounting.test.ts
+- tests/model-accounting-ipc.test.ts
+- tests/model-accounting-ui.test.tsx
+- tests/model-accounting-egress.test.ts
+- tests/model-accounting-portability.test.ts
+- tests/model-accounting-electron-smoke.test.ts
+- tests/model-accounting-packaged-smoke.test.ts
+
+测试文件名遵循仓库实际约定，不为匹配此列表重写既有结构。
+
+
+三十二、建议实施顺序
+--------------------
+
+1. 动态发现 REPO_ROOT、记录 BASELINE_HEAD 和工作树。
+2. 建立项目卷临时目录和 npm cache。
+3. 完整读取事实来源和嵌套 AGENTS.md。
+4. 运行全部开工门禁。
+5. 编写 docs/m2-issue014-implementation-plan.md。
+6. 草拟 1—240 验收映射，不预填 PASS。
+7. 冻结 model-execution-v1 和 model-accounting-v1 合同。
+8. 实现 canonicalization、cache key 和 DecimalMoney 纯函数。
+9. 先写纯合同、property/table tests。
+10. 设计 migration v7 和迁移回滚测试。
+11. 扩展受控 storage cache category。
+12. 实现 model_runs/cache/price/ledger/reservation repositories。
+13. 实现 singleflight 和恢复语义。
+14. 实现 ModelExecutionService，不连接真实供应商。
+15. 接入 Scripted Mock 和 loopback。
+16. 接入 Issue 013 probe 的 BYPASS/预算路径。
+17. 实现 strict IPC/preload。
+18. 实现成本与任务中心 UI。
+19. 建立 60 项 egress/accounting matrix。
+20. 增加 test:model-accounting 和 Windows CI。
+21. 运行 source Electron smoke。
+22. 运行 packaged smoke。
+23. 回填 ADR、implementation plan 和 240 项证据。
+24. 从最新 npm ci 开始完整运行最终门禁。
+25. 检查 Git diff、绝对路径、secret、散列门禁和 Issue 范围。
+26. 创建唯一一个本地提交。
+27. 验证工作树干净并提交最终报告。
+28. 严格停止。
+
+
+三十三、最终门禁
+----------------
+
+从一次最新、成功的 npm ci 开始，顺序执行并保留证据：
+
+1. npm ci
+2. npm run format-check
+3. npm run lint
+4. npm run typecheck
+5. npm run test:constraints
+6. npm run test:db
+7. npm run test:queue
+8. npm run test:desktop
+9. npm run test:storage
+10. npm run test:settings
+11. npm run test:local-api
+12. npm run test:portability
+13. npm run test:providers
+14. npm run test:capabilities
+15. npm run test:model-accounting
+16. npm run test:electron-smoke
+17. npm run test
+18. npm run build
+19. npm run package:desktop
+20. npm run audit:dependencies
+21. npm run test:packaged-smoke
+
+若实际 CI 还有额外既有门禁，也必须运行。
+
+最终要求：
+
+- 全部门禁 PASS；
+- 失败 0；
+- skip 0；
+- todo 0；
+- lint warning 0；
+- audit vulnerabilities 0；
+- 真实 credential 读取 0；
+- 真实 API/model/search/image/Batch 请求 0；
+- 真实费用 0；
+- 外部网络连接 0；
+- 重复外部调用 0；
+- 账本重复项 0；
+- listener/socket/timer/process/临时文件残留 0；
+- 60/60 egress/accounting 有证据；
+- 240/240 验收有证据。
+
+发现缺陷后修复根因，并从 npm ci 重新运行全部最终门禁。不得删除或弱化测试来通过。
+
+
+三十四、Windows、Electron 与 CI
+------------------------------
+
+必须保留既有 Electron 安全设置：
+
+- nodeIntegration=false；
+- contextIsolation=true；
+- sandbox=true；
+- webSecurity=true；
+- CSP 不放宽；
+- navigation/new window/webview/permission 默认拒绝；
+- fuses 保持；
+- renderer 不直接访问 Node、SQLite、文件系统、网络或 credential。
+
+source 和 packaged smoke 至少验证：
+
+- 临时 userData；
+- 临时 ProjectDataRoot；
+- synthetic credential；
+- Scripted Mock/loopback；
+- local cache miss 后一次请求；
+- 第二次 local cache hit 请求 0；
+- Provider Prompt Cache usage 不误标 local hit；
+- 80/100 预算边界；
+- unknown price/unit block；
+- clear cache preview/confirm；
+- capability probe BYPASS；
+- app shutdown；
+- 外部连接 0；
+- 退出后 listener、socket、timer、process、temp 全部释放；
+- 不出现系统 Error launching app 弹窗。
+
+CI：
+
+- windows-latest 继续为必过；
+- 保留全部旧门禁；
+- 加入 test:model-accounting；
+- 不配置真实 Base URL；
+- 不配置真实 model ID；
+- 不配置 OPENAI_API_KEY；
+- 不配置 CONTENT_AI_API_KEY；
+- 不授权外部业务网络；
+- 使用动态项目卷临时目录；
+- 不固定盘符。
+
+若 GitHub 托管 CI 未实际运行，最终报告必须原样写：
+
+GitHub 托管 CI 尚未运行，不能声称已通过。
+
+
+三十五、Git 提交
+----------------
+
+全部通过后创建唯一一个 Issue 014 本地提交：
+
+feat(models): add execution cache and cost ledger
+
+要求：
+
+- parent 为本轮动态 BASELINE_HEAD；
+- 不与任何预置散列比较；
+- BASELINE_HEAD 之后只新增本轮一个提交；
+- 不 amend；
+- 不 rebase；
+- 不 squash；
+- 不 push；
+- 不创建 PR；
+- 不合并；
+- 把本指令 TXT 保留在仓库根目录并纳入提交；
+- 提交后工作树干净；
+- 最终 HEAD 等于新提交；
+- 最终报告可记录实际提交 ID 和 migration 规范化校验值；
+- 明确这些值只作本次结果，不是下一个任务的固定门禁。
+
+
+三十六、最终报告格式
+--------------------
+
+报告依次包含：
+
+1. 结论
+   - Issue 014 PASS/FAIL；
+   - 是否停止；
+   - 真实 key/API/model/search/image/Batch/费用状态。
+
+2. 动态基线与 Git
+   - 使用 git rev-parse；
+   - 不写机器绝对路径；
+   - 动态 BASELINE_HEAD；
+   - 最终 commit/parent；
+   - 分支、工作树、远端；
+   - push/PR/merge/rewrite；
+   - 未使用旧电脑路径、预置 HEAD、迁移 hash 或文件 SHA-256 作为门禁。
+
+3. 可迁移性与磁盘
+   - repo-relative；
+   - 项目卷动态 temp/cache/package；
+   - 系统盘空间是否影响；
+   - 临时目录清理；
+   - LF/CRLF/lone CR；
+   - 新文件无机器绝对路径。
+
+4. migration v7
+   - version/name；
+   - 新表/重建表；
+   - v1—v6 保持；
+   - 备份、回滚、完整性；
+   - canonical checksum 跨换行稳定；
+   - 实际校验值只作记录。
+
+5. ModelExecution 合同
+   - request/result；
+   - 固定执行顺序；
+   - CapabilityGuard；
+   - executionId 幂等；
+   - credential late resolution。
+
+6. 本地结果缓存
+   - cache key；
+   - canonicalization；
+   - policies；
+   - 可缓存/不可缓存类型；
+   - storage 和完整性；
+   - clear/GC。
+
+7. Singleflight 与恢复
+   - lease/heartbeat；
+   - concurrent same key；
+   - crash before/after send；
+   - AMBIGUOUS；
+   - at-least-once 边界。
+
+8. model_runs 与 usage
+   - 状态机；
+   - 有限字段；
+   - Provider Prompt Cache 区分；
+   - 无 raw content/secret。
+
+9. 精确金额与价格表
+   - micro-USD；
+   - decimal parser；
+   - provider-reported；
+   - user estimate；
+   - unknown/partial；
+   - 价格版本。
+
+10. 成本账本与预算
+    - append-only/idempotent；
+    - UTC month；
+    - 80/100；
+    - reservations；
+    - uncertain committed；
+    - unpriced unit policies；
+    - cache hit 不占预算。
+
+11. Issue 013 Probe 集成
+    - BYPASS；
+    - NONESSENTIAL；
+    - run/ledger/budget；
+    - 保持一次、串行、无重试。
+
+12. UI/IPC/Egress
+    - 任务中心；
+    - unknown 不显示 0；
+    - cache clear；
+    - strict IPC；
+    - 60/60 egress/accounting。
+
+13. 测试
+    - 21 道及任何额外门禁；
+    - model-accounting 文件数/测试数；
+    - 全量文件数/测试数；
+    - 失败/skip/todo/warning/vulnerability；
+    - 240/240。
+
+14. Windows/Electron/CI
+    - runtime 版本；
+    - source/package smoke；
+    - loopback/external；
+    - 进程、端口和临时目录清理；
+    - GitHub 托管 CI 的真实状态。
+
+15. 硬约束与范围
+    - ai_disclosure；
+    - copyright；
+    - 无平台动作；
+    - 无真实开发调用；
+    - 未进入 Issue 015 及以后。
+
+16. 下一步
+    - 只推荐 Issue 015：通用 SearchProvider；
+    - 不自动开始。
+
+
+三十七、停止条件
+----------------
+
+出现以下任一情况立即停止：
+
+- 除本指令外工作树有未知修改；
+- 语义基线不满足；
+- 事实来源缺失；
+- 必须依赖旧电脑路径、固定提交散列或固定文件 SHA 才能继续；
+- 必须删除用户文件解决磁盘空间；
+- 必须读取真实 credential 才能开发或验收；
+- 必须调用真实中转站才可通过测试；
+- 必须硬编码或联网抓取价格；
+- 必须用浮点或 REAL 做金额决策；
+- 必须把未知费用写成 0；
+- 必须把 Provider Prompt Cache 当本地结果缓存；
+- 必须缓存 search/tool/probe/refusal/error/partial/ambiguous；
+- 必须在外部调用期间持有长 SQLite 事务；
+- 无法对并发预算做原子预留；
+- ambiguous 调用需要自动重试；
+- 需要开放 essential 绕过；
+- 需要把 cache payload、prompt、output、credential 或 raw response 发给 renderer；
+- cache 清理无法限定在精确 managed path；
+- migration v1—v6 语义发生变化；
+- 非换行迁移修改被错误接受；
+- 需要新增 migration v8；
+- 需要放宽 Electron 安全设置；
+- 60 项 egress/accounting 不为全通过；
+- 既有硬约束回归；
+- test 需要 skip/todo；
+- audit 不为 0；
+- 需要扩大到 Issue 015 或后续。
+
+停止时保留证据，不 reset、不删除用户数据、不伪造 PASS。
+
+
+最终启动指令
+------------
+
+现在开始执行 M2 Issue 014。
+
+先使用 git rev-parse --show-toplevel 动态发现仓库根目录，完成语义基线、项目卷临时目录、
+实施计划和 240 项验收草案，再开发。不得绑定盘符、用户名、绝对路径、固定提交散列、
+迁移散列或指令文件 SHA-256。
+
+本轮 Codex 开发和全部测试只使用 Scripted Mock、127.0.0.1 loopback、synthetic
+credential、临时 userData 和临时 ProjectDataRoot；不得读取真实密钥，不得调用真实 API、
+模型、搜索、图片或 Batch，不得产生费用。
+
+必须把本地完整结果缓存与供应商 Prompt Cache 分开；未知价格和未知费用保持 NULL/UNKNOWN，
+不得显示或写成 0；金额决策只用精确整数 micro-USD；并发外部调用必须在发送前通过 SQLite
+原子预算预留。
+
+全部门禁通过后创建一个本地提交并报告，然后严格停止，不得进入 Issue 015。

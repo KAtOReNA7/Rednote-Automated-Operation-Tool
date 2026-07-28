@@ -77,6 +77,9 @@ jobs:
       - name: Run explicit provider capability probing suites
         run: npm run test:capabilities
 
+      - name: Run model execution cache and accounting suites
+        run: npm run test:model-accounting
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

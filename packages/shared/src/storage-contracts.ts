@@ -8,6 +8,7 @@ export const FILE_CATEGORIES = [
   'EXPORT',
   'BACKUP',
   'LOG',
+  'MODEL_RESULT_CACHE',
 ] as const;
 
 export type FileCategory = (typeof FILE_CATEGORIES)[number];
@@ -19,6 +20,7 @@ export const CATEGORY_DIRECTORY: Readonly<Record<FileCategory, string>> = Object
   GENERATED_IMAGE: 'generated-images',
   IMPORT: 'imports',
   LOG: 'logs',
+  MODEL_RESULT_CACHE: 'cache/model-results',
   PHOTO_ORIGINAL: 'photos/originals',
   PHOTO_PROCESSED: 'photos/processed',
   SOURCE_SNAPSHOT: 'sources/snapshots',

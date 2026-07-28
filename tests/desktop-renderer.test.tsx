@@ -20,11 +20,38 @@ const bridge: DesktopBridge = {
     ok: true,
     value: { available: true, requiresReauth: false, status: 'NOT_CONFIGURED' },
   }),
+  confirmModelCacheClear: async () => ({
+    ok: true,
+    value: { deletedFiles: 0, orphanFiles: 0, tombstonedEntries: 0 },
+  }),
   confirmDataRootSelection: async () => ({
     ok: true,
     value: {
       project: { displayPath: 'C:\\测试 数据', revision: 0, status: 'READY' },
       setupState: 'LOCAL_PROJECT_READY',
+    },
+  }),
+  createModelPriceSchedule: async (input) => ({
+    ok: true,
+    value: {
+      id: 'price-fixture',
+      modelId: input.modelId,
+      operationKind: input.operationKind,
+      protocolMode: input.protocolMode,
+      status: 'ACTIVE',
+      version: 1,
+    },
+  }),
+  createModelUnitPolicy: async (input) => ({
+    ok: true,
+    value: {
+      id: 'units-fixture',
+      maxExternalCallsMonthly: input.maxExternalCallsMonthly,
+      maxExternalCallsWeekly: input.maxExternalCallsWeekly,
+      scopeKind: input.scopeKind,
+      scopeValue: input.scopeValue,
+      status: 'ACTIVE',
+      version: 1,
     },
   }),
   exportDiagnosticReport: async (input) => ({
@@ -55,6 +82,27 @@ const bridge: DesktopBridge = {
       status: 'ready',
     },
   }),
+  getModelAccounting: async () => ({
+    ok: true,
+    value: {
+      billingMonth: '2026-07',
+      cacheBytes: 0,
+      cacheEntries: 0,
+      cacheHitCount: 0,
+      estimatedKnownMicroUsd: '0',
+      hardLimitMicroUsd: '100000000',
+      hardStop: false,
+      outstandingReservationMicroUsd: '0',
+      priceSchedules: [],
+      providerReportedMicroUsd: '0',
+      recentRuns: [],
+      uncertainReservationMicroUsd: '0',
+      unitPolicies: [],
+      unknownCostCallCount: 0,
+      warning: false,
+      warningLimitMicroUsd: '80000000',
+    },
+  }),
   getProviderCapabilityState: async () => ({
     ok: true,
     value: {
@@ -68,6 +116,7 @@ const bridge: DesktopBridge = {
   previewProviderCapabilityProbe: async () => ({
     ok: true,
     value: {
+      budgetCheck: 'UNIT_POLICY_READY',
       credentialBindingVersion: 0,
       expiresAt: '2099-01-01T00:00:00.000Z',
       feeEstimate: 'UNKNOWN',
@@ -76,6 +125,16 @@ const bridge: DesktopBridge = {
       requestCount: 1,
       settingsRevision: 0,
       startToken: 'a'.repeat(43),
+    },
+  }),
+  previewModelCacheClear: async () => ({
+    ok: true,
+    value: {
+      bytes: 0,
+      count: 0,
+      expiresAt: '2099-01-01T00:00:00.000Z',
+      outputTypes: [],
+      previewToken: 'a'.repeat(43),
     },
   }),
   startProviderCapabilityProbe: async () => ({

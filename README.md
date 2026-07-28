@@ -7,7 +7,7 @@
 面向 Windows 10/11 的本地优先、单用户推理小说内容生产与决策系统。
 
 [![Windows CI](https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg)](https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml)
-![Milestone](https://img.shields.io/badge/里程碑-M2%20Issue%20013%20已完成-2ea44f)
+![Milestone](https://img.shields.io/badge/里程碑-M2%20Issue%20014%20已完成-2ea44f)
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933)
 ![Electron](https://img.shields.io/badge/Electron-43.2.0-47848f)
 ![Platform](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)
@@ -21,7 +21,7 @@
 
 ## 当前开发状态
 
-**M0（Issue 001—005）、M1（Issue 006—011）和 M2 Issue 012—013 均已完成验收。**
+**M0（Issue 001—005）、M1（Issue 006—011）和 M2 Issue 012—014 均已完成验收。**
 
 | 里程碑 | 范围                                                       |   状态    |
 | ------ | ---------------------------------------------------------- | :-------: |
@@ -30,14 +30,14 @@
 | M2     | 供应商接口、能力探测、搜索、书库、研究、浏览器插件         | 🚧 进行中 |
 | M3—M6  | 内容生产、视觉、审批、导出、数据闭环、Windows 发布         | ⏳ 未开始 |
 
-截至目前已完成 Issue 001—013。下一项是
-**Issue 014：模型运行记录、缓存与成本账本**。能力探测只会在设置页经过显式预览和确认后
+截至目前已完成 Issue 001—014。下一项是 **Issue 015：通用 SearchProvider**，本仓库不会自动开始后续 Issue。
+能力探测只会在设置页经过显式预览、预算检查和确认后
 运行；安装、保存设置、迁移、启动、定时器和队列都不会自动访问模型服务。
 
 ### 已经具备
 
 - 安全的 Electron 43 + React 19 中文桌面壳，启用 context isolation、sandbox 和导航限制。
-- SQLite v1—v6 迁移、迁移前备份、失败回滚、STRICT 表、外键和 WAL。
+- SQLite v1—v7 迁移、迁移前备份、失败回滚、STRICT 表、外键和 WAL。
 - 支持暂停、取消、重试、租约和重启恢复的持久化本地任务队列。
 - 支持中文、空格路径和受控目录边界的本地文件仓库。
 - 本地设置向导、ProjectDataRoot、Windows 本机凭据保护和脱敏诊断。
@@ -46,6 +46,11 @@
   有限安全重试、独立协议 codec、可注入 HTTP transport 和零网络 Scripted Mock。
 - 设置页显式 CORE/FULL/CUSTOM 能力探测、短期单次启动 token、串行无重试 runner、保守
   三态分类、配置/凭据 stale、CapabilityGuard 和安全历史矩阵。
+- Provider-neutral `ModelExecutionService`、`executionId` 幂等、`cache-key-v1`、
+  文本/结构化/视觉/图片本地结果缓存、singleflight 和中断恢复语义。
+- 整数 micro-USD 追加式成本账本、版本化价格表、未定价单位政策、UTC 月预算、$80 预警、
+  $100 硬停止与发送前原子预留。
+- 任务中心成本/缓存摘要、严格 IPC、两阶段缓存清理；本地缓存与供应商缓存输入分别统计。
 - source 与 packaged Electron smoke、依赖审计、700+ 项自动化测试和 Windows CI。
 
 ### 尚未具备
@@ -113,6 +118,7 @@ npm run test:local-api
 npm run test:portability
 npm run test:providers
 npm run test:capabilities
+npm run test:model-accounting
 npm run test:electron-smoke
 npm run package:desktop
 npm run audit:dependencies
@@ -130,12 +136,13 @@ npm run test:packaged-smoke
 ```mermaid
 flowchart LR
     UI["React renderer"] -->|"窄 preload API"| IPC["Electron main / IPC"]
-    IPC --> DB["SQLite v1—v6"]
+    IPC --> DB["SQLite v1—v7"]
     IPC --> FS["ProjectDataRoot / 本地文件仓库"]
     IPC --> Queue["持久化任务队列"]
     IPC --> Settings["本机设置与凭据引用"]
     IPC --> API["127.0.0.1 本地 API"]
     IPC --> Probe["用户显式能力探测"]
+    IPC --> Accounting["模型运行 / 缓存 / 成本账本"]
     Probe --> Providers["供应商无关接口"]
     API -. "Issue 017 才实现业务" .-> Clipper["Chrome / Edge 插件"]
     Queue -. "后续真实 handler 才调用" .-> Providers
@@ -161,8 +168,8 @@ apps/
 packages/
   core/          领域枚举、规则、状态机与不可变约束
   db/            SQLite 连接、迁移和本地仓储
-  workflows/     持久化任务队列、恢复与 worker
-  storage/       ProjectDataRoot、本地文件和脱敏诊断存储
+  workflows/     持久化任务队列、恢复、worker 与模型执行/预算编排
+  storage/       ProjectDataRoot、本地文件、模型结果缓存和脱敏诊断存储
   settings/      非秘密设置、凭据引用与诊断合同
   local-api/     loopback HTTP、配对、认证、CORS 与限流
   shared/        renderer/preload/main 共享 DTO
@@ -203,12 +210,17 @@ tests/           领域、架构、SQLite、Electron、安全与回归测试
 - [本地 API 与插件认证](./docs/adr/0007-local-loopback-api-and-plugin-authentication.md)
 - [供应商无关模型接口](./docs/adr/0008-provider-neutral-model-interfaces.md)
 - [显式供应商能力探测](./docs/adr/0009-provider-capability-probing.md)
+- [模型执行缓存与成本账本](./docs/adr/0010-model-execution-cache-and-cost-ledger.md)
 - [Local API v1 合同](./docs/contracts/local-api-v1.md)
 - [Provider v1 合同](./docs/contracts/provider-v1.md)
 - [Provider Capabilities v1 合同](./docs/contracts/provider-capabilities-v1.md)
+- [Model Execution v1 合同](./docs/contracts/model-execution-v1.md)
+- [Model Accounting v1 合同](./docs/contracts/model-accounting-v1.md)
 - [Issue 011 验收映射](./docs/m1-issue011-acceptance-map.md)
 - [Issue 012 验收映射](./docs/m2-issue012-acceptance-map.md)
 - [Issue 013 验收映射](./docs/m2-issue013-acceptance-map.md)
+- [Issue 014 验收映射](./docs/m2-issue014-acceptance-map.md)
+- [Issue 014 外发矩阵](./docs/m2-issue014-egress-matrix.md)
 
 ## 开发约定
 

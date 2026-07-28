@@ -10,6 +10,13 @@ export {
 export { JobQueueService, JobQueueServiceError } from './queue/queue-service.js';
 export { JobRecoveryService } from './queue/recovery-service.js';
 export { JobWorker } from './queue/worker.js';
+export * from './model-execution/accounting.js';
+export * from './model-execution/cache-key.js';
+export * from './model-execution/canonical.js';
+export * from './model-execution/money.js';
+export * from './model-execution/service.js';
+export * from './model-execution/sqlite-persistence.js';
+export * from './model-execution/types.js';
 
 export type { BackoffPolicy, ExponentialBackoffOptions } from './queue/backoff.js';
 export type { QueueClock, QueueScheduler } from './queue/clock.js';

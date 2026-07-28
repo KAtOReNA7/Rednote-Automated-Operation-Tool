@@ -392,6 +392,121 @@ textarea:focus-visible {
   margin: 0 auto;
 }
 
+.accounting-layout {
+  display: grid;
+  gap: 16px;
+  max-width: 1180px;
+  margin: 0 auto;
+}
+
+.accounting-intro,
+.accounting-card {
+  border: 1px solid #293034;
+  border-radius: 14px;
+  background: #171c1f;
+  box-shadow: 0 12px 32px rgb(0 0 0 / 10%);
+}
+
+.accounting-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 28px 30px;
+  background: linear-gradient(120deg, rgb(163 111 80 / 12%), transparent 60%), #171c1f;
+}
+
+.accounting-intro h2,
+.accounting-card h3 {
+  margin: 6px 0 0;
+  color: #eee5d9;
+  font-family: Georgia, 'Songti SC', 'Microsoft YaHei', serif;
+  font-weight: 500;
+}
+
+.accounting-intro p:last-child,
+.accounting-card p {
+  margin: 8px 0 0;
+  color: #89918f;
+  font-size: 12px;
+}
+
+.budget-state {
+  padding: 8px 11px;
+  border: 1px solid #3d5a46;
+  border-radius: 999px;
+  color: #9ec4a6;
+  background: #152019;
+  font-size: 11px;
+}
+
+.budget-state--hard {
+  border-color: #784c45;
+  color: #e7bbb2;
+  background: #3e2926;
+}
+
+.accounting-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.accounting-metrics article {
+  display: grid;
+  gap: 8px;
+  min-height: 108px;
+  padding: 18px;
+  border: 1px solid #293034;
+  border-radius: 12px;
+  background: #171c1f;
+}
+
+.accounting-metrics span,
+.accounting-metrics small,
+.accounting-card small {
+  color: #78817f;
+  font-size: 10px;
+}
+
+.accounting-metrics strong {
+  color: #e8ded0;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.accounting-card {
+  display: grid;
+  gap: 16px;
+  padding: 24px;
+}
+
+.accounting-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.accounting-card code {
+  color: #d4d3cc;
+  font-family: 'Cascadia Code', Consolas, monospace;
+  font-size: 10px;
+}
+
+.accounting-list {
+  display: grid;
+  gap: 7px;
+  margin: 0;
+  padding-left: 20px;
+  color: #9da5a2;
+  font-size: 11px;
+}
+
+.accounting-card.danger-zone {
+  grid-template-columns: 1fr auto;
+  margin-top: 0;
+}
+
 .settings-intro,
 .wizard-step,
 .diagnostic-card,

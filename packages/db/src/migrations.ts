@@ -1502,6 +1502,488 @@ CREATE INDEX idx_provider_capability_entries_run
   ON provider_capability_entries(run_id);
 `;
 
+function optionalAsciiDecimal(column: string): string {
+  return `(
+    ${column} IS NULL OR (
+      length(${column}) BETWEEN 1 AND 48 AND
+      ${column} NOT GLOB '*[^0-9.]*' AND
+      ${column} NOT LIKE '.%' AND ${column} NOT LIKE '%.' AND
+      ${column} NOT LIKE '%..%' AND
+      (instr(${column}, '.') = 0 OR (
+        instr(substr(${column}, instr(${column}, '.') + 1), '.') = 0 AND
+        length(substr(${column}, instr(${column}, '.') + 1)) BETWEEN 1 AND 12
+      )) AND
+      (${column} = '0' OR ${column} LIKE '0.%' OR ${column} NOT LIKE '0%')
+    )
+  )`;
+}
+
+const MODEL_EXECUTION_CACHE_AND_COST_LEDGER = `
+CREATE TABLE model_runs_issue014_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128 AND id = trim(id)),
+  execution_id TEXT NOT NULL UNIQUE CHECK (
+    length(execution_id) BETWEEN 1 AND 128 AND execution_id = trim(execution_id)
+  ),
+  job_id TEXT CHECK (job_id IS NULL OR length(job_id) BETWEEN 1 AND 128),
+  task_kind TEXT NOT NULL CHECK (length(task_kind) BETWEEN 1 AND 64),
+  model_role TEXT NOT NULL CHECK (length(model_role) BETWEEN 1 AND 64),
+  model_slot TEXT NOT NULL CHECK (length(model_slot) BETWEEN 1 AND 64),
+  provider_config_fingerprint TEXT NOT NULL CHECK (
+    length(provider_config_fingerprint) = 64 AND
+    provider_config_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  model_id TEXT NOT NULL CHECK (length(model_id) BETWEEN 1 AND 256),
+  protocol_mode TEXT NOT NULL CHECK (protocol_mode IN (
+    'RESPONSES', 'CHAT_COMPLETIONS', 'IMAGES_GENERATIONS', 'MOCK', 'LEGACY'
+  )),
+  prompt_template_id TEXT NOT NULL CHECK (length(prompt_template_id) BETWEEN 1 AND 128),
+  prompt_version INTEGER NOT NULL CHECK (typeof(prompt_version) = 'integer' AND prompt_version > 0),
+  prompt_content_hash TEXT NOT NULL CHECK (length(prompt_content_hash) BETWEEN 1 AND 128),
+  input_hash TEXT NOT NULL CHECK (length(input_hash) BETWEEN 1 AND 128),
+  cache_key TEXT NOT NULL CHECK (
+    length(cache_key) = 64 AND cache_key NOT GLOB '*[^0-9a-f]*'
+  ),
+  cache_entry_id TEXT
+    REFERENCES model_cache_entries(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  output_hash TEXT CHECK (output_hash IS NULL OR length(output_hash) = 64),
+  local_cache_hit INTEGER NOT NULL DEFAULT 0 CHECK (local_cache_hit IN (0, 1)),
+  cache_policy TEXT NOT NULL CHECK (cache_policy IN (
+    'READ_WRITE', 'READ_ONLY', 'BYPASS', 'REFRESH', 'LEGACY'
+  )),
+  status TEXT NOT NULL CHECK (status IN (
+    'PLANNED', 'BUDGET_BLOCKED', 'CAPABILITY_BLOCKED', 'CACHE_HIT', 'IN_FLIGHT',
+    'SUCCEEDED', 'FAILED', 'CANCELLED', 'AMBIGUOUS', 'CORRUPT'
+  )),
+  outcome_certainty TEXT NOT NULL CHECK (outcome_certainty IN (
+    'NOT_SENT', 'REJECTED_BEFORE_EXECUTION', 'MAY_HAVE_EXECUTED', 'COMPLETED_INVALID_OUTPUT'
+  )),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(external_request_count) = 'integer' AND external_request_count BETWEEN 0 AND 32
+  ),
+  usage_input_tokens INTEGER CHECK (usage_input_tokens IS NULL OR usage_input_tokens >= 0),
+  usage_output_tokens INTEGER CHECK (usage_output_tokens IS NULL OR usage_output_tokens >= 0),
+  usage_total_tokens INTEGER CHECK (usage_total_tokens IS NULL OR usage_total_tokens >= 0),
+  usage_cached_input_tokens INTEGER CHECK (
+    usage_cached_input_tokens IS NULL OR usage_cached_input_tokens >= 0
+  ),
+  usage_cache_write_tokens INTEGER CHECK (
+    usage_cache_write_tokens IS NULL OR usage_cache_write_tokens >= 0
+  ),
+  usage_reasoning_tokens INTEGER CHECK (
+    usage_reasoning_tokens IS NULL OR usage_reasoning_tokens >= 0
+  ),
+  usage_images INTEGER CHECK (usage_images IS NULL OR usage_images >= 0),
+  usage_image_generation_calls INTEGER CHECK (
+    usage_image_generation_calls IS NULL OR usage_image_generation_calls >= 0
+  ),
+  usage_web_search_calls INTEGER CHECK (
+    usage_web_search_calls IS NULL OR usage_web_search_calls >= 0
+  ),
+  usage_tool_calls INTEGER CHECK (usage_tool_calls IS NULL OR usage_tool_calls >= 0),
+  cost_state TEXT NOT NULL CHECK (cost_state IN (
+    'PROVIDER_REPORTED_USD', 'USER_PRICE_TABLE_ESTIMATE', 'UNPRICED_USAGE',
+    'UNKNOWN_POSSIBLY_INCURRED', 'NOT_INCURRED'
+  )),
+  cost_source TEXT CHECK (cost_source IS NULL OR length(cost_source) BETWEEN 1 AND 64),
+  cost_amount_microusd INTEGER CHECK (
+    cost_amount_microusd IS NULL OR
+    (typeof(cost_amount_microusd) = 'integer' AND cost_amount_microusd >= 0)
+  ),
+  price_schedule_version INTEGER CHECK (
+    price_schedule_version IS NULL OR price_schedule_version > 0
+  ),
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 96
+  ),
+  duration_ms INTEGER CHECK (duration_ms IS NULL OR duration_ms >= 0),
+  started_at TEXT NOT NULL CHECK (started_at ${UTC_REQUIRED}),
+  finished_at TEXT CHECK (finished_at ${UTC_OPTIONAL} finished_at ${UTC_REQUIRED}),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  CHECK (
+    (status IN ('PLANNED', 'IN_FLIGHT') AND finished_at IS NULL) OR
+    (status NOT IN ('PLANNED', 'IN_FLIGHT') AND finished_at IS NOT NULL)
+  )
+) STRICT;
+
+INSERT INTO model_runs_issue014_new (
+  id, execution_id, task_kind, model_role, model_slot, provider_config_fingerprint,
+  model_id, protocol_mode, prompt_template_id, prompt_version, prompt_content_hash,
+  input_hash, cache_key, output_hash, local_cache_hit, cache_policy, status,
+  outcome_certainty, external_request_count, usage_input_tokens, usage_output_tokens,
+  usage_images, cost_state, cost_source, cost_amount_microusd, started_at, finished_at,
+  created_at, updated_at, revision
+)
+SELECT
+  id,
+  'legacy:' || id,
+  'LEGACY',
+  substr(role, 1, 64),
+  'LEGACY',
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  substr(model, 1, 256),
+  'LEGACY',
+  'legacy',
+  1,
+  substr(input_hash, 1, 128),
+  substr(input_hash, 1, 128),
+  lower(hex(randomblob(32))),
+  CASE WHEN output_hash IS NULL THEN NULL ELSE substr(output_hash, 1, 64) END,
+  cached,
+  'LEGACY',
+  CASE
+    WHEN completed_at IS NULL THEN 'AMBIGUOUS'
+    WHEN status IN ('CANCELLED', 'FAILED', 'SUCCEEDED') THEN status
+    ELSE 'SUCCEEDED'
+  END,
+  CASE WHEN completed_at IS NULL THEN 'MAY_HAVE_EXECUTED' ELSE 'COMPLETED_INVALID_OUTPUT' END,
+  CASE WHEN cached = 1 THEN 0 ELSE 1 END,
+  input_tokens,
+  output_tokens,
+  image_count,
+  CASE
+    WHEN cached = 1 THEN 'NOT_INCURRED'
+    WHEN estimated_cost_usd IS NULL THEN 'UNPRICED_USAGE'
+    ELSE 'USER_PRICE_TABLE_ESTIMATE'
+  END,
+  CASE WHEN estimated_cost_usd IS NULL THEN NULL ELSE 'LEGACY_ESTIMATE' END,
+  CASE
+    WHEN estimated_cost_usd IS NULL THEN NULL
+    ELSE CAST(round(estimated_cost_usd * 1000000.0) AS INTEGER)
+  END,
+  started_at,
+  completed_at,
+  started_at,
+  coalesce(completed_at, started_at),
+  0
+FROM model_runs;
+
+CREATE TABLE model_cache_entries (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128),
+  cache_key TEXT NOT NULL UNIQUE CHECK (
+    length(cache_key) = 64 AND cache_key NOT GLOB '*[^0-9a-f]*'
+  ),
+  status TEXT NOT NULL CHECK (status IN (
+    'IN_FLIGHT', 'READY', 'CORRUPT', 'EVICTED', 'AMBIGUOUS'
+  )),
+  output_type TEXT CHECK (output_type IS NULL OR output_type IN (
+    'TEXT', 'STRUCTURED', 'VISION', 'IMAGE'
+  )),
+  managed_relative_path TEXT CHECK (
+    managed_relative_path IS NULL OR (
+      length(managed_relative_path) BETWEEN 86 AND 1024 AND
+      managed_relative_path GLOB 'cache/model-results/?*' AND
+      managed_relative_path NOT LIKE '/%' AND
+      managed_relative_path NOT LIKE '%\\%' AND
+      managed_relative_path NOT LIKE '%:%' AND
+      ('/' || managed_relative_path || '/') NOT GLOB '*/./*' AND
+      ('/' || managed_relative_path || '/') NOT GLOB '*/../*'
+    )
+  ),
+  content_hash TEXT CHECK (
+    content_hash IS NULL OR
+    (length(content_hash) = 64 AND content_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  output_hash TEXT CHECK (
+    output_hash IS NULL OR
+    (length(output_hash) = 64 AND output_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  size_bytes INTEGER CHECK (
+    size_bytes IS NULL OR (typeof(size_bytes) = 'integer' AND size_bytes BETWEEN 1 AND 16777216)
+  ),
+  format_version INTEGER NOT NULL DEFAULT 1 CHECK (format_version = 1),
+  owner_token_hash TEXT CHECK (
+    owner_token_hash IS NULL OR
+    (length(owner_token_hash) = 64 AND owner_token_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  lease_expires_at TEXT CHECK (
+    lease_expires_at ${UTC_OPTIONAL} lease_expires_at ${UTC_REQUIRED}
+  ),
+  last_heartbeat_at TEXT CHECK (
+    last_heartbeat_at ${UTC_OPTIONAL} last_heartbeat_at ${UTC_REQUIRED}
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  CHECK (
+    (status = 'IN_FLIGHT' AND owner_token_hash IS NOT NULL AND lease_expires_at IS NOT NULL) OR
+    (status <> 'IN_FLIGHT' AND owner_token_hash IS NULL AND lease_expires_at IS NULL)
+  ),
+  CHECK (
+    (status = 'READY' AND managed_relative_path IS NOT NULL AND content_hash IS NOT NULL AND
+      output_hash IS NOT NULL AND size_bytes IS NOT NULL AND output_type IS NOT NULL) OR
+    status <> 'READY'
+  )
+) STRICT;
+
+CREATE TABLE model_price_schedules (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128),
+  provider_config_fingerprint TEXT NOT NULL CHECK (
+    length(provider_config_fingerprint) = 64 AND
+    provider_config_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  model_id TEXT NOT NULL CHECK (length(model_id) BETWEEN 1 AND 256),
+  operation_kind TEXT NOT NULL CHECK (length(operation_kind) BETWEEN 1 AND 64),
+  protocol_mode TEXT CHECK (protocol_mode IS NULL OR length(protocol_mode) BETWEEN 1 AND 32),
+  version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+  currency TEXT NOT NULL DEFAULT 'USD' CHECK (currency = 'USD'),
+  usage_semantics_version TEXT NOT NULL CHECK (
+    length(usage_semantics_version) BETWEEN 1 AND 64
+  ),
+  input_tokens_include_cached INTEGER NOT NULL CHECK (
+    input_tokens_include_cached IN (0, 1)
+  ),
+  input_per_million_usd TEXT,
+  output_per_million_usd TEXT,
+  cached_input_per_million_usd TEXT,
+  cache_write_per_million_usd TEXT,
+  image_usd TEXT,
+  image_generation_call_usd TEXT,
+  web_search_call_usd TEXT,
+  tool_unit_usd TEXT,
+  call_usd TEXT,
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
+  effective_at TEXT NOT NULL CHECK (effective_at ${UTC_REQUIRED}),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  UNIQUE(provider_config_fingerprint, model_id, operation_kind, protocol_mode, version),
+  CHECK (
+    ${optionalAsciiDecimal('input_per_million_usd')} AND
+    ${optionalAsciiDecimal('output_per_million_usd')} AND
+    ${optionalAsciiDecimal('cached_input_per_million_usd')} AND
+    ${optionalAsciiDecimal('cache_write_per_million_usd')} AND
+    ${optionalAsciiDecimal('image_usd')} AND
+    ${optionalAsciiDecimal('image_generation_call_usd')} AND
+    ${optionalAsciiDecimal('web_search_call_usd')} AND
+    ${optionalAsciiDecimal('tool_unit_usd')} AND
+    ${optionalAsciiDecimal('call_usd')}
+  )
+) STRICT;
+
+CREATE TRIGGER model_price_schedule_immutable
+BEFORE UPDATE ON model_price_schedules
+WHEN
+  NEW.provider_config_fingerprint <> OLD.provider_config_fingerprint OR
+  NEW.model_id <> OLD.model_id OR
+  NEW.operation_kind <> OLD.operation_kind OR
+  NEW.protocol_mode IS NOT OLD.protocol_mode OR
+  NEW.version <> OLD.version OR
+  NEW.currency <> OLD.currency OR
+  NEW.usage_semantics_version <> OLD.usage_semantics_version OR
+  NEW.input_tokens_include_cached <> OLD.input_tokens_include_cached OR
+  NEW.input_per_million_usd IS NOT OLD.input_per_million_usd OR
+  NEW.output_per_million_usd IS NOT OLD.output_per_million_usd OR
+  NEW.cached_input_per_million_usd IS NOT OLD.cached_input_per_million_usd OR
+  NEW.cache_write_per_million_usd IS NOT OLD.cache_write_per_million_usd OR
+  NEW.image_usd IS NOT OLD.image_usd OR
+  NEW.image_generation_call_usd IS NOT OLD.image_generation_call_usd OR
+  NEW.web_search_call_usd IS NOT OLD.web_search_call_usd OR
+  NEW.tool_unit_usd IS NOT OLD.tool_unit_usd OR
+  NEW.call_usd IS NOT OLD.call_usd OR
+  NEW.effective_at <> OLD.effective_at OR
+  NEW.created_at <> OLD.created_at
+BEGIN
+  SELECT RAISE(ABORT, 'model price schedule versions are immutable');
+END;
+
+CREATE TABLE model_unit_budget_policies (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128),
+  scope_kind TEXT NOT NULL CHECK (scope_kind IN ('GLOBAL', 'TASK_KIND', 'MODEL_ROLE')),
+  scope_value TEXT CHECK (
+    (scope_kind = 'GLOBAL' AND scope_value IS NULL) OR
+    (scope_kind <> 'GLOBAL' AND length(scope_value) BETWEEN 1 AND 64)
+  ),
+  version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+  max_external_calls_monthly INTEGER NOT NULL CHECK (max_external_calls_monthly > 0),
+  max_external_calls_weekly INTEGER NOT NULL CHECK (max_external_calls_weekly > 0),
+  max_input_tokens INTEGER CHECK (max_input_tokens IS NULL OR max_input_tokens >= 0),
+  max_output_tokens INTEGER CHECK (max_output_tokens IS NULL OR max_output_tokens >= 0),
+  max_images INTEGER CHECK (max_images IS NULL OR max_images >= 0),
+  max_image_generation_calls INTEGER CHECK (
+    max_image_generation_calls IS NULL OR max_image_generation_calls >= 0
+  ),
+  max_web_search_calls INTEGER CHECK (
+    max_web_search_calls IS NULL OR max_web_search_calls >= 0
+  ),
+  max_tool_calls INTEGER CHECK (max_tool_calls IS NULL OR max_tool_calls >= 0),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (status IN ('ACTIVE', 'INACTIVE')),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  UNIQUE(scope_kind, scope_value, version)
+) STRICT;
+
+CREATE TRIGGER model_unit_budget_policy_immutable
+BEFORE UPDATE ON model_unit_budget_policies
+WHEN
+  NEW.scope_kind <> OLD.scope_kind OR
+  NEW.scope_value IS NOT OLD.scope_value OR
+  NEW.version <> OLD.version OR
+  NEW.max_external_calls_monthly <> OLD.max_external_calls_monthly OR
+  NEW.max_external_calls_weekly <> OLD.max_external_calls_weekly OR
+  NEW.max_input_tokens IS NOT OLD.max_input_tokens OR
+  NEW.max_output_tokens IS NOT OLD.max_output_tokens OR
+  NEW.max_images IS NOT OLD.max_images OR
+  NEW.max_image_generation_calls IS NOT OLD.max_image_generation_calls OR
+  NEW.max_web_search_calls IS NOT OLD.max_web_search_calls OR
+  NEW.max_tool_calls IS NOT OLD.max_tool_calls OR
+  NEW.created_at <> OLD.created_at
+BEGIN
+  SELECT RAISE(ABORT, 'model unit policy versions are immutable');
+END;
+
+CREATE TABLE model_budget_reservations (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128),
+  execution_id TEXT NOT NULL UNIQUE
+    REFERENCES model_runs_issue014_new(execution_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  model_run_id TEXT NOT NULL UNIQUE
+    REFERENCES model_runs_issue014_new(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  billing_month TEXT NOT NULL CHECK (billing_month GLOB '????-??'),
+  week_key TEXT NOT NULL CHECK (week_key GLOB '????-W??'),
+  task_kind TEXT NOT NULL CHECK (length(task_kind) BETWEEN 1 AND 64),
+  status TEXT NOT NULL CHECK (status IN (
+    'ACTIVE', 'SETTLED', 'RELEASED_BEFORE_SEND', 'UNCERTAIN_COMMITTED',
+    'EXPIRED_SAFE', 'CANCELLED_BEFORE_SEND'
+  )),
+  reserved_amount_microusd INTEGER CHECK (
+    reserved_amount_microusd IS NULL OR
+    (typeof(reserved_amount_microusd) = 'integer' AND reserved_amount_microusd >= 0)
+  ),
+  unit_demand_json TEXT NOT NULL CHECK (
+    json_valid(unit_demand_json) AND length(unit_demand_json) BETWEEN 2 AND 8192
+  ),
+  sent_state TEXT NOT NULL CHECK (sent_state IN ('NOT_SENT', 'SENT', 'UNKNOWN')),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  settled_at TEXT CHECK (settled_at ${UTC_OPTIONAL} settled_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0)
+) STRICT;
+
+CREATE TABLE cost_ledger_issue014_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 128),
+  settlement_identity TEXT NOT NULL UNIQUE CHECK (
+    length(settlement_identity) BETWEEN 1 AND 160
+  ),
+  execution_id TEXT NOT NULL UNIQUE
+    REFERENCES model_runs_issue014_new(execution_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  model_run_id TEXT NOT NULL UNIQUE
+    REFERENCES model_runs_issue014_new(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  entry_kind TEXT NOT NULL DEFAULT 'SETTLEMENT' CHECK (
+    entry_kind IN ('SETTLEMENT', 'ADJUSTMENT')
+  ),
+  adjustment_of_id TEXT
+    REFERENCES cost_ledger_issue014_new(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  adjustment_reason TEXT CHECK (
+    adjustment_reason IS NULL OR adjustment_reason IN ('CORRECTION', 'PROVIDER_CREDIT')
+  ),
+  billing_month TEXT NOT NULL CHECK (billing_month GLOB '????-??'),
+  provider_config_fingerprint TEXT NOT NULL CHECK (
+    length(provider_config_fingerprint) = 64 AND
+    provider_config_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  model_id TEXT NOT NULL CHECK (length(model_id) BETWEEN 1 AND 256),
+  operation_kind TEXT NOT NULL CHECK (length(operation_kind) BETWEEN 1 AND 64),
+  cost_state TEXT NOT NULL CHECK (cost_state IN (
+    'PROVIDER_REPORTED_USD', 'USER_PRICE_TABLE_ESTIMATE', 'UNPRICED_USAGE',
+    'UNKNOWN_POSSIBLY_INCURRED'
+  )),
+  cost_source TEXT NOT NULL CHECK (length(cost_source) BETWEEN 1 AND 64),
+  amount_microusd INTEGER CHECK (
+    amount_microusd IS NULL OR
+    (typeof(amount_microusd) = 'integer' AND amount_microusd >= 0)
+  ),
+  comparison_estimate_microusd INTEGER CHECK (
+    comparison_estimate_microusd IS NULL OR
+    (typeof(comparison_estimate_microusd) = 'integer' AND comparison_estimate_microusd >= 0)
+  ),
+  price_schedule_id TEXT
+    REFERENCES model_price_schedules(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  price_schedule_version INTEGER CHECK (
+    price_schedule_version IS NULL OR price_schedule_version > 0
+  ),
+  usage_summary_json TEXT NOT NULL CHECK (
+    json_valid(usage_summary_json) AND length(usage_summary_json) BETWEEN 2 AND 8192
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  CHECK (
+    (entry_kind = 'SETTLEMENT' AND adjustment_of_id IS NULL AND adjustment_reason IS NULL) OR
+    (entry_kind = 'ADJUSTMENT' AND adjustment_of_id IS NOT NULL AND adjustment_reason IS NOT NULL)
+  ),
+  CHECK (
+    (cost_state IN ('UNPRICED_USAGE', 'UNKNOWN_POSSIBLY_INCURRED') AND amount_microusd IS NULL) OR
+    (cost_state NOT IN ('UNPRICED_USAGE', 'UNKNOWN_POSSIBLY_INCURRED') AND amount_microusd IS NOT NULL)
+  )
+) STRICT;
+
+INSERT INTO cost_ledger_issue014_new (
+  id, settlement_identity, execution_id, model_run_id, billing_month,
+  provider_config_fingerprint, model_id, operation_kind, cost_state, cost_source,
+  amount_microusd, usage_summary_json, created_at
+)
+SELECT
+  ledger.id,
+  'legacy:' || ledger.id,
+  'legacy:' || ledger.model_run_id,
+  ledger.model_run_id,
+  ledger.billing_month,
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  substr(runs.model, 1, 256),
+  'LEGACY',
+  'USER_PRICE_TABLE_ESTIMATE',
+  'LEGACY_ESTIMATE',
+  CAST(round(ledger.amount_usd * 1000000.0) AS INTEGER),
+  ledger.token_or_call_units_json,
+  ledger.created_at
+FROM cost_ledger AS ledger
+JOIN model_runs AS runs ON runs.id = ledger.model_run_id;
+
+DROP TABLE cost_ledger;
+DROP TABLE model_runs;
+ALTER TABLE model_runs_issue014_new RENAME TO model_runs;
+ALTER TABLE model_budget_reservations RENAME TO model_budget_reservations_issue014_tmp;
+ALTER TABLE model_budget_reservations_issue014_tmp RENAME TO model_budget_reservations;
+ALTER TABLE cost_ledger_issue014_new RENAME TO cost_ledger;
+
+CREATE INDEX idx_model_runs_recent ON model_runs(created_at DESC, id DESC);
+CREATE INDEX idx_model_runs_billing ON model_runs(cost_state, created_at);
+CREATE INDEX idx_model_runs_cache_key ON model_runs(cache_key, status);
+CREATE INDEX idx_model_runs_cache_entry ON model_runs(cache_entry_id);
+CREATE INDEX idx_model_runs_job ON model_runs(job_id);
+CREATE INDEX idx_model_cache_status_updated ON model_cache_entries(status, updated_at);
+CREATE INDEX idx_model_cache_lease ON model_cache_entries(status, lease_expires_at);
+CREATE INDEX idx_model_cache_managed_path ON model_cache_entries(managed_relative_path);
+CREATE INDEX idx_model_reservations_month_status
+  ON model_budget_reservations(billing_month, status);
+CREATE INDEX idx_model_reservations_week_status
+  ON model_budget_reservations(week_key, status);
+CREATE INDEX idx_model_reservations_task_status
+  ON model_budget_reservations(task_kind, status);
+CREATE INDEX idx_model_price_lookup
+  ON model_price_schedules(
+    provider_config_fingerprint, model_id, operation_kind, protocol_mode, status, version DESC
+  );
+CREATE INDEX idx_model_unit_policy_lookup
+  ON model_unit_budget_policies(scope_kind, scope_value, status, version DESC);
+CREATE INDEX idx_cost_ledger_month_state
+  ON cost_ledger(billing_month, cost_state, created_at);
+CREATE INDEX idx_cost_ledger_provider_model
+  ON cost_ledger(provider_config_fingerprint, model_id, operation_kind);
+CREATE INDEX idx_cost_ledger_price_schedule ON cost_ledger(price_schedule_id);
+CREATE INDEX idx_cost_ledger_adjustment ON cost_ledger(adjustment_of_id);
+
+CREATE TRIGGER cost_ledger_append_only_update
+BEFORE UPDATE ON cost_ledger
+BEGIN
+  SELECT RAISE(ABORT, 'cost ledger is append-only');
+END;
+
+CREATE TRIGGER cost_ledger_append_only_delete
+BEFORE DELETE ON cost_ledger
+BEGIN
+  SELECT RAISE(ABORT, 'cost ledger is append-only');
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -1533,5 +2015,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'provider_capability_probing',
     sql: PROVIDER_CAPABILITY_PROBING,
     version: 6,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'model_execution_cache_and_cost_ledger',
+    sql: MODEL_EXECUTION_CACHE_AND_COST_LEDGER,
+    version: 7,
   }),
 ]);

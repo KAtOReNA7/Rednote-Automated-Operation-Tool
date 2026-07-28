@@ -321,11 +321,19 @@ async function startApplication(): Promise<void> {
           });
           await closeRuntime();
           app.exit(ok ? 0 : 4);
-        } catch {
+        } catch (error: unknown) {
           await closeRuntime().catch(() => undefined);
           if (!smokeReportWritten) {
             writeSmokeReport(smokeOutputPath, {
+              ...(error instanceof SettingsError && error.context !== undefined
+                ? { context: error.context }
+                : {}),
               error: 'STORAGE_SMOKE_FAILED',
+              errorCode:
+                error instanceof Error && 'code' in error && typeof error.code === 'string'
+                  ? error.code
+                  : 'NONE',
+              errorName: error instanceof Error ? error.name : 'UNKNOWN',
               ok: false,
             });
           }

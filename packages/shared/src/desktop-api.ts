@@ -37,6 +37,11 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getSetupState: 'settings:get-setup-state',
   getSettings: 'settings:get-settings',
   getProviderCapabilityState: 'providers:get-capability-state',
+  getModelAccounting: 'models:get-accounting',
+  previewModelCacheClear: 'models:preview-cache-clear',
+  confirmModelCacheClear: 'models:confirm-cache-clear',
+  createModelPriceSchedule: 'models:create-price-schedule',
+  createModelUnitPolicy: 'models:create-unit-policy',
   previewProviderCapabilityProbe: 'providers:preview-capability-probe',
   startProviderCapabilityProbe: 'providers:start-capability-probe',
   getProviderCapabilityProbeProgress: 'providers:get-capability-probe-progress',
@@ -76,6 +81,11 @@ export interface DesktopError {
     | 'FOUNDATION_UNAVAILABLE'
     | 'INTERNAL_ERROR'
     | 'INVALID_REQUEST'
+    | 'MODEL_ACCOUNTING_INVALID_REQUEST'
+    | 'MODEL_ACCOUNTING_STALE'
+    | 'MODEL_CACHE_CLEAR_INVALID'
+    | 'MODEL_CACHE_CLEAR_STALE'
+    | 'BUDGET_UNPRICED_LIMIT_REQUIRED'
     | 'PROBE_ALREADY_RUNNING'
     | 'PROBE_INVALID_REQUEST'
     | 'PROBE_NOT_RUNNING'
@@ -204,6 +214,7 @@ export interface PreviewProviderCapabilityProbeInput {
 }
 
 export interface ProviderCapabilityProbePreview {
+  readonly budgetCheck: 'UNIT_POLICY_READY' | 'UNIT_POLICY_REQUIRED';
   readonly credentialBindingVersion: number;
   readonly expiresAt: string;
   readonly feeEstimate: 'UNKNOWN';
@@ -240,9 +251,117 @@ export interface ProviderCapabilityProbeProgressView {
   readonly status: ProbeRunStatus;
 }
 
+export interface ModelAccountingRunView {
+  readonly costAmountMicroUsd: string | null;
+  readonly costState: string;
+  readonly executionId: string;
+  readonly externalRequestCount: number;
+  readonly localCacheHit: boolean;
+  readonly modelId: string;
+  readonly modelSlot: string;
+  readonly protocolMode: string;
+  readonly stableErrorCode: string | null;
+  readonly status: string;
+  readonly taskKind: string;
+}
+
+export interface ModelPriceScheduleView {
+  readonly id: string;
+  readonly modelId: string;
+  readonly operationKind: string;
+  readonly protocolMode: string | null;
+  readonly status: 'ACTIVE' | 'INACTIVE';
+  readonly version: number;
+}
+
+export interface ModelUnitPolicyView {
+  readonly id: string;
+  readonly maxExternalCallsMonthly: number;
+  readonly maxExternalCallsWeekly: number;
+  readonly scopeKind: 'GLOBAL' | 'MODEL_ROLE' | 'TASK_KIND';
+  readonly scopeValue: string | null;
+  readonly status: 'ACTIVE' | 'INACTIVE';
+  readonly version: number;
+}
+
+export interface ModelAccountingView {
+  readonly billingMonth: string;
+  readonly cacheBytes: number;
+  readonly cacheEntries: number;
+  readonly cacheHitCount: number;
+  readonly estimatedKnownMicroUsd: string;
+  readonly hardLimitMicroUsd: string;
+  readonly hardStop: boolean;
+  readonly outstandingReservationMicroUsd: string;
+  readonly priceSchedules: readonly ModelPriceScheduleView[];
+  readonly providerReportedMicroUsd: string;
+  readonly recentRuns: readonly ModelAccountingRunView[];
+  readonly uncertainReservationMicroUsd: string;
+  readonly unitPolicies: readonly ModelUnitPolicyView[];
+  readonly unknownCostCallCount: number;
+  readonly warning: boolean;
+  readonly warningLimitMicroUsd: string;
+}
+
+export interface ModelCacheClearPreview {
+  readonly bytes: number;
+  readonly count: number;
+  readonly expiresAt: string;
+  readonly outputTypes: readonly string[];
+  readonly previewToken: string;
+}
+
+export interface ConfirmModelCacheClearInput {
+  readonly confirmation: 'CLEAR_MODEL_RESULT_CACHE';
+  readonly expectedBytes: number;
+  readonly expectedCount: number;
+  readonly previewToken: string;
+}
+
+export interface ConfirmModelCacheClearResult {
+  readonly deletedFiles: number;
+  readonly orphanFiles: number;
+  readonly tombstonedEntries: number;
+}
+
+export interface CreateModelPriceScheduleInput {
+  readonly cachedInputPerMillionUsd: string | null;
+  readonly cacheWritePerMillionUsd: string | null;
+  readonly callUsd: string | null;
+  readonly expectedSettingsRevision: number;
+  readonly imageGenerationCallUsd: string | null;
+  readonly imageUsd: string | null;
+  readonly inputPerMillionUsd: string | null;
+  readonly inputTokensIncludeCachedInput: boolean;
+  readonly modelId: string;
+  readonly operationKind: string;
+  readonly outputPerMillionUsd: string | null;
+  readonly protocolMode: string | null;
+  readonly searchCallUsd: string | null;
+  readonly toolUnitUsd: string | null;
+  readonly usageSemanticsVersion: string;
+}
+
+export interface CreateModelUnitPolicyInput {
+  readonly expectedSettingsRevision: number;
+  readonly maxExternalCallsMonthly: number;
+  readonly maxExternalCallsWeekly: number;
+  readonly maxImageGenerationCalls: number | null;
+  readonly maxImages: number | null;
+  readonly maxInputTokens: number | null;
+  readonly maxOutputTokens: number | null;
+  readonly maxToolCalls: number | null;
+  readonly maxWebSearchCalls: number | null;
+  readonly scopeKind: 'GLOBAL' | 'MODEL_ROLE' | 'TASK_KIND';
+  readonly scopeValue: string | null;
+}
+
 export interface DesktopBridge {
   buildDiagnosticPreview(): Promise<DesktopResult<DiagnosticPreview>>;
   clearCredential(input: ClearCredentialInput): Promise<DesktopResult<CredentialStatusView>>;
+  confirmModelCacheClear(
+    input: ConfirmModelCacheClearInput,
+  ): Promise<DesktopResult<ConfirmModelCacheClearResult>>;
   confirmDataRootSelection(
     input: ConfirmDataRootSelectionInput,
   ): Promise<DesktopResult<SetupStateView>>;
@@ -254,6 +373,7 @@ export interface DesktopBridge {
     input: GetCredentialStatusInput,
   ): Promise<DesktopResult<CredentialStatusView>>;
   getFoundationHealth(): Promise<DesktopResult<FoundationHealth>>;
+  getModelAccounting(): Promise<DesktopResult<ModelAccountingView>>;
   getProviderCapabilityState(): Promise<DesktopResult<ProviderCapabilityStateView>>;
   previewProviderCapabilityProbe(
     input: PreviewProviderCapabilityProbeInput,
@@ -273,6 +393,13 @@ export interface DesktopBridge {
   getSetupState(): Promise<DesktopResult<SetupStateView>>;
   getWindowState(): Promise<DesktopResult<WindowState>>;
   listLocalApiClients(): Promise<DesktopResult<readonly LocalApiClientView[]>>;
+  previewModelCacheClear(): Promise<DesktopResult<ModelCacheClearPreview>>;
+  createModelPriceSchedule(
+    input: CreateModelPriceScheduleInput,
+  ): Promise<DesktopResult<ModelPriceScheduleView>>;
+  createModelUnitPolicy(
+    input: CreateModelUnitPolicyInput,
+  ): Promise<DesktopResult<ModelUnitPolicyView>>;
   selectDataRoot(): Promise<DesktopResult<DataRootSelection | null>>;
   setCredential(input: SetCredentialInput): Promise<DesktopResult<CredentialStatusView>>;
   startLocalApiPairing(): Promise<DesktopResult<PairingView>>;

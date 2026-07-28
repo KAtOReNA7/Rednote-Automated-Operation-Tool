@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 
 import { NAVIGATION_ITEMS, resolveRoute } from './routes.js';
+import { ModelAccountingCenter } from './model-accounting-center.js';
 import { SettingsPage } from './settings-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
@@ -144,6 +145,8 @@ export function App(): React.JSX.Element {
             </div>
           ) : route.path === '/settings' ? (
             <SettingsPage />
+          ) : route.path === '/tasks' ? (
+            <ModelAccountingCenter />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">

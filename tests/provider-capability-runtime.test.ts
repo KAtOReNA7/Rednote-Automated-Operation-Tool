@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  SqliteModelAccountingRepository,
   SqliteProviderCapabilityRepository,
   SqliteSettingsRepository,
 } from '../packages/db/src/index.js';
@@ -52,6 +53,99 @@ function configure(
 }
 
 describe('Issue 013 main-process capability runtime', () => {
+  it('uses the Issue 014 BYPASS accounting kernel and blocks before credentials without a unit policy', async () => {
+    const credential = syntheticInvalidCredential();
+    const fixture = await startCapabilityProbeFixture({ expectedCredential: credential });
+    const { database } = await createInitializedDatabase();
+    configure(database, fixture.baseUrl);
+    const settings = new SqliteSettingsRepository(database);
+    const accounting = new SqliteModelAccountingRepository(database);
+    let credentialResolveCount = 0;
+    const runtime = new ProviderCapabilityRuntime(
+      new SqliteProviderCapabilityRepository(database),
+      () => settings.getBundle().settings,
+      async () => {
+        credentialResolveCount += 1;
+        return credential;
+      },
+      { accountingRepository: accounting },
+    );
+    runtime.initialize();
+    try {
+      const blocked = runtime.preview(
+        { includeToolCalling: false, profile: 'CORE', selectedCapabilities: [] },
+        90,
+        91,
+      );
+      expect(blocked.budgetCheck).toBe('UNIT_POLICY_REQUIRED');
+      await expect(
+        runtime.start(
+          {
+            confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
+            credentialBindingVersion: blocked.credentialBindingVersion,
+            planHash: blocked.planHash,
+            settingsRevision: blocked.settingsRevision,
+            startToken: blocked.startToken,
+          },
+          90,
+          91,
+        ),
+      ).rejects.toMatchObject({ code: 'BUDGET_UNPRICED_LIMIT_REQUIRED' });
+      expect(credentialResolveCount).toBe(0);
+      expect(fixture.requests).toHaveLength(0);
+
+      accounting.createUnitPolicy(
+        {
+          maxExternalCallsMonthly: 32,
+          maxExternalCallsWeekly: 32,
+          maxImageGenerationCalls: 8,
+          maxImages: 8,
+          maxInputTokens: null,
+          maxOutputTokens: null,
+          maxToolCalls: 8,
+          maxWebSearchCalls: 8,
+          scopeKind: 'GLOBAL',
+          scopeValue: null,
+          version: 1,
+        },
+        '2026-07-28T00:00:00.000Z',
+      );
+      const ready = runtime.preview(
+        { includeToolCalling: false, profile: 'CORE', selectedCapabilities: [] },
+        90,
+        91,
+      );
+      expect(ready.budgetCheck).toBe('UNIT_POLICY_READY');
+      const started = await runtime.start(
+        {
+          confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
+          credentialBindingVersion: ready.credentialBindingVersion,
+          planHash: ready.planHash,
+          settingsRevision: ready.settingsRevision,
+          startToken: ready.startToken,
+        },
+        90,
+        91,
+      );
+      expect((await waitForTerminal(runtime, started.runId)).status).toBe('SUCCEEDED');
+      expect(
+        database
+          .prepare(
+            `SELECT count(*) AS count FROM model_runs
+             WHERE task_kind LIKE 'CAPABILITY_PROBE_%' AND cache_policy='BYPASS'`,
+          )
+          .get(),
+      ).toEqual({ count: ready.requestCount });
+      expect(database.prepare(`SELECT count(*) AS count FROM cost_ledger`).get()).toEqual({
+        count: ready.requestCount,
+      });
+    } finally {
+      await runtime.close();
+      database.close();
+      await fixture.close();
+    }
+  });
+
   it('does no automatic egress, consumes one bound token, and persists a safe current matrix', async () => {
     const credential = syntheticInvalidCredential();
     const fixture = await startCapabilityProbeFixture({ expectedCredential: credential });
@@ -73,6 +167,7 @@ describe('Issue 013 main-process capability runtime', () => {
       );
       expect(fixture.requests).toHaveLength(0);
       expect(preview).toMatchObject({
+        budgetCheck: 'UNIT_POLICY_READY',
         feeEstimate: 'UNKNOWN',
         profile: 'CORE',
         settingsRevision: 1,

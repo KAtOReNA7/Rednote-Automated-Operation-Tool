@@ -10,6 +10,7 @@ import type {
 
 import {
   MIGRATIONS,
+  SqliteModelAccountingRepository,
   SqliteProviderCapabilityRepository,
   SqliteSettingsRepository,
   connectDatabase,
@@ -17,12 +18,20 @@ import {
 } from '@mystery-operations/db';
 import type {
   CancelProviderCapabilityProbeInput,
+  ConfirmModelCacheClearInput,
+  ConfirmModelCacheClearResult,
   ConfirmDataRootSelectionInput,
+  CreateModelPriceScheduleInput,
+  CreateModelUnitPolicyInput,
   DataRootSelection,
   PreviewProviderCapabilityProbeInput,
   ProviderCapabilityProbePreview,
   ProviderCapabilityProbeProgressView,
   ProviderCapabilityStateView,
+  ModelAccountingView,
+  ModelCacheClearPreview,
+  ModelPriceScheduleView,
+  ModelUnitPolicyView,
   SetupStateView,
   StartProviderCapabilityProbeInput,
 } from '@mystery-operations/shared';
@@ -41,6 +50,7 @@ import {
   DATA_ROOT_FORMAT_VERSION,
   LocalDiagnosticReportStore,
   LocalProjectLocator,
+  ModelResultCacheStore,
   initializeProjectDataRoot,
   openProjectDataRoot,
   type ProjectDataRoot,
@@ -49,6 +59,7 @@ import {
 import { type AsyncSafeStorage, ElectronCredentialStore } from './credential-store.js';
 import { DataRootSelectionBroker, type DirectoryDialog } from './data-root-selection.js';
 import { DesktopLocalApiRuntime } from './local-api-runtime.js';
+import { DesktopModelAccountingRuntime } from './model-accounting-runtime.js';
 import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import {
   disabledLocalApiSmoke,
@@ -85,6 +96,7 @@ interface RuntimeVersions {
 }
 
 interface ActiveProject {
+  readonly accounting: DesktopModelAccountingRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
   readonly database: DatabaseSync;
   readonly root: ProjectDataRoot;
@@ -186,7 +198,7 @@ export class DesktopSettingsRuntime {
         configured.status === 'CONFIGURED' && resolved === unusableRuntimeValue;
       smokePhase = 'CONFIGURE_CAPABILITY_FIXTURE';
       const current = await prepared.service.getSettings();
-      await prepared.service.updateNonSecretSettings({
+      const configuredSettings = await prepared.service.updateNonSecretSettings({
         account: {
           bio: current.account.bio,
           workingName: current.account.workingName,
@@ -204,6 +216,19 @@ export class DesktopSettingsRuntime {
           writing: 'issue013-smoke-model',
         },
         providerBaseUrl: `http://127.0.0.1:${capability.port}/v1`,
+      });
+      prepared.accounting.createUnitPolicy({
+        expectedSettingsRevision: configuredSettings.settings.revision,
+        maxExternalCallsMonthly: 32,
+        maxExternalCallsWeekly: 32,
+        maxImageGenerationCalls: 8,
+        maxImages: 8,
+        maxInputTokens: null,
+        maxOutputTokens: null,
+        maxToolCalls: 8,
+        maxWebSearchCalls: 8,
+        scopeKind: 'GLOBAL',
+        scopeValue: null,
       });
       smokePhase = 'PREVIEW_CAPABILITY_PROBE';
       const capabilityPreview = prepared.capabilities.preview(
@@ -395,6 +420,30 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().capabilities.getState();
   }
 
+  public getModelAccounting(): ModelAccountingView {
+    return this.#requireActive().accounting.getView();
+  }
+
+  public previewModelCacheClear(senderId: number, windowId: number): ModelCacheClearPreview {
+    return this.#requireActive().accounting.previewCacheClear(senderId, windowId);
+  }
+
+  public confirmModelCacheClear(
+    input: ConfirmModelCacheClearInput,
+    senderId: number,
+    windowId: number,
+  ): ConfirmModelCacheClearResult {
+    return this.#requireActive().accounting.confirmCacheClear(input, senderId, windowId);
+  }
+
+  public createModelPriceSchedule(input: CreateModelPriceScheduleInput): ModelPriceScheduleView {
+    return this.#requireActive().accounting.createPriceSchedule(input);
+  }
+
+  public createModelUnitPolicy(input: CreateModelUnitPolicyInput): ModelUnitPolicyView {
+    return this.#requireActive().accounting.createUnitPolicy(input);
+  }
+
   public previewProviderCapabilityProbe(
     input: PreviewProviderCapabilityProbeInput,
     senderId: number,
@@ -433,6 +482,7 @@ export class DesktopSettingsRuntime {
     this.#selectionBroker.clearForWindow(windowId);
     this.#localApi.clearWindowPairings(windowId);
     this.#active?.capabilities.clearWindow(windowId);
+    this.#active?.accounting.clearWindow(windowId);
   }
 
   public getLocalApiStatus(): LocalApiStatusView {
@@ -483,6 +533,7 @@ export class DesktopSettingsRuntime {
     const database = connectDatabase(databasePath);
     const repository = new SqliteSettingsRepository(database);
     const capabilityRepository = new SqliteProviderCapabilityRepository(database);
+    const accountingRepository = new SqliteModelAccountingRepository(database);
     const diagnosticStore = new LocalDiagnosticReportStore(root);
     const service = new SettingsService(repository, this.#credentials, {
       diagnosticRuntime: () => ({
@@ -509,9 +560,23 @@ export class DesktopSettingsRuntime {
       capabilityRepository,
       () => repository.getBundle().settings,
       () => this.#credentials.resolveForProvider(CREDENTIAL_SLOT),
+      { accountingRepository },
     );
     capabilities.initialize();
-    return { capabilities, database, root, service };
+    const accounting = new DesktopModelAccountingRuntime(
+      accountingRepository,
+      new ModelResultCacheStore(root),
+      () => new Date(),
+      () => {
+        try {
+          return capabilities.getConfigFingerprint();
+        } catch {
+          return '0'.repeat(64);
+        }
+      },
+    );
+    accountingRepository.recoverInterrupted(new Date().toISOString());
+    return { accounting, capabilities, database, root, service };
   }
 
   #requireActive(): ActiveProject {

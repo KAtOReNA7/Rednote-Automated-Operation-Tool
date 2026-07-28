@@ -232,6 +232,12 @@ export function ProviderCapabilitySettings({
       {preview === null ? null : (
         <div className="probe-preview">
           <p>
+            预算检查：
+            {preview.budgetCheck === 'UNIT_POLICY_READY'
+              ? '未定价调用单位政策已就绪'
+              : '需要先配置未定价调用单位政策'}
+          </p>
+          <p>
             {preview.profile} 将发送 <strong>{preview.requestCount}</strong> 个外部请求；费用估算：
             {preview.feeEstimate}。计划在 {preview.expiresAt} 前有效。
           </p>
@@ -245,7 +251,7 @@ export function ProviderCapabilitySettings({
           </label>
           <button
             className="button button--primary"
-            disabled={!confirmed || busy}
+            disabled={!confirmed || busy || preview.budgetCheck === 'UNIT_POLICY_REQUIRED'}
             onClick={() => void start()}
             type="button"
           >

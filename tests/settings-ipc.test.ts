@@ -21,6 +21,14 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       slot: 'CONTENT_AI_API_KEY',
     },
   ],
+  confirmModelCacheClear: [
+    {
+      confirmation: 'CLEAR_MODEL_RESULT_CACHE',
+      expectedBytes: 0,
+      expectedCount: 0,
+      previewToken: 'a'.repeat(43),
+    },
+  ],
   confirmDataRootSelection: [
     {
       confirmation: 'ACTIVATE_DATA_ROOT',
@@ -29,10 +37,45 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       token: 'selection-token-000010',
     },
   ],
+  createModelPriceSchedule: [
+    {
+      cachedInputPerMillionUsd: null,
+      cacheWritePerMillionUsd: null,
+      callUsd: null,
+      expectedSettingsRevision: 0,
+      imageGenerationCallUsd: null,
+      imageUsd: null,
+      inputPerMillionUsd: '1.25',
+      inputTokensIncludeCachedInput: false,
+      modelId: 'fixture-model',
+      operationKind: 'TEXT_GENERATION',
+      outputPerMillionUsd: '2.5',
+      protocolMode: null,
+      searchCallUsd: null,
+      toolUnitUsd: null,
+      usageSemanticsVersion: 'usage-v1',
+    },
+  ],
+  createModelUnitPolicy: [
+    {
+      expectedSettingsRevision: 0,
+      maxExternalCallsMonthly: 400,
+      maxExternalCallsWeekly: 100,
+      maxImageGenerationCalls: null,
+      maxImages: null,
+      maxInputTokens: null,
+      maxOutputTokens: null,
+      maxToolCalls: null,
+      maxWebSearchCalls: null,
+      scopeKind: 'GLOBAL',
+      scopeValue: null,
+    },
+  ],
   exportDiagnosticReport: [{ expectedPreviewHash: 'a'.repeat(64) }],
   getAppInfo: [],
   getCredentialStatus: [{ slot: 'CONTENT_AI_API_KEY' }],
   getFoundationHealth: [],
+  getModelAccounting: [],
   getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
   getProviderCapabilityState: [],
   getLocalApiStatus: [],
@@ -57,6 +100,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       selectedCapabilities: [],
     },
   ],
+  previewModelCacheClear: [],
   setCredential: [
     {
       plaintext: 'runtime-only-unusable-value',

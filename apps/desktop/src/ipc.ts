@@ -5,10 +5,13 @@ import { LocalApiError } from '@mystery-operations/local-api';
 import {
   type CancelLocalApiPairingRequest,
   type CancelProviderCapabilityProbeInput,
+  type ConfirmModelCacheClearInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
   type ConfirmDataRootSelectionInput,
+  type CreateModelPriceScheduleInput,
+  type CreateModelUnitPolicyInput,
   type DesktopError,
   type DesktopResult,
   type ExportDiagnosticReportInput,
@@ -27,6 +30,7 @@ import type { NonSecretSettingsDraft } from '@mystery-operations/settings';
 import { SettingsError } from '@mystery-operations/settings';
 
 import { type DesktopIpcOperation, validateDesktopIpcRequest } from './ipc-policy.js';
+import { ModelAccountingError } from './model-accounting-runtime.js';
 import { ProviderCapabilityControlError } from './provider-capability-runtime.js';
 import type { DesktopSettingsRuntime } from './settings-runtime.js';
 
@@ -62,6 +66,9 @@ function safeFailure(error: unknown): DesktopResult<never> {
     return failure(error.code, error.message, error.retryable, error.context);
   }
   if (error instanceof ProviderCapabilityControlError) {
+    return failure(error.code, error.message, error.retryable);
+  }
+  if (error instanceof ModelAccountingError) {
     return failure(error.code, error.message, error.retryable);
   }
   return failure('INTERNAL_ERROR', '本地基础设施暂时不可用。');
@@ -136,6 +143,36 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('getProviderCapabilityState', DESKTOP_IPC_CHANNELS.getProviderCapabilityState, () =>
     options.settingsRuntime.getProviderCapabilityState(),
+  );
+  register('getModelAccounting', DESKTOP_IPC_CHANNELS.getModelAccounting, () =>
+    options.settingsRuntime.getModelAccounting(),
+  );
+  register('previewModelCacheClear', DESKTOP_IPC_CHANNELS.previewModelCacheClear, (event) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new ModelAccountingError('MODEL_CACHE_CLEAR_INVALID');
+    }
+    return options.settingsRuntime.previewModelCacheClear(event.sender.id, window.id);
+  });
+  register('confirmModelCacheClear', DESKTOP_IPC_CHANNELS.confirmModelCacheClear, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new ModelAccountingError('MODEL_CACHE_CLEAR_INVALID');
+    }
+    return options.settingsRuntime.confirmModelCacheClear(
+      args[0] as ConfirmModelCacheClearInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register(
+    'createModelPriceSchedule',
+    DESKTOP_IPC_CHANNELS.createModelPriceSchedule,
+    (_event, args) =>
+      options.settingsRuntime.createModelPriceSchedule(args[0] as CreateModelPriceScheduleInput),
+  );
+  register('createModelUnitPolicy', DESKTOP_IPC_CHANNELS.createModelUnitPolicy, (_event, args) =>
+    options.settingsRuntime.createModelUnitPolicy(args[0] as CreateModelUnitPolicyInput),
   );
   register(
     'previewProviderCapabilityProbe',
