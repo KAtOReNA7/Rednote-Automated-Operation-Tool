@@ -1,5 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { existsSync } from 'node:fs';
 import { mkdir, readFile, readdir, stat } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { backup } from 'node:sqlite';
@@ -175,12 +176,17 @@ describe('Issue 011 36-target secret egress matrix', () => {
     await backup(database, backupPath);
     database.exec('PRAGMA wal_checkpoint(PASSIVE)');
 
-    const trackedFiles = execFileSync('git', ['ls-files', '-z'], {
-      cwd: projectRoot,
-      encoding: 'utf8',
-    })
+    const trackedFiles = execFileSync(
+      'git',
+      ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+      {
+        cwd: projectRoot,
+        encoding: 'utf8',
+      },
+    )
       .split('\u0000')
-      .filter(Boolean);
+      .filter(Boolean)
+      .filter((path) => existsSync(join(projectRoot, path)));
     const trackedContent = Buffer.concat(
       await Promise.all(trackedFiles.map((path) => readFile(join(projectRoot, path)))),
     );

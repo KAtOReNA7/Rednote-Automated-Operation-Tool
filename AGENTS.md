@@ -12,10 +12,10 @@
 事实来源按优先级为：
 
 1. 用户当前明确指令；
-2. 对应 Issue 的根目录执行指令；
-3. `codex-master-development-instruction-v1.md`；
-4. `xiaohongshu-development-roadmap-v1.md`；
-5. `xiaohongshu-mystery-account-prd-v1.md`；
+2. 对应 Issue 的当前执行指令；已完成 Issue 的历史指令位于 `docs/instructions/`；
+3. `docs/governance/codex-master-development-instruction-v1.md`；
+4. `docs/product/xiaohongshu-development-roadmap-v1.md`；
+5. `docs/product/xiaohongshu-mystery-account-prd-v1.md`；
 6. 已提交的 ADR、合同、验收映射和测试。
 
 历史 Issue 指令、ADR、验收映射是审计证据。除非任务明确要求修正文档事实，否则不要为
@@ -93,6 +93,10 @@
   盘符、用户目录或跨卷临时路径。
 - 每次运行只清理本次创建且已验证位于仓库 `.rednote-temp` 或明确输出目录内的精确目标；
   不得清理全局 TEMP、npm cache、用户目录或模糊匹配目录。
+- 仓库根目录只保留贡献入口和工具必须从根目录发现的配置。产品基线放在 `docs/product/`，
+  治理合同放在 `docs/governance/`，已完成 Issue 的执行指令放在 `docs/instructions/<milestone>/`。
+- 新 Issue 指令可在执行期间临时放入根目录；完成并通过引用审计后应归档到对应
+  `docs/instructions/` 目录。移动历史文件时保持内容不变，并同步活跃链接和测试。
 - README 的开发状态、命令、包结构和下一里程碑必须随已完成工作同步更新。
 
 ## 8. 必需验证

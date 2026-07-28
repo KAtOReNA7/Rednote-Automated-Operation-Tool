@@ -13,8 +13,8 @@
 
 开始前，完整读取以下两个文件，不得只读摘要：
 
-1. `xiaohongshu-mystery-account-prd-v1.md`
-2. `xiaohongshu-development-roadmap-v1.md`
+1. `../product/xiaohongshu-mystery-account-prd-v1.md`
+2. `../product/xiaohongshu-development-roadmap-v1.md`
 
 如果文件不存在或内容不完整，立即停止并报告，不得凭记忆重建需求。
 
@@ -489,4 +489,3 @@ M0 完成后停止，输出验收报告，等待用户授权 M1。
 6. 运行全部 M0 验证；
 7. 输出规定格式的验收报告；
 8. 停止，不进入 M1。
-

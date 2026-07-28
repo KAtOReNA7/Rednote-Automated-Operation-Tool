@@ -93,10 +93,10 @@ describe('Issue 008 package and process boundaries', () => {
     expect(storageSource).not.toMatch(/ai_disclosure|copyright|版权/iu);
   });
 
-  it('keeps the Issue 008 instruction in root and does not create Issue 010 artifacts', async () => {
+  it('keeps the Issue 008 instruction in the historical archive and does not create Issue 010 artifacts', async () => {
     const instruction = join(
       projectRoot,
-      'M1-Issue008-local-file-repository-Codex-instruction.txt',
+      'docs/instructions/m1/M1-Issue008-local-file-repository-Codex-instruction.txt',
     );
     expect(await readFile(instruction, 'utf8')).toContain('M1 Issue 008：本地文件仓库');
 

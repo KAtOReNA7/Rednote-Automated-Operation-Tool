@@ -7,7 +7,7 @@
 - 仓库根由 `git rev-parse --show-toplevel` 动态发现。
 - 本轮动态基线为开始任务时的本地 `HEAD`；实际值只进入最终报告，不作为未来门禁。
 - 开工时 `main` 与 `origin/main` 一致，工作树仅有本轮
-  `Issue015-short-Codex-instruction.txt` 这一项授权输入。
+  `docs/instructions/m2/Issue015-short-Codex-instruction.txt` 这一项授权输入。
 - 当前能力基线为 migration v7、Provider v1、显式 Capability Probe、
   `ModelExecutionService`、本地缓存/预算/成本账本和 at-least-once Job Queue。
 - 只实现 Issue 015。禁止结果页抓取、HTML/PDF/图片/RSS/附件解析、插件业务 route、书目发现、
