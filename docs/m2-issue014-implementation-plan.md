@@ -8,7 +8,7 @@
 - 本轮动态 `BASELINE_HEAD` 为 `f92d9846f4a66b078f0b90961e71bd3479cfcb64`，只作本次记录，
   不作为未来门禁。
 - 起点是完成的 SQLite v6、Provider v1 与显式 Capability Probe；工作树除根目录
-  `Issue014-Codex-instruction.txt` 外无未知修改。
+  `docs/instructions/m2/Issue014-Codex-instruction.txt` 外无未知修改。
 - 临时目录、npm cache 与 packager staging 从仓库所在卷动态派生；不依赖系统盘余量。
 - 只实现 Issue 014。不得实现 SearchProvider、页面抓取、插件业务或 Issue 015 以后功能。
 - 开发、测试、source/package smoke 仅使用 Scripted Mock、`127.0.0.1` loopback、合成凭据、

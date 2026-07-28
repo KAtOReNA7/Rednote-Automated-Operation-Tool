@@ -34,6 +34,12 @@ describe('Issue 015 architecture boundaries', () => {
     expect(shared).not.toMatch(/search:(?:execute|fetch|crawl|plugin)/u);
   });
 
+  it('bundles Electron main from current search sources without requiring stale dist output', () => {
+    const viteMain = source('vite.main.config.ts');
+    expect(viteMain).toContain("'@mystery-operations/search'");
+    expect(viteMain).toContain("new URL('./packages/search/src/index.ts', import.meta.url)");
+  });
+
   it('validates search configuration IPC by exact provider-specific fields', () => {
     const renderer = 'rednote://app/index.html';
     const input = {

@@ -7,9 +7,9 @@ package-lock.json
 scripts/trigger-clipper-action.ps1
 
 # Frozen source documents are preserved verbatim.
-codex-master-development-instruction-v1.md
-M1-Issue007-SQLite-schema-migrations-Codex-instruction.md
-M1-Issue009-persistent-local-job-queue-Codex-instruction.txt
-M1-Issue006-Electron-React-desktop-shell-Codex-instruction.txt
-xiaohongshu-development-roadmap-v1.md
-xiaohongshu-mystery-account-prd-v1.md
+docs/governance/codex-master-development-instruction-v1.md
+docs/instructions/m1/M1-Issue007-SQLite-schema-migrations-Codex-instruction.md
+docs/instructions/m1/M1-Issue009-persistent-local-job-queue-Codex-instruction.txt
+docs/instructions/m1/M1-Issue006-Electron-React-desktop-shell-Codex-instruction.txt
+docs/product/xiaohongshu-development-roadmap-v1.md
+docs/product/xiaohongshu-mystery-account-prd-v1.md

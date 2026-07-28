@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -27,6 +27,57 @@ describe('repository-facing documentation', () => {
     expect(localTargets.length).toBeGreaterThan(0);
     for (const target of localTargets) {
       expect(existsSync(resolve(projectRoot, target ?? '')), target).toBe(true);
+    }
+  });
+
+  it('keeps product baselines, governance records, and historical instructions out of root', () => {
+    for (const path of [
+      'docs/README.md',
+      'docs/product/README.md',
+      'docs/governance/README.md',
+      'docs/instructions/README.md',
+      'docs/product/xiaohongshu-mystery-account-prd-v1.md',
+      'docs/product/xiaohongshu-development-roadmap-v1.md',
+      'docs/governance/codex-master-development-instruction-v1.md',
+      'docs/instructions/m1/M1-Issue008-local-file-repository-Codex-instruction.txt',
+      'docs/instructions/m2/M2-Issue017-Chrome-Edge-browser-clipper-Codex-instruction.txt',
+    ]) {
+      expect(existsSync(resolve(projectRoot, path)), path).toBe(true);
+    }
+    for (const obsoleteRootPath of [
+      'codex-master-development-instruction-v1.md',
+      'xiaohongshu-mystery-account-prd-v1.md',
+      'xiaohongshu-development-roadmap-v1.md',
+      'M1-Issue008-local-file-repository-Codex-instruction.txt',
+      'M2-Issue017-Chrome-Edge-browser-clipper-Codex-instruction.txt',
+    ]) {
+      expect(existsSync(resolve(projectRoot, obsoleteRootPath)), obsoleteRootPath).toBe(false);
+    }
+    expect(
+      readdirSync(projectRoot)
+        .filter((name) =>
+          /(?:Issue\d+.*instruction|codex-master-development|xiaohongshu-.*-v1)/iu.test(name),
+        )
+        .sort(),
+    ).toEqual([]);
+  });
+
+  it('keeps every documentation index link resolvable from its own directory', () => {
+    for (const indexPath of [
+      'docs/README.md',
+      'docs/product/README.md',
+      'docs/governance/README.md',
+      'docs/instructions/README.md',
+    ]) {
+      const absoluteIndexPath = resolve(projectRoot, indexPath);
+      const index = readFileSync(absoluteIndexPath, 'utf8');
+      const localTargets = [...index.matchAll(/\]\((\.\/[^)#]+)(?:#[^)]*)?\)/gu)].map(
+        (match) => match[1],
+      );
+      expect(localTargets.length, indexPath).toBeGreaterThan(0);
+      for (const target of localTargets) {
+        expect(existsSync(resolve(dirname(absoluteIndexPath), target ?? '')), target).toBe(true);
+      }
     }
   });
 

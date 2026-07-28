@@ -9,7 +9,7 @@
 |    3 | `test:constraints` 通过                  | `npm run test:constraints`                                                                                    |
 |    4 | `test:db` 通过                           | `npm run test:db`                                                                                             |
 |    5 | `test:queue` 通过                        | `npm run test:queue`                                                                                          |
-|    6 | 路线图顺序修正仅改变对应文档段落         | `git diff -- xiaohongshu-development-roadmap-v1.md`                                                           |
+|    6 | 路线图顺序修正仅改变对应文档段落         | `git diff -- docs/product/xiaohongshu-development-roadmap-v1.md`                                              |
 |    7 | 选择受支持的稳定 Electron                | `docs/adr/0004-electron-react-desktop-shell.md`；Electron 官方发布与支持周期                                  |
 |    8 | Electron 版本精确锁定                    | `package.json`、`package-lock.json`、`tests/desktop-architecture.test.ts`                                     |
 |    9 | 不使用 beta/nightly/canary               | `tests/desktop-architecture.test.ts`；锁定 `43.2.0`                                                           |

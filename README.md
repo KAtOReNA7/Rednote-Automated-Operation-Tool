@@ -253,9 +253,11 @@ npm run test:packaged-smoke
 <details open>
 <summary><strong>需求与路线</strong></summary>
 
-- [产品 PRD](./xiaohongshu-mystery-account-prd-v1.md)
-- [开发路线图](./xiaohongshu-development-roadmap-v1.md)
-- [Codex 总开发指令](./codex-master-development-instruction-v1.md)
+- [文档中心](./docs/README.md)
+- [产品 PRD](./docs/product/xiaohongshu-mystery-account-prd-v1.md)
+- [开发路线图](./docs/product/xiaohongshu-development-roadmap-v1.md)
+- [Codex 总开发指令](./docs/governance/codex-master-development-instruction-v1.md)
+- [历史 Issue 执行指令](./docs/instructions/README.md)
 
 </details>
 
@@ -315,6 +317,10 @@ npm run test:packaged-smoke
 
 开始修改前请先阅读 [AGENTS.md](./AGENTS.md)。新增任务必须保持硬约束、迁移规则和既有门禁，
 并以真实代码、测试与命令证据更新文档；历史 ADR、验收映射与已发布 migration 不为追求整洁而改写。
+
+仓库根目录只保留贡献入口和构建工具要求的配置。产品基线、治理合同与历史 Issue 指令已经分别
+归入 `docs/product/`、`docs/governance/` 和 `docs/instructions/`，避免 GitHub 首页文件列表被
+历史执行材料淹没。
 
 ---
 

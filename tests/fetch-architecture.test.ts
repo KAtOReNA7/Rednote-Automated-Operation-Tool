@@ -43,6 +43,12 @@ describe('Issue 016 architecture boundaries', () => {
     expect(runtime).not.toMatch(/proxy|rejectUnauthorized\s*:\s*false/iu);
   });
 
+  it('bundles Electron main from current fetch sources without requiring stale dist output', async () => {
+    const viteMain = await source('vite.main.config.ts');
+    expect(viteMain).toContain("'@mystery-operations/fetch'");
+    expect(viteMain).toContain("new URL('./packages/fetch/src/index.ts', import.meta.url)");
+  });
+
   it('has no renderer execution method, raw URL field or automatic enqueue source', async () => {
     const bridge = await source('packages/shared/src/desktop-api.ts');
     const preload = await source('apps/desktop/src/preload.ts');

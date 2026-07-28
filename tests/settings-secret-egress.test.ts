@@ -156,12 +156,17 @@ describe('Issue 010 secret egress matrix', () => {
       const exported = await service.exportDiagnosticReport(preview.hash);
       database.exec('PRAGMA wal_checkpoint(PASSIVE)');
 
-      const trackedFiles = execFileSync('git', ['ls-files', '-z'], {
-        cwd: projectRoot,
-        encoding: 'utf8',
-      })
+      const trackedFiles = execFileSync(
+        'git',
+        ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+        {
+          cwd: projectRoot,
+          encoding: 'utf8',
+        },
+      )
         .split('\u0000')
-        .filter(Boolean);
+        .filter(Boolean)
+        .filter((path) => existsSync(join(projectRoot, path)));
       const trackedContent = Buffer.concat(
         await Promise.all(trackedFiles.map((path) => readFile(join(projectRoot, path)))),
       );
