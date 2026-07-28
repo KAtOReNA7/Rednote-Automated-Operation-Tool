@@ -139,25 +139,17 @@ npm run desktop:dev
 
 ```mermaid
 flowchart LR
-    UI["React renderer<br/>不可信边界"] -->|"窄 preload API"| MAIN["Electron main / IPC"]
-    MAIN --> DB["SQLite<br/>迁移 / 仓储 / 账本"]
-    MAIN --> FS["ProjectDataRoot<br/>本地文件 / 结果缓存"]
-    MAIN --> QUEUE["持久化任务队列<br/>lease / recovery"]
-    MAIN --> SETTINGS["设置与凭据引用<br/>safeStorage"]
-    MAIN --> API["127.0.0.1 本地 API<br/>默认关闭"]
-    MAIN --> EXEC["模型执行内核<br/>幂等 / 预算 / 缓存"]
-    EXEC --> PROBE["用户显式能力探测"]
-    PROBE --> PROVIDERS["Provider-neutral 接口"]
-
-    API -.-> CLIPPER["Chrome / Edge 插件"]
+    UI["React renderer"] --> MAIN["Electron main / IPC"]
+    MAIN --> DB["SQLite"]
+    MAIN --> FS["ProjectDataRoot"]
+    MAIN --> QUEUE["持久化任务队列"]
+    MAIN --> SETTINGS["设置与凭据引用"]
+    MAIN --> API["本地 API"]
+    MAIN --> MODEL["模型执行内核"]
+    MODEL --> PROBE["用户显式能力探测"]
+    PROBE --> PROVIDERS["Provider 接口"]
+    API -.-> CLIPPER["浏览器插件"]
     QUEUE -.-> PROVIDERS
-
-    classDef core fill:#fff0f2,stroke:#ff2442,color:#111;
-    classDef safe fill:#fff,stroke:#111,color:#111;
-    classDef future fill:#f6f6f6,stroke:#aaa,color:#666,stroke-dasharray:5 5;
-    class MAIN,EXEC core;
-    class UI,DB,FS,QUEUE,SETTINGS,API,PROBE,PROVIDERS safe;
-    class CLIPPER future;
 ```
 
 关键边界：
