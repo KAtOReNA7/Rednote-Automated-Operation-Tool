@@ -23,6 +23,18 @@ jobs:
           node-version: 24
           cache: npm
 
+      - name: Prepare repository-volume temporary paths
+        shell: pwsh
+        run: |
+          $workspaceParent = Split-Path -Parent (Get-Location).Path
+          $temporaryPath = Join-Path $workspaceParent ".rednote-temp\ci-${{ github.run_id }}-${{ github.run_attempt }}"
+          $cachePath = Join-Path $workspaceParent '.rednote-npm-cache'
+          $environmentFile = [System.Environment]::GetEnvironmentVariable('GITHUB_ENV')
+          New-Item -ItemType Directory -Force -Path $temporaryPath, $cachePath | Out-Null
+          "TEMP=$temporaryPath" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "TMP=$temporaryPath" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "npm_config_cache=$cachePath" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+
       - name: Install locked dependencies
         run: npm ci
 
@@ -59,6 +71,12 @@ jobs:
       - name: Run provider-neutral model interface suites
         run: npm run test:providers
 
+      - name: Run repository-volume portability suites
+        run: npm run test:portability
+
+      - name: Run explicit provider capability probing suites
+        run: npm run test:capabilities
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 
@@ -76,3 +94,13 @@ jobs:
 
       - name: Audit dependencies
         run: npm run audit:dependencies
+
+      - name: Clean exact CI temporary directory
+        if: always()
+        shell: pwsh
+        run: |
+          $workspaceParent = Split-Path -Parent (Get-Location).Path
+          $temporaryPath = Join-Path $workspaceParent ".rednote-temp\ci-${{ github.run_id }}-${{ github.run_attempt }}"
+          if (Test-Path -LiteralPath $temporaryPath) {
+            Remove-Item -LiteralPath $temporaryPath -Recurse -Force
+          }

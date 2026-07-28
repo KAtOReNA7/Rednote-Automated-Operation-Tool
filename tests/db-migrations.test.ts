@@ -45,6 +45,7 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'revision',
       'created_at',
       'updated_at',
+      'credential_binding_version',
     ],
     approvals: [
       'id',
@@ -353,16 +354,18 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5],
+        appliedVersions: [1, 2, 3, 4, 5, 6],
         backupPath: null,
         databasePath,
-        schemaVersion: 5,
+        schemaVersion: 6,
       });
       expect(tables).toEqual(
         [
           ...BUSINESS_TABLE_NAMES,
           'local_api_clients',
           'local_api_settings',
+          'provider_capability_entries',
+          'provider_capability_probe_runs',
           'schema_migrations',
         ].sort(),
       );
@@ -424,9 +427,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 5,
+        schemaVersion: 6,
       });
-      expect(row.count).toBe(5);
+      expect(row.count).toBe(6);
     } finally {
       database.close();
     }

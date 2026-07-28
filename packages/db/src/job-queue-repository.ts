@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { DatabaseSync, SQLInputValue } from 'node:sqlite';
+import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite';
 
 import { JOB_STATUSES, JobStatus, transitionJobStatus } from '@mystery-operations/core';
 
@@ -135,9 +135,29 @@ function controlSignal(status: JobStatus): 'CANCEL' | 'CONTINUE' | 'PAUSE' {
 
 export class JobQueueRepository {
   readonly #database: DatabaseSync;
+  readonly #findByIdempotencyKeyStatement: StatementSync;
+  readonly #getByIdStatement: StatementSync;
+  readonly #insertAuditStatement: StatementSync;
+  readonly #insertJobStatement: StatementSync;
 
   public constructor(database: DatabaseSync) {
     this.#database = database;
+    this.#findByIdempotencyKeyStatement = database.prepare(
+      `SELECT ${JOB_COLUMNS} FROM jobs WHERE idempotency_key = ?`,
+    );
+    this.#getByIdStatement = database.prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`);
+    this.#insertAuditStatement = database.prepare(
+      `INSERT INTO audit_events(
+         id, event_type, entity_type, entity_id, actor, before_json, after_json,
+         created_at
+       ) VALUES (?, ?, 'JOB', ?, ?, ?, ?, ?)`,
+    );
+    this.#insertJobStatement = database.prepare(
+      `INSERT INTO jobs(
+         id, job_type, idempotency_key, payload_json, payload_hash, priority,
+         status, attempt_count, max_attempts, next_run_at, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', 0, ?, ?, ?, ?)`,
+    );
   }
 
   public enqueue(input: EnqueueStoredJobInput): {
@@ -158,25 +178,18 @@ export class JobQueueRepository {
         return { created: false, job: existing };
       }
 
-      this.#database
-        .prepare(
-          `INSERT INTO jobs(
-             id, job_type, idempotency_key, payload_json, payload_hash, priority,
-             status, attempt_count, max_attempts, next_run_at, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, 'QUEUED', 0, ?, ?, ?, ?)`,
-        )
-        .run(
-          input.id,
-          input.jobType,
-          input.idempotencyKey,
-          input.payloadJson,
-          input.payloadHash,
-          input.priority,
-          input.maxAttempts,
-          input.nextRunAt,
-          input.now,
-          input.now,
-        );
+      this.#insertJobStatement.run(
+        input.id,
+        input.jobType,
+        input.idempotencyKey,
+        input.payloadJson,
+        input.payloadHash,
+        input.priority,
+        input.maxAttempts,
+        input.nextRunAt,
+        input.now,
+        input.now,
+      );
       this.#writeAudit(input.id, 'ENQUEUED', 'CALLER', null, JobStatus.QUEUED, input.now);
 
       return { created: true, job: this.#getRequired(input.id) };
@@ -598,7 +611,7 @@ export class JobQueueRepository {
   }
 
   public get(jobId: string): StoredJob | null {
-    const row = this.#database.prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE id = ?`).get(jobId);
+    const row = this.#getByIdStatement.get(jobId);
     return row === undefined ? null : rowAsJob(row);
   }
 
@@ -664,9 +677,7 @@ export class JobQueueRepository {
   }
 
   #findByIdempotencyKey(idempotencyKey: string): StoredJob | null {
-    const row = this.#database
-      .prepare(`SELECT ${JOB_COLUMNS} FROM jobs WHERE idempotency_key = ?`)
-      .get(idempotencyKey);
+    const row = this.#findByIdempotencyKeyStatement.get(idempotencyKey);
     return row === undefined ? null : rowAsJob(row);
   }
 
@@ -743,21 +754,14 @@ export class JobQueueRepository {
     afterStatus: JobStatus,
     now: string,
   ): void {
-    this.#database
-      .prepare(
-        `INSERT INTO audit_events(
-           id, event_type, entity_type, entity_id, actor, before_json, after_json,
-           created_at
-         ) VALUES (?, ?, 'JOB', ?, ?, ?, ?, ?)`,
-      )
-      .run(
-        randomUUID(),
-        eventType,
-        jobId,
-        actor,
-        beforeStatus === null ? null : JSON.stringify({ status: beforeStatus }),
-        JSON.stringify({ status: afterStatus }),
-        now,
-      );
+    this.#insertAuditStatement.run(
+      randomUUID(),
+      eventType,
+      jobId,
+      actor,
+      beforeStatus === null ? null : JSON.stringify({ status: beforeStatus }),
+      JSON.stringify({ status: afterStatus }),
+      now,
+    );
   }
 }

@@ -107,23 +107,41 @@ export async function inspectProcessTree(rootProcessId) {
   };
 }
 
-export function assertSocketSnapshot(snapshot, mode, expectedPort) {
+export function assertSocketSnapshot(snapshot, mode, expectedPort, capabilityPort) {
   const listeners = snapshot.connections.filter((connection) => connection.State === 'Listen');
-  const externalConnections = snapshot.connections.filter(
-    (connection) =>
-      connection.State !== 'Listen' &&
-      !['127.0.0.1', '::1', '0:0:0:0:0:0:0:1'].includes(connection.RemoteAddress),
+  const loopbackAddresses = ['127.0.0.1', '::1', '0:0:0:0:0:0:0:1'];
+  const nonListeners = snapshot.connections.filter((connection) => connection.State !== 'Listen');
+  const externalConnections = nonListeners.filter(
+    (connection) => !loopbackAddresses.includes(connection.RemoteAddress),
   );
   if (externalConnections.length !== 0) {
     throw new Error(
       `Electron smoke opened an external TCP connection: ${JSON.stringify(externalConnections)}`,
     );
   }
+  const allowedRemotePorts = new Set([
+    capabilityPort,
+    ...(mode === 'enabled' ? [expectedPort] : []),
+  ]);
+  const unexpectedLoopbackConnections = nonListeners.filter(
+    (connection) => !allowedRemotePorts.has(Number(connection.RemotePort)),
+  );
+  if (unexpectedLoopbackConnections.length !== 0) {
+    throw new Error(
+      `Electron smoke opened an unexpected loopback connection: ${JSON.stringify(unexpectedLoopbackConnections)}`,
+    );
+  }
   if (mode === 'disabled') {
-    if (snapshot.connections.length !== 0) {
-      throw new Error('Disabled Electron smoke unexpectedly owned a TCP socket.');
+    if (listeners.length !== 0) {
+      throw new Error('Disabled Electron smoke unexpectedly owned a TCP listener.');
     }
-    return { externalConnections: 0, listeners: 0 };
+    return {
+      capabilityConnections: nonListeners.filter(
+        (connection) => Number(connection.RemotePort) === capabilityPort,
+      ).length,
+      externalConnections: 0,
+      listeners: 0,
+    };
   }
   if (
     listeners.length !== 1 ||
@@ -137,7 +155,13 @@ export function assertSocketSnapshot(snapshot, mode, expectedPort) {
   ) {
     throw new Error('Enabled Electron smoke did not own exactly one expected loopback listener.');
   }
-  return { externalConnections: 0, listeners: 1 };
+  return {
+    capabilityConnections: nonListeners.filter(
+      (connection) => Number(connection.RemotePort) === capabilityPort,
+    ).length,
+    externalConnections: 0,
+    listeners: 1,
+  };
 }
 
 export async function assertProcessesExited(processIds) {
@@ -174,7 +198,12 @@ export function assertCommonReport(report, packaged, mode, expectedPort) {
     report.settings?.credentialRoundtrip !== true ||
     report.settings?.locator !== true ||
     report.settings?.safeStorage !== true ||
-    report.settings?.secretEgressSafeCount !== 30 ||
+    report.settings?.secretEgressSafeCount !== 50 ||
+    report.settings?.capability?.startupAutoRequestCount !== 0 ||
+    report.settings?.capability?.status !== 'SUCCEEDED' ||
+    report.settings?.capability?.matrixComplete !== true ||
+    report.settings?.capability?.sentRequestCount !==
+      report.settings?.capability?.plannedRequestCount ||
     report.settings?.settings !== true ||
     report.security?.externalRequestAttempts !== 0 ||
     localApi?.mode !== mode ||

@@ -48,7 +48,7 @@ function runtime() {
     platformVersion: 'Windows',
     queueHealthy: true,
     safeStorageAvailable: true,
-    schemaVersion: 5,
+    schemaVersion: 6,
     storageHealthy: true,
   } as const;
 }
@@ -297,7 +297,7 @@ describe('basic diagnostic report', () => {
       credential: { configured: false, safeStorageAvailable: true },
       localApi: { activeClientCount: 0, enabled: false, port: 43_119 },
       provider: { baseUrlConfigured: false, capability: 'UNPROBED' },
-      schemaVersion: 5,
+      schemaVersion: 6,
     });
     await expect(test.service.exportDiagnosticReport(first.hash)).resolves.toEqual({
       managedPath: `exports/diagnostics/basic-${first.hash.slice(0, 12)}.json`,

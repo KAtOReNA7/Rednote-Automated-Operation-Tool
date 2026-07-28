@@ -150,7 +150,7 @@ describe('Issue 011 36-target secret egress matrix', () => {
         platformVersion: 'Windows',
         queueHealthy: true,
         safeStorageAvailable: true,
-        schemaVersion: 5,
+        schemaVersion: 6,
         storageHealthy: true,
       },
     );

@@ -20,6 +20,9 @@
       "path": "../../packages/local-api"
     },
     {
+      "path": "../../packages/providers"
+    },
+    {
       "path": "../../packages/shared"
     },
     {

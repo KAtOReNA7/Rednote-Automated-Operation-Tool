@@ -111,8 +111,54 @@ function makeBridge(
           reopen: true,
           wal: true,
         },
-        schemaVersion: 5,
+        schemaVersion: 6,
         status: 'ready',
+      }),
+    getProviderCapabilityState: async () =>
+      ok({
+        activeRun: null,
+        derivedState: 'NOT_PROBED',
+        entries: [],
+        history: [],
+        runId: null,
+      }),
+    previewProviderCapabilityProbe: async (input) =>
+      ok({
+        credentialBindingVersion: 0,
+        expiresAt: '2099-01-01T00:00:00.000Z',
+        feeEstimate: 'UNKNOWN',
+        planHash: 'a'.repeat(64),
+        profile: input.profile,
+        requestCount: 1,
+        settingsRevision: bundle.settings.revision,
+        startToken: 'a'.repeat(43),
+      }),
+    startProviderCapabilityProbe: async () =>
+      ok({
+        completedRequestCount: 0,
+        currentCapability: null,
+        plannedRequestCount: 1,
+        runId: 'probe-runtime-000001',
+        sentRequestCount: 0,
+        status: 'RUNNING',
+      }),
+    getProviderCapabilityProbeProgress: async (input) =>
+      ok({
+        completedRequestCount: 1,
+        currentCapability: null,
+        plannedRequestCount: 1,
+        runId: input.runId,
+        sentRequestCount: 1,
+        status: 'SUCCEEDED',
+      }),
+    cancelProviderCapabilityProbe: async (input) =>
+      ok({
+        completedRequestCount: 0,
+        currentCapability: null,
+        plannedRequestCount: 1,
+        runId: input.runId,
+        sentRequestCount: 0,
+        status: 'RUNNING',
       }),
     getLocalApiStatus: async () =>
       ok({

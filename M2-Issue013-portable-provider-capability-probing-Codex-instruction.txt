@@ -1,0 +1,2173 @@
+M2 Issue 013：中转站能力探测——可迁移 Codex 完整开发指令
+===========================================================
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；协议判定、迁移、安全边界和最终验收使用 XHigh
+授权范围：只实现 Roadmap Issue 013
+基线方式：运行时发现仓库根目录，以语义能力确认 Issue 012 基线；不固定盘符、绝对路径、提交散列或文件 SHA-256
+目标提交信息：feat(providers): add explicit capability probing
+
+
+零、任务授权与停止边界
+----------------------
+
+你现在获得的唯一开发授权是：
+
+Issue 013：实现供应商能力探测。
+
+本轮必须交付：
+
+- 对已配置 OpenAI-compatible 中转站的能力探测框架；
+- 文本、结构化 JSON、工具调用、联网搜索、图片生成、图片理解、usage、Batch 的三态能力矩阵；
+- Responses、Chat Completions、Images 三类协议模式的独立探测结果；
+- 最大上下文和速率限制的“只接受明确元数据、缺失即未知”观测；
+- CORE、FULL、CUSTOM 三类有界探测计划；
+- 用户显式操作前的计划预览、请求数上限和费用风险确认；
+- main-process-only 凭据解析与真实探测运行时；
+- 设置变化后的能力矩阵失效；
+- 串行执行、取消、超时、崩溃中断和不自动恢复；
+- SQLite migration v6、迁移前备份、回滚和能力结果持久化；
+- 设置页能力矩阵、探测计划、进度、取消和历史状态；
+- Provider Capability Guard：UNKNOWN/UNSUPPORTED 不得被后续业务调用；
+- Scripted Mock 与 127.0.0.1 loopback fixture；
+- 独立 test:capabilities 门禁、全量回归、Windows CI、文档、验收映射和一个本地提交；
+- 对仓库路径、Git 历史、换行符、Windows 用户名和磁盘布局的持续可迁移支持。
+
+本轮开发与验收明确不做：
+
+- 不使用用户现有真实中转站做开发验证；
+- 不读取用户现有真实密钥；
+- 不调用真实 API、模型、搜索、图片或 Batch；
+- 不产生任何真实费用；
+- 不在应用启动、设置保存、数据库迁移或后台定时器中自动探测；
+- 不自动重试可能已经产生费用的探测请求；
+- 不创建 Batch、上传 Batch 文件或提交 Batch 工作；
+- 不执行模型返回的工具调用；
+- 不保存或复用联网搜索正文；
+- 不进入 Issue 014 的 model_runs、结果缓存、成本账本、价格表或 80/100 美元门禁；
+- 不进入 Issue 015 的通用 SearchProvider；
+- 不进入 Issue 016 的网页抓取；
+- 不进入 Issue 017 的浏览器插件业务；
+- 不进入书库、研究、选题、写作、审核或图片资产业务；
+- 不增加小红书登录、发布、评论、私信、验证码或风控动作；
+- 不增加云数据库、云存储、云队列或远程服务；
+- 不使用开卷、盗版电子书或磨铁内部业务数据。
+
+完成后必须停止，不得自动进入 Issue 014。
+
+
+一、必须完整读取的仓库事实来源
+--------------------------------
+
+开始前完整读取，不得只看摘要：
+
+1. xiaohongshu-mystery-account-prd-v1.md
+2. xiaohongshu-development-roadmap-v1.md
+3. codex-master-development-instruction-v1.md
+4. README.md
+5. AGENTS.md
+6. package.json
+7. package-lock.json
+8. docs/adr/0001-m0-foundation.md
+9. docs/adr/0002-sqlite-schema-and-migrations.md
+10. docs/adr/0003-persistent-local-job-queue.md
+11. docs/adr/0004-electron-react-desktop-shell.md
+12. docs/adr/0005-local-file-repository.md
+13. docs/adr/0006-settings-and-local-credential-reference.md
+14. docs/adr/0007-local-loopback-api-and-plugin-authentication.md
+15. docs/adr/0008-provider-neutral-model-interfaces.md
+16. docs/contracts/local-api-v1.md
+17. docs/contracts/provider-v1.md
+18. docs/m2-issue012-acceptance-map.md
+19. docs/m2-issue012-implementation-plan.md
+20. packages/providers 下全部文件
+21. packages/settings 下全部合同与实现
+22. packages/db 下 migrations、settings、model_runs、cost_ledger 相关代码
+23. packages/workflows 下任务队列合同
+24. packages/shared 下 desktop API、DTO、日志与脱敏合同
+25. packages/storage 下项目数据根、备份和临时目录规则
+26. apps/desktop 下 CredentialStore、settings runtime、IPC、preload、smoke
+27. apps/web-ui 下设置页和路由
+28. tests 下 Issue 012 Provider、portability、settings、Electron 测试
+29. .github/workflows/ci.yml
+30. 本指令文件
+
+读取所有适用的嵌套 AGENTS.md。
+
+若冻结文档缺失、损坏或无法完整读取，停止并报告，不得凭记忆补造。
+
+需求优先级：
+
+1. 用户当前明确要求；
+2. PRD 冻结约束；
+3. Roadmap 禁止事项；
+4. 本 Issue 013 指令；
+5. PRD 其他内容；
+6. Roadmap 其他内容；
+7. 既有 ADR。
+
+
+二、可迁移仓库发现与动态语义基线
+----------------------------------
+
+不得假设仓库位于任何固定盘符、用户名目录、桌面或绝对路径。
+
+从用户当前打开的工作区开始：
+
+1. 使用 git rev-parse --show-toplevel 发现仓库根目录。
+2. 将结果只保存在当前运行变量 REPO_ROOT 中并切换到该目录。
+3. 后续路径、命令、文档和报告使用仓库相对路径。
+4. 如果当前路径不是 Git 工作树，停止并报告；不得擅自 git init。
+5. 不把实际绝对路径写入源代码、fixture、快照、日志、诊断、文档或提交。
+
+Git 只读检查：
+
+- 记录当前分支；
+- 正常本地流程应在 main；若不是 main，不自动 checkout，报告并停止；
+- 记录当前 HEAD 为动态 BASELINE_HEAD；
+- 记录 git log --oneline --decorate -20；
+- 远端可以不存在；
+- 本地 main 可以领先 origin/main；
+- 不要求 fetch、pull、push、PR、merge、rebase、amend 或 squash；
+- 不把 BASELINE_HEAD 与本指令中的预置值比较，因为本指令不得包含预置提交散列。
+
+开工时工作树规则：
+
+- 理想状态为干净；
+- 若本指令刚由用户放入仓库根目录，允许仅本指令 TXT 为未跟踪文件；
+- 该 TXT 属于本轮授权输入，最终与 Issue 013 一起进入提交；
+- 除该 TXT 外出现任何未知修改或未跟踪文件，停止并报告，不覆盖、不删除、不 reset。
+
+不得因为以下变化单独判定失败：
+
+- 仓库盘符或父目录改变；
+- Windows 用户名改变；
+- 从旧电脑复制到新电脑；
+- Git 历史被用户合法重建而导致对象 ID 变化；
+- main 相对远端领先；
+- instruction TXT 的本机文件 SHA-256 改变；
+- checkout 使用 LF、CRLF 或 lone CR；
+- 系统临时目录位置改变；
+- npm cache 位置改变。
+
+当前基线改用语义验收。必须同时满足：
+
+- PRD、Roadmap、总指令和 ADR 0001—0008 存在并可完整读取；
+- provider-v1 合同和 Issue 012 的实施计划、190 项验收映射存在；
+- Issue 012 的文本、结构化、视觉、图片、usage 接口存在；
+- Responses、Chat Completions、Images codecs 存在；
+- Scripted Mock、可注入 transport、稳定错误和保守重试语义存在；
+- 能力状态为 UNKNOWN/SUPPORTED/UNSUPPORTED；
+- schema 最新版本仍为 5；
+- migration v1—v5 的版本、名称和 SQL 语义完整；
+- migration checksum 对 LF/CRLF/lone CR 已稳定，或现有 test:portability 能证明严格兼容；
+- 尚未存在完成的 Issue 013 能力持久化、真实探测 UI 或 migration v6；
+- 尚未存在 Issue 014 的缓存或成本账本业务；
+- 所有现有本地门禁通过。
+
+开工门禁至少包括仓库中已存在的：
+
+- npm run test:constraints
+- npm run test:db
+- npm run test:queue
+- npm run test:desktop
+- npm run test:storage
+- npm run test:settings
+- npm run test:local-api
+- npm run test:portability
+- npm run test:providers
+- npm run test:electron-smoke
+- npm run test:packaged-smoke
+
+如果实际 package.json 中还有已纳入 CI 的旧门禁，也必须运行并保留。
+
+语义基线满足时，即使路径、HEAD、parent、远端状态或文件 SHA-256 与旧电脑不同，也必须继续。
+
+语义基线不满足时，只报告缺少的具体能力、文档或失败门禁；不得只报告“路径不一致”
+“SHA 不匹配”或“不是旧提交”。
+
+
+二-A、长期可迁移规则
+--------------------
+
+完整读取并验证根级 AGENTS.md 的 Portable development 规则。
+
+本轮及后续新增代码必须遵守：
+
+- 使用 git rev-parse --show-toplevel 发现仓库根；
+- 源码和文档只使用 repo-relative path；
+- 不硬编码盘符、用户名、桌面目录或旧电脑绝对路径；
+- 不把某次 checkout 的文件 SHA-256 作为跨电脑开工条件；
+- Git HEAD 只作为一次执行内的动态记录；
+- 历史迁移按版本、名称、规范化校验和和运行时完整性验证；
+- LF/CRLF/lone CR 不改变迁移身份；
+- 运行时测试路径由 mkdtemp 动态生成；
+- 中文、空格、emoji 和长路径在运行时构造；
+- 最终报告中的实际提交 ID 或迁移校验值只作结果记录，不得成为下一任务的固定前置条件；
+- 历史 ADR 中的旧机器路径或旧提交记录可保留为历史，不复制进新活动代码和新门禁。
+
+如果 AGENTS.md 已完整包含这些规则，只记录证据，不重复追加。
+
+如果缺少本轮新增的磁盘可迁移规则，可以最小合并：
+
+- 构建、npm cache 和测试临时空间按当前仓库所在卷动态选择；
+- 不固定系统盘或项目盘盘符；
+- 只清理由当前运行创建且路径经过验证的临时目录；
+- 不执行全局磁盘清理，不删除用户缓存、下载、项目或数据根。
+
+
+二-B、磁盘空间与临时目录
+------------------------
+
+上一轮报告显示系统盘可能无可用空间，但项目所在卷能够完成全部门禁。本轮不得把某个盘符
+写进脚本或指令。
+
+开工时：
+
+1. 动态取得 REPO_ROOT 所在文件系统卷。
+2. 检查该卷对 npm ci、测试、打包和 smoke 所需的可写性及合理可用空间。
+3. 检查仓库现有项目盘临时目录包装器或打包修复，优先复用，不重写。
+4. TEMP、TMP、npm cache 和 packager 临时目录按当前仓库所在卷动态建立。
+5. 临时目录位于仓库外的可写同卷父目录，或使用既有受控实现。
+6. 使用随机、单次、可验证的目录名。
+7. 命令结束后只删除本轮创建的精确临时目录。
+8. 不把临时目录加入 Git。
+
+如果系统盘空间为零，但所有项目命令通过同卷临时目录可安全执行，继续，不把系统盘空间
+单独视为失败。
+
+如果仓库所在卷也空间不足，停止并报告需要空间与可用空间；不得擅自删除任何用户文件、
+全局 npm cache、旧仓库、备份或 ProjectDataRoot。
+
+
+三、真实能力与本轮开发调用边界
+------------------------------
+
+Issue 013 的产品功能最终允许用户在应用设置页明确发起真实中转站能力探测。实现这条生产
+路径属于本轮范围。
+
+但是，Codex 本轮开发和验收不得：
+
+- 打开用户正式 ProjectDataRoot；
+- 打开或解密用户现有 safeStorage credential；
+- 检查真实 credential 内容；
+- 读取 .env 或环境变量中的密钥；
+- 把 credential 复制到命令行；
+- 启动连接真实中转站的应用流程；
+- 点击真实“开始探测”；
+- 使用真实 Base URL、模型 ID 或账号数据；
+- 发送任何外部 API 请求；
+- 产生费用。
+
+自动化测试、Electron source smoke 和 packaged smoke 只能使用：
+
+- 运行时随机生成、明确不可用、无真实供应商前缀的 synthetic credential；
+- Scripted Mock；
+- 当前测试进程内、只绑定 127.0.0.1 随机端口的 loopback fixture；
+- 隔离的临时 userData、ProjectDataRoot 和 SQLite。
+
+产品真实探测路径必须通过依赖注入在相同合同下由 loopback fixture 验证，不能因为本轮不调
+真实服务而留下未测试分支。
+
+不要启动 OpenAI Platform API key 创建或选择流程。用户使用的是其自行配置的第三方
+OpenAI-compatible 中转站。
+
+
+四、两项冻结硬约束
+------------------
+
+ai_disclosure：
+
+- 默认且只能为 false；
+- 不进入探测 request、prompt、capability、matrix 或证据；
+- 不影响探测计划、顺序、状态、评分、审批、排期或导出；
+- 不被 Provider、Capability Guard、UI 或迁移自动修改。
+
+copyright：
+
+- 不进入探测 request、prompt、capability、matrix 或证据；
+- 不建立风险检查、提醒、门禁或审批；
+- 不影响探测计划、顺序、状态、评分、优先级、排期或导出。
+
+不得借能力探测加入 AI 标识或版权字段。
+
+
+五、正式协议参考与供应商兼容原则
+--------------------------------
+
+参考用于理解 OpenAI 协议形状，不代表第三方中转站完整兼容：
+
+- Responses API：
+  https://developers.openai.com/api/docs/guides/responses
+- Structured Outputs：
+  https://developers.openai.com/api/docs/guides/structured-outputs
+- Function calling：
+  https://developers.openai.com/api/docs/guides/function-calling
+- Web search：
+  https://developers.openai.com/api/docs/guides/tools-web-search
+- Images and vision：
+  https://developers.openai.com/api/docs/guides/images-vision
+- Image generation：
+  https://developers.openai.com/api/docs/guides/image-generation
+- Batch：
+  https://developers.openai.com/api/docs/guides/batch
+- Rate limits：
+  https://developers.openai.com/api/docs/guides/rate-limits
+- API errors：
+  https://developers.openai.com/api/docs/guides/error-codes
+
+必须承认：
+
+- OpenAI-compatible 不等于完整兼容；
+- 能力可能按模型、endpoint 和协议模式不同；
+- 接口返回成功不等于某项工具能力真的被执行；
+- 模型名称不能作为能力证据；
+- /models 列表不能单独证明结构化、工具、搜索、视觉、图片或 Batch；
+- usage、上下文长度和速率字段可能缺失；
+- Web Search 可能产生额外工具费用；
+- 图片生成可能产生独立费用；
+- Batch 不是 V1 依赖；
+- 不支持、未授权、限流、网络失败和探测不确定必须区分。
+
+不得硬编码任何实际供应商域名、模型名、价格、速率或上下文长度。
+
+
+六、包与进程边界
+----------------
+
+优先扩展既有 packages/providers，不创建功能重叠的 Provider 包。
+
+建议结构：
+
+packages/providers/src/
+  capabilities.ts
+  capability-matrix.ts
+  capability-guard.ts
+  probes/
+    contracts.ts
+    plan.ts
+    planner.ts
+    classifier.ts
+    service.ts
+    transport.ts
+    metadata-probe.ts
+    text-probe.ts
+    structured-probe.ts
+    tool-probe.ts
+    web-search-probe.ts
+    vision-probe.ts
+    image-probe.ts
+    usage-probe.ts
+    batch-probe.ts
+    fixtures.ts
+
+packages/db/src/
+  capability-repository.ts
+  migrations.ts
+
+apps/desktop/src/
+  capability-runtime.ts
+  capability-ipc.ts
+
+实际文件可以按既有风格调整。
+
+边界要求：
+
+- Provider 探测合同、计划、分类器与 Capability Guard 不依赖 Electron；
+- SQLite repository 位于 packages/db；
+- safeStorage 解析和真实 transport 装配只在 Electron main；
+- renderer 不能 import providers、db、net、crypto 或 CredentialStore；
+- preload 只暴露有限 DTO 方法；
+- local API 不增加 Provider 或探测 route；
+- 浏览器插件不能调用探测；
+- JobQueue 不执行能力探测；
+- 不注册会自动恢复的真实探测 JobHandler；
+- 不向 packages/shared 的 renderer 通用入口导出 credential、Authorization、raw response、
+  图片 bytes 或固定探测 prompt。
+
+
+七、能力矩阵合同
+----------------
+
+沿用 Issue 012：
+
+CapabilityState：
+
+- UNKNOWN
+- SUPPORTED
+- UNSUPPORTED
+
+至少覆盖：
+
+- text
+- structuredJson
+- toolCalling
+- webSearch
+- imageGeneration
+- vision
+- usage
+- batch
+- streaming
+
+附加可空观测：
+
+- maxContextTokens
+- rateLimitRequests
+- rateLimitTokens
+- rateLimitRemainingRequests
+- rateLimitRemainingTokens
+- rateLimitResetAt
+
+每一项能力结果至少包含：
+
+- capability；
+- state；
+- providerConfigFingerprint；
+- settingsRevision；
+- modelSlot；
+- modelId；
+- protocolMode，可空；
+- evidenceCode；
+- reasonCode，可空；
+- observedAt；
+- source=PROBED/METADATA/NOT_PROBED；
+- runId；
+- confidence=CONFIRMED/INCONCLUSIVE；
+- stale；
+- finite safe details。
+
+未实际探测或只有 NOT_PROBED 证据时，observedAt 必须为 null，不能伪造当前时间。
+
+modelSlot 使用有限枚举：
+
+- PROVIDER
+- RESEARCH
+- WRITING
+- REVIEW
+- IMAGE
+
+相同 modelId 可以去重实际请求，但必须把结果映射回所有使用该模型的 slot。
+
+CapabilityState 规则：
+
+- 没有运行探测时为 UNKNOWN；
+- 用户跳过某项时为 UNKNOWN；
+- 网络、DNS、TLS、timeout、429、401、403 或 ambiguous outcome 不等于 UNSUPPORTED；
+- 只有成功的正向证据才能标记 SUPPORTED；
+- 只有明确、能力特定且可信的负向协议证据才能标记 UNSUPPORTED；
+- 无法区分“不支持”和“中转站错误”时保持 UNKNOWN；
+- 不能根据模型名、域名、HTTP 状态单独推断；
+- 不能把 UNKNOWN 当作 SUPPORTED；
+- 不能把一次失败永久写成不支持。
+
+
+八、能力矩阵作用域与失效
+------------------------
+
+能力不是 Provider 全局布尔值。作用域至少包含：
+
+- 规范化后的 Provider 配置指纹；
+- settings revision，作为计划并发与历史来源记录；
+- credentialBindingVersion，作为不含秘密的凭据生命周期版本；
+- model slot；
+- model ID；
+- protocol mode；
+- capability；
+- provider contract version。
+
+Provider 配置指纹：
+
+- 由规范化协议、Base URL、模型映射和合同版本组成；
+- 不包含 credential、ciphertext、用户路径、用户名或机器信息；
+- 使用稳定规范序列化后计算；
+- 同一语义配置跨电脑得到相同结果；
+- 不是文件 SHA-256；
+- 不是 Git 或开工门禁；
+- 不在 UI 显示完整值。
+
+credentialBindingVersion：
+
+- 只来自 CredentialStore 已有的非秘密 revision/updated metadata，或新增的单调非秘密版本；
+- 不包含 credential 内容、长度、前后缀、hash、ciphertext 或平台密钥；
+- credential set/replace/clear/reauth 后必须改变；
+- 只用于判断能力证据是否仍绑定当前凭据生命周期；
+- 不通过 renderer 传入；
+- 不在 UI 显示原始值。
+
+以下变化使旧矩阵 stale：
+
+- Base URL 变化；
+- provider protocol 变化；
+- 任一相关 model ID 变化；
+- provider contract version 变化；
+- credentialBindingVersion 变化。
+
+以下变化不应单独改变配置指纹：
+
+- 仓库路径；
+- Windows 用户名；
+- Git HEAD；
+- LF/CRLF；
+- ProjectDataRoot 绝对位置；
+- UI 主题；
+- 账号简介；
+- 审批预算；
+- credential 的密文 envelope 路径，前提是 credentialBindingVersion 未改变。
+
+credential 被替换、清除或重新认证后可以保留历史矩阵，但旧矩阵必须 stale，UI 要求重新
+探测；不得把历史矩阵当作认证或权限仍有效的证明。
+
+settingsRevision 用于 preview/start 的 optimistic concurrency。探测完成后，如果只修改账号
+简介、预算或其他与 Provider 无关设置，settingsRevision 即使改变，也不能单独使能力矩阵
+stale；矩阵有效性由 Provider 配置指纹、credentialBindingVersion 和合同版本共同决定。
+
+
+九、SQLite migration v6
+-----------------------
+
+本轮允许且只允许追加一个不可变 migration：
+
+- version：6
+- semantic name：provider_capability_probing
+
+不得修改 migration v1—v5 的 version、name、SQL 语义或历史记录。
+
+建议新增 STRICT 表：
+
+1. provider_capability_probe_runs
+2. provider_capability_entries
+
+provider_capability_probe_runs 至少包含：
+
+- id；
+- provider_config_fingerprint；
+- settings_revision；
+- credential_binding_version；
+- profile=CORE/FULL/CUSTOM；
+- status=PLANNED/RUNNING/SUCCEEDED/PARTIAL/FAILED/CANCELLED/INTERRUPTED；
+- plan_hash；
+- planned_steps；
+- attempted_steps；
+- external_request_count；
+- supported_count；
+- unsupported_count；
+- unknown_count；
+- failure_code，可空；
+- created_at；
+- started_at，可空；
+- completed_at，可空；
+- updated_at；
+- revision。
+
+provider_capability_entries 至少包含：
+
+- id；
+- run_id 外键；
+- provider_config_fingerprint；
+- settings_revision；
+- credential_binding_version；
+- model_slot；
+- model_id；
+- capability；
+- protocol_mode，可空；
+- state；
+- evidence_code；
+- reason_code，可空；
+- confidence；
+- source；
+- safe_metadata_json；
+- observed_at；
+- created_at。
+
+约束：
+
+- STRICT；
+- 主键、外键、唯一约束和显式索引；
+- 每个 run/model slot/model/capability/protocol mode 最多一行；
+- 数量和时间字段有界；
+- JSON 只允许有限安全结构；
+- 状态、能力、slot、协议和 evidence 使用 Core/Provider 合同枚举；
+- 不保存 prompt、response、tool output、搜索结果、图片、Authorization、credential、完整
+  headers、vendor error body、stack 或绝对路径；
+- 不修改 model_runs 和 cost_ledger；
+- 不虚构费用；
+- 不把 probe run 当作 model run。
+
+持久化语义：
+
+- plan 可先保存为 PLANNED；
+- 开始时 expected revision 转 RUNNING；
+- 每个 step 完成后以短事务写入有限结果；
+- 网络调用期间不持有 SQLite 事务；
+- 一个 run 的 external_request_count 必须和 transport 实际发送计数一致；
+- 完成时一次事务核对计数并转最终状态；
+- RUNNING 状态在应用重启后转 INTERRUPTED；
+- INTERRUPTED/CANCELLED 不自动恢复或重发；
+- 旧有效矩阵保持可查；
+- 当前配置只读取与当前指纹和 credentialBindingVersion 匹配的最新 SUCCEEDED 矩阵；
+- PARTIAL/FAILED/CANCELLED/INTERRUPTED 只作历史和诊断，不替换当前矩阵；
+- 不把失败 run 的未完成条目覆盖为 UNSUPPORTED。
+
+迁移要求：
+
+- 迁移前自动备份；
+- 备份失败则不迁移；
+- migration 与 schema_migrations 记录同一事务；
+- 失败完整回滚；
+- v5 用户数据、设置、队列、本地 API、Provider 数据保持；
+- backup 可独立打开；
+- foreign_key_check 和 quick_check 通过；
+- 新表外键有首列索引；
+- 不通过删除或重建用户数据库处理失败。
+
+迁移校验继续使用已实现的 canonical line-ending 规则。不得在本指令或代码中硬编码旧电脑
+算出的 migration checksum。报告可以说明 v6 的规范化校验已验证，但不得把某个十六进制
+值设为后续电脑的开工条件。
+
+
+十、探测计划与显式确认
+----------------------
+
+任何真实探测前必须先生成不可变 ProbePlan。
+
+ProbePlan 至少包含：
+
+- planId；
+- planHash；
+- providerConfigFingerprint；
+- settingsRevision；
+- credentialBindingVersion；
+- profile；
+- selected model slots；
+- selected capabilities；
+- protocol modes；
+- ordered steps；
+- exact maximum external request count；
+- includesWebSearch；
+- includesImageGeneration；
+- includesBatchMetadataProbe；
+- mayIncurCharges=true；
+- costEstimate=null；
+- expiresAt；
+- singleUse=true。
+
+不得声称可以准确估算费用，因为 Issue 014 尚未实现价格表和成本账本。
+
+profile：
+
+CORE：
+
+- configured model metadata；
+- text protocol；
+- structured JSON；
+- usage observation；
+- vision；
+- 不包含 web search、image generation 或 Batch；
+- 工具调用可由用户选择，默认关闭。
+
+FULL：
+
+- CORE 全部；
+- tool calling；
+- web search；
+- image generation；
+- Batch 无副作用元数据探测；
+- 所有支持的显式协议模式；
+- 请求数仍必须有硬上限。
+
+CUSTOM：
+
+- 用户从有限能力列表选择；
+- 至少包含一个能力；
+- 不能自定义 prompt、endpoint、header 或 body。
+
+计划器必须：
+
+- 对相同 modelId 去重；
+- 在 UI 确认前给出精确请求上限；
+- 默认串行；
+- 最大并发固定为 1；
+- 单次 run 的计划请求硬上限为 32；
+- 每个逻辑 step 最多一次外部尝试；
+- 不安排隐式 repair；
+- 不安排隐藏 fallback；
+- 不安排创建 Batch；
+- 不安排上传文件；
+- 不安排搜索结果抓取；
+- 不安排用户内容。
+
+真实 start 采用 preview/commit 两阶段：
+
+1. renderer 请求 preview，不携带 Base URL、modelId、credential 或 prompt；
+2. main 从当前设置重建计划；
+3. main 返回有限预览和一次性 start token；
+4. 用户勾选“我知道探测会向中转站发送请求并可能产生费用”；
+5. renderer 提交 token、planHash、expected settingsRevision 和 confirmed=true；
+6. main 校验窗口、sender、TTL、single-use、planHash、revision 和
+   credentialBindingVersion；
+7. main 再次从设置重建并比较；
+8. 完全一致后才开始。
+
+token：
+
+- 仅内存；
+- CSPRNG；
+- TTL 最多 5 分钟；
+- 单次；
+- 绑定 senderFrame 和 BrowserWindow；
+- 设置变化、窗口关闭、app shutdown 或取消后失效；
+- 不进入 SQLite、日志、诊断或报告。
+
+
+十一、探测执行器
+----------------
+
+实现 CapabilityProbeService/Runner：
+
+- 同一应用同时最多一个真实 run；
+- 串行执行；
+- 每步独立 AbortController；
+- run 级总 deadline；
+- step 级 timeout；
+- 用户取消立即停止安排后续步骤；
+- 对当前请求调用 abort；
+- 等待资源释放；
+- 写入 CANCELLED；
+- 不自动恢复；
+- 不自动重试；
+- 不在失败后自动换 endpoint；
+- 不在能力探测之外调用 Provider。
+
+run 状态机：
+
+PLANNED
+  -> RUNNING
+  -> SUCCEEDED | PARTIAL | FAILED | CANCELLED | INTERRUPTED
+
+禁止：
+
+- 从终态返回 RUNNING；
+- 同一 plan 二次 start；
+- stale revision start；
+- app startup 自动 start；
+- 数据库迁移后自动 start；
+- settings 保存后自动 start；
+- 定时探测；
+- JobQueue 崩溃恢复后自动探测。
+
+若应用崩溃：
+
+- 下次启动将遗留 RUNNING 标记 INTERRUPTED；
+- 不重新发送任何 step；
+- 保留已完成有限证据；
+- UI 允许用户生成新计划；
+- 不复用旧 start token。
+
+
+十二、探测 transport 安全
+-------------------------
+
+可以扩展 Issue 012 HttpTransport 或新增专用 CapabilityProbeTransport，但不得放宽普通
+Provider 调用边界。
+
+允许的探测 endpoint 只来自固定枚举：
+
+- /models
+- /models/{configuredModelId}
+- /responses
+- /chat/completions
+- /images/generations
+- /batches 的无副作用元数据方法
+
+Base URL 合并必须保留合法 base path。
+
+configuredModelId 如果进入 path，只能作为一个经过严格 percent-encoding 的 path segment，
+不得把 `/`、`..`、query、fragment 或控制字符解释为路径。若中转站的模型 ID 不能安全映射
+为单 segment，则只使用 /models 列表在内存中精确筛选，或保持 metadata UNKNOWN；不得拼接
+任意路径。
+
+要求：
+
+- HTTPS，或 Issue 010 允许的 loopback HTTP；
+- redirect=error；
+- credentials=omit；
+- 不使用 Cookie；
+- 不读取系统代理环境配置；
+- Authorization 只在 main 的最后 transport 层注入；
+- 不能由 renderer/job/local API 提供 header；
+- Host/Origin 不跨重定向；
+- request/response header 和 body 有上限；
+- 响应流式计数；
+- timeout 和 AbortSignal；
+- 连接、body、timer 完整释放；
+- 只记录有限状态和计数；
+- 不记录 raw request/response。
+
+GET/OPTIONS/HEAD 只可用于固定元数据探测。普通 Issue 012 Provider 仍保持既有 POST 和受控
+endpoint 规则。
+
+测试 transport：
+
+- 只连接 127.0.0.1；
+- 使用 OS 随机端口；
+- 对任何非 loopback 地址 fail closed；
+- 外部连接计数必须为 0。
+
+
+十三、文本与协议模式探测
+------------------------
+
+对每个去重后的 text model，可以显式探测：
+
+- RESPONSES；
+- CHAT_COMPLETIONS。
+
+不得根据模型名选择。
+
+每个 mode 使用固定、最小、非业务 prompt：
+
+- 不包含用户书名、作品、账号、设置或个人信息；
+- 要求返回固定短标记；
+- output token 上限保持最小；
+- temperature 等参数只使用合同允许的保守值；
+- store=false；若中转站不接受该参数，不能静默删除后重试。
+
+SUPPORTED：
+
+- HTTP 与 codec 成功；
+- 响应结构合法；
+- 返回预期固定标记；
+- 没有 refusal；
+- 没有 ambiguous outcome。
+
+UNSUPPORTED：
+
+- 中转站返回明确、协议特定的 endpoint/model/mode unsupported 证据；
+- 分类器能与认证、限流、配额、请求错误区分。
+
+UNKNOWN：
+
+- 401/403；
+- 429；
+- timeout；
+- 网络/TLS/DNS；
+- 5xx；
+- malformed body；
+- generic 404 无法确认；
+- response 成功但没有预期标记；
+- ambiguous disconnect。
+
+协议模式结果必须分别保存，不允许“一个成功就声称全部模式支持”。
+
+
+十四、结构化 JSON 探测
+----------------------
+
+对已证明 text mode 可工作的模型，使用固定极小 strict schema：
+
+- object；
+- additionalProperties=false；
+- 一个固定 boolean；
+- 一个固定 enum 字符串；
+- schemaId/version 固定为能力探测合同；
+- runtime validator 必须再次验证。
+
+Responses 和 Chat Completions 使用各自 codec 的显式 Structured Outputs 形状。
+
+SUPPORTED：
+
+- provider 接受 schema；
+- 返回合法 JSON；
+- runtime schema 验证通过；
+- 固定值符合预期。
+
+不得仅因为“返回了看起来像 JSON 的文本”标记支持。
+
+明确 unsupported structured output 可标 UNSUPPORTED。
+
+invalid JSON、schema mismatch、refusal、静默忽略 schema 或 generic error 保持 UNKNOWN，并
+记录有限 reason。
+
+不发送第二次 JSON repair 请求。
+
+
+十五、工具调用探测
+------------------
+
+工具探测只声明一个无副作用 synthetic function：
+
+- 固定名称；
+- strict schema；
+- 只接受固定 enum 参数；
+- prompt 要求调用该函数；
+- 不提供任何真实业务工具；
+- 不执行返回的 tool call；
+- 不提交 tool result；
+- 不产生第二轮模型调用。
+
+SUPPORTED：
+
+- provider 返回可由对应 codec 解析的 tool call；
+- 工具名和参数通过严格验证；
+- 参数等于固定 synthetic 值。
+
+如果只返回普通文本、伪造 JSON 或未知工具，不标记支持。
+
+任何返回的 tool call 只在内存验证，随后丢弃；不进入日志、SQLite、audit、diagnostic 或
+snapshot。
+
+
+十六、联网搜索探测
+------------------
+
+联网搜索只在用户选择 FULL 或 CUSTOM 且明确确认后进入真实计划。
+
+要求：
+
+- 使用 Responses 的受控 web_search tool 形状；
+- 可以在兼容性合同中保留 legacy 名称，但必须作为独立显式 probe mode；
+- 固定、非敏感、低复杂度查询；
+- 查询目标使用稳定公开标准页面；
+- 不使用用户业务主题；
+- 不保存网页正文；
+- 不抓取结果 URL；
+- 不把搜索结果送入 SearchProvider；
+- 不创建来源、claims、clips 或 research dossier。
+
+SUPPORTED 必须有强正向证据：
+
+- 响应包含可识别的 web_search_call completed 事件，或合同认可的等价工具证据；
+- 至少有安全解析的来源/citation 元数据；
+- 不是只凭模型文本声称“我搜索了”。
+
+普通文本答案、模型记忆答案、虚构 URL 或无工具证据时保持 UNKNOWN。
+
+只保存：
+
+- 是否出现工具事件；
+- 来源计数；
+- citation 计数；
+- 安全 evidence code；
+- 不保存 URL、标题、snippet 或正文。
+
+不得把本轮联网探测的结果当作任何图书事实来源。
+
+
+十七、图片理解探测
+------------------
+
+Vision 探测使用代码内生成的极小 synthetic image：
+
+- 运行时内存生成；
+- 不从磁盘读取用户图片；
+- 不包含书封、人物、文字或个人信息；
+- 固定纯色/简单几何；
+- MIME 与 magic bytes 合法；
+- 大小受 Issue 012 上限约束；
+- 测试结束释放；
+- 不写 assets 或文件仓库。
+
+prompt 要求返回有限 enum，例如识别固定颜色或形状。
+
+SUPPORTED：
+
+- 对应 mode 接受 image input；
+- 返回合法文本；
+- 结果匹配固定 enum；
+- 没有 refusal。
+
+成功返回但答案错误、忽略图片或只复述 prompt 时保持 UNKNOWN，不标记 UNSUPPORTED。
+
+
+十八、图片生成探测
+------------------
+
+图片生成属于可能费用较高能力：
+
+- CORE 默认不包含；
+- FULL/CUSTOM 必须在预览中单独标注；
+- 用户明确确认后最多一次请求；
+- count=1；
+- 使用产品合同支持的最低保守质量/尺寸 hint；
+- prompt 固定为简单 synthetic 图形；
+- 不使用用户内容。
+
+SUPPORTED：
+
+- Images endpoint 成功；
+- codec 返回受支持的 inline image bytes；
+- MIME、magic bytes、单张/总大小验证通过。
+
+如果仅返回产品当前不支持的任意远程 URL：
+
+- 不下载；
+- 不跟随；
+- 不标记为产品可用的 imageGeneration；
+- 使用安全 reason=OUTPUT_VARIANT_UNSUPPORTED。
+
+真实探测所得图片：
+
+- 只在内存验证；
+- 不显示给用户；
+- 不保存；
+- 不写 ProjectDataRoot、assets、日志、diagnostic 或测试 artifact；
+- 验证后立即解除引用。
+
+
+十九、usage、上下文与速率观测
+----------------------------
+
+usage：
+
+- 不单独增加付费请求；
+- 从其他成功 probe 的返回中观察；
+- 至少一个成功响应包含可验证 usage 才可标 SUPPORTED；
+- 所有成功响应均缺失 usage 时保持 UNKNOWN，除非上游明确声明不支持；
+- malformed usage 保持 UNKNOWN，并记录稳定 reason；
+- 不估算 token；
+- 不把缺失写 0；
+- 不计算美元；
+- 不写 model_runs 或 cost_ledger。
+
+maxContextTokens：
+
+- 只从明确、可信、与 configured model 精确对应的元数据读取；
+- 不通过逐步扩大 prompt 测上限；
+- 不发送大输入；
+- 缺失为 null；
+- 不根据模型名或官方同名模型推断第三方中转站值。
+
+rate limits：
+
+- 只读取 allowlist 的规范化响应 headers 或明确元数据；
+- 不主动打到限流；
+- 不并发压测；
+- 不估算；
+- 不持久化完整 headers；
+- 非负安全整数或合法时间才接受；
+- 缺失保持 null；
+- 不把单次 429 当作固定供应商速率。
+
+
+二十、Batch 无副作用探测
+------------------------
+
+Batch 不是 V1 依赖。探测不得创建真实 Batch。
+
+禁止：
+
+- 上传 JSONL；
+- 创建 file；
+- 提交 input_file_id；
+- POST 一个可能被接受的 Batch 创建请求；
+- 查询或列出用户已有 Batch；
+- 读取 Batch 内容；
+- 取消用户 Batch；
+- 依赖 Batch 完成后台队列任务。
+
+允许：
+
+- 固定 endpoint 的 OPTIONS/HEAD 等无副作用元数据探测；
+- 明确 Provider capability metadata；
+- loopback fixture 中模拟 SUPPORTED/UNSUPPORTED。
+
+分类：
+
+- 明确、可信的 capability metadata 可标 SUPPORTED；
+- 明确 endpoint unsupported 可标 UNSUPPORTED；
+- 2xx 但无能力语义、405、generic 404、认证/限流/网络问题均保持 UNKNOWN。
+
+无论 Batch 为 UNKNOWN 或 UNSUPPORTED：
+
+- Issue 009 本地持久队列必须继续运行；
+- 不改变 jobs 状态机；
+- 不降低 queue 测试；
+- 不引入远程队列。
+
+
+二十一、保守分类器与稳定错误
+----------------------------
+
+实现纯函数 CapabilityProbeClassifier。
+
+输入只包括：
+
+- probe kind；
+- protocol mode；
+- normalized transport outcome；
+- normalized provider error；
+- validated finite evidence；
+- metadata presence。
+
+输出：
+
+- state；
+- confidence；
+- evidenceCode；
+- reasonCode；
+- safe metadata；
+- shouldContinueRun；
+- mustStopRun。
+
+不得把 vendor 原始 message 作为分类条件的唯一依据。可使用有限、经过测试的结构化 code
+和状态组合。
+
+至少覆盖稳定 reason：
+
+- NOT_PROBED
+- USER_SKIPPED
+- CONFIG_STALE
+- AUTHENTICATION_REJECTED
+- PERMISSION_REJECTED
+- RATE_LIMITED
+- QUOTA_UNAVAILABLE
+- NETWORK_UNREACHABLE
+- TLS_FAILURE
+- TIMEOUT
+- ABORTED
+- ENDPOINT_EXPLICITLY_UNSUPPORTED
+- MODEL_EXPLICITLY_UNSUPPORTED
+- PROTOCOL_EXPLICITLY_UNSUPPORTED
+- INVALID_CONTENT_TYPE
+- INVALID_RESPONSE
+- INVALID_JSON
+- SCHEMA_MISMATCH
+- TOOL_NOT_OBSERVED
+- SEARCH_NOT_OBSERVED
+- VISION_INCONCLUSIVE
+- OUTPUT_VARIANT_UNSUPPORTED
+- USAGE_NOT_REPORTED
+- METADATA_NOT_REPORTED
+- AMBIGUOUS_OUTCOME
+- INTERNAL_ERROR
+
+全局停止规则：
+
+- 401/403：停止余下真实 probe，剩余项 UNKNOWN；
+- credential unavailable/corrupt：开始前失败，外部请求 0；
+- config stale：开始前失败，外部请求 0；
+- 429：停止余下步骤，不自动等待或重试；
+- 用户取消：停止；
+- app shutdown：中断；
+- 同一 Provider 连续 3 个网络/5xx 失败：停止，避免无意义请求；
+- 任何计划计数不一致：停止并 FAILED。
+
+单项 unsupported 不阻止探测其他独立能力，除非基础 text mode 均不可用。
+
+
+二十二、Capability Guard
+------------------------
+
+实现供后续业务调用的 CapabilityGuard/Resolver。
+
+输入：
+
+- 当前 provider config fingerprint；
+- settings revision，仅作历史来源与并发信息；
+- 当前 credentialBindingVersion；
+- model slot；
+- capability；
+- protocol mode；
+- 当前矩阵。
+
+规则：
+
+- SUPPORTED 且矩阵不 stale 才允许；
+- UNKNOWN 拒绝并返回 PROVIDER_CAPABILITY_UNKNOWN；
+- UNSUPPORTED 拒绝并返回 PROVIDER_CAPABILITY_UNSUPPORTED；
+- stale 拒绝并返回 PROVIDER_CAPABILITY_STALE；
+- 不能仅因与 Provider 无关的 settingsRevision 变化拒绝；
+- model/mode 不匹配拒绝；
+- 不自动探测；
+- 不自动 fallback；
+- 不自动换模型；
+- 不调用 UI；
+- 不读取 credential；
+- 不修改矩阵。
+
+本轮没有研究、写作或图片业务调用，Guard 通过单元/集成测试证明，不注册真实业务
+JobHandler。
+
+
+二十三、IPC 与设置页
+--------------------
+
+共享 desktop bridge 可以新增有限方法：
+
+- getProviderCapabilityState
+- previewProviderCapabilityProbe
+- startProviderCapabilityProbe
+- getProviderCapabilityProbeProgress
+- cancelProviderCapabilityProbe
+
+每个方法：
+
+- 独立固定 channel；
+- exact-object 验证；
+- 拒绝多余字段；
+- senderFrame origin 和 BrowserWindow 绑定；
+- 输入大小/深度有界；
+- 返回稳定 DTO；
+- 不暴露 raw IPC；
+- 不暴露 Base URL 完整值；
+- 不暴露 credential、ciphertext、Authorization、plan token 以外的秘密；
+- 不暴露 raw prompt、request、response、headers、tool call、search result 或图片 bytes。
+
+设置页新增“中转站能力探测”区域：
+
+- 当前配置状态；
+- 未探测、已探测、部分完成、过期、失败、取消、中断；
+- model slot 与 model ID；
+- capability 三态矩阵；
+- protocol mode；
+- observedAt；
+- safe reason；
+- CORE/FULL/CUSTOM 选择；
+- 精确最大请求数；
+- Web Search/图片生成可能额外收费提示；
+- 无价格表时明确“无法估算实际金额”；
+- 显式确认 checkbox；
+- start；
+- progress；
+- cancel；
+- stale 后重新探测；
+- loading/empty/error/conflict 状态；
+- 可见键盘焦点和可访问标签。
+
+不要把一次部分能力成功命名为“中转站全部验证通过”，也不要为了本轮修改 Issue 010 的
+app_settings.setup_state CHECK。新增一个由当前矩阵派生的有限展示状态：
+
+- NOT_PROBED
+- PROBE_COMPLETE
+- PROBE_PARTIAL
+- PROBE_STALE
+- PROBE_FAILED
+- PROBE_CANCELLED
+- PROBE_INTERRUPTED
+
+该状态不替代每项能力三态，也不代表账号额度、价格、长期稳定性或所有模型均可用。
+
+禁止：
+
+- 默认勾选费用确认；
+- 页面加载自动 preview/start；
+- settings 保存自动 start；
+- 隐藏 image/search 请求；
+- 显示密钥前缀、长度、hash 或后四位；
+- 显示完整 Base URL；
+- 显示探测 prompt 或 provider 原始输出；
+- 把 capability success 伪装成所有模型均支持；
+- 提供任意 endpoint/header/prompt 编辑框。
+
+
+二十四、凭据生命周期
+--------------------
+
+真实产品运行时：
+
+- start 通过全部计划校验后才调用 CredentialStore.resolveForProvider；
+- 只解析固定 CONTENT_AI_API_KEY reference；
+- credential 只存在于 main transport 调用所需的最短内存生命周期；
+- 每个 request 不重复持久化；
+- run 完成/失败/取消时解除引用；
+- 不进入 closure 长期缓存；
+- 不进入 renderer、preload DTO、SQLite、WAL、SHM、jobs、audit、logs、diagnostic、
+  crash report、package 或 Git；
+- 不回显；
+- 不 fingerprint credential；
+- 不比较 credential 内容；
+- 不从环境变量 fallback。
+
+CredentialStore 状态不是 CONFIGURED 时：
+
+- preview 可以说明不可探测；
+- start 外部请求 0；
+- 返回稳定 CREDENTIAL_UNAVAILABLE/REAUTH_REQUIRED；
+- 不清除用户密钥；
+- 不把 capability 标记 UNSUPPORTED。
+
+
+二十五、日志、audit 与诊断
+--------------------------
+
+允许日志：
+
+- runId；
+- operation=CAPABILITY_PROBE；
+- profile；
+- step kind；
+- model slot；
+- protocol mode；
+- attempt=1；
+- duration；
+- stable state/evidence/reason；
+- external request count；
+- supported/unsupported/unknown count。
+
+默认不记录完整 model ID；如既有 ADR 允许，可记录安全显示值，否则记录 slot。
+
+禁止日志：
+
+- credential；
+- Authorization；
+- full Base URL；
+- prompt；
+- request/response body；
+- vendor error body；
+- raw headers；
+- tool arguments；
+- search URL/title/snippet/body；
+- image bytes/base64；
+- output text；
+- stack；
+- absolute path。
+
+audit_events 只记录：
+
+- probe planned/started/completed/cancelled/interrupted；
+- profile；
+- capability count；
+- 最终有限计数；
+- settings revision；
+- credential binding version；
+- 不记录 plan token/hash 全值、内容或秘密。
+
+基础诊断可以增加：
+
+- capabilityProbeAvailable；
+- currentProbeState；
+- capabilityMatrixPresent；
+- capabilityMatrixStale；
+- supported/unsupported/unknown counts；
+- lastProbeAt。
+
+不得包含：
+
+- model ID 全值；
+- Base URL；
+- credential 状态细节；
+- capability evidence 原始内容；
+- run 历史明细；
+- provider response。
+
+
+二十六、50 项 secret/content/side-effect egress
+-----------------------------------------------
+
+至少逐项验证：
+
+1. synthetic credential 不进入 SQLite。
+2. 不进入 WAL。
+3. 不进入 SHM。
+4. 不进入 audit_events。
+5. 不进入 jobs payload。
+6. 不进入 jobs result。
+7. 不进入 model_runs。
+8. 不进入 cost_ledger。
+9. 不进入 logs。
+10. 不进入 diagnostic preview。
+11. 不进入 diagnostic export。
+12. 不进入 backup。
+13. 不进入 ProjectDataRoot 文件。
+14. 不进入 local API response。
+15. 不进入 renderer state。
+16. 不进入 preload DTO。
+17. 不进入 error DTO。
+18. 不进入 test snapshot。
+19. 不进入 source map。
+20. 不进入 package/asar。
+21. 不进入 Git tracked fixture。
+22. Authorization 不进入任何输出。
+23. start token 不进入 SQLite。
+24. start token 不进入日志。
+25. plan hash 不作为 secret 泄露原始配置。
+26. full Base URL 不进入 UI。
+27. full Base URL 不进入诊断。
+28. raw probe prompt 不进入日志。
+29. raw probe prompt 不进入 SQLite。
+30. raw output text 不进入日志。
+31. raw output text 不进入 SQLite。
+32. tool call 参数不进入日志。
+33. tool call 参数不进入 SQLite。
+34. search URL 不进入 SQLite。
+35. search title 不进入 SQLite。
+36. search snippet/body 不进入 SQLite。
+37. search 内容不进入 sources/claims/clips。
+38. vision synthetic bytes 不进入日志。
+39. vision synthetic bytes 不进入 SQLite。
+40. generated image bytes 不进入文件仓库。
+41. generated image bytes 不进入 assets。
+42. generated image bytes 不进入测试 artifact。
+43. vendor error body 不进入稳定错误。
+44. raw response headers 不进入持久化。
+45. runtime random credential 不被固定。
+46. 自动开发测试真实 API 请求为 0。
+47. 自动开发测试真实费用为 0。
+48. Batch 创建数为 0。
+49. 外部非 loopback 连接为 0。
+50. app startup 自动探测数为 0。
+
+
+二十七、Mock 与 loopback fixture
+-------------------------------
+
+扩展 ScriptedMockProvider 或增加 ScriptedCapabilityFixture。
+
+必须覆盖：
+
+- Responses text supported；
+- Chat text supported；
+- mode unsupported；
+- structured supported/ignored/invalid；
+- tool call supported/普通文本/非法参数；
+- web search event + citation；
+- 普通文本伪装已搜索；
+- vision correct/incorrect/ignored；
+- image inline bytes/URL-only/malformed；
+- usage present/missing/malformed；
+- max context metadata present/missing；
+- rate metadata present/missing/malformed；
+- Batch metadata supported/unsupported/inconclusive；
+- 401/403；
+- 404 generic/explicit unsupported；
+- 429；
+- 5xx；
+- timeout；
+- abort；
+- invalid MIME；
+- invalid JSON；
+- ambiguous disconnect；
+- plan stale；
+- user cancel；
+- app interruption。
+
+loopback fixture：
+
+- 只绑定 127.0.0.1；
+- port=0；
+- 不使用 local API 默认端口；
+- route/method allowlist；
+- 可脚本化 header/body/delay/disconnect；
+- 只在内存记录有限 request count；
+- 不记录 Authorization 值；
+- 每测试独立；
+- 结束关闭 listener/socket/timer；
+- 不打包为产品 server；
+- 不注册到 app startup。
+
+source 与 packaged smoke 使用隔离测试入口显式触发 loopback probe，不能打开用户正式设置。
+
+
+二十八、并发、取消与崩溃测试
+----------------------------
+
+必须测试：
+
+- 同时两个 preview 可以独立，但 start token 各自绑定；
+- 同一 token 只能一次；
+- 同一 app 同时只允许一个 RUNNING；
+- 第二个 start 返回稳定 conflict；
+- settings revision 变化使旧计划失效；
+- planHash 改动拒绝；
+- 窗口改变拒绝；
+- sender 改变拒绝；
+- token 过期拒绝；
+- current step 取消；
+- step 间取消；
+- timeout 后不自动重发；
+- 429 后停止；
+- 401 后停止；
+- ambiguous outcome 后不重发；
+- app shutdown 标记 INTERRUPTED；
+- 重启不恢复；
+- 旧有效矩阵不被失败 run 覆盖；
+- 同 modelId 多 slot 去重请求；
+- external_request_count 与 fixture 完全一致；
+- 最大计划 32 请求；
+- 请求并发峰值 1。
+
+不使用真实 sleep；使用 fake clock/scheduler/AbortController。
+
+
+二十九、数据库与既有系统回归
+----------------------------
+
+专项测试前后断言：
+
+- model_runs 行数不变；
+- cost_ledger 行数不变；
+- jobs 业务行数不因 probe 改变；
+- local_api_settings/clients 不变；
+- sources、claims、clips 不变；
+- assets 不变；
+- post_packages 不变；
+- ai_disclosure 仍固定 false；
+- quality_checks 不出现 AI 标识或版权类型；
+- queue 在 Batch UNKNOWN/UNSUPPORTED 时正常；
+- app 不启动自动 listener 之外的新公共服务；
+- 0.0.0.0、::、LAN/public listener 为 0。
+
+迁移测试：
+
+- 新库直接到 v6；
+- v5 数据库升级到 v6；
+- migration 前备份；
+- 失败完整回滚；
+- backup 独立打开；
+- existing data 保留；
+- LF/CRLF/lone CR；
+- 中文、空格、emoji、长路径；
+- 非换行 SQL 修改 fail closed；
+- 外键和索引计划。
+
+
+三十、文件级实施计划与文档
+--------------------------
+
+改代码前创建：
+
+- docs/m2-issue013-implementation-plan.md
+- docs/m2-issue013-acceptance-map.md
+
+建议新增：
+
+- docs/adr/0009-provider-capability-probing.md
+- docs/contracts/provider-capabilities-v1.md
+
+implementation plan 至少记录：
+
+- 动态基线；
+- Issue 012 语义核验；
+- 磁盘与临时目录策略；
+- 文件清单；
+- migration v6；
+- 探测计划和请求上限；
+- 真实产品路径与本轮零真实调用边界；
+- 分类规则；
+- IPC/UI；
+- egress；
+- 测试；
+- 最终实际结果。
+
+ADR 必须冻结：
+
+- 不自动探测；
+- 显式 preview/confirm/start；
+- 最大 32 请求；
+- 串行与无自动重试；
+- 三态保守分类；
+- capability 作用域；
+- stale 语义；
+- migration；
+- 中断不恢复；
+- Batch 无副作用；
+- Issue 014 边界。
+
+新文档不得写入当前电脑绝对路径、用户名、固定 HEAD 或作为未来门禁的文件 SHA-256。
+
+
+三十一、独立测试、CI 与打包
+----------------------------
+
+新增：
+
+npm run test:capabilities
+
+要求：
+
+- 只运行 Issue 013 专项测试；
+- 可独立失败；
+- 不读取真实 credential；
+- 不连接真实中转站；
+- 只使用 Mock/loopback；
+- 外部连接 0；
+- 费用 0；
+- Batch 创建 0；
+- listener/socket/timer/temp 残留 0。
+
+npm run test 必须包含 capability tests。
+
+Windows CI：
+
+- 保留全部旧门禁；
+- 加入 test:capabilities；
+- 不配置真实 Base URL；
+- 不配置真实 model ID；
+- 不配置 OPENAI_API_KEY；
+- 不配置 CONTENT_AI_API_KEY；
+- 不授权外部业务网络；
+- 使用动态临时目录；
+- 不固定盘符。
+
+Electron source smoke 与 packaged smoke：
+
+- 使用临时 userData/ProjectDataRoot；
+- synthetic credential；
+- loopback provider；
+- 验证 preview/start/progress/cancel/complete；
+- 验证 app startup probe count=0；
+- 验证外部连接 0；
+- 验证退出后进程、listener、socket、timer 全部释放；
+- 不显示系统错误弹窗。
+
+
+三十二、210 项最低验收矩阵
+--------------------------
+
+docs/m2-issue013-acceptance-map.md 必须按 1—210 逐项映射真实代码、测试或命令证据。
+不得合并编号、跳号、重复编号或只写“同上”。
+
+A. 可迁移基线
+
+1. 使用 git rev-parse 动态发现仓库根。
+2. 未硬编码盘符、用户名或旧绝对路径。
+3. BASELINE_HEAD 只在本轮动态记录。
+4. 未比较预置提交散列。
+5. instruction 文件 SHA-256 不作为门禁。
+6. 允许 main 合法领先远端。
+7. 除本指令外起点工作树无未知修改。
+8. Issue 012 ADR/合同/验收文档完整。
+9. Issue 012 四类 Provider 接口完整。
+10. Issue 012 codecs/mock/transport/error 完整。
+11. schema 起点为 v5。
+12. 尚无完成的 Issue 013。
+13. 尚无 Issue 014 业务。
+14. 全部旧门禁开工前通过。
+15. 根级 Portable development 规则保持。
+
+B. 磁盘与环境
+
+16. 临时目录按仓库所在卷动态选择。
+17. npm cache 不固定系统盘。
+18. packager temp 不固定盘符。
+19. 系统盘不足但项目卷可用时可继续。
+20. 项目卷不足时安全停止。
+21. 不执行全局清理。
+22. 只清理本轮精确临时目录。
+23. 临时目录不进入 Git。
+24. 中文/空格/emoji/长路径动态测试。
+25. 新代码和文档无机器绝对路径。
+
+C. 范围与零真实开发调用
+
+26. 产品运行时具备显式真实探测路径。
+27. 本轮开发未打开正式 ProjectDataRoot。
+28. 未读取真实 safeStorage credential。
+29. 未读取 .env/环境 credential。
+30. 未调用真实中转站。
+31. 未调用真实模型。
+32. 未调用真实 Web Search。
+33. 未调用真实图片生成。
+34. 未调用真实 Batch。
+35. 真实费用为 0。
+
+D. 能力合同
+
+36. CapabilityState 三态保持。
+37. text 能力存在。
+38. structuredJson 能力存在。
+39. toolCalling 能力存在。
+40. webSearch 能力存在。
+41. imageGeneration 能力存在。
+42. vision 能力存在。
+43. usage 能力存在。
+44. batch 能力存在。
+45. streaming 能力存在。
+46. maxContextTokens 可空。
+47. rate metadata 可空。
+48. modelSlot 有限。
+49. protocolMode 可空且有限。
+50. evidence/reason/confidence 有限。
+51. UNKNOWN 不当作 SUPPORTED。
+52. 网络错误不当作 UNSUPPORTED。
+53. 认证错误不当作 UNSUPPORTED。
+54. 429 不当作 UNSUPPORTED。
+55. 模型名不作为证据。
+
+E. 作用域与 stale
+
+56. 配置指纹不含 credential。
+57. 配置指纹不含绝对路径。
+58. 配置指纹跨电脑稳定。
+59. 配置指纹不是文件哈希门禁。
+60. credentialBindingVersion 不含 credential 内容。
+61. Base URL/protocol/model/contract 变化使矩阵 stale。
+62. credentialBindingVersion 变化使矩阵 stale。
+63. 仓库路径变化不使矩阵 stale。
+64. Git HEAD 变化不使矩阵 stale。
+65. LF/CRLF 变化不使矩阵 stale。
+66. 账号简介或预算变化不使矩阵 stale。
+67. settingsRevision 不单独决定矩阵有效性。
+68. stale matrix 不允许调用。
+69. credential 替换后必须重新探测。
+70. 历史矩阵不证明当前认证有效。
+
+F. migration v6
+
+71. 只追加 v6 provider_capability_probing。
+72. v1—v5 version/name/SQL 语义不变。
+73. 新增 probe_runs STRICT 表。
+74. 新增 capability_entries STRICT 表。
+75. 主键/外键/唯一约束完整。
+76. 外键首列索引完整。
+77. 状态/枚举 CHECK 完整。
+78. 数量范围 CHECK 完整。
+79. JSON 结构有界。
+80. 不保存 credential。
+81. 不保存 prompt/output/image/search 内容。
+82. 不修改 model_runs。
+83. 不修改 cost_ledger。
+84. 网络调用期间不持事务。
+85. step 结果短事务保存。
+86. external request count 一致。
+87. RUNNING 重启后转 INTERRUPTED。
+88. 中断不自动恢复。
+89. 失败 run 不覆盖为 UNSUPPORTED。
+90. 迁移前备份、回滚、完整性通过。
+
+G. 迁移可移植性
+
+91. v6 canonical checksum 对 LF/CRLF/lone CR 稳定。
+92. 不硬编码旧电脑迁移 hash。
+93. 非换行 SQL 变化 fail closed。
+94. v5 升 v6 保留数据。
+95. 新库直达 v6。
+96. backup 可独立打开。
+97. backup 失败不迁移。
+98. foreign_key_check 通过。
+99. quick_check 通过。
+100. 中文/空格/长路径迁移通过。
+
+H. ProbePlan 与确认
+
+101. CORE profile 存在。
+102. FULL profile 存在。
+103. CUSTOM profile 存在。
+104. 相同 modelId 请求去重。
+105. 结果映射回所有 slot。
+106. 精确计划请求上限可见。
+107. 单 run 硬上限 32。
+108. 最大并发 1。
+109. 每 step 最多一次外部尝试。
+110. costEstimate 缺失时保持 null。
+111. Web Search 收费风险显式。
+112. 图片生成收费风险显式。
+113. preview/start 两阶段。
+114. 用户确认默认未勾选。
+115. start token CSPRNG/TTL/单次/绑定。
+116. planHash 绑定。
+117. settingsRevision 与 credentialBindingVersion 绑定。
+118. stale plan 外部请求 0。
+119. token 重放外部请求 0。
+120. renderer 不能提供 endpoint/header/prompt。
+
+I. Runner 与状态机
+
+121. 同时最多一个 RUNNING。
+122. 串行执行。
+123. step AbortController。
+124. run 总 deadline。
+125. step timeout。
+126. 用户取消停止后续 step。
+127. 当前 request 被 abort。
+128. timeout 不自动重发。
+129. 429 不自动等待/重发。
+130. ambiguous outcome 不自动重发。
+131. settings 保存不自动探测。
+132. app startup 不自动探测。
+133. migration 不自动探测。
+134. 无定时探测。
+135. JobQueue 不恢复探测。
+136. app shutdown 转 INTERRUPTED。
+137. 终态不可回 RUNNING。
+138. 计划计数不一致 fail closed。
+139. 401/403 停止剩余步骤。
+140. 连续失败熔断有界。
+
+J. 文本、结构化与工具
+
+141. Responses text 独立探测。
+142. Chat text 独立探测。
+143. 固定 synthetic prompt。
+144. 不含用户业务数据。
+145. mode 成功不扩展到其他 mode。
+146. generic 404 保守 UNKNOWN。
+147. structured 使用 strict schema。
+148. structured runtime validator。
+149. 普通 JSON 文本不等于支持。
+150. invalid JSON/schema mismatch 保守分类。
+151. 不发 JSON repair 请求。
+152. synthetic function 无副作用。
+153. tool call 不执行。
+154. tool result 不回传。
+155. 非法工具参数不标支持。
+
+K. Web Search、Vision、Image
+
+156. Web Search 仅 FULL/CUSTOM。
+157. Web Search 使用固定非敏感查询。
+158. 必须观察 search tool 事件或等价强证据。
+159. 普通文本声称搜索不算支持。
+160. 不保存搜索 URL/title/snippet/body。
+161. 搜索结果不进入来源/事实/研究。
+162. Vision 使用内存 synthetic image。
+163. Vision 不读取用户图片。
+164. Vision 正确 enum 才有正向证据。
+165. Vision 错答保持 UNKNOWN。
+166. Image 默认不在 CORE。
+167. Image 最多一次 count=1。
+168. Image inline bytes 严格验证。
+169. URL-only image 不下载。
+170. 探测图片不显示、不落盘、不建 assets。
+
+L. Usage、metadata 与 Batch
+
+171. usage 不增加单独请求。
+172. usage 缺失不写 0。
+173. usage 不估算 token。
+174. usage 不计算美元。
+175. max context 只从明确元数据读取。
+176. 不用大 prompt 测 context。
+177. rate limits 只从 allowlist metadata 读取。
+178. 不通过压测获取速率。
+179. Batch 不创建任务。
+180. Batch 不上传文件。
+181. Batch 不读取用户历史 Batch。
+182. Batch 无副作用方法有界。
+183. Batch 不确定保持 UNKNOWN。
+184. Batch 不支持时本地队列正常。
+185. 不引入远程队列。
+
+M. Guard、IPC 与 UI
+
+186. CapabilityGuard 仅允许当前 SUPPORTED。
+187. UNKNOWN 返回稳定错误。
+188. UNSUPPORTED 返回稳定错误。
+189. STALE 返回稳定错误。
+190. Guard 不自动探测/fallback/换模型。
+191. IPC channel 固定且逐方法。
+192. IPC exact-object/sender/window 验证。
+193. preload 不暴露 credential/raw response。
+194. 设置页矩阵按 model slot/mode 展示。
+195. UI 有 loading/empty/error/conflict/cancel。
+196. UI 不显示完整 Base URL 或 key 信息。
+197. UI 不允许任意 prompt/endpoint/header。
+198. UI 对费用未知表述准确。
+199. UI 键盘和焦点可用。
+200. local API 未增加探测 route。
+
+N. Egress、回归与停止
+
+201. 50 项 egress 全部通过。
+202. model_runs/cost_ledger/jobs 不因 probe 写业务数据。
+203. sources/claims/clips/assets/post_packages 不变。
+204. ai_disclosure=false 硬约束保持。
+205. 版权不参与门禁/评分/审批/排期。
+206. test:capabilities 独立通过且纳入全量/CI。
+207. source/package smoke 外部连接 0、启动探测 0。
+208. 全部门禁失败/skip/todo/warning/vulnerability 为 0。
+209. 未进入 Issue 014/015/016/017 或平台动作。
+210. 创建一个本地提交后严格停止在 Issue 013。
+
+
+三十三、建议测试文件
+--------------------
+
+建议新增或扩展：
+
+- tests/provider-capability-contracts.test.ts
+- tests/provider-capability-fingerprint.test.ts
+- tests/provider-capability-plan.test.ts
+- tests/provider-capability-classifier.test.ts
+- tests/provider-capability-text.test.ts
+- tests/provider-capability-structured.test.ts
+- tests/provider-capability-tools.test.ts
+- tests/provider-capability-web-search.test.ts
+- tests/provider-capability-vision-image.test.ts
+- tests/provider-capability-usage-metadata.test.ts
+- tests/provider-capability-batch.test.ts
+- tests/provider-capability-runner.test.ts
+- tests/provider-capability-cancellation.test.ts
+- tests/provider-capability-repository.test.ts
+- tests/provider-capability-migration.test.ts
+- tests/provider-capability-ipc.test.ts
+- tests/provider-capability-renderer.test.tsx
+- tests/provider-capability-egress.test.ts
+- tests/provider-capability-architecture.test.ts
+- tests/provider-capability-electron.test.ts
+- tests/project-volume-temp.test.ts
+
+实际文件按仓库现有组织调整，不重写无关代码。
+
+测试不能用以下方式替代真实合同验证：
+
+- 只搜索类名；
+- 只编译；
+- 把 transport 全部 mock 后不跑 loopback；
+- 固定 sleep；
+- 固定真实格式 credential；
+- 真实中转站；
+- 删除失败测试；
+- skip/todo；
+- 捕获异常后总返回成功；
+- 把 raw response 存 snapshot；
+- 只检查 UI 文案不检查 main 侧门禁。
+
+
+三十四、实现顺序
+----------------
+
+1. 动态发现 REPO_ROOT 和 BASELINE_HEAD。
+2. 核对工作树，只允许本指令作为新增输入。
+3. 完整读取事实来源和 AGENTS.md。
+4. 检查项目卷临时目录与空间策略。
+5. 运行全部开工门禁。
+6. 创建 Issue 013 implementation plan。
+7. 草拟 210 项验收映射。
+8. 冻结 ADR 0009 和 provider-capabilities-v1 合同。
+9. 实现能力矩阵、配置指纹和 stale 规则。
+10. 实现 migration v6 与 repository。
+11. 实现 plan preview、请求上限和 single-use token。
+12. 实现分类器和 Capability Guard。
+13. 实现 metadata/text/structured/tool probes。
+14. 实现 web search/vision/image/usage/Batch probes。
+15. 实现串行 runner、取消、熔断和中断恢复语义。
+16. 实现 Electron main runtime、严格 IPC/preload。
+17. 实现设置页矩阵、预览、确认、进度和取消。
+18. 完成 Mock、loopback、数据库、并发和 50 项 egress。
+19. 更新 package scripts 和 Windows CI。
+20. 更新 source/package smoke，确认没有系统错误弹窗。
+21. 回填 implementation plan 和 210 项证据。
+22. 从 npm ci 开始运行全部最终门禁。
+23. 检查相对动态 BASELINE_HEAD 的 diff、范围、秘密、网络计数和临时文件。
+24. 全部通过后创建唯一一个本地提交。
+25. 输出完整报告并停止。
+
+
+三十五、最终门禁
+----------------
+
+必须从 npm ci 开始，运行仓库全部既有门禁以及新增 capability 门禁。至少依次执行：
+
+1. npm ci
+2. npm run format-check
+3. npm run lint
+4. npm run typecheck
+5. npm run test:constraints
+6. npm run test:db
+7. npm run test:queue
+8. npm run test:desktop
+9. npm run test:storage
+10. npm run test:settings
+11. npm run test:local-api
+12. npm run test:portability
+13. npm run test:providers
+14. npm run test:capabilities
+15. npm run test:electron-smoke
+16. npm run test
+17. npm run build
+18. npm run package:desktop
+19. npm run audit:dependencies
+20. npm run test:packaged-smoke
+
+如果 package.json/CI 还有其他既有 required gate，也必须运行，不得用本列表删减。
+
+环境变量只可用于把 TEMP、TMP、npm cache 和 packager temp 动态指向仓库所在卷的本轮临时
+目录，不得写入真实 credential 或 Base URL。
+
+要求：
+
+- 失败 0；
+- skip 0；
+- todo 0；
+- lint warning 0；
+- audit vulnerabilities 0；
+- 外部真实 API 请求 0；
+- 费用 0；
+- Batch 创建 0；
+- app startup 自动 probe 0；
+- listener/socket/timer/process/临时文件残留 0；
+- 210/210 有证据。
+
+发现缺陷后修复根因，并从 npm ci 重新运行全部最终门禁。
+
+
+三十六、Git 提交
+----------------
+
+全部通过后创建唯一一个 Issue 013 本地提交：
+
+feat(providers): add explicit capability probing
+
+要求：
+
+- parent 为本轮动态 BASELINE_HEAD；
+- 不与预置散列比较；
+- 不 amend；
+- 不 rebase；
+- 不 squash；
+- 不 push；
+- 不创建 PR；
+- 不合并；
+- 把本指令 TXT 保留在仓库根目录并纳入提交；
+- 提交后工作树干净；
+- 最终 HEAD 等于新提交；
+- 最终报告可记录实际提交 ID，但明确它只作本次结果，不是下一个任务的固定门禁。
+
+
+三十七、最终报告格式
+--------------------
+
+报告依次包含：
+
+1. 结论
+   - Issue 013 PASS/FAIL；
+   - 是否停止；
+   - 真实 key/API/model/search/image/Batch/费用状态。
+
+2. 动态基线与 Git
+   - 使用 git rev-parse；
+   - 不写绝对路径；
+   - 动态 BASELINE_HEAD；
+   - 最终 commit/parent；
+   - 分支、工作树、远端；
+   - push/PR/merge/rewrite；
+   - 未使用旧电脑路径、预置 HEAD 或文件 SHA-256 作为门禁。
+
+3. 可迁移性与磁盘
+   - repo-relative；
+   - 项目卷动态 temp/cache/package；
+   - 系统盘空间是否影响；
+   - 临时目录清理；
+   - LF/CRLF/lone CR；
+   - 不包含机器路径。
+
+4. migration v6
+   - version/name；
+   - 新表；
+   - v1—v5 保持；
+   - 备份、回滚、完整性；
+   - canonical checksum 跨换行稳定；
+   - 不把某个十六进制值作为未来门禁。
+
+5. 能力合同
+   - 能力列表；
+   - 三态；
+   - model/mode 作用域；
+   - fingerprint/stale；
+   - 保守分类。
+
+6. ProbePlan
+   - CORE/FULL/CUSTOM；
+   - 最大 32；
+   - 去重；
+   - preview/confirm/start；
+   - 费用未知提示。
+
+7. Runner
+   - 串行；
+   - 无自动重试；
+   - timeout/abort/cancel；
+   - 401/429/连续失败；
+   - interrupted 不恢复；
+   - request count。
+
+8. 各能力探测
+   - text modes；
+   - structured；
+   - tools；
+   - web search 强证据；
+   - vision；
+   - image；
+   - usage/context/rate；
+   - Batch 无副作用。
+
+9. Capability Guard
+   - supported/unknown/unsupported/stale；
+   - 无 fallback/换模型/自动探测。
+
+10. UI/IPC/Credential
+    - 设置页；
+    - strict IPC；
+    - token；
+    - main-only credential；
+    - 无 secret egress。
+
+11. Egress 与数据库不变量
+    - 50/50；
+    - model_runs/cost_ledger/jobs；
+    - sources/claims/clips/assets；
+    - 真实网络/费用/Batch。
+
+12. 测试
+    - 全部门禁；
+    - capability 文件数/测试数；
+    - 全量文件数/测试数；
+    - 失败/skip/todo；
+    - 210/210。
+
+13. Windows/Electron/CI
+    - runtime 版本；
+    - source/package smoke；
+    - loopback/external；
+    - 进程和端口清理；
+    - 若 GitHub 托管 CI 未运行，原样写：
+      GitHub 托管 CI 尚未运行，不能声称已通过。
+
+14. 硬约束与范围
+    - ai_disclosure；
+    - copyright；
+    - 无平台动作；
+    - 无真实开发调用；
+    - 未进入 Issue 014 及以后。
+
+15. 下一步
+    - 只推荐 Issue 014：模型运行记录、缓存与成本账本；
+    - 不自动开始。
+
+
+三十八、停止条件
+----------------
+
+出现以下任一情况立即停止：
+
+- 除本指令外工作树有未知修改；
+- 语义基线不满足；
+- 事实来源缺失；
+- 必须依赖旧电脑路径或固定提交散列；
+- 必须删除用户文件解决磁盘空间；
+- 必须读取真实 credential 才能开发或验收；
+- 必须调用真实中转站才可通过测试；
+- 需要在启动时自动探测；
+- 需要超过 32 个计划请求；
+- 需要并发真实探测；
+- 需要自动重试 ambiguous/付费请求；
+- 需要执行模型工具；
+- 需要保存搜索内容或探测图片；
+- 需要创建真实 Batch；
+- 需要进入 model_runs、缓存、价格或 cost_ledger；
+- 需要注册自动恢复探测 JobHandler；
+- 需要增加 local API 探测 route；
+- 需要放宽 Electron 安全设置；
+- credential/content/side-effect egress 不为 0；
+- migration v1—v5 语义发生变化；
+- 非换行迁移修改被错误接受；
+- 既有硬约束回归；
+- test 需要 skip/todo；
+- audit 不为 0；
+- 需要扩大到 Issue 014 或后续。
+
+停止时保留证据，不 reset、不删除用户数据、不伪造 PASS。
+
+
+最终启动指令
+------------
+
+现在开始执行 M2 Issue 013。
+
+先动态发现仓库根目录，完成语义基线、磁盘临时目录核验、实施计划和 210 项验收草案，再
+开发。产品只允许用户在设置页显式 preview、确认后开始真实能力探测；本轮 Codex 开发与
+全部测试只使用 Scripted Mock 和 127.0.0.1 loopback fixture，不打开用户正式数据根，不
+读取真实密钥，不调用真实 API、模型、搜索、图片或 Batch，不产生费用。
+
+全部门禁通过后创建一个本地提交并报告，然后严格停止，不得进入 Issue 014。

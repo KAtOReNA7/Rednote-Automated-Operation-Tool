@@ -4,12 +4,15 @@ import { isTrustedRendererUrl } from './security-policy.js';
 
 export type DesktopIpcOperation =
   | 'buildDiagnosticPreview'
+  | 'cancelProviderCapabilityProbe'
   | 'clearCredential'
   | 'confirmDataRootSelection'
   | 'exportDiagnosticReport'
   | 'getAppInfo'
   | 'getCredentialStatus'
   | 'getFoundationHealth'
+  | 'getProviderCapabilityProbeProgress'
+  | 'getProviderCapabilityState'
   | 'getLocalApiStatus'
   | 'getRuntimeCapabilities'
   | 'getSettings'
@@ -20,6 +23,8 @@ export type DesktopIpcOperation =
   | 'revokeLocalApiClient'
   | 'selectDataRoot'
   | 'setCredential'
+  | 'previewProviderCapabilityProbe'
+  | 'startProviderCapabilityProbe'
   | 'startLocalApiPairing'
   | 'updateLocalApiSettings'
   | 'updateNonSecretSettings';
@@ -27,6 +32,17 @@ export type DesktopIpcOperation =
 const MAX_IPC_BYTES = 32 * 1024;
 const MAX_IPC_DEPTH = 6;
 const SECRET_LIKE_KEY = /api.?key|authorization|ciphertext|credential|password|secret|token/iu;
+const CAPABILITIES = new Set([
+  'batch',
+  'imageGeneration',
+  'streaming',
+  'structuredJson',
+  'text',
+  'toolCalling',
+  'usage',
+  'vision',
+  'webSearch',
+]);
 
 function invalid(message = '请求内容无效。'): DesktopResult<never> {
   return {
@@ -92,6 +108,7 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'getFoundationHealth':
     case 'getRuntimeCapabilities':
     case 'getSettings':
+    case 'getProviderCapabilityState':
     case 'getSetupState':
     case 'getWindowState':
     case 'getLocalApiStatus':
@@ -100,6 +117,61 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'startLocalApiPairing':
     case 'buildDiagnosticPreview':
       return args.length === 0;
+    case 'previewProviderCapabilityProbe': {
+      const value = validateOneObject(args, [
+        'includeToolCalling',
+        'profile',
+        'selectedCapabilities',
+      ]);
+      if (
+        value === null ||
+        typeof value.includeToolCalling !== 'boolean' ||
+        !['CORE', 'FULL', 'CUSTOM'].includes(String(value.profile)) ||
+        !Array.isArray(value.selectedCapabilities) ||
+        value.selectedCapabilities.length > CAPABILITIES.size ||
+        !value.selectedCapabilities.every(
+          (capability) => typeof capability === 'string' && CAPABILITIES.has(capability),
+        ) ||
+        new Set(value.selectedCapabilities).size !== value.selectedCapabilities.length
+      ) {
+        return false;
+      }
+      return value.profile !== 'CUSTOM' || value.selectedCapabilities.length > 0;
+    }
+    case 'startProviderCapabilityProbe': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'credentialBindingVersion',
+        'planHash',
+        'settingsRevision',
+        'startToken',
+      ]);
+      return (
+        value?.confirmation === 'START_PROVIDER_CAPABILITY_PROBE' &&
+        typeof value.startToken === 'string' &&
+        /^[A-Za-z0-9_-]{32,128}$/u.test(value.startToken) &&
+        typeof value.planHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.planHash) &&
+        typeof value.settingsRevision === 'number' &&
+        Number.isSafeInteger(value.settingsRevision) &&
+        value.settingsRevision >= 0 &&
+        typeof value.credentialBindingVersion === 'number' &&
+        Number.isSafeInteger(value.credentialBindingVersion) &&
+        value.credentialBindingVersion >= 0
+      );
+    }
+    case 'getProviderCapabilityProbeProgress': {
+      const value = validateOneObject(args, ['runId']);
+      return typeof value?.runId === 'string' && /^probe-[A-Za-z0-9-]{8,128}$/u.test(value.runId);
+    }
+    case 'cancelProviderCapabilityProbe': {
+      const value = validateOneObject(args, ['confirmation', 'runId']);
+      return (
+        value?.confirmation === 'CANCEL_PROVIDER_CAPABILITY_PROBE' &&
+        typeof value.runId === 'string' &&
+        /^probe-[A-Za-z0-9-]{8,128}$/u.test(value.runId)
+      );
+    }
     case 'cancelLocalApiPairing': {
       const value = validateOneObject(args, ['pairingSessionId']);
       return (

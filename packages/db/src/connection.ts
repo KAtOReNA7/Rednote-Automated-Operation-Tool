@@ -31,6 +31,7 @@ export function connectDatabase(databasePath: string): DatabaseSync {
       PRAGMA busy_timeout = ${BUSY_TIMEOUT_MILLISECONDS};
       PRAGMA journal_mode = WAL;
       PRAGMA synchronous = NORMAL;
+      PRAGMA wal_autocheckpoint = 4096;
     `);
 
     const row = database.prepare('PRAGMA foreign_keys').get() as

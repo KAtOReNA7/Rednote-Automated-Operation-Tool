@@ -1331,6 +1331,177 @@ END;
 INSERT INTO local_api_settings(id) VALUES (1);
 `;
 
+const PROVIDER_CAPABILITY_PROBING = `
+ALTER TABLE app_settings
+  ADD COLUMN credential_binding_version INTEGER NOT NULL DEFAULT 0
+  CHECK (
+    typeof(credential_binding_version) = 'integer' AND
+    credential_binding_version >= 0
+  );
+
+CREATE TABLE provider_capability_probe_runs (
+  id TEXT PRIMARY KEY NOT NULL CHECK (
+    length(id) BETWEEN 16 AND 128 AND
+    id = trim(id) AND
+    id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+  ),
+  config_fingerprint TEXT NOT NULL CHECK (
+    length(config_fingerprint) = 64 AND
+    config_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  settings_revision INTEGER NOT NULL CHECK (
+    typeof(settings_revision) = 'integer' AND settings_revision >= 0
+  ),
+  credential_binding_version INTEGER NOT NULL CHECK (
+    typeof(credential_binding_version) = 'integer' AND credential_binding_version >= 0
+  ),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version = 'provider-capabilities-v1'
+  ),
+  profile TEXT NOT NULL CHECK (profile IN ('CORE', 'FULL', 'CUSTOM')),
+  plan_hash TEXT NOT NULL CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  planned_request_count INTEGER NOT NULL CHECK (
+    typeof(planned_request_count) = 'integer' AND
+    planned_request_count BETWEEN 1 AND 32
+  ),
+  sent_request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(sent_request_count) = 'integer' AND
+    sent_request_count BETWEEN 0 AND 32 AND
+    sent_request_count <= planned_request_count
+  ),
+  status TEXT NOT NULL CHECK (
+    status IN ('RUNNING', 'SUCCEEDED', 'PARTIAL', 'FAILED', 'CANCELLED', 'INTERRUPTED')
+  ),
+  reason_code TEXT CHECK (
+    reason_code IS NULL OR reason_code IN (
+      'NOT_PROBED', 'USER_SKIPPED', 'CONFIG_STALE',
+      'AUTHENTICATION_REJECTED', 'PERMISSION_REJECTED', 'RATE_LIMITED',
+      'QUOTA_UNAVAILABLE', 'NETWORK_UNREACHABLE', 'TLS_FAILURE', 'TIMEOUT',
+      'ABORTED', 'ENDPOINT_EXPLICITLY_UNSUPPORTED',
+      'MODEL_EXPLICITLY_UNSUPPORTED', 'PROTOCOL_EXPLICITLY_UNSUPPORTED',
+      'INVALID_CONTENT_TYPE', 'INVALID_RESPONSE', 'INVALID_JSON',
+      'SCHEMA_MISMATCH', 'TOOL_NOT_OBSERVED', 'SEARCH_NOT_OBSERVED',
+      'VISION_INCONCLUSIVE', 'OUTPUT_VARIANT_UNSUPPORTED',
+      'USAGE_NOT_REPORTED', 'METADATA_NOT_REPORTED', 'AMBIGUOUS_OUTCOME',
+      'INTERNAL_ERROR'
+    )
+  ),
+  started_at TEXT NOT NULL CHECK (started_at ${UTC_REQUIRED}),
+  completed_at TEXT CHECK (
+    completed_at ${UTC_OPTIONAL} completed_at ${UTC_REQUIRED}
+  ),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  CHECK (
+    (status = 'RUNNING' AND completed_at IS NULL) OR
+    (status <> 'RUNNING' AND completed_at IS NOT NULL)
+  ),
+  CHECK (completed_at IS NULL OR completed_at >= started_at)
+) STRICT;
+
+CREATE TABLE provider_capability_entries (
+  id TEXT PRIMARY KEY NOT NULL CHECK (
+    length(id) BETWEEN 16 AND 256 AND
+    id = trim(id) AND
+    id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+  ),
+  run_id TEXT NOT NULL
+    REFERENCES provider_capability_probe_runs(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  config_fingerprint TEXT NOT NULL CHECK (
+    length(config_fingerprint) = 64 AND
+    config_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  settings_revision INTEGER NOT NULL CHECK (
+    typeof(settings_revision) = 'integer' AND settings_revision >= 0
+  ),
+  credential_binding_version INTEGER NOT NULL CHECK (
+    typeof(credential_binding_version) = 'integer' AND credential_binding_version >= 0
+  ),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version = 'provider-capabilities-v1'
+  ),
+  model_slot TEXT NOT NULL CHECK (
+    model_slot IN ('PROVIDER', 'RESEARCH', 'WRITING', 'REVIEW', 'IMAGE')
+  ),
+  model_id TEXT CHECK (
+    model_id IS NULL OR (
+      length(model_id) BETWEEN 1 AND 256 AND
+      model_id = trim(model_id) AND
+      model_id NOT GLOB ('*[' || char(0) || '-' || char(31) || char(127) || ']*')
+    )
+  ),
+  protocol_mode TEXT NOT NULL CHECK (
+    protocol_mode IN ('RESPONSES', 'CHAT_COMPLETIONS', 'NOT_APPLICABLE')
+  ),
+  capability TEXT NOT NULL CHECK (
+    capability IN (
+      'batch', 'imageGeneration', 'streaming', 'structuredJson', 'text',
+      'toolCalling', 'usage', 'vision', 'webSearch'
+    )
+  ),
+  state TEXT NOT NULL CHECK (state IN ('UNKNOWN', 'SUPPORTED', 'UNSUPPORTED')),
+  reason_code TEXT NOT NULL CHECK (
+    reason_code IN (
+      'NOT_PROBED', 'USER_SKIPPED', 'CONFIG_STALE',
+      'AUTHENTICATION_REJECTED', 'PERMISSION_REJECTED', 'RATE_LIMITED',
+      'QUOTA_UNAVAILABLE', 'NETWORK_UNREACHABLE', 'TLS_FAILURE', 'TIMEOUT',
+      'ABORTED', 'ENDPOINT_EXPLICITLY_UNSUPPORTED',
+      'MODEL_EXPLICITLY_UNSUPPORTED', 'PROTOCOL_EXPLICITLY_UNSUPPORTED',
+      'INVALID_CONTENT_TYPE', 'INVALID_RESPONSE', 'INVALID_JSON',
+      'SCHEMA_MISMATCH', 'TOOL_NOT_OBSERVED', 'SEARCH_NOT_OBSERVED',
+      'VISION_INCONCLUSIVE', 'OUTPUT_VARIANT_UNSUPPORTED',
+      'USAGE_NOT_REPORTED', 'METADATA_NOT_REPORTED', 'AMBIGUOUS_OUTCOME',
+      'INTERNAL_ERROR'
+    )
+  ),
+  source TEXT NOT NULL CHECK (source IN ('PROBED', 'METADATA', 'NOT_PROBED')),
+  confidence TEXT NOT NULL CHECK (confidence IN ('CONFIRMED', 'INCONCLUSIVE')),
+  stale INTEGER NOT NULL DEFAULT 0 CHECK (stale IN (0, 1)),
+  safe_details_json TEXT NOT NULL DEFAULT '{}' CHECK (
+    json_valid(safe_details_json) AND json_type(safe_details_json) = 'object' AND
+    length(safe_details_json) <= 2048
+  ),
+  max_context_tokens INTEGER CHECK (
+    max_context_tokens IS NULL OR (
+      typeof(max_context_tokens) = 'integer' AND max_context_tokens > 0
+    )
+  ),
+  rate_limit_requests INTEGER CHECK (
+    rate_limit_requests IS NULL OR (
+      typeof(rate_limit_requests) = 'integer' AND rate_limit_requests >= 0
+    )
+  ),
+  rate_limit_tokens INTEGER CHECK (
+    rate_limit_tokens IS NULL OR (
+      typeof(rate_limit_tokens) = 'integer' AND rate_limit_tokens >= 0
+    )
+  ),
+  observed_at TEXT CHECK (
+    observed_at ${UTC_OPTIONAL} observed_at ${UTC_REQUIRED}
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  CHECK (
+    (source = 'NOT_PROBED' AND observed_at IS NULL) OR
+    (source <> 'NOT_PROBED' AND observed_at IS NOT NULL)
+  ),
+  UNIQUE(run_id, model_slot, protocol_mode, capability)
+) STRICT;
+
+CREATE INDEX idx_provider_capability_runs_current
+  ON provider_capability_probe_runs(
+    config_fingerprint, credential_binding_version, status, completed_at DESC
+  );
+CREATE INDEX idx_provider_capability_entries_current
+  ON provider_capability_entries(
+    config_fingerprint, credential_binding_version, stale, run_id
+  );
+CREATE INDEX idx_provider_capability_entries_run
+  ON provider_capability_entries(run_id);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -1357,5 +1528,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'local_loopback_api_and_plugin_clients',
     sql: LOCAL_LOOPBACK_API_AND_PLUGIN_CLIENTS,
     version: 5,
+  }),
+  Object.freeze({
+    name: 'provider_capability_probing',
+    sql: PROVIDER_CAPABILITY_PROBING,
+    version: 6,
   }),
 ]);

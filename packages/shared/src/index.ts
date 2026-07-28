@@ -12,6 +12,7 @@ export type {
 
 export type {
   AppInfo,
+  CancelProviderCapabilityProbeInput,
   ClearCredentialInput,
   ConfirmDataRootSelectionInput,
   DataRootSelection,
@@ -21,9 +22,17 @@ export type {
   ExportDiagnosticReportInput,
   FoundationCheckKey,
   FoundationHealth,
+  GetProviderCapabilityProbeProgressInput,
   GetCredentialStatusInput,
   RuntimeCapabilities,
+  PreviewProviderCapabilityProbeInput,
+  ProviderCapabilityEntryView,
+  ProviderCapabilityProbePreview,
+  ProviderCapabilityProbeProgressView,
+  ProviderCapabilityRunHistoryView,
+  ProviderCapabilityStateView,
   SetCredentialInput,
+  StartProviderCapabilityProbeInput,
   SetupStateView,
   WindowState,
 } from './desktop-api.js';

@@ -4,10 +4,14 @@
     "composite": true,
     "outDir": "./dist",
     "rootDir": "./src",
-    "tsBuildInfoFile": "./dist/.tsbuildinfo"
+    "tsBuildInfoFile": "./dist/.tsbuildinfo",
+    "types": ["node"]
   },
   "include": ["src/**/*.ts"],
   "references": [
+    {
+      "path": "../providers"
+    },
     {
       "path": "../settings"
     }

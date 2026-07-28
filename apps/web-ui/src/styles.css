@@ -623,6 +623,77 @@ fieldset.wizard-step {
   padding: 24px;
 }
 
+.capability-card {
+  display: grid;
+  gap: 1rem;
+  padding: clamp(1rem, 2.5vw, 1.75rem);
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  background: var(--surface);
+}
+
+.capability-card fieldset {
+  display: grid;
+  gap: 0.75rem;
+  border: 0;
+  padding: 0;
+}
+
+.capability-options {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr));
+  gap: 0.5rem;
+}
+
+.probe-preview,
+.probe-progress {
+  display: grid;
+  gap: 0.75rem;
+  padding: 1rem;
+  border-radius: 0.8rem;
+  background: var(--surface-muted);
+}
+
+.probe-progress progress {
+  width: 100%;
+}
+
+.capability-message {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.capability-table-wrap {
+  overflow-x: auto;
+}
+
+.capability-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.capability-table caption {
+  padding-block: 0.5rem;
+  text-align: left;
+  font-weight: 700;
+}
+
+.capability-table th,
+.capability-table td {
+  padding: 0.55rem;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.probe-history {
+  display: grid;
+  gap: 0.35rem;
+  margin-block: 0.75rem 0;
+  padding-inline-start: 1.25rem;
+}
+
 .diagnostic-card .button-row {
   align-self: center;
   margin: 0;

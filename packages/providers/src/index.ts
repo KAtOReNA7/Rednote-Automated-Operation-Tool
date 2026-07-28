@@ -58,6 +58,41 @@ export {
 } from './transport.js';
 export { applyUsageCapability, emptyProviderUsage, parseProviderUsage } from './usage.js';
 export {
+  CAPABILITY_PROBE_MARKERS,
+  classifyCapabilityProbeFailure,
+  classifyCapabilityProbeResponse,
+} from './capability-probe-classifier.js';
+export {
+  CAPABILITY_PROBE_LIMITS,
+  PROVIDER_CAPABILITY_CONTRACT_VERSION,
+  PROBE_CAPABILITIES,
+  PROBE_CONFIDENCES,
+  PROBE_MODEL_SLOTS,
+  PROBE_PROFILES,
+  PROBE_PROTOCOL_MODES,
+  PROBE_REASON_CODES,
+  PROBE_RUN_STATUSES,
+  PROBE_SOURCES,
+  PROBE_STATES,
+} from './capability-probe-contracts.js';
+export {
+  buildCapabilityProbePlan,
+  capabilityConfigFingerprint,
+  normalizeCapabilityProbeBaseUrl,
+} from './capability-probe-plan.js';
+export { capabilityProbeRequestBody } from './capability-probe-payloads.js';
+export { CapabilityProbeRunner } from './capability-probe-runner.js';
+export {
+  capabilityProbeModelMetadataUrl,
+  capabilityProbeUrl,
+  NodeFetchCapabilityProbeTransport,
+} from './capability-probe-transport.js';
+export {
+  assertCurrentCapabilitySupported,
+  CAPABILITY_GUARD_ERROR_CODES,
+  CapabilityGuardError,
+} from './capability-guard.js';
+export {
   decodeChatCompletionsText,
   encodeChatCompletionsText,
   encodeChatCompletionsVision,
@@ -147,3 +182,30 @@ export type {
   ProviderEndpoint,
 } from './transport.js';
 export type { ProviderUsage, UsageDialect, UsageIdentity } from './usage.js';
+export type {
+  CapabilityProbeConfigSnapshot,
+  CapabilityProbeObservation,
+  CapabilityProbePlan,
+  CapabilityProbeProgress,
+  CapabilityProbeRequest,
+  CapabilityProbeResponse,
+  CapabilityProbeRunnerOptions,
+  CapabilityProbeRunResult,
+  CapabilityProbeSelection,
+  CapabilityProbeStep,
+  CapabilityProbeStepKind,
+  CapabilityProbeTransport,
+  ProbeCapability,
+  ProbeConfidence,
+  ProbeModelMapping,
+  ProbeModelSlot,
+  ProbeProfile,
+  ProbeProtocolMode,
+  ProbeReasonCode,
+  ProbeRunStatus,
+  ProbeSafeDetails,
+  ProbeSource,
+  ProbeState,
+} from './capability-probe-contracts.js';
+export type { CapabilityGuardErrorCode } from './capability-guard.js';
+export type { CapabilityProbeFetch } from './capability-probe-transport.js';

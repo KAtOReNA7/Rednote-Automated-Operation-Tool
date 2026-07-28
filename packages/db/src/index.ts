@@ -5,6 +5,7 @@ export { MigrationError, initializeDatabase, migrationChecksum } from './migrati
 export { MIGRATIONS } from './migrations.js';
 export { assertSqliteRuntimeCapabilities } from './runtime-capabilities.js';
 export { SqliteSettingsRepository } from './settings-repository.js';
+export { SqliteProviderCapabilityRepository } from './provider-capability-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
@@ -19,3 +20,8 @@ export type {
 } from './job-queue-repository.js';
 export type { Migration } from './migrations.js';
 export type { SqliteRuntimeCapabilities } from './runtime-capabilities.js';
+export type {
+  ProviderCapabilityEntryRecord,
+  ProviderCapabilityRunHistoryRecord,
+  ProviderCapabilityStateRecord,
+} from './provider-capability-repository.js';

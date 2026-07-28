@@ -5,8 +5,8 @@
 ## 1. 项目定位与当前状态
 
 - 这是面向 Windows 10/11 的本地优先、单用户推理小说内容运营工作台。
-- M0（Issue 001—005）与 M1（Issue 006—011）已经完成。
-- 下一项规划是 Issue 012：供应商无关的模型接口；不得在未收到明确任务时自动开始。
+- M0（Issue 001—005）、M1（Issue 006—011）与 M2 Issue 012—013 已经完成。
+- 下一项规划是 Issue 014：模型运行记录、缓存与成本账本；不得在未收到明确任务时自动开始。
 - 当前版本是开发中的本地基础设施，不是生产可用的内容运营成品。
 
 事实来源按优先级为：
@@ -54,8 +54,8 @@
 - 测试使用运行时随机值、mock、fixture、临时数据库和本机 loopback。
 - 除非当前任务明确授权且安全凭据流程已经完成，否则不得调用真实模型、搜索、图片或业务
   API，不得产生费用。
-- `packages/providers` 在 Issue 012 前保持无真实客户端；`apps/clipper` 在 Issue 017 前保持
-  无插件业务。
+- Issue 013 只允许用户在设置页显式确认后执行有限能力探测；不得把 provider 接入启动、
+  保存设置、定时器、队列或内容工作流。`apps/clipper` 在 Issue 017 前保持无插件业务。
 
 ## 5. 架构边界
 
@@ -72,7 +72,7 @@
 ## 6. SQLite 与数据规则
 
 - migration 只能按连续版本追加，已发布 migration 不得修改、重排、合并或删除。
-- 当前 migration v1—v5 的 SHA-256 由测试冻结；任何不匹配都应视为阻塞，而不是更新预期值。
+- 当前 migration v1—v6 的 SHA-256 由测试冻结；任何不匹配都应视为阻塞，而不是更新预期值。
 - 迁移前备份、事务回滚、外键、STRICT 表和 Windows 路径行为必须保持。
 - 数据库只保存受控路径或相对路径；不得把任意外部绝对路径当作托管文件。
 - 队列采用至少一次交付。未来真实 handler 必须保证外部副作用幂等。
@@ -85,6 +85,10 @@
 - 不新增依赖，除非现有标准库和仓库能力确实无法满足需求，并记录理由。
 - Windows 文件操作使用显式、已解析的目标路径；删除或递归移动前确认目标位于预期目录。
 - 保持中文路径、空格路径和 Windows 原生运行兼容。
+- 开发、测试、构建和打包的临时目录与缓存必须从当前仓库根目录动态派生到同一卷；不得写死
+  盘符、用户目录或跨卷临时路径。
+- 每次运行只清理本次创建且已验证位于仓库 `.rednote-temp` 或明确输出目录内的精确目标；
+  不得清理全局 TEMP、npm cache、用户目录或模糊匹配目录。
 - README 的开发状态、命令、包结构和下一里程碑必须随已完成工作同步更新。
 
 ## 8. 必需验证
@@ -109,6 +113,9 @@ npm run test:desktop
 npm run test:storage
 npm run test:settings
 npm run test:local-api
+npm run test:portability
+npm run test:providers
+npm run test:capabilities
 npm run test:electron-smoke
 npm run package:desktop
 npm run audit:dependencies

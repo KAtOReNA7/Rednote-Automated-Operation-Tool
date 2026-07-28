@@ -131,7 +131,7 @@ describe('Issue 010 secret egress matrix', () => {
         platformVersion: 'Windows',
         queueHealthy: true,
         safeStorageAvailable: true,
-        schemaVersion: 5,
+        schemaVersion: 6,
         storageHealthy: true,
       }),
       diagnosticStore,

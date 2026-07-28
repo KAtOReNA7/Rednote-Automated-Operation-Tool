@@ -10,14 +10,21 @@ import type {
 
 import {
   MIGRATIONS,
+  SqliteProviderCapabilityRepository,
   SqliteSettingsRepository,
   connectDatabase,
   initializeDatabase,
 } from '@mystery-operations/db';
 import type {
+  CancelProviderCapabilityProbeInput,
   ConfirmDataRootSelectionInput,
   DataRootSelection,
+  PreviewProviderCapabilityProbeInput,
+  ProviderCapabilityProbePreview,
+  ProviderCapabilityProbeProgressView,
+  ProviderCapabilityStateView,
   SetupStateView,
+  StartProviderCapabilityProbeInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -42,6 +49,7 @@ import {
 import { type AsyncSafeStorage, ElectronCredentialStore } from './credential-store.js';
 import { DataRootSelectionBroker, type DirectoryDialog } from './data-root-selection.js';
 import { DesktopLocalApiRuntime } from './local-api-runtime.js';
+import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -49,7 +57,7 @@ import {
 } from './local-api-smoke.js';
 
 const PROJECT_DATABASE_FILE = 'rednote.sqlite';
-const SECRET_EGRESS_TARGET_COUNT = 30;
+const SECRET_EGRESS_TARGET_COUNT = 50;
 
 function containsPlaintext(directory: string, plaintext: Buffer): boolean {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -77,6 +85,7 @@ interface RuntimeVersions {
 }
 
 interface ActiveProject {
+  readonly capabilities: ProviderCapabilityRuntime;
   readonly database: DatabaseSync;
   readonly root: ProjectDataRoot;
   readonly service: SettingsService;
@@ -127,7 +136,18 @@ export class DesktopSettingsRuntime {
       readonly port: number;
       readonly windowId: number;
     },
+    capability: {
+      readonly port: number;
+      readonly windowId: number;
+    },
   ): Promise<{
+    readonly capability: {
+      readonly matrixComplete: boolean;
+      readonly plannedRequestCount: number;
+      readonly sentRequestCount: number;
+      readonly startupAutoRequestCount: 0;
+      readonly status: 'SUCCEEDED';
+    };
     readonly credentialCleared: boolean;
     readonly credentialRoundtrip: boolean;
     readonly locator: boolean;
@@ -164,6 +184,60 @@ export class DesktopSettingsRuntime {
       const resolved = await this.#credentials.resolveForProvider(CREDENTIAL_SLOT);
       const credentialRoundtrip =
         configured.status === 'CONFIGURED' && resolved === unusableRuntimeValue;
+      smokePhase = 'CONFIGURE_CAPABILITY_FIXTURE';
+      const current = await prepared.service.getSettings();
+      await prepared.service.updateNonSecretSettings({
+        account: {
+          bio: current.account.bio,
+          workingName: current.account.workingName,
+        },
+        budget: {
+          hardLimitDollars: (current.settings.monthlyHardLimitCents / 100).toFixed(2),
+          warningDollars: (current.settings.monthlyWarningCents / 100).toFixed(2),
+        },
+        expectedRevision: current.settings.revision,
+        models: {
+          embedding: current.settings.embeddingModelId,
+          image: 'issue013-smoke-model',
+          research: 'issue013-smoke-model',
+          review: 'issue013-smoke-model',
+          writing: 'issue013-smoke-model',
+        },
+        providerBaseUrl: `http://127.0.0.1:${capability.port}/v1`,
+      });
+      smokePhase = 'PREVIEW_CAPABILITY_PROBE';
+      const capabilityPreview = prepared.capabilities.preview(
+        { includeToolCalling: false, profile: 'CORE', selectedCapabilities: [] },
+        capability.windowId,
+        capability.windowId,
+      );
+      smokePhase = 'RUN_CAPABILITY_PROBE';
+      const capabilityStarted = await prepared.capabilities.start(
+        {
+          confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
+          credentialBindingVersion: capabilityPreview.credentialBindingVersion,
+          planHash: capabilityPreview.planHash,
+          settingsRevision: capabilityPreview.settingsRevision,
+          startToken: capabilityPreview.startToken,
+        },
+        capability.windowId,
+        capability.windowId,
+      );
+      let capabilityProgress = capabilityStarted;
+      for (
+        let attempt = 0;
+        attempt < 500 && capabilityProgress.status === 'RUNNING';
+        attempt += 1
+      ) {
+        await new Promise<void>((resolveDelay) => {
+          setTimeout(resolveDelay, 10);
+        });
+        capabilityProgress = prepared.capabilities.getProgress(capabilityStarted.runId);
+      }
+      if (capabilityProgress.status !== 'SUCCEEDED') {
+        throw new SettingsError('SETTINGS_INVALID');
+      }
+      const capabilityState = prepared.capabilities.getState();
       smokePhase = 'EXPORT_DIAGNOSTIC';
       const preview = await prepared.service.buildDiagnosticPreview();
       await prepared.service.exportDiagnosticReport(preview.hash);
@@ -187,6 +261,13 @@ export class DesktopSettingsRuntime {
           ? await runEnabledLocalApiSmoke(this, localApi.port, localApi.windowId)
           : disabledLocalApiSmoke(this);
       return {
+        capability: {
+          matrixComplete: capabilityState.derivedState === 'PROBE_COMPLETE',
+          plannedRequestCount: capabilityProgress.plannedRequestCount,
+          sentRequestCount: capabilityProgress.sentRequestCount,
+          startupAutoRequestCount: 0,
+          status: 'SUCCEEDED',
+        },
         credentialCleared: cleared.status === 'NOT_CONFIGURED',
         credentialRoundtrip,
         locator: (await this.#locator.read()).status === 'READY',
@@ -282,6 +363,7 @@ export class DesktopSettingsRuntime {
         record,
         status: 'READY',
       };
+      await previous?.capabilities.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
@@ -309,6 +391,36 @@ export class DesktopSettingsRuntime {
     return this.#active.service.getCredentialStatus();
   }
 
+  public getProviderCapabilityState(): ProviderCapabilityStateView {
+    return this.#requireActive().capabilities.getState();
+  }
+
+  public previewProviderCapabilityProbe(
+    input: PreviewProviderCapabilityProbeInput,
+    senderId: number,
+    windowId: number,
+  ): ProviderCapabilityProbePreview {
+    return this.#requireActive().capabilities.preview(input, senderId, windowId);
+  }
+
+  public startProviderCapabilityProbe(
+    input: StartProviderCapabilityProbeInput,
+    senderId: number,
+    windowId: number,
+  ): Promise<ProviderCapabilityProbeProgressView> {
+    return this.#requireActive().capabilities.start(input, senderId, windowId);
+  }
+
+  public getProviderCapabilityProbeProgress(runId: string): ProviderCapabilityProbeProgressView {
+    return this.#requireActive().capabilities.getProgress(runId);
+  }
+
+  public cancelProviderCapabilityProbe(
+    input: CancelProviderCapabilityProbeInput,
+  ): ProviderCapabilityProbeProgressView {
+    return this.#requireActive().capabilities.cancel(input);
+  }
+
   public async buildDiagnosticPreview(): Promise<DiagnosticPreview> {
     return this.#requireActive().service.buildDiagnosticPreview();
   }
@@ -320,6 +432,7 @@ export class DesktopSettingsRuntime {
   public clearWindowSelections(windowId: number): void {
     this.#selectionBroker.clearForWindow(windowId);
     this.#localApi.clearWindowPairings(windowId);
+    this.#active?.capabilities.clearWindow(windowId);
   }
 
   public getLocalApiStatus(): LocalApiStatusView {
@@ -356,6 +469,7 @@ export class DesktopSettingsRuntime {
 
   public async close(): Promise<void> {
     await this.#localApi.close();
+    await this.#active?.capabilities.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -368,6 +482,7 @@ export class DesktopSettingsRuntime {
     });
     const database = connectDatabase(databasePath);
     const repository = new SqliteSettingsRepository(database);
+    const capabilityRepository = new SqliteProviderCapabilityRepository(database);
     const diagnosticStore = new LocalDiagnosticReportStore(root);
     const service = new SettingsService(repository, this.#credentials, {
       diagnosticRuntime: () => ({
@@ -390,7 +505,13 @@ export class DesktopSettingsRuntime {
       }),
       diagnosticStore,
     });
-    return { database, root, service };
+    const capabilities = new ProviderCapabilityRuntime(
+      capabilityRepository,
+      () => repository.getBundle().settings,
+      () => this.#credentials.resolveForProvider(CREDENTIAL_SLOT),
+    );
+    capabilities.initialize();
+    return { capabilities, database, root, service };
   }
 
   #requireActive(): ActiveProject {

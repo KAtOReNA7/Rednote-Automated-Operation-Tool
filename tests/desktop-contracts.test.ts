@@ -16,12 +16,15 @@ describe('desktop process contracts', () => {
   it('exposes exactly the fixed desktop and settings IPC allowlist', () => {
     expect(DESKTOP_IPC_CHANNELS).toEqual({
       buildDiagnosticPreview: 'settings:build-diagnostic-preview',
+      cancelProviderCapabilityProbe: 'providers:cancel-capability-probe',
       clearCredential: 'settings:clear-credential',
       confirmDataRootSelection: 'settings:confirm-data-root-selection',
       exportDiagnosticReport: 'settings:export-diagnostic-report',
       getAppInfo: 'desktop:get-app-info',
       getCredentialStatus: 'settings:get-credential-status',
       getFoundationHealth: 'desktop:get-foundation-health',
+      getProviderCapabilityProbeProgress: 'providers:get-capability-probe-progress',
+      getProviderCapabilityState: 'providers:get-capability-state',
       getLocalApiStatus: 'local-api:get-status',
       getRuntimeCapabilities: 'desktop:get-runtime-capabilities',
       getSettings: 'settings:get-settings',
@@ -31,8 +34,10 @@ describe('desktop process contracts', () => {
       cancelLocalApiPairing: 'local-api:cancel-pairing',
       revokeLocalApiClient: 'local-api:revoke-client',
       selectDataRoot: 'settings:select-data-root',
+      previewProviderCapabilityProbe: 'providers:preview-capability-probe',
       setCredential: 'settings:set-credential',
       startLocalApiPairing: 'local-api:start-pairing',
+      startProviderCapabilityProbe: 'providers:start-capability-probe',
       updateLocalApiSettings: 'local-api:update-settings',
       updateNonSecretSettings: 'settings:update-non-secret',
     });

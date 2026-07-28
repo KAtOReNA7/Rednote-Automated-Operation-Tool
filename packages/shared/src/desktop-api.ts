@@ -8,6 +8,17 @@ import type {
   SetupState,
 } from '@mystery-operations/settings';
 import type {
+  ProbeCapability,
+  ProbeConfidence,
+  ProbeModelSlot,
+  ProbeProfile,
+  ProbeProtocolMode,
+  ProbeReasonCode,
+  ProbeRunStatus,
+  ProbeSource,
+  ProbeState,
+} from '@mystery-operations/providers';
+import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
   LocalApiErrorCode,
@@ -25,6 +36,11 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getRuntimeCapabilities: 'desktop:get-runtime-capabilities',
   getSetupState: 'settings:get-setup-state',
   getSettings: 'settings:get-settings',
+  getProviderCapabilityState: 'providers:get-capability-state',
+  previewProviderCapabilityProbe: 'providers:preview-capability-probe',
+  startProviderCapabilityProbe: 'providers:start-capability-probe',
+  getProviderCapabilityProbeProgress: 'providers:get-capability-probe-progress',
+  cancelProviderCapabilityProbe: 'providers:cancel-capability-probe',
   selectDataRoot: 'settings:select-data-root',
   confirmDataRootSelection: 'settings:confirm-data-root-selection',
   updateNonSecretSettings: 'settings:update-non-secret',
@@ -60,6 +76,10 @@ export interface DesktopError {
     | 'FOUNDATION_UNAVAILABLE'
     | 'INTERNAL_ERROR'
     | 'INVALID_REQUEST'
+    | 'PROBE_ALREADY_RUNNING'
+    | 'PROBE_INVALID_REQUEST'
+    | 'PROBE_NOT_RUNNING'
+    | 'PROBE_STALE'
     | LocalApiErrorCode
     | SettingsErrorCode;
   readonly context?: Readonly<Record<string, boolean | number | string>>;
@@ -141,6 +161,85 @@ export interface ExportDiagnosticReportInput {
   readonly expectedPreviewHash: string;
 }
 
+export interface ProviderCapabilityEntryView {
+  readonly capability: ProbeCapability;
+  readonly confidence: ProbeConfidence;
+  readonly maxContextTokens: number | null;
+  readonly modelId: string | null;
+  readonly modelSlot: ProbeModelSlot;
+  readonly observedAt: string | null;
+  readonly protocolMode: ProbeProtocolMode;
+  readonly rateLimitRequests: number | null;
+  readonly rateLimitTokens: number | null;
+  readonly reasonCode: ProbeReasonCode;
+  readonly source: ProbeSource;
+  readonly stale: boolean;
+  readonly state: ProbeState;
+}
+
+export interface ProviderCapabilityRunHistoryView {
+  readonly completedAt: string | null;
+  readonly plannedRequestCount: number;
+  readonly profile: ProbeProfile;
+  readonly reasonCode: ProbeReasonCode | null;
+  readonly runId: string;
+  readonly sentRequestCount: number;
+  readonly startedAt: string;
+  readonly status: ProbeRunStatus;
+}
+
+export interface ProviderCapabilityStateView {
+  readonly activeRun: ProviderCapabilityProbeProgressView | null;
+  readonly derivedState:
+    'CANCELLED' | 'FAILED' | 'INTERRUPTED' | 'NOT_PROBED' | 'PARTIAL' | 'PROBE_COMPLETE' | 'STALE';
+  readonly entries: readonly ProviderCapabilityEntryView[];
+  readonly history: readonly ProviderCapabilityRunHistoryView[];
+  readonly runId: string | null;
+}
+
+export interface PreviewProviderCapabilityProbeInput {
+  readonly includeToolCalling: boolean;
+  readonly profile: ProbeProfile;
+  readonly selectedCapabilities: readonly ProbeCapability[];
+}
+
+export interface ProviderCapabilityProbePreview {
+  readonly credentialBindingVersion: number;
+  readonly expiresAt: string;
+  readonly feeEstimate: 'UNKNOWN';
+  readonly planHash: string;
+  readonly profile: ProbeProfile;
+  readonly requestCount: number;
+  readonly settingsRevision: number;
+  readonly startToken: string;
+}
+
+export interface StartProviderCapabilityProbeInput {
+  readonly confirmation: 'START_PROVIDER_CAPABILITY_PROBE';
+  readonly credentialBindingVersion: number;
+  readonly planHash: string;
+  readonly settingsRevision: number;
+  readonly startToken: string;
+}
+
+export interface GetProviderCapabilityProbeProgressInput {
+  readonly runId: string;
+}
+
+export interface CancelProviderCapabilityProbeInput {
+  readonly confirmation: 'CANCEL_PROVIDER_CAPABILITY_PROBE';
+  readonly runId: string;
+}
+
+export interface ProviderCapabilityProbeProgressView {
+  readonly completedRequestCount: number;
+  readonly currentCapability: ProbeCapability | null;
+  readonly plannedRequestCount: number;
+  readonly runId: string;
+  readonly sentRequestCount: number;
+  readonly status: ProbeRunStatus;
+}
+
 export interface DesktopBridge {
   buildDiagnosticPreview(): Promise<DesktopResult<DiagnosticPreview>>;
   clearCredential(input: ClearCredentialInput): Promise<DesktopResult<CredentialStatusView>>;
@@ -155,6 +254,19 @@ export interface DesktopBridge {
     input: GetCredentialStatusInput,
   ): Promise<DesktopResult<CredentialStatusView>>;
   getFoundationHealth(): Promise<DesktopResult<FoundationHealth>>;
+  getProviderCapabilityState(): Promise<DesktopResult<ProviderCapabilityStateView>>;
+  previewProviderCapabilityProbe(
+    input: PreviewProviderCapabilityProbeInput,
+  ): Promise<DesktopResult<ProviderCapabilityProbePreview>>;
+  startProviderCapabilityProbe(
+    input: StartProviderCapabilityProbeInput,
+  ): Promise<DesktopResult<ProviderCapabilityProbeProgressView>>;
+  getProviderCapabilityProbeProgress(
+    input: GetProviderCapabilityProbeProgressInput,
+  ): Promise<DesktopResult<ProviderCapabilityProbeProgressView>>;
+  cancelProviderCapabilityProbe(
+    input: CancelProviderCapabilityProbeInput,
+  ): Promise<DesktopResult<ProviderCapabilityProbeProgressView>>;
   getLocalApiStatus(): Promise<DesktopResult<LocalApiStatusView>>;
   getRuntimeCapabilities(): Promise<DesktopResult<RuntimeCapabilities>>;
   getSettings(): Promise<DesktopResult<SettingsBundle>>;

@@ -4,6 +4,7 @@ import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { LocalApiError } from '@mystery-operations/local-api';
 import {
   type CancelLocalApiPairingRequest,
+  type CancelProviderCapabilityProbeInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -13,9 +14,12 @@ import {
   type ExportDiagnosticReportInput,
   type FoundationHealth,
   type GetCredentialStatusInput,
+  type GetProviderCapabilityProbeProgressInput,
+  type PreviewProviderCapabilityProbeInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
   type SetCredentialInput,
+  type StartProviderCapabilityProbeInput,
   type UpdateLocalApiSettingsRequest,
   type WindowState,
 } from '@mystery-operations/shared';
@@ -23,6 +27,7 @@ import type { NonSecretSettingsDraft } from '@mystery-operations/settings';
 import { SettingsError } from '@mystery-operations/settings';
 
 import { type DesktopIpcOperation, validateDesktopIpcRequest } from './ipc-policy.js';
+import { ProviderCapabilityControlError } from './provider-capability-runtime.js';
 import type { DesktopSettingsRuntime } from './settings-runtime.js';
 
 interface RegisterDesktopIpcOptions {
@@ -55,6 +60,9 @@ function safeFailure(error: unknown): DesktopResult<never> {
   }
   if (error instanceof SettingsError) {
     return failure(error.code, error.message, error.retryable, error.context);
+  }
+  if (error instanceof ProviderCapabilityControlError) {
+    return failure(error.code, error.message, error.retryable);
   }
   return failure('INTERNAL_ERROR', '本地基础设施暂时不可用。');
 }
@@ -125,6 +133,55 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('getSettings', DESKTOP_IPC_CHANNELS.getSettings, () =>
     options.settingsRuntime.getSettings(),
+  );
+  register('getProviderCapabilityState', DESKTOP_IPC_CHANNELS.getProviderCapabilityState, () =>
+    options.settingsRuntime.getProviderCapabilityState(),
+  );
+  register(
+    'previewProviderCapabilityProbe',
+    DESKTOP_IPC_CHANNELS.previewProviderCapabilityProbe,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewProviderCapabilityProbe(
+        args[0] as PreviewProviderCapabilityProbeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'startProviderCapabilityProbe',
+    DESKTOP_IPC_CHANNELS.startProviderCapabilityProbe,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.startProviderCapabilityProbe(
+        args[0] as StartProviderCapabilityProbeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'getProviderCapabilityProbeProgress',
+    DESKTOP_IPC_CHANNELS.getProviderCapabilityProbeProgress,
+    (_event, args) => {
+      const input = args[0] as GetProviderCapabilityProbeProgressInput;
+      return options.settingsRuntime.getProviderCapabilityProbeProgress(input.runId);
+    },
+  );
+  register(
+    'cancelProviderCapabilityProbe',
+    DESKTOP_IPC_CHANNELS.cancelProviderCapabilityProbe,
+    (_event, args) =>
+      options.settingsRuntime.cancelProviderCapabilityProbe(
+        args[0] as CancelProviderCapabilityProbeInput,
+      ),
   );
   register('selectDataRoot', DESKTOP_IPC_CHANNELS.selectDataRoot, async (event) => {
     const window = options.getWindow();

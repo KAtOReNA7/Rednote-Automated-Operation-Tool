@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 
 import electron from 'electron';
 
@@ -16,6 +16,13 @@ import {
   waitForExit,
   waitForSmokeReport,
 } from './issue011-smoke-support.mjs';
+import {
+  assertIssue013CapabilityFixture,
+  startIssue013CapabilityFixture,
+} from './issue013-capability-smoke-fixture.mjs';
+import { createPortableTemp } from './portable-temp.mjs';
+
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 const childEnvironment = { ...process.env };
 delete childEnvironment.DESKTOP_DEV_SERVER_URL;
@@ -24,9 +31,15 @@ delete childEnvironment.NODE_OPTIONS;
 
 const results = [];
 for (const mode of ['disabled', 'enabled']) {
+  const temporary = await createPortableTemp(projectRoot, `source-smoke-${mode}`);
+  const capabilityFixture = await startIssue013CapabilityFixture();
   const port = await allocateLoopbackPort();
-  const outputPath = join(tmpdir(), `issue006-smoke-${randomUUID()}.json`);
-  const smokeWorkspace = await mkdtemp(join(tmpdir(), 'rednote-issue010-smoke-'));
+  const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
+  const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
+  const modeEnvironment = {
+    ...childEnvironment,
+    ...temporary.env,
+  };
   const child = spawn(
     electron,
     [
@@ -36,10 +49,11 @@ for (const mode of ['disabled', 'enabled']) {
       `--issue010-smoke-workspace=${smokeWorkspace}`,
       `--issue011-smoke-mode=${mode}`,
       `--issue011-smoke-port=${port}`,
+      `--issue013-smoke-port=${capabilityFixture.port}`,
     ],
     {
-      cwd: new URL('..', import.meta.url),
-      env: childEnvironment,
+      cwd: projectRoot,
+      env: modeEnvironment,
       stdio: ['ignore', 'pipe', 'pipe'],
       windowsHide: true,
     },
@@ -52,8 +66,9 @@ for (const mode of ['disabled', 'enabled']) {
   const exitPromise = waitForExit(child);
   try {
     const report = await waitForSmokeReport(outputPath);
+    assertIssue013CapabilityFixture(capabilityFixture, report);
     const snapshot = await inspectProcessTree(child.pid);
-    const socketEvidence = assertSocketSnapshot(snapshot, mode, port);
+    const socketEvidence = assertSocketSnapshot(snapshot, mode, port, capabilityFixture.port);
     const exitCode = await exitPromise;
     if (exitCode !== 0) {
       throw new Error(
@@ -69,8 +84,15 @@ for (const mode of ['disabled', 'enabled']) {
       child.kill();
       await exitPromise.catch(() => undefined);
     }
+    await capabilityFixture.close();
     await rm(outputPath, { force: true });
-    await rm(smokeWorkspace, { force: true, recursive: true });
+    await rm(smokeWorkspace, {
+      force: true,
+      maxRetries: 20,
+      recursive: true,
+      retryDelay: 100,
+    });
+    await temporary.cleanup();
   }
 }
 

@@ -188,6 +188,7 @@ export class SqliteSettingsRepository implements SettingsRepository {
       .prepare(
         `UPDATE app_settings
          SET credential_reference = ?,
+             credential_binding_version = credential_binding_version + 1,
              setup_state = CASE
                WHEN ? IS NOT NULL AND provider_base_url IS NOT NULL
                 AND research_model_id IS NOT NULL AND writing_model_id IS NOT NULL

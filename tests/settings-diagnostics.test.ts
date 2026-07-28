@@ -71,7 +71,7 @@ const runtime: DiagnosticRuntime = {
   platformVersion: 'Windows 11 fixture',
   queueHealthy: true,
   safeStorageAvailable: true,
-  schemaVersion: 5,
+  schemaVersion: 6,
   storageHealthy: true,
 };
 

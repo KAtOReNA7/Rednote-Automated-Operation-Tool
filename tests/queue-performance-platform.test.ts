@@ -117,8 +117,17 @@ describe('queue performance and Windows-local platform behavior', () => {
           }
         ).journal_mode,
     );
+    const checkpoints = openDatabases.map(
+      (database) =>
+        (
+          database.prepare('PRAGMA wal_autocheckpoint').get() as {
+            readonly wal_autocheckpoint: number;
+          }
+        ).wal_autocheckpoint,
+    );
 
     expect(new Set(modes)).toEqual(new Set(['wal']));
+    expect(new Set(checkpoints)).toEqual(new Set([4096]));
   });
 
   it('claims the correct highest-priority job among 1,000 due jobs', async () => {

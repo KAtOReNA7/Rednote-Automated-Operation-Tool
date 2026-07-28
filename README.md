@@ -7,7 +7,7 @@
 面向 Windows 10/11 的本地优先、单用户推理小说内容生产与决策系统。
 
 [![Windows CI](https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg)](https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml)
-![Milestone](https://img.shields.io/badge/里程碑-M2%20Issue%20012%20已完成-2ea44f)
+![Milestone](https://img.shields.io/badge/里程碑-M2%20Issue%20013%20已完成-2ea44f)
 ![Node.js](https://img.shields.io/badge/Node.js-24-339933)
 ![Electron](https://img.shields.io/badge/Electron-43.2.0-47848f)
 ![Platform](https://img.shields.io/badge/平台-Windows%2010%2F11-0078d4)
@@ -16,12 +16,12 @@
 
 > [!IMPORTANT]
 > 当前版本完成的是可靠、安全的本地应用基础，不是可直接投入内容生产的成品。
-> Provider 合同已经建立，但真实模型、搜索、研究、图片业务、浏览器插件业务和发布包仍未
-> 接通；应用不会自动调用模型或操作小红书。
+> Provider 合同与用户显式能力探测已经建立，但内容工作流中的真实模型、搜索、研究、
+> 图片业务、浏览器插件业务和发布包仍未接通；应用不会自动调用模型或操作小红书。
 
 ## 当前开发状态
 
-**M0（Issue 001—005）、M1（Issue 006—011）和 M2 Issue 012 均已完成验收。**
+**M0（Issue 001—005）、M1（Issue 006—011）和 M2 Issue 012—013 均已完成验收。**
 
 | 里程碑 | 范围                                                       |   状态    |
 | ------ | ---------------------------------------------------------- | :-------: |
@@ -30,25 +30,27 @@
 | M2     | 供应商接口、能力探测、搜索、书库、研究、浏览器插件         | 🚧 进行中 |
 | M3—M6  | 内容生产、视觉、审批、导出、数据闭环、Windows 发布         | ⏳ 未开始 |
 
-截至目前已完成 Issue 001—012。下一项是 **Issue 013：能力探测**，但本轮没有探测能力、
-没有把 OpenAI-compatible adapter 接入应用启动或工作流，也不会在安装、测试或启动时访问
-模型服务。
+截至目前已完成 Issue 001—013。下一项是
+**Issue 014：模型运行记录、缓存与成本账本**。能力探测只会在设置页经过显式预览和确认后
+运行；安装、保存设置、迁移、启动、定时器和队列都不会自动访问模型服务。
 
 ### 已经具备
 
 - 安全的 Electron 43 + React 19 中文桌面壳，启用 context isolation、sandbox 和导航限制。
-- SQLite v1—v5 迁移、迁移前备份、失败回滚、STRICT 表、外键和 WAL。
+- SQLite v1—v6 迁移、迁移前备份、失败回滚、STRICT 表、外键和 WAL。
 - 支持暂停、取消、重试、租约和重启恢复的持久化本地任务队列。
 - 支持中文、空格路径和受控目录边界的本地文件仓库。
 - 本地设置向导、ProjectDataRoot、Windows 本机凭据保护和脱敏诊断。
 - 默认关闭、只绑定 `127.0.0.1` 的本地 API，以及短期配对、token digest、CORS 和限流。
 - 文本、结构化输出、视觉和图片生成的供应商无关接口，三态能力、统一 usage、稳定错误、
   有限安全重试、独立协议 codec、可注入 HTTP transport 和零网络 Scripted Mock。
+- 设置页显式 CORE/FULL/CUSTOM 能力探测、短期单次启动 token、串行无重试 runner、保守
+  三态分类、配置/凭据 stale、CapabilityGuard 和安全历史矩阵。
 - source 与 packaged Electron smoke、依赖审计、700+ 项自动化测试和 Windows CI。
 
 ### 尚未具备
 
-- 真实 provider wiring、能力探测、搜索、联网研究、正式图片保存、OCR 或任何付费 API 调用。
+- 内容工作流中的真实 provider wiring、搜索、联网研究、正式图片保存、OCR 或自动付费调用。
 - Chrome/Edge 收藏插件及其页面保存业务。
 - 选题、文案、质量编排、审批、排期、发布包或数据复盘业务。
 - 小红书登录、自动发布、评论、私信、验证码或风控处理。
@@ -108,7 +110,9 @@ npm run test:desktop
 npm run test:storage
 npm run test:settings
 npm run test:local-api
+npm run test:portability
 npm run test:providers
+npm run test:capabilities
 npm run test:electron-smoke
 npm run package:desktop
 npm run audit:dependencies
@@ -126,13 +130,15 @@ npm run test:packaged-smoke
 ```mermaid
 flowchart LR
     UI["React renderer"] -->|"窄 preload API"| IPC["Electron main / IPC"]
-    IPC --> DB["SQLite v1—v5"]
+    IPC --> DB["SQLite v1—v6"]
     IPC --> FS["ProjectDataRoot / 本地文件仓库"]
     IPC --> Queue["持久化任务队列"]
     IPC --> Settings["本机设置与凭据引用"]
     IPC --> API["127.0.0.1 本地 API"]
+    IPC --> Probe["用户显式能力探测"]
+    Probe --> Providers["供应商无关接口"]
     API -. "Issue 017 才实现业务" .-> Clipper["Chrome / Edge 插件"]
-    Queue -. "后续真实 handler 才调用" .-> Providers["供应商无关接口"]
+    Queue -. "后续真实 handler 才调用" .-> Providers
 ```
 
 关键进程边界：
@@ -142,8 +148,8 @@ flowchart LR
 - Electron main 负责本地资源、生命周期和安全策略。
 - `packages/core`、`db`、`storage`、`workflows`、`settings`、`local-api`、`providers` 保持
   Electron 无关。
-- `apps/clipper` 仍是 Issue 017 的空包；`packages/providers` 不被 renderer、preload、
-  local API 或应用启动流程导入。
+- `apps/clipper` 仍是 Issue 017 的空包；renderer、preload 与 local API 不直接导入
+  `packages/providers`，应用启动、保存设置、迁移、定时器和队列不会自动探测。
 
 ## 仓库结构
 
@@ -160,7 +166,7 @@ packages/
   settings/      非秘密设置、凭据引用与诊断合同
   local-api/     loopback HTTP、配对、认证、CORS 与限流
   shared/        renderer/preload/main 共享 DTO
-  providers/     四类模型接口、能力、配置、usage、错误、transport、codecs 与 Mock
+  providers/     模型接口、能力探测、配置、usage、错误、transport、codecs 与 Mock
 docs/
   adr/           架构决策记录
   contracts/     稳定协议合同
@@ -196,10 +202,13 @@ tests/           领域、架构、SQLite、Electron、安全与回归测试
 - [设置与本地凭据引用](./docs/adr/0006-settings-and-local-credential-reference.md)
 - [本地 API 与插件认证](./docs/adr/0007-local-loopback-api-and-plugin-authentication.md)
 - [供应商无关模型接口](./docs/adr/0008-provider-neutral-model-interfaces.md)
+- [显式供应商能力探测](./docs/adr/0009-provider-capability-probing.md)
 - [Local API v1 合同](./docs/contracts/local-api-v1.md)
 - [Provider v1 合同](./docs/contracts/provider-v1.md)
+- [Provider Capabilities v1 合同](./docs/contracts/provider-capabilities-v1.md)
 - [Issue 011 验收映射](./docs/m1-issue011-acceptance-map.md)
 - [Issue 012 验收映射](./docs/m2-issue012-acceptance-map.md)
+- [Issue 013 验收映射](./docs/m2-issue013-acceptance-map.md)
 
 ## 开发约定
 

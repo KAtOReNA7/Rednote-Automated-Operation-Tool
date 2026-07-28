@@ -9,6 +9,12 @@ const RENDERER = 'rednote://app/index.html';
 
 const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> = {
   buildDiagnosticPreview: [],
+  cancelProviderCapabilityProbe: [
+    {
+      confirmation: 'CANCEL_PROVIDER_CAPABILITY_PROBE',
+      runId: 'probe-runtime-000001',
+    },
+  ],
   clearCredential: [
     {
       confirmation: 'DELETE_CONTENT_AI_API_KEY',
@@ -27,6 +33,8 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getAppInfo: [],
   getCredentialStatus: [{ slot: 'CONTENT_AI_API_KEY' }],
   getFoundationHealth: [],
+  getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
+  getProviderCapabilityState: [],
   getLocalApiStatus: [],
   getRuntimeCapabilities: [],
   getSettings: [],
@@ -42,6 +50,13 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     },
   ],
   selectDataRoot: [],
+  previewProviderCapabilityProbe: [
+    {
+      includeToolCalling: false,
+      profile: 'CORE',
+      selectedCapabilities: [],
+    },
+  ],
   setCredential: [
     {
       plaintext: 'runtime-only-unusable-value',
@@ -49,6 +64,15 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     },
   ],
   startLocalApiPairing: [],
+  startProviderCapabilityProbe: [
+    {
+      confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
+      credentialBindingVersion: 0,
+      planHash: 'a'.repeat(64),
+      settingsRevision: 0,
+      startToken: 'a'.repeat(43),
+    },
+  ],
   updateLocalApiSettings: [{ enabled: true, expectedRevision: 0, port: 43_119 }],
   updateNonSecretSettings: [
     {
@@ -177,6 +201,42 @@ describe('Issue 010 strict IPC request policy', () => {
         'clearCredential',
       ),
     ).toMatchObject({ error: { code: 'INVALID_REQUEST' } });
+  });
+
+  it('rejects provider capability URL, model, credential, prompt, header, and body injection', () => {
+    const preview = validRequests.previewProviderCapabilityProbe[0] as Record<string, unknown>;
+    for (const extra of [
+      { baseUrl: 'https://outside.invalid/v1' },
+      { model: 'caller-model' },
+      { credential: 'caller-secret' },
+      { prompt: 'caller prompt' },
+      { headers: { Authorization: 'Bearer bad' } },
+      { body: { arbitrary: true } },
+    ]) {
+      expect(
+        validateDesktopIpcRequest(
+          RENDERER,
+          [{ ...preview, ...extra }],
+          RENDERER,
+          'previewProviderCapabilityProbe',
+        ),
+      ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    }
+  });
+
+  it('requires exact capability confirmation, revision, hash and single bounded token', () => {
+    const start = validRequests.startProviderCapabilityProbe[0] as Record<string, unknown>;
+    for (const invalid of [
+      { ...start, confirmation: 'YES' },
+      { ...start, startToken: 'short' },
+      { ...start, planHash: 'not-a-hash' },
+      { ...start, settingsRevision: -1 },
+      { ...start, credentialBindingVersion: 1.5 },
+    ]) {
+      expect(
+        validateDesktopIpcRequest(RENDERER, [invalid], RENDERER, 'startProviderCapabilityProbe'),
+      ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    }
   });
 
   it('rejects invalid tokens, stale revision shapes, excessive depth, and oversized input', () => {

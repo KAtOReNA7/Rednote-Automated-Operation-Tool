@@ -42,6 +42,13 @@ function resolveLocalApiSmoke(argv: readonly string[]): {
     : null;
 }
 
+function resolveCapabilitySmokePort(argv: readonly string[]): number | null {
+  const prefix = '--issue013-smoke-port=';
+  const argument = argv.find((value) => value.startsWith(prefix));
+  const port = Number(argument?.slice(prefix.length));
+  return Number.isSafeInteger(port) && port >= 1_024 && port <= 65_535 ? port : null;
+}
+
 function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
   const prefix = '--issue010-smoke-workspace=';
   const argument = argv.find((value) => value.startsWith(prefix));
@@ -62,6 +69,7 @@ function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
 
 const smokeWorkspacePath = isSmokeMode ? resolveSmokeWorkspacePath(process.argv) : null;
 const localApiSmoke = isSmokeMode ? resolveLocalApiSmoke(process.argv) : null;
+const capabilitySmokePort = isSmokeMode ? resolveCapabilitySmokePort(process.argv) : null;
 const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -162,7 +170,7 @@ async function startApplication(): Promise<void> {
     }
   });
   await settingsRuntime.initialize();
-  if (isSmokeMode && localApiSmoke === null) {
+  if (isSmokeMode && (localApiSmoke === null || capabilitySmokePort === null)) {
     throw new Error('INVALID_LOCAL_API_SMOKE_ARGUMENTS');
   }
   const settingsSmoke =
@@ -175,6 +183,10 @@ async function startApplication(): Promise<void> {
             mode: localApiSmoke?.mode ?? 'disabled',
             port: localApiSmoke?.port ?? 43_119,
             windowId: 11,
+          },
+          {
+            port: capabilitySmokePort ?? 43_120,
+            windowId: 13,
           },
         );
   const stateStore = createWindowStateStore(join(app.getPath('userData'), 'window-state.json'));
@@ -263,11 +275,16 @@ async function startApplication(): Promise<void> {
             renderer.settings &&
             renderer.setupState &&
             renderer.credentialStatus &&
-            settingsSmoke?.credentialCleared === true &&
+            settingsSmoke?.capability.matrixComplete === true &&
+            settingsSmoke.capability.startupAutoRequestCount === 0 &&
+            settingsSmoke.capability.status === 'SUCCEEDED' &&
+            settingsSmoke.capability.sentRequestCount ===
+              settingsSmoke.capability.plannedRequestCount &&
+            settingsSmoke.credentialCleared === true &&
             settingsSmoke.credentialRoundtrip &&
             settingsSmoke.locator &&
             settingsSmoke.safeStorage &&
-            settingsSmoke.secretEgressSafeCount === 30 &&
+            settingsSmoke.secretEgressSafeCount === 50 &&
             settingsSmoke.settings &&
             settingsSmoke.localApi.mode === localApiSmoke?.mode &&
             settingsSmoke.localApi.enabled === (localApiSmoke?.mode === 'enabled') &&

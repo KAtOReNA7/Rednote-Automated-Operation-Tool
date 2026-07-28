@@ -12,6 +12,7 @@
     "@mystery-operations/core": "0.0.0",
     "@mystery-operations/db": "0.0.0",
     "@mystery-operations/local-api": "0.0.0",
+    "@mystery-operations/providers": "0.0.0",
     "@mystery-operations/shared": "0.0.0",
     "@mystery-operations/settings": "0.0.0",
     "@mystery-operations/storage": "0.0.0",

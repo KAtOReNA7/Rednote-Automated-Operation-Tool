@@ -22,15 +22,22 @@ const providerProductionSource = [
   'packages/providers/src/transport.ts',
   'packages/providers/src/openai-compatible-provider.ts',
   'packages/providers/src/mock-provider.ts',
+  'packages/providers/src/capability-probe-contracts.ts',
+  'packages/providers/src/capability-probe-plan.ts',
+  'packages/providers/src/capability-probe-classifier.ts',
+  'packages/providers/src/capability-probe-payloads.ts',
+  'packages/providers/src/capability-probe-runner.ts',
+  'packages/providers/src/capability-probe-transport.ts',
+  'packages/providers/src/capability-guard.ts',
   'packages/providers/src/index.ts',
 ]
   .map(source)
   .join('\n');
 
 describe('Issue 012 provider architecture and scope', () => {
-  it('keeps migration v1-v5 hashes frozen and adds no v6', () => {
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5]);
-    expect(MIGRATIONS.map(migrationChecksum)).toEqual([
+  it('keeps migration v1-v5 hashes frozen while Issue 013 appends v6', () => {
+    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(MIGRATIONS.slice(0, 5).map(migrationChecksum)).toEqual([
       '8964b8727dfb4f244a8c63a47368da3ceb23de945078b37efe161af91acac907',
       'ab3d6d34621f9f29601f1574f624381d78c208f1c36cfda35377d8f82f4c57ce',
       '11dc5ba6496b265cf2945ea7b6b94f59e01428ee253a203596d188b929a222ed',
@@ -54,7 +61,9 @@ describe('Issue 012 provider architecture and scope', () => {
     ]) {
       expect(lock.packages).not.toHaveProperty(`node_modules/${dependency}`);
     }
-    expect(providerProductionSource).not.toMatch(/\bBatch\b|\/batches\b/u);
+    expect(providerProductionSource).not.toMatch(
+      /\/batches\/(?:create|list|cancel)|files\/upload/iu,
+    );
   });
 
   it('keeps provider imports out of renderer, preload, and shared renderer contracts', () => {
