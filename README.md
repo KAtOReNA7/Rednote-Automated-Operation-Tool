@@ -149,8 +149,8 @@ flowchart LR
     EXEC --> PROBE["用户显式能力探测"]
     PROBE --> PROVIDERS["Provider-neutral 接口"]
 
-    API -. "后续 Issue 才接入插件业务" .-> CLIPPER["Chrome / Edge 插件"]
-    QUEUE -. "后续真实 handler" .-> PROVIDERS
+    API -.-> CLIPPER["Chrome / Edge 插件"]
+    QUEUE -.-> PROVIDERS
 
     classDef core fill:#fff0f2,stroke:#ff2442,color:#111;
     classDef safe fill:#fff,stroke:#111,color:#111;
