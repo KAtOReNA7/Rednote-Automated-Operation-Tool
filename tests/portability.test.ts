@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, isAbsolute, parse, relative, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, parse, relative, resolve } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
@@ -15,9 +15,10 @@ describe('Issue 013 repository-volume portability', () => {
   it('runs Vitest in a controlled sibling directory on the repository volume', () => {
     expect(parse(tmpdir()).root).toBe(parse(root).root);
     expect(insideRoot(tmpdir())).toBe(false);
-    expect(relative(dirname(root), tmpdir()).replaceAll('\\', '/')).toMatch(
-      /^\.rednote-temp\/rednote-vitest-/u,
-    );
+    const prefix = `.rednote-temp/${basename(root)}-vitest-`;
+    const relativeTemp = relative(dirname(root), tmpdir()).replaceAll('\\', '/');
+    expect(relativeTemp.startsWith(prefix)).toBe(true);
+    expect(relativeTemp.slice(prefix.length)).toMatch(/^[A-Za-z0-9_-]+$/u);
   });
 
   it('routes every test script through a repository-controlled test runner', () => {
