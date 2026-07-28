@@ -241,7 +241,8 @@ describe('runtime token authentication', () => {
   });
 
   it('returns the same limited 401 for missing, unknown, rotated, and revoked tokens', async () => {
-    const context = await createLocalApiContext();
+    const now = new Date('2026-07-28T01:00:00.000Z');
+    const context = await createLocalApiContext({ clock: { now: () => now } });
     const first = await pairOverHttp(context);
     const unknown = randomRuntimeToken();
     const missing = await localApiRequest(context.port, { origin: first.origin });
@@ -260,7 +261,11 @@ describe('runtime token authentication', () => {
     if (active === undefined) {
       throw new Error('Active test client was not found.');
     }
-    context.repository.revokeClient(active.id, active.revision, '2026-07-28T02:00:00.000Z');
+    context.repository.revokeClient(
+      active.id,
+      active.revision,
+      new Date(now.getTime() + 60_000).toISOString(),
+    );
     const revoked = await localApiRequest(context.port, {
       authorization: `Bearer ${second.token}`,
       origin: first.origin,

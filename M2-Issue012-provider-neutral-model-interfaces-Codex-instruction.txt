@@ -1,0 +1,1530 @@
+M2 Issue 012：供应商无关模型接口——Codex 完整开发指令
+======================================================
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；协议、错误语义、结构化输出和最终验收使用 XHigh
+授权范围：只实现 Roadmap Issue 012
+固定起点：7bc921fb805ef42b8ae5a71184dd94e4b5ac920d
+目标提交信息：feat(providers): add provider-neutral model interfaces
+
+
+零、任务授权与停止边界
+----------------------
+
+你现在获得的唯一开发授权是：
+
+Issue 012：实现供应商无关的模型接口。
+
+本轮必须交付：
+
+- 文本生成接口；
+- 结构化输出接口与运行时 Schema 验证；
+- 图片理解/视觉接口；
+- 图片生成接口；
+- 统一、保守、可缺省的 usage 结构；
+- OpenAI-compatible 协议的可注入 transport 和 codec 边界；
+- Responses、Chat Completions 和 Images 的协议模式抽象；
+- 严格配置装配，Base URL 与模型 ID 只能来自现有设置；
+- 供应商无关、脚本化、确定性的 Mock Provider；
+- 网络错误、限流、超时、无效 JSON、拒绝和无效 usage 的稳定错误分类；
+- 对安全重试与不确定结果的明确区分；
+- 本机 loopback fixture 集成测试；
+- 独立 test:providers 门禁、全量回归、CI、文档、验收映射和一个本地提交。
+
+本轮明确不做：
+
+- Issue 013 的真实中转站能力探测；
+- Issue 014 的 model_runs、缓存、成本账本、80/100 美元执行门禁；
+- Issue 015 的 SearchProvider；
+- Issue 017 的浏览器插件业务；
+- 任何真实模型调用；
+- 任何真实 API key 检查、读取、创建、配置或复用；
+- OpenAI Platform key 创建流程；
+- 真实中转站连通性测试；
+- 真实费用；
+- Batch 请求、Batch 队列或 Batch 依赖；
+- Web Search、工具调用执行、MCP、Computer Use；
+- Embedding 调用；
+- OCR；
+- 图片文件落盘、缩略图、EXIF 或正式 assets 写入；
+- 业务 JobHandler、研究、书库、选题、写作或审核工作流；
+- UI 的“测试连接”或“开始生成”按钮；
+- 新数据库迁移；
+- 小红书登录、发布、评论、私信、验证码或风控动作；
+- 云数据库、云存储、云队列或远程服务器；
+- 开卷、盗版电子书或磨铁内部业务数据。
+
+完成后必须停止，不得自动进入 Issue 013。
+
+
+一、必须完整读取的仓库事实来源
+--------------------------------
+
+开始前完整读取，不得只看摘要：
+
+1. xiaohongshu-mystery-account-prd-v1.md
+2. xiaohongshu-development-roadmap-v1.md
+3. codex-master-development-instruction-v1.md
+4. README.md
+5. package.json
+6. package-lock.json
+7. docs/adr/0001-m0-foundation.md
+8. docs/adr/0002-sqlite-schema-and-migrations.md
+9. docs/adr/0003-persistent-local-job-queue.md
+10. docs/adr/0004-electron-react-desktop-shell.md
+11. docs/adr/0005-local-file-repository.md
+12. docs/adr/0006-settings-and-local-credential-reference.md
+13. docs/adr/0007-local-loopback-api-and-plugin-authentication.md
+14. docs/contracts/local-api-v1.md
+15. docs/m1-issue011-acceptance-map.md
+16. docs/m1-issue011-implementation-plan.md
+17. packages/providers 下全部现有文件
+18. packages/settings 下全部合同与验证文件
+19. packages/workflows 下任务队列合同
+20. packages/shared 下公开 DTO 与日志/脱敏合同
+21. packages/db 中 settings、jobs、model_runs、cost_ledger 相关 Schema
+22. apps/desktop 中 CredentialStore 和 settings runtime 的边界
+23. M2-Issue012-provider-neutral-model-interfaces-Codex-instruction.txt
+
+读取所有适用 AGENTS.md。
+
+若冻结文档缺失、损坏或无法完整读取，停止并报告，不得凭记忆补造。
+
+需求优先级：
+
+1. 用户当前明确要求；
+2. PRD 冻结约束；
+3. Roadmap 禁止事项；
+4. 本 Issue 012 指令；
+5. PRD 其他内容；
+6. Roadmap 其他内容；
+7. 既有 ADR。
+
+
+二、Git 与基线核验
+------------------
+
+只读检查：
+
+- 当前目录必须是 D:\porject\rednote；
+- 分支必须为 main；
+- HEAD 必须精确为：
+  7bc921fb805ef42b8ae5a71184dd94e4b5ac920d
+- 工作树必须干净；
+- 远端状态只读记录；
+- 不得 fetch、pull、push、建 PR 或合并。
+
+核对祖先提交：
+
+- b01785f7010f259c2faf2bfb7173dc678ca16cca
+- 891f680e4e7dd92f364204a83d8e3ba5aaaf5b24
+- 4438f237729ee68a4631d5068fcbc3ec1a8f200c
+- eb9ac8a600caa05c764eb3f2e62e535efa509069
+- a8ba00dc1dd6658984a6803f12fc93733a886bde
+- aab11d793021ac4f97dcf134d325be4576b5e9da
+- 7bc921fb805ef42b8ae5a71184dd94e4b5ac920d
+
+Issue 011 的父提交必须精确等于 Issue 010。起点之后不得存在未报告提交。
+
+开工前运行：
+
+- npm run test:constraints
+- npm run test:settings
+- npm run test:local-api
+- npm run test:electron-smoke
+- npm run test:packaged-smoke
+
+确认 Issue 011 的本地 listener 两态、安全清理和既有 Electron smoke 均未回归。
+
+任何不匹配立即停止，不修改代码。
+
+
+三、密钥与真实调用的特殊边界
+----------------------------
+
+用户使用的是第三方 OpenAI-compatible 中转站，不是本轮要创建或配置的 OpenAI
+Platform key。
+
+本轮：
+
+- 不检查 OPENAI_API_KEY 是否存在；
+- 不检查 CONTENT_AI_API_KEY 的明文；
+- 不读取 .env、环境变量值或 safeStorage 凭据；
+- 不打开 OpenAI Platform key 创建流程；
+- 不要求用户选择复用或新建密钥；
+- 不调用 CredentialStore.resolveForProvider() 获取真实值；
+- 不调用真实中转站；
+- 不调用官方 OpenAI API；
+- 不产生费用。
+
+生产 ProviderFactory 只依赖 CredentialResolver 端口。Issue 012 测试传入运行时随机、
+明确不可用的 synthetic credential。该值：
+
+- 不使用 sk-、sk-proj 或真实供应商前缀；
+- 不固定写进 fixture；
+- 不打印；
+- 不进入 snapshot、日志、错误、DB、WAL、SHM、diagnostic、package 或 Git。
+
+真实配置与能力探测必须等待 Issue 013 的单独授权。
+
+
+四、两项硬约束继续冻结
+----------------------
+
+ai_disclosure：
+
+- 默认且只能为 false；
+- 不参与 Provider request；
+- 不作为 prompt parameter；
+- 不影响模型选择、错误、重试、usage、评分、审批、排期或导出；
+- Provider 层不得自动修改。
+
+copyright：
+
+- 不参与 Provider request、route、error、capability 或 output；
+- 不建立风险评分、提醒、门禁或额外审批；
+- 不影响模型选择、调用、重试、usage、优先级、排期或导出。
+
+不得借 Provider 抽象加入 AI 标识或版权字段。
+
+
+五、正式参考与兼容原则
+----------------------
+
+参考只用于理解协议差异，不能把系统锁死为官方 OpenAI：
+
+- OpenAI Responses API：
+  https://platform.openai.com/docs/api-reference/responses
+- OpenAI Structured Outputs：
+  https://developers.openai.com/api/docs/guides/structured-outputs
+- OpenAI Images and Vision：
+  https://developers.openai.com/api/docs/guides/images-vision
+- OpenAI Error Codes：
+  https://developers.openai.com/api/docs/guides/error-codes
+- Node.js fetch/AbortController：
+  https://nodejs.org/download/release/latest-v24.x/docs/api/globals.html
+- Zod：
+  https://zod.dev/
+
+必须承认：
+
+- “OpenAI-compatible”不等于支持全部端点；
+- Responses 与 Chat Completions 结构不同；
+- 图片生成可能使用独立 Images endpoint；
+- 某些中转站只实现部分 JSON Schema；
+- usage 字段可能缺失或结构不同；
+- 视觉、图片、工具、搜索和 Batch 都是 UNKNOWN，不能从模型名称推断；
+- Issue 013 才探测并选择可用能力。
+
+不得硬编码任何模型名称、价格、速率、上下文长度或供应商域名。
+
+
+六、包边界
+----------
+
+优先在既有 packages/providers 内实现，不新建平行 Provider 包。
+
+建议文件：
+
+packages/providers/src/
+  contracts.ts
+  capabilities.ts
+  configuration.ts
+  content.ts
+  usage.ts
+  errors.ts
+  retry-policy.ts
+  transport.ts
+  response-limits.ts
+  codecs/
+    responses-codec.ts
+    chat-completions-codec.ts
+    images-codec.ts
+  openai-compatible-provider.ts
+  mock-provider.ts
+  redaction.ts
+  index.ts
+
+职责：
+
+- contracts：Provider interfaces 和 request/result；
+- capabilities：三态能力，不探测；
+- configuration：从设置装配非秘密 config；
+- content：文本、视觉与图片的有限输入；
+- usage：统一 usage 与严格验证；
+- errors：稳定错误码和恢复语义；
+- retry-policy：只做安全分类与有限重试协调；
+- transport：可注入 HTTP transport；
+- codecs：协议编码/解码，不做能力选择；
+- openai-compatible-provider：按明确传入的 protocol mode 执行；
+- mock-provider：脚本化、确定性、零网络；
+- redaction：错误和诊断不泄漏输入、输出或 credential。
+
+packages/providers 必须是 Node/main/worker 可用，不可被 renderer import。
+
+不要在 packages/shared 的通用 renderer 入口导出 Provider request、credential、
+raw prompt、binary image 或 transport。
+
+
+七、核心 Provider 接口
+----------------------
+
+至少定义：
+
+interface TextGenerationProvider
+interface StructuredGenerationProvider
+interface VisionProvider
+interface ImageGenerationProvider
+
+可以用一个组合 Provider 实现多个接口，但各方法和返回类型必须独立。
+
+建议方法语义：
+
+- generateText(request, context)
+- generateStructured(request, schema, context)
+- analyzeVision(request, context)
+- generateImage(request, context)
+
+不得在本轮加入：
+
+- search()
+- embed()
+- ocr()
+- batch()
+- runTool()
+- executeComputerUse()
+
+每个调用必须显式接收：
+
+- providerId；
+- modelId；
+- requestId；
+- operation kind；
+- input；
+- generation options；
+- timeout；
+- AbortSignal；
+- capability snapshot；
+- protocol mode；
+- secret-free trace metadata。
+
+modelId 不允许默认值或 fallback。缺失时返回 PROVIDER_MODEL_NOT_CONFIGURED。
+
+base URL 不由每个 request 任意传入；由受验证的 ProviderRuntimeConfig 装配。
+
+
+八、配置装配
+------------
+
+ProviderRuntimeConfig 只允许来自 Issue 010 设置：
+
+- protocol=OPENAI_COMPATIBLE；
+- normalized base URL；
+- research model ID；
+- writing model ID；
+- review model ID；
+- optional embedding model ID；
+- image model ID；
+- credential reference=CONTENT_AI_API_KEY。
+
+本轮不新增模型字段或数据库 migration。
+
+ProviderConfigLoader：
+
+- 从 SettingsRepository/SettingsService 的 main-only 端口读取；
+- 不从 renderer、query、job payload 或环境变量获取；
+- 不硬编码 Base URL；
+- 不硬编码 model；
+- 不接受调用方覆盖 credential reference；
+- 返回 deep-frozen、secret-free config；
+- 设置 revision 变化后旧 runtime config 可检测为 stale；
+- Base URL/model 缺失返回稳定配置错误；
+- setup state 必须至少为 PROVIDER_CONFIGURED_UNVERIFIED；
+- 不把 PROVIDER_CONFIGURED_UNVERIFIED 当作 verified。
+
+CredentialResolver：
+
+- 只定义端口；
+- secret 仅在调用开始时按固定 reference 解析；
+- 返回内存中的 opaque credential handle/value；
+- finally 中解除引用；
+- 不进入 request DTO、job、DB、日志或 error；
+- Issue 012 生产 wiring 不主动调用真实 resolver；
+- 测试只用 fake resolver。
+
+
+九、能力合同
+------------
+
+能力不能使用简单 boolean 默认 false，因为“未知”与“不支持”不同。
+
+定义：
+
+CapabilityState =
+
+- UNKNOWN
+- SUPPORTED
+- UNSUPPORTED
+
+ProviderCapabilities 至少包含：
+
+- text；
+- structuredJson；
+- toolCalling；
+- webSearch；
+- imageGeneration；
+- vision；
+- batch；
+- usage；
+- streaming；
+- maxContextTokens，可空；
+- observedAt，可空；
+- source，固定为 CONFIGURED_UNKNOWN/MOCK/PROBED 之一。
+
+Issue 012：
+
+- 默认实际中转站能力全部 UNKNOWN；
+- Mock 可以显式声明 SUPPORTED/UNSUPPORTED；
+- 不根据 model ID、URL、provider 名称或历史经验推断；
+- 不持久化能力；
+- 不发探测请求；
+- 不选择最佳 endpoint；
+- 不把 UNKNOWN 当作 SUPPORTED；
+- 不把 UNKNOWN 永久写成 UNSUPPORTED。
+
+如果生产调用需要的能力为 UNKNOWN 或 UNSUPPORTED，默认拒绝并返回稳定错误。Issue 013
+探测后才允许真实调用。
+
+
+十、协议模式
+------------
+
+定义明确、不可自动猜测的 protocol mode：
+
+- RESPONSES
+- CHAT_COMPLETIONS
+- IMAGES_GENERATIONS
+- MOCK
+
+不得根据模型名推断 mode。
+
+Responses codec、Chat Completions codec、Images codec：
+
+- 分别编码；
+- 分别解码；
+- 不互相偷偷 fallback；
+- 不在收到 404 后自动改 endpoint；
+- 不自动试遍全部 endpoint；
+- 不做 capability probe；
+- 不允许任意 path；
+- endpoint path 由受控枚举决定；
+- Base URL 合并保留用户合法 base path；
+- 禁止 userinfo、query、fragment；
+- redirect=error；
+- 不跟随跨域或同域 redirect。
+
+Issue 013 才决定某个中转站/模型支持哪种 mode。
+
+
+十一、文本与消息合同
+--------------------
+
+文本 request 使用供应商无关内容模型。
+
+允许 message role：
+
+- SYSTEM
+- USER
+- ASSISTANT
+
+允许文本 part。Vision request 额外允许 image part。
+
+限制：
+
+- message 数量有上限；
+- 单 part 和总字符数有应用级上限；
+- 空白-only input 被拒绝；
+- 控制字符策略明确；
+- 不接受任意 provider JSON；
+- 不接受调用方注入 Authorization/header/endpoint；
+- 不接受 remote file URL；
+- 不接受绝对本地路径；
+- 不接受 file://；
+- 不接受 tool definition，本轮无工具执行。
+
+TextGenerationResult 至少包含：
+
+- text；
+- finishReason，统一枚举；
+- refusal，可空且结构化；
+- usage；
+- providerRequestId，可空；
+- modelId；
+- protocolMode；
+- latencyMs；
+- outputTruncated=false/true；
+- warnings，有限稳定代码。
+
+不得返回供应商完整 raw response 给 workflow。
+
+
+十二、结构化输出
+----------------
+
+StructuredGenerationProvider 必须支持调用方提供的、版本化 Schema：
+
+- schemaId；
+- schemaVersion；
+- JSON Schema 或 Zod runtime validator；
+- strict object；
+- size/depth/array/string limits；
+- deterministic validation result。
+
+若仓库没有合格 runtime validator，可以新增 Zod，要求：
+
+- package-lock 精确锁定；
+- 只在需要的包声明；
+- audit 0 vulnerabilities；
+- 不引入 OpenAI SDK 作为结构化验证前提。
+
+结构化调用流程：
+
+1. 编码受控 Schema；
+2. 调用 transport；
+3. 识别 provider refusal；
+4. 提取候选 JSON；
+5. 严格 JSON.parse；
+6. runtime Schema 校验；
+7. 返回已验证 T；
+8. 丢弃 raw provider envelope。
+
+错误分类：
+
+- PROVIDER_INVALID_JSON；
+- PROVIDER_SCHEMA_VALIDATION_FAILED；
+- PROVIDER_REFUSAL；
+- PROVIDER_OUTPUT_TOO_LARGE；
+- PROVIDER_UNSUPPORTED_STRUCTURED_OUTPUT。
+
+错误不得携带：
+
+- raw JSON；
+- prompt；
+- 整段 output；
+- Schema 中的业务值；
+- stack；
+- credential。
+
+只允许：
+
+- schemaId/version；
+- 有限 issue path；
+- issue code；
+- byte/character count；
+- SHA-256 content hash；
+- requestId。
+
+不自动发送“修复 JSON”的第二次付费请求。本轮错误可恢复是指稳定分类、队列可安全决定
+重试/人工处理，而不是隐式产生第二次费用。
+
+
+十三、视觉输入
+--------------
+
+VisionProvider 输入只接受内存 binary part，不接受路径或 URL：
+
+- Uint8Array；
+- MIME allowlist：image/png、image/jpeg、image/webp、image/gif；
+- 每张大小上限；
+- 总大小上限；
+- 图片数量上限；
+- 空文件拒绝；
+- magic bytes 与 MIME 基础一致性检查；
+- 不解析 EXIF；
+- 不自动上传到远程文件服务；
+- 不把图片写入日志、error、DB 或 snapshot。
+
+接口层只把 binary part 交给 codec。Issue 012 不从 ProjectDataRoot 读取正式图片，也不写
+assets。
+
+Vision result 使用与 Text result 相同的规范文本/usage/refusal 结构。
+
+
+十四、图片生成输出
+------------------
+
+ImageGenerationProvider request 至少包含：
+
+- prompt；
+- modelId；
+- count，应用级上限；
+- size hint，可选受控枚举；
+- quality hint，可选受控枚举；
+- transparentBackground hint，可选三态；
+- timeout/AbortSignal。
+
+这些是供应商无关 hint，不保证所有 provider 支持。UNKNOWN capability 时不得真实调用。
+
+ImageGenerationResult 至少包含：
+
+- images 数组；
+- 每张 MIME；
+- inline bytes 或受控 opaque reference；
+- width/height，可空；
+- revisedPrompt，不默认公开且可空；
+- usage；
+- providerRequestId；
+- warnings。
+
+安全要求：
+
+- base64 解码前先检查长度；
+- 单张与总 output bytes 有上限；
+- MIME/magic bytes 校验；
+- 拒绝 data URL 中非 allowlist MIME；
+- 不自动抓取 provider 返回的任意远程 URL；
+- URL-only 响应返回 PROVIDER_UNSUPPORTED_OUTPUT_VARIANT；
+- 不写入文件仓库；
+- 不创建 assets 行；
+- 不输出图片到测试报告；
+- Mock 只返回极小、合法、合成图片 fixture bytes。
+
+正式图片保存和处理属于后续图片 Issue。
+
+
+十五、统一 usage
+---------------
+
+定义 ProviderUsage：
+
+- inputTokens: integer|null；
+- outputTokens: integer|null；
+- totalTokens: integer|null；
+- cachedInputTokens: integer|null；
+- reasoningTokens: integer|null；
+- imageInputCount: integer|null；
+- imageOutputCount: integer|null；
+- providerReported: boolean；
+- complete: boolean；
+- warnings: 稳定代码数组。
+
+规则：
+
+- 所有数字必须为有限非负安全整数；
+- 缺失保持 null；
+- 不把缺失写成 0；
+- 不推测 token；
+- 不按字符数估算 token；
+- 不虚构 total；
+- provider total 与分项冲突时保留可验证分项并产生 warning，或按明确合同拒绝；
+- unknown extra usage 字段不透传；
+- usage=false/UNKNOWN 时不得声称完整；
+- 不计算美元；
+- 不读取价格；
+- 不写 cost_ledger；
+- 不写 model_runs；
+- Issue 014 才处理缓存和费用。
+
+
+十六、HTTP transport
+--------------------
+
+实现可注入 HttpTransport。生产默认可以使用 Node.js 24 fetch，但不得在 app 启动时创建
+请求。
+
+要求：
+
+- URL 只能由 normalized Base URL + 受控 endpoint 构造；
+- HTTPS，或 Issue 010 已允许的 loopback HTTP；
+- POST only；
+- redirect=error；
+- credentials=omit；
+- 不使用 Cookie；
+- 不使用系统/环境变量中的代理配置；
+- 不允许调用方提供任意 header；
+- Authorization 由 credential resolver 在最后一层注入；
+- Content-Type/Accept 固定 application/json；
+- request body 有字节上限；
+- response header/body 有上限；
+- 流式读取并计数；
+- 非 JSON Content-Type 安全拒绝，图片 bytes endpoint 例外由 codec 明确处理；
+- AbortSignal；
+- deadline timeout；
+- socket/DNS/TLS/HTTP 错误归一；
+- response 完成或失败后释放资源；
+- 不记录 raw request/response。
+
+本轮不把 transport 接到 Electron 启动、local API 或真实工作流。
+
+测试只允许：
+
+- Scripted fake transport；
+- 127.0.0.1、随机端口、测试进程内 fake provider server。
+
+任何测试访问非 loopback 地址都必须失败。
+
+
+十七、错误与恢复语义
+--------------------
+
+定义稳定 ProviderError，不把 vendor message 直接外泄。
+
+至少包含：
+
+- PROVIDER_NOT_CONFIGURED
+- PROVIDER_MODEL_NOT_CONFIGURED
+- PROVIDER_CAPABILITY_UNKNOWN
+- PROVIDER_CAPABILITY_UNSUPPORTED
+- PROVIDER_CREDENTIAL_UNAVAILABLE
+- PROVIDER_INVALID_REQUEST
+- PROVIDER_REQUEST_TOO_LARGE
+- PROVIDER_TIMEOUT
+- PROVIDER_ABORTED
+- PROVIDER_NETWORK_UNREACHABLE
+- PROVIDER_TLS_ERROR
+- PROVIDER_RATE_LIMITED
+- PROVIDER_UPSTREAM_4XX
+- PROVIDER_UPSTREAM_5XX
+- PROVIDER_INVALID_CONTENT_TYPE
+- PROVIDER_RESPONSE_TOO_LARGE
+- PROVIDER_INVALID_JSON
+- PROVIDER_SCHEMA_VALIDATION_FAILED
+- PROVIDER_INVALID_USAGE
+- PROVIDER_REFUSAL
+- PROVIDER_UNSUPPORTED_OUTPUT_VARIANT
+- PROVIDER_PROTOCOL_ERROR
+- PROVIDER_STALE_CONFIGURATION
+- PROVIDER_AMBIGUOUS_OUTCOME
+- PROVIDER_INTERNAL_ERROR
+
+每个错误包含：
+
+- code；
+- retryDisposition；
+- outcomeCertainty；
+- retryAfterMs，可空且有上限；
+- requestId；
+- providerId；
+- modelId，可空；
+- operation；
+- finite safe details；
+- cause category，不含原始异常文本。
+
+retryDisposition：
+
+- DO_NOT_RETRY
+- RETRY_AUTOMATIC_SAFE
+- RETRY_QUEUE
+- RETRY_MANUAL
+
+outcomeCertainty：
+
+- NOT_SENT
+- REJECTED_BEFORE_EXECUTION
+- MAY_HAVE_EXECUTED
+- COMPLETED_INVALID_OUTPUT
+
+保守原则：
+
+- 建连前失败可以安全自动重试；
+- 明确 429/503 且响应表明未执行，可以按 Retry-After 进入队列；
+- 请求发送后的断连、读取 timeout 或未知 5xx 默认 MAY_HAVE_EXECUTED；
+- MAY_HAVE_EXECUTED 不自动重发，避免潜在重复费用；
+- invalid JSON/schema 是 COMPLETED_INVALID_OUTPUT，不自动付费修复；
+- 401/403/大多数 4xx 不重试；
+- AbortSignal 取消不重试；
+- 不假设中转站支持 idempotency key。
+
+
+十八、有限重试协调
+------------------
+
+ProviderRetryPolicy 使用可注入 clock/random/backoff：
+
+- 自动尝试总数默认最多 2；
+- 仅对 RETRY_AUTOMATIC_SAFE；
+- 指数退避；
+- 有界 jitter；
+- 解析整数秒或 HTTP-date Retry-After；
+- Retry-After 上限 60 秒；
+- AbortSignal 可中断 backoff；
+- deadline 覆盖所有尝试总时间；
+- 不使用真实 sleep 的单元测试；
+- 不在 Provider 层调用 JobQueue；
+- 只返回给未来 JobHandler 可消费的 retry metadata。
+
+Issue 009 的 at-least-once 语义保持。未来真实 handler 必须处理幂等和
+MAY_HAVE_EXECUTED，本轮不注册任何真实 handler。
+
+
+十九、Mock Provider
+-------------------
+
+实现统一 ScriptedMockProvider，覆盖四种 Provider interface。
+
+必须支持脚本步骤：
+
+- text success；
+- structured success；
+- vision success；
+- image success；
+- refusal；
+- network unreachable；
+- rate limit + Retry-After；
+- timeout；
+- abort；
+- upstream 4xx；
+- upstream 5xx；
+- invalid Content-Type；
+- invalid JSON；
+- schema mismatch；
+- malformed usage；
+- response too large；
+- ambiguous disconnect；
+- capability unknown/unsupported。
+
+Mock 要求：
+
+- 默认确定性；
+- 可注入 clock；
+- 不使用真实网络；
+- 不使用真实模型；
+- 不读取设置中的真实 credential；
+- 不把调用内容写日志；
+- 可供测试检查安全 metadata；
+- 支持并发调用隔离；
+- 支持取消；
+- 脚本耗尽时稳定失败；
+- 不把 Mock 自动用于 production。
+
+
+二十、日志、诊断与敏感数据
+--------------------------
+
+Provider 层允许记录：
+
+- requestId；
+- providerId；
+- operation；
+- model role；
+- model ID 的安全引用或原值是否允许必须在 ADR 明确；默认不记录完整 model ID；
+- input bytes/chars count；
+- output bytes/chars count；
+- duration；
+- attempt；
+- stable error code；
+- usage 是否存在；
+- capability state。
+
+禁止记录：
+
+- API credential；
+- Authorization；
+- Base URL 完整值；
+- prompt/system message；
+- 用户文本；
+- 作品内容；
+- 图片 bytes/base64；
+- structured raw JSON；
+- provider raw response；
+- vendor error body；
+- request/response headers；
+- stack；
+- 绝对路径。
+
+Issue 010 诊断本轮不增加真实调用结果。可以仅增加：
+
+- providerContractsAvailable=true；
+- mockProviderAvailable=true；
+- liveProviderWired=false；
+- capabilityProbeAvailable=false。
+
+不显示虚构能力成功。
+
+
+二十一、secret/content egress 矩阵
+--------------------------------
+
+至少验证 40 项：
+
+1. synthetic credential 不进入 SQLite。
+2. 不进入 WAL。
+3. 不进入 SHM。
+4. 不进入 audit_events。
+5. 不进入 jobs payload。
+6. 不进入 jobs result。
+7. 不进入 model_runs。
+8. 不进入 cost_ledger。
+9. 不进入 logs。
+10. 不进入 diagnostic preview。
+11. 不进入 diagnostic export。
+12. 不进入 backup。
+13. 不进入 ProjectDataRoot 文件。
+14. 不进入 local API response。
+15. 不进入 renderer。
+16. 不进入 preload DTO。
+17. 不进入 error DTO。
+18. 不进入 stack snapshot。
+19. 不进入 test snapshot。
+20. 不进入 package/asar。
+21. 不进入 source map。
+22. 不进入 Git tracked files。
+23. Authorization 不进入任意输出。
+24. Base URL credential/userinfo 被拒绝。
+25. raw prompt 不进入日志。
+26. raw prompt 不进入 error。
+27. raw prompt 不进入 audit。
+28. raw output 不进入日志。
+29. raw output 不进入 error。
+30. raw output 不进入 diagnostic。
+31. image bytes 不进入日志。
+32. image bytes 不进入 error。
+33. image bytes 不进入 snapshot。
+34. structured business value 不进入 validation error。
+35. vendor error body 不进入稳定错误。
+36. response header 不进入稳定错误。
+37. Mock scripted content 不进入 CI artifact。
+38. runtime random synthetic credential 不被固定。
+39. CONTENT_AI_API_KEY 不被读取。
+40. 真实 API 调用计数为 0。
+
+
+二十二、数据库与既有系统不变量
+------------------------------
+
+Issue 012 不需要 Schema 变更：
+
+- 不新增 migration v6；
+- v1—v5 内容和 SHA-256 必须保持；
+- schema version 仍为 5；
+- 不修改 app_settings；
+- 不修改 local_api_settings/clients；
+- 不修改 jobs；
+- 不修改 model_runs；
+- 不修改 cost_ledger。
+
+当前 migration hash：
+
+- v1 8964b8727dfb4f244a8c63a47368da3ceb23de945078b37efe161af91acac907
+- v2 ab3d6d34621f9f29601f1574f624381d78c208f1c36cfda35377d8f82f4c57ce
+- v3 11dc5ba6496b265cf2945ea7b6b94f59e01428ee253a203596d188b929a222ed
+- v4 c84c82c50f2170c20154c754d0604319082c6683737624a9c14d3a508315471c
+- v5 88c29c6160122eea91dc8f3b88c0cd0aafc58f91c3cfd6bcfdd2020209f6d808
+
+专项测试前后断言：
+
+- model_runs 行数不变；
+- cost_ledger 行数不变；
+- jobs 行数不变；
+- audit 不含 provider request content；
+- local API listener 状态不因 providers 测试改变。
+
+
+二十三、应用与 UI 边界
+----------------------
+
+本轮不新增用户可点击的真实调用入口。
+
+禁止：
+
+- 设置页“测试中转站”；
+- 设置页“探测模型”；
+- 任意生成按钮；
+- local API 暴露 provider route；
+- browser extension 调用 provider；
+- renderer import providers；
+- preload 暴露 credential 或 provider invoke；
+- app 启动自动请求；
+- 后台定时请求。
+
+可以在 foundation health/diagnostic 中显示纯合同状态，但必须明确：
+
+- Provider 接口已安装；
+- Mock 可用；
+- 真实 Provider 未接通；
+- 能力尚未探测；
+- 当前不会产生费用。
+
+
+二十四、本机 HTTP fixture
+------------------------
+
+为验证真实 transport 行为，可以创建测试进程内 fake provider server：
+
+- 只绑定 127.0.0.1；
+- port=0，由 OS 分配；
+- 不使用 Issue 011 默认端口；
+- 每个测试独立；
+- route allowlist；
+- response 大小可控；
+- 支持延迟、429、5xx、断连、错误 MIME、invalid JSON；
+- 记录只在内存；
+- 不记录 synthetic credential；
+- 测试结束关闭 listener/socket/timer；
+- 0 外部连接；
+- 0 残留进程。
+
+测试必须防止 URL 被替换为非 loopback。任何外部 hostname 都在测试 transport 层直接
+失败。
+
+该 fixture 不是产品 server，不打包，不导出，不注册到 Electron。
+
+
+二十五、文件级实施计划
+----------------------
+
+开始改代码前创建：
+
+docs/m2-issue012-implementation-plan.md
+
+至少记录：
+
+- 起点核验；
+- 现有 packages/providers 状态；
+- 新增依赖决策；
+- 文件清单；
+- 不做内容；
+- 错误与重试语义；
+- 测试计划；
+- 最终实际结果。
+
+建议新增文档：
+
+- docs/adr/0008-provider-neutral-model-interfaces.md
+- docs/contracts/provider-v1.md
+- docs/m2-issue012-acceptance-map.md
+- docs/m2-issue012-implementation-plan.md
+
+建议测试：
+
+- tests/providers-contracts.test.ts
+- tests/providers-configuration.test.ts
+- tests/providers-capabilities.test.ts
+- tests/providers-text.test.ts
+- tests/providers-structured.test.ts
+- tests/providers-vision.test.ts
+- tests/providers-image.test.ts
+- tests/providers-usage.test.ts
+- tests/providers-errors-retry.test.ts
+- tests/providers-http-transport.test.ts
+- tests/providers-mock.test.ts
+- tests/providers-egress.test.ts
+- tests/providers-architecture.test.ts
+
+实际文件可按仓库结构微调，不得重写无关代码。
+
+
+二十六、独立测试与 CI
+--------------------
+
+新增：
+
+npm run test:providers
+
+要求：
+
+- 只运行 Issue 012 专项测试；
+- 可独立失败；
+- 不读取真实 credential；
+- 不连接真实中转站；
+- 只使用 Mock 或 loopback fixture；
+- 使用 fake clock/random 验证 timeout/backoff；
+- 不产生费用；
+- 结束后 listener、socket、timer、临时文件为 0。
+
+npm run test 必须包含 provider tests。
+
+Windows CI 必须保留全部旧门禁并新增 test:providers。
+
+不要在 CI 配置：
+
+- OPENAI_API_KEY；
+- CONTENT_AI_API_KEY；
+- 真实 Base URL；
+- 真实模型 ID；
+- 网络访问授权。
+
+
+二十七、190 项最低验收矩阵
+-------------------------
+
+docs/m2-issue012-acceptance-map.md 必须按 1—190 逐项映射真实证据。不得合并编号或只写
+“同上”。
+
+A. 基线与范围
+
+1. 起始 HEAD 精确为 7bc921fb805ef42b8ae5a71184dd94e4b5ac920d。
+2. main 分支且起点工作树干净。
+3. M0 至 Issue 011 祖先顺序正确。
+4. Issue 011 父提交与单提交事实核验。
+5. 不改写历史提交。
+6. v1 migration 内容和 hash 不变。
+7. v2 migration 内容和 hash 不变。
+8. v3 migration 内容和 hash 不变。
+9. v4 migration 内容和 hash 不变。
+10. v5 migration 内容和 hash 不变。
+11. 不新增 migration v6。
+12. 既有 constraints 测试不削弱。
+13. 既有 settings 测试不削弱。
+14. 既有 local-api 测试不削弱。
+15. 旧 Electron/package smoke 开工前通过。
+
+B. 包与架构
+
+16. 使用既有 packages/providers。
+17. Provider 包不被 renderer import。
+18. shared renderer 入口不导出 credential/request binary。
+19. 不新增 OpenAI SDK 强依赖。
+20. 不新增 Batch 依赖。
+21. 不注册真实 JobHandler。
+22. 不在 app startup 发请求。
+23. 不新增 UI 调用入口。
+24. 不新增 local API provider route。
+25. 不创建 model_runs/cost_ledger/jobs 数据。
+
+C. Provider 接口
+
+26. TextGenerationProvider 存在。
+27. StructuredGenerationProvider 存在。
+28. VisionProvider 存在。
+29. ImageGenerationProvider 存在。
+30. 四种接口返回供应商无关结果。
+31. 方法都支持 AbortSignal。
+32. 方法都有总 deadline。
+33. requestId 必填且验证。
+34. providerId 必填且验证。
+35. modelId 无默认值。
+36. operation 使用有限枚举。
+37. generation options 有严格范围。
+38. input 有数量/字符/字节限制。
+39. raw provider JSON 不进入 workflow。
+40. Search/Embedding/OCR/Batch/tool execution 未实现。
+
+D. 配置
+
+41. Base URL 只来自 Issue 010 设置。
+42. model ID 只来自 Issue 010 设置。
+43. credential reference 固定 CONTENT_AI_API_KEY。
+44. renderer/job payload 不能覆盖 Base URL。
+45. renderer/job payload 不能覆盖 credential reference。
+46. config deep-frozen。
+47. config 携带 revision。
+48. stale revision 可检测。
+49. setup state 未验证不伪装 verified。
+50. 缺失 Base URL 稳定失败。
+51. 缺失 model ID 稳定失败。
+52. 不读取环境变量 credential。
+53. 不读取 .env。
+54. 不调用真实 CredentialStore。
+55. 不硬编码模型、价格、速率或域名。
+
+E. Capabilities
+
+56. CapabilityState 有 UNKNOWN/SUPPORTED/UNSUPPORTED。
+57. text capability 存在。
+58. structuredJson capability 存在。
+59. toolCalling capability 存在。
+60. webSearch capability 存在。
+61. imageGeneration capability 存在。
+62. vision capability 存在。
+63. batch capability 存在。
+64. usage capability 存在。
+65. streaming capability 存在。
+66. maxContextTokens 可空。
+67. 实际 provider 默认能力全部 UNKNOWN。
+68. 不按 model 名推断能力。
+69. 不执行 capability probe。
+70. UNKNOWN 不被当作 SUPPORTED。
+
+F. 协议模式与 URL
+
+71. RESPONSES mode 存在。
+72. CHAT_COMPLETIONS mode 存在。
+73. IMAGES_GENERATIONS mode 存在。
+74. MOCK mode 存在。
+75. mode 不按模型名猜测。
+76. codecs 相互独立。
+77. 404 不触发 endpoint fallback。
+78. 不自动遍历 endpoint。
+79. endpoint path 使用 allowlist。
+80. Base URL 合并保留合法 base path。
+81. URL userinfo/query/fragment 被拒绝。
+82. redirect 被拒绝。
+83. 不允许任意 request path。
+84. Responses codec table tests 通过。
+85. Chat codec table tests 通过。
+86. Images codec table tests 通过。
+
+G. Text 与结构化输出
+
+87. message role 仅 system/user/assistant。
+88. 文本消息数量有界。
+89. 单 part 和总字符有界。
+90. 空白-only 输入拒绝。
+91. 调用方不能注入 header/Authorization。
+92. Text result finishReason 规范化。
+93. refusal 结构化。
+94. providerRequestId 可空且安全。
+95. Structured schema 有 id/version。
+96. Structured 使用 runtime validator。
+97. strict object 生效。
+98. valid JSON+schema 返回 typed result。
+99. invalid JSON 返回稳定错误。
+100. schema mismatch 返回稳定错误。
+101. validation error 不含业务值。
+102. raw JSON 不进入错误。
+103. refusal 不被误当 JSON 错误。
+104. output size/depth/array/string 有界。
+105. 不自动发第二次 JSON repair 调用。
+
+H. Vision 与 Image
+
+106. Vision 只接受 Uint8Array。
+107. Vision MIME allowlist 生效。
+108. Vision magic bytes 基础校验。
+109. Vision 单图大小有界。
+110. Vision 总大小和数量有界。
+111. Vision 不接受路径/file URL/remote URL。
+112. Vision bytes 不持久化。
+113. Image request prompt/count 有界。
+114. Image size/quality 使用受控 hint。
+115. base64 解码前检查长度。
+116. Image 单张/总 output 有界。
+117. Image MIME/magic bytes 校验。
+118. URL-only image output 安全拒绝。
+119. Image 不写文件仓库/assets。
+120. Mock image 为极小合法合成 bytes。
+
+I. Usage
+
+121. inputTokens 可空。
+122. outputTokens 可空。
+123. totalTokens 可空。
+124. cachedInputTokens 可空。
+125. reasoningTokens 可空。
+126. image input/output count 可空。
+127. usage 数值只接受非负安全整数。
+128. 缺失 usage 保持 null 而非 0。
+129. 不估算 token。
+130. 不虚构 total。
+131. 冲突 usage 有稳定 warning/error。
+132. unknown usage 字段不透传。
+133. providerReported/complete 语义准确。
+134. 不计算美元成本。
+135. 不写 model_runs/cost_ledger。
+
+J. Transport
+
+136. HttpTransport 可注入。
+137. production transport 无启动请求。
+138. URL 仅由 config+allowlist endpoint 构造。
+139. 只允许 HTTPS 或合法 loopback HTTP。
+140. POST only。
+141. redirect=error。
+142. 不使用 Cookie。
+143. 不读取代理环境配置。
+144. header allowlist。
+145. request body 有界。
+146. response body 流式计数有界。
+147. invalid Content-Type 拒绝。
+148. timeout/Abort 正确释放资源。
+149. loopback fixture 外部连接为 0。
+150. fixture 结束 listener/socket/timer 为 0。
+
+K. 错误与重试
+
+151. 稳定 ProviderError code 完整。
+152. retryDisposition 四态完整。
+153. outcomeCertainty 四态完整。
+154. 建连前失败可安全重试。
+155. 429 解析 Retry-After。
+156. Retry-After 上限 60 秒。
+157. 401/403/普通 4xx 不重试。
+158. 发送后 timeout 标记 MAY_HAVE_EXECUTED。
+159. ambiguous disconnect 不自动重发。
+160. invalid JSON 标记 COMPLETED_INVALID_OUTPUT。
+161. 自动尝试最多 2。
+162. backoff+jitter 有界且可注入。
+163. Abort 可中断 backoff。
+164. deadline 覆盖全部尝试。
+165. Provider 层不直接调用 JobQueue。
+
+L. Mock 与 egress
+
+166. Mock 覆盖四接口成功。
+167. Mock 覆盖 refusal/network/429/timeout/abort。
+168. Mock 覆盖 4xx/5xx/invalid MIME/JSON/schema/usage。
+169. Mock 覆盖 response too large/ambiguous。
+170. Mock 脚本耗尽稳定失败。
+171. Mock 并发隔离。
+172. Mock 不可自动进入 production。
+173. 40 项 credential/content egress 全部通过。
+174. runtime synthetic credential 不固定、不打印。
+175. 真实 API 请求计数为 0。
+
+M. 回归、CI 与范围
+
+176. test:providers 独立通过。
+177. npm test 包含 providers 并通过。
+178. format/lint/typecheck/build 全部通过。
+179. package desktop 与 source/package smoke 通过。
+180. audit 0 vulnerabilities。
+181. Windows CI 保留全部旧门禁并加入 test:providers。
+182. 失败/skip/todo 均为 0。
+183. model_runs/cost_ledger/jobs 行数专项测试前后不变。
+184. local API listener 两态不回归。
+185. ai_disclosure=false 硬约束保持。
+186. 版权不参与门禁/评分/审批/排期。
+187. 无平台动作、开卷或盗版处理。
+188. 无真实 key/API/model/费用/云服务。
+189. 未进入 Issue 013/014/015/017。
+190. 严格停止在 Issue 012。
+
+
+二十八、测试策略
+----------------
+
+测试必须组合：
+
+- 类型合同；
+- table-driven validation；
+- runtime Schema；
+- ScriptedMockProvider；
+- fake clock/random；
+- loopback fake provider；
+- 真实 AbortController；
+- 并发；
+- egress；
+- architecture；
+- DB 行数不变；
+- Electron/package 回归。
+
+不得用以下方式替代：
+
+- 只搜索 interface 名；
+- 只编译不调用；
+- 只 mock 掉全部 transport；
+- 固定 sleep；
+- 固定 credential；
+- 真实中转站；
+- 删除失败测试；
+- skip/todo；
+- 捕获异常后总返回成功；
+- 把 raw response 存进 snapshot。
+
+
+二十九、实现顺序
+----------------
+
+1. 完成 Git、文档、旧门禁只读核验。
+2. 创建 m2-issue012-implementation-plan.md。
+3. 草拟 190 项验收映射。
+4. 冻结 ADR 与 provider-v1 contract。
+5. 实现 contracts、capabilities、config、content、usage。
+6. 实现 errors、outcome certainty、retry policy。
+7. 实现 transport 与 response limits。
+8. 实现三个 codec。
+9. 实现 OpenAICompatibleProvider。
+10. 实现 ScriptedMockProvider。
+11. 实现结构化、视觉和图片严格验证。
+12. 实现 loopback fixture 与专项测试。
+13. 实现 40 项 egress 与架构测试。
+14. 更新 CI 和 package scripts。
+15. 回填文档和 190 项证据。
+16. 从 npm ci 开始运行全部最终门禁。
+17. 检查 diff、敏感值、网络计数、工作树。
+18. 全部通过后创建唯一一个本地提交。
+19. 输出报告并停止。
+
+
+三十、最终门禁
+--------------
+
+必须从 npm ci 开始依次执行：
+
+1. npm ci
+2. npm run format-check
+3. npm run lint
+4. npm run typecheck
+5. npm run test:constraints
+6. npm run test:db
+7. npm run test:queue
+8. npm run test:desktop
+9. npm run test:storage
+10. npm run test:settings
+11. npm run test:local-api
+12. npm run test:providers
+13. npm run test:electron-smoke
+14. npm run test
+15. npm run build
+16. npm run package:desktop
+17. npm run audit:dependencies
+18. npm run test:packaged-smoke
+
+要求：
+
+- 失败 0；
+- skip 0；
+- todo 0；
+- lint warning 0；
+- audit vulnerabilities 0；
+- 外部真实 API 请求 0；
+- 费用 0；
+- listener/socket/timer/临时文件残留 0。
+
+发现缺陷后修复根因，并从 npm ci 重新运行全部门禁。
+
+
+三十一、Git 提交
+----------------
+
+全部通过后创建唯一一个 Issue 012 本地提交：
+
+feat(providers): add provider-neutral model interfaces
+
+要求：
+
+- 不 amend；
+- 不 rebase；
+- 不 squash；
+- 不 push；
+- 不创建 PR；
+- 不合并；
+- 提交后工作树干净；
+- 最终 HEAD 等于新提交；
+- 报告完整 SHA。
+
+
+三十二、最终报告格式
+--------------------
+
+报告依次包含：
+
+1. 结论
+   - Issue 012 PASS/FAIL；
+   - 是否停止；
+   - 真实 key/API/model/费用状态。
+
+2. 起点与 Git
+   - 起始 HEAD；
+   - 最终 commit/HEAD；
+   - parent；
+   - 分支、作者、工作树、远端；
+   - push/PR/merge/rewrite。
+
+3. Provider 架构
+   - 包边界；
+   - 四接口；
+   - transport；
+   - codecs；
+   - production wiring 状态；
+   - 未实现能力。
+
+4. 配置与凭据
+   - Base URL/model 来源；
+   - credential resolver 边界；
+   - 未读取真实 credential；
+   - stale config。
+
+5. Capabilities
+   - 三态；
+   - 默认 UNKNOWN；
+   - 未探测；
+   - protocol mode。
+
+6. Text/Structured/Vision/Image
+   - 输入输出；
+   - runtime Schema；
+   - 拒绝；
+   - binary limits；
+   - 未落盘。
+
+7. Usage
+   - 字段；
+   - missing/null；
+   - 不估算；
+   - 不计算费用。
+
+8. 错误与恢复
+   - stable codes；
+   - retryDisposition；
+   - outcomeCertainty；
+   - ambiguous outcome；
+   - Retry-After/backoff/deadline。
+
+9. Mock 与 loopback fixture
+   - scripted scenarios；
+   - 网络范围；
+   - 清理；
+   - 外部请求 0。
+
+10. Egress
+    - 40/40；
+    - credential/prompt/output/image；
+    - DB/log/diagnostic/package/Git。
+
+11. Database
+    - 无 migration v6；
+    - v1—v5 hash；
+    - model_runs/cost_ledger/jobs 不变。
+
+12. 测试
+    - 全部门禁；
+    - 文件数/测试数；
+    - 失败/skip/todo；
+    - 190/190。
+
+13. Windows/Electron/CI
+    - Node/Electron/Chromium；
+    - source/package smoke；
+    - local API 回归；
+    - workflow；
+    - 若 GitHub 托管 CI 未运行，原样写：
+      GitHub 托管 CI 尚未运行，不能声称已通过。
+
+14. 硬约束与范围
+    - AI 标识；
+    - 版权；
+    - 无平台动作；
+    - 无真实 API/费用；
+    - 未进入后续 Issue。
+
+15. 下一步
+    - 只推荐 Issue 013：中转站能力探测；
+    - 不自动开始。
+
+
+三十三、停止条件
+----------------
+
+出现以下任一情况立即停止：
+
+- HEAD/工作树不匹配；
+- 文档缺失；
+- 必须读取或创建真实 key；
+- 必须调用真实中转站才能通过；
+- 需要猜测模型或 endpoint；
+- 需要把 UNKNOWN 当 SUPPORTED；
+- 需要新增 migration；
+- 需要写 model_runs/cost_ledger；
+- 需要注册真实 JobHandler；
+- 需要新增 UI 调用入口；
+- 需要使用 Batch；
+- egress 出现 credential/prompt/output/image；
+- migration v1—v5 变化；
+- 既有硬约束回归；
+- test 需要 skip/todo；
+- audit 不为 0；
+- 需要扩大到 Issue 013 或后续范围。
+
+停止时保留证据，不 reset、不删除用户数据、不伪造 PASS。
+
+
+最终命令
+--------
+
+现在开始执行 M2 Issue 012。
+
+先完成只读核验、实施计划和 190 项验收草案，再实现。只使用 Mock 和 127.0.0.1
+loopback fixture；不检查或读取真实密钥，不调用真实 API 或模型，不产生费用。全部通过后
+创建一个本地提交并报告，然后停止，不得进入 Issue 013。

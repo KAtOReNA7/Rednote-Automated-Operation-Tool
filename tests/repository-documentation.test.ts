@@ -8,10 +8,13 @@ const readme = readFileSync(resolve(projectRoot, 'README.md'), 'utf8');
 const agents = readFileSync(resolve(projectRoot, 'AGENTS.md'), 'utf8');
 
 describe('repository-facing documentation', () => {
-  it('reports the completed M1 foundation without stale pre-Electron claims', () => {
+  it('reports the completed Issue 012 foundation and the bounded next milestone', () => {
     expect(readme).toContain('M1（Issue 006—011）');
-    expect(readme).toContain('Issue 012：供应商无关的模型接口');
-    expect(readme).toContain('M1 本地基础已完成');
+    expect(readme).toContain('M2 Issue 012 均已完成验收');
+    expect(readme).toContain('Issue 013：能力探测');
+    expect(readme).toContain('供应商无关接口');
+    expect(readme).toContain('不会在安装、测试或启动时访问');
+    expect(readme).toContain('模型服务。');
     expect(readme).not.toContain('尚未实现桌面 UI');
     expect(readme).not.toContain('M0 仅保留包边界');
   });

@@ -1,8 +1,9 @@
-import { createReadStream } from 'node:fs';
-import { cp, mkdtemp, mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { createReadStream } from 'node:fs';
+import { cp, mkdtemp, mkdir, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
-import { tmpdir } from 'node:os';
+import { promisify } from 'node:util';
 
 import {
   flipFuses,
@@ -11,13 +12,24 @@ import {
   FuseVersion,
   getCurrentFuseWire,
 } from '@electron/fuses';
-import { packager } from '@electron/packager';
 
+const execFileAsync = promisify(execFile);
 const projectRoot = resolve(import.meta.dirname, '..');
 const buildDirectory = join(projectRoot, '.vite');
 const outputDirectory = join(projectRoot, 'out');
-const stageDirectory = await mkdtemp(join(tmpdir(), 'rednote-desktop-package-'));
-const electronArchiveName = 'electron-v43.2.0-win32-x64.zip';
+const packagingScratchDirectory = await mkdtemp(join(projectRoot, '.rednote-package-'));
+process.env.TEMP = packagingScratchDirectory;
+process.env.TMP = packagingScratchDirectory;
+const { packager } = await import('@electron/packager');
+const temporaryDirectory = await mkdtemp(
+  join(packagingScratchDirectory, 'rednote-desktop-package-'),
+);
+const stageDirectory = join(temporaryDirectory, 'app');
+const generatedElectronArchiveDirectory = join(temporaryDirectory, 'electron-archive');
+const electronDirectory = join(projectRoot, 'node_modules', 'electron');
+const electronDistDirectory = join(electronDirectory, 'dist');
+const electronVersion = '43.2.0';
+const electronArchiveName = `electron-v${electronVersion}-win32-x64.zip`;
 
 async function findFile(directory, name) {
   let entries;
@@ -49,6 +61,45 @@ async function sha256(filePath) {
   return hash.digest('hex');
 }
 
+async function createInstalledElectronArchive() {
+  const packageMetadata = JSON.parse(
+    await readFile(join(electronDirectory, 'package.json'), 'utf8'),
+  );
+  const runtimeVersion = (await readFile(join(electronDistDirectory, 'version'), 'utf8')).trim();
+  if (packageMetadata.version !== electronVersion || runtimeVersion !== electronVersion) {
+    throw new Error('Installed Electron runtime does not match the locked package version.');
+  }
+
+  const executablePath = join(electronDistDirectory, 'electron.exe');
+  const executable = await stat(executablePath);
+  if (!executable.isFile() || executable.size === 0) {
+    throw new Error('Installed Electron runtime is incomplete.');
+  }
+
+  await mkdir(generatedElectronArchiveDirectory, { recursive: true });
+  const archivePath = join(generatedElectronArchiveDirectory, electronArchiveName);
+  await execFileAsync(
+    'powershell.exe',
+    [
+      '-NoLogo',
+      '-NoProfile',
+      '-NonInteractive',
+      '-Command',
+      "$ErrorActionPreference = 'Stop'; Compress-Archive -Path (Join-Path -Path $env:REDNOTE_ELECTRON_DIST -ChildPath '*') -DestinationPath $env:REDNOTE_ELECTRON_ARCHIVE -CompressionLevel Optimal -Force",
+    ],
+    {
+      env: {
+        ...process.env,
+        REDNOTE_ELECTRON_ARCHIVE: archivePath,
+        REDNOTE_ELECTRON_DIST: electronDistDirectory,
+      },
+      timeout: 300_000,
+      windowsHide: true,
+    },
+  );
+  return archivePath;
+}
+
 try {
   await rm(outputDirectory, { force: true, recursive: true });
   await mkdir(outputDirectory, { recursive: true });
@@ -74,13 +125,20 @@ try {
       ? ''
       : join(process.env.LOCALAPPDATA, 'electron', 'Cache');
   const cachedArchive = cacheRoot === '' ? null : await findFile(cacheRoot, electronArchiveName);
+  let electronArchive = cachedArchive;
   if (cachedArchive !== null) {
-    const checksums = JSON.parse(
-      await readFile(join(projectRoot, 'node_modules', 'electron', 'checksums.json'), 'utf8'),
-    );
+    const checksums = JSON.parse(await readFile(join(electronDirectory, 'checksums.json'), 'utf8'));
     if (checksums[electronArchiveName] !== (await sha256(cachedArchive))) {
       throw new Error('Cached Electron archive did not match the official package checksum.');
     }
+  } else {
+    process.stdout.write(
+      'Electron archive cache unavailable; packaging the locked local runtime.\n',
+    );
+    electronArchive = await createInstalledElectronArchive();
+  }
+  if (electronArchive === null) {
+    throw new Error('Electron archive preparation failed.');
   }
 
   const packagePaths = await packager({
@@ -88,8 +146,8 @@ try {
     arch: 'x64',
     asar: true,
     dir: stageDirectory,
-    electronVersion: '43.2.0',
-    ...(cachedArchive === null ? {} : { electronZipDir: dirname(cachedArchive) }),
+    electronVersion,
+    electronZipDir: dirname(electronArchive),
     executableName: 'RednoteMysteryOperations',
     name: 'rednote-mystery-operations',
     out: outputDirectory,
@@ -138,5 +196,5 @@ try {
 
   process.stdout.write('Packaged Windows desktop directory with verified Electron fuses.\n');
 } finally {
-  await rm(stageDirectory, { force: true, recursive: true });
+  await rm(packagingScratchDirectory, { force: true, recursive: true });
 }

@@ -56,6 +56,9 @@ jobs:
       - name: Run local loopback API and plugin-authentication suites
         run: npm run test:local-api
 
+      - name: Run provider-neutral model interface suites
+        run: npm run test:providers
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

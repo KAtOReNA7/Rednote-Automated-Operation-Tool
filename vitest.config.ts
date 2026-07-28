@@ -14,6 +14,9 @@ export default defineConfig({
       '@mystery-operations/local-api': fileURLToPath(
         new URL('./packages/local-api/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/providers': fileURLToPath(
+        new URL('./packages/providers/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/shared/storage': fileURLToPath(
         new URL('./packages/shared/src/storage-contracts.ts', import.meta.url),
       ),
@@ -36,6 +39,7 @@ export default defineConfig({
     environment: 'node',
     exclude: ['**/coverage/**', '**/dist/**', '**/node_modules/**'],
     include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+    maxWorkers: 1,
     passWithNoTests: false,
     sequence: {
       shuffle: false,

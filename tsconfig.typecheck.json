@@ -10,6 +10,7 @@
       "@mystery-operations/core": ["./packages/core/src/index.ts"],
       "@mystery-operations/db": ["./packages/db/src/index.ts"],
       "@mystery-operations/local-api": ["./packages/local-api/src/index.ts"],
+      "@mystery-operations/providers": ["./packages/providers/src/index.ts"],
       "@mystery-operations/shared": ["./packages/shared/src/index.ts"],
       "@mystery-operations/shared/storage": ["./packages/shared/src/storage-contracts.ts"],
       "@mystery-operations/settings": ["./packages/settings/src/index.ts"],

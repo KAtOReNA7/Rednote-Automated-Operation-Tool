@@ -2,6 +2,9 @@ node_modules/
 dist/
 .vite/
 out/
+.rednote-package-*/
+.rednote-npm-cache/
+.rednote-temp/
 coverage/
 *.tsbuildinfo
 

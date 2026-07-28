@@ -1,0 +1,551 @@
+﻿请严格执行本指令。
+
+本任务包含两个连续阶段：
+
+K0：恢复仓库规定的 Python 3.11–3.13 普通开发能力，并修复项目级 Python
+解释器选择的可移植性；
+K1–K2：在不运行、不训练、不选择任何模型的前提下，修订、验证并按条件启用
+M2 评价合同第二版 v2.1（M2 Evaluation Contract v2.1）。
+
+不得把 Python 环境阻断解释为模型失败，也不得因修复开发环境而扩大算法、数据或
+production 权限。
+
+一、固定起点与实时状态
+
+repository=KAtOReNA7/system
+base branch=main
+expected HEAD=623d9c2a41a90ddfd3263bf49a30c5b8e10f0a07
+upstream=origin/main
+expected behind/ahead=0/0
+expected tracked worktree=clean
+expected open PR=none
+PR #28=MERGED
+PR #28 merge commit=623d9c2a41a90ddfd3263bf49a30c5b8e10f0a07
+latest authority state index=M2-v2-current-state-index-v0.28.md
+evaluation contract v2.1=not yet created
+
+现有 v0.28 是合并前生成的不可变历史快照，其中“PR #28 Draft/Open/Unmerged”
+不是当前 GitHub 实时状态。不得因此阻断，也不得回改 v0.28；在新建 v0.29 时同时
+记录“v0.28 的快照语义”和“PR #28 已合并的实时事实”。
+
+本机另有旧本地分支 codex/m2-v2-evidence-pilot-v1，其 upstream 已删除，且有
+1 个 main 未包含的提交。必须原样保留：
+
+- 不删除；
+- 不重置；
+- 不 checkout 进入该分支执行本任务；
+- 不 merge、rebase 或 cherry-pick 其提交；
+- 不把它当作新任务证据或起点。
+
+二、开始门禁
+
+1. 先读根 AGENTS.md 与 src/domain/m2Current/AGENTS.md。
+2. 只读核验 Git：
+   - git fetch origin；
+   - 当前分支必须是 main；
+   - local main、origin/main、expected HEAD 必须三者相同；
+   - behind/ahead 必须为 0/0；
+   - tracked worktree 必须干净；
+   - GitHub open PR 必须为 0；
+   - PR #28 必须为 MERGED，merge commit 必须等于 expected HEAD。
+3. 不得使用 v0.28 内的旧 PR 状态代替 GitHub 实时核验。
+4. 起点核验通过后，新建开发分支：
+
+   codex/m2-evaluation-contract-v2-1
+
+5. 新分支如已在本地或远端存在，且无法证明它从本次 exact main 创建，则立即停止；
+   不得复用、覆盖或 force-update。
+6. 任一固定起点事实不成立，停止并返回：
+
+   M2_EVALUATION_CONTRACT_V2_1_BLOCKED_START_STATE
+
+不得自行换起点、回退 main、reset、rebase、amend、force-push、重建旧分支或恢复
+PR #28 的开发分支。
+
+三、开始前必须阅读的权威文件
+
+- AGENTS.md
+- src/domain/m2Current/AGENTS.md
+- package.json
+- .python-version
+- config/development-capability-catalog.v0.1.json
+- scripts/check-development-capability.mjs
+- scripts/run-codex-python.mjs
+- test/toolchain-contract.test.js
+- config/m2-model-registry.v1.json
+- docs/analysis/m2-current/M2-model-catalog-and-scorecard-v1.md
+- docs/analysis/m2-current/M2-evaluation-system-audit-v1.md
+- docs/analysis/m2-current/M2-evaluation-contract-v2-proposal.md
+- docs/analysis/m2-current/M2-evaluation-v2-frozen-rescore-v1.md
+- docs/analysis/m2-current/M2-evaluation-v2-frozen-rescore-v1.json
+- docs/analysis/m2-current/M2-evaluation-contract-v2-validation-v1.md
+- docs/analysis/m2-current/M2-evaluation-v2-frozen-artifact-readiness-v1.md
+- docs/analysis/m2-v2/M2-v2-current-state-index-v0.28.md
+
+四、K0：恢复兼容 Python 开发能力
+
+已知本机状态：
+
+Git=2.54.0，正常
+Node=24.16.0，正常
+npm=11.13.0，正常
+Python=3.14.5，不兼容
+仓库允许 Python=3.11–3.13，推荐/CI=3.13
+py -0p=目前只发现 Python 3.14
+npm run doctor:dev=BLOCKED_MISSING_OR_INCOMPATIBLE_TOOL
+
+### 4.1 安装边界
+
+先运行只读探测：
+
+- py -0p
+- py -3.13 --version
+- python --version
+- where.exe python
+- winget --version
+
+如果 py -3.13 不存在，且 winget 可用，授权以当前用户范围并排安装官方
+Python 3.13：
+
+winget install --exact --id Python.Python.3.13 --scope user --accept-package-agreements --accept-source-agreements
+
+安装后重新核验：
+
+- py -0p
+- py -3.13 --version
+- py -3.13 -m pip --version
+
+限制：
+
+- 不卸载 Python 3.14；
+- 不删除或覆盖其他 Python；
+- 不修改系统级注册表；
+- 不使用非官方镜像、来源不明的安装包或绕过安全策略；
+- 不在全局 Python 中安装项目依赖；
+- 不使用 setx 永久重写全局 PATH；
+- 如 winget 需要管理员权限、交互确认、企业策略例外或安装失败，停止并报告，
+  不得绕过。
+
+如仓库任务需要 Python 包，先确认 .gitignore 和现有环境约定，再用 Python 3.13
+建立项目本地虚拟环境；不得提交虚拟环境或绝对本机路径。
+
+### 4.2 修复“安装了 3.13 但裸 python 仍命中 3.14”的项目缺口
+
+当前 config/development-capability-catalog.v0.1.json 的 core-dev 直接探测
+裸 python，而 scripts/run-codex-python.mjs 的普通回退也可能调用裸 python。
+因此不得以“py -3.13 可用”直接宣告环境恢复。
+
+先进行最小复现：
+
+1. 安装后运行 npm run doctor:dev；
+2. 检查所有 package.json Python 入口最终解析到的解释器；
+3. 如果裸 python 仍为 3.14，或 doctor 与实际 Python 脚本使用不同解释器，
+   必须做项目级、跨平台、可测试的最小修复。
+
+修复必须满足：
+
+- 建立一个共享的 compatible Python resolver；doctor 和
+  run-codex-python 必须使用相同解析语义；
+- 只接受实际版本为 3.11、3.12 或 3.13 的解释器；
+- Python 3.14 必须被明确拒绝，而不是仅按命令名判断；
+- Windows 至少支持 py -3.13、py -3.12、py -3.11；
+- Linux/macOS 至少支持 python3.13、python3.12、python3.11 和经过版本验证的
+  python3/python；
+- 可支持一个项目专用显式解释器路径环境变量 KATORENA7_PYTHON；
+- KATORENA7_PYTHON 只按单个可执行文件路径处理，不允许拼接 shell 命令；
+- 如存在项目本地 .venv，可在确认版本兼容后使用；
+- 保留现有 Codex bundled runtime 支持，但也必须验证版本；
+- 使用 executable + args 数组启动，不通过 shell 拼接；
+- 不提交本机绝对路径、用户名、盘符、虚拟环境或安装收据；
+- 不降低 3.11–3.13 版本范围，不把 3.14 加入允许范围；
+- 不破坏 Linux/Windows CI。
+
+优先做共享解析模块，不要在 doctor、runner、测试中各复制一套候选顺序。
+config catalog 继续保存版本合同，不保存本机路径。
+
+必须增加确定性测试，至少覆盖：
+
+- 显式兼容解释器路径；
+- 路径含空格；
+- Windows py -3.13 可用；
+- 只有 Python 3.14 时安全阻断；
+- 首个候选不兼容、后续候选兼容；
+- 所有候选缺失；
+- doctor 与实际 runner 选择同一解释器；
+- Linux 和 Windows 路径/参数形式；
+- 不启用 shell。
+
+### 4.3 K0 通过条件
+
+必须同时满足：
+
+- npm run doctor:dev PASS；
+- 实际选中的 Python 版本在 3.11–3.13；
+- npm run check:no-real-data PASS；
+- Python resolver 聚焦测试 PASS；
+- npm run lint PASS；
+- npm run build PASS；
+- npm test PASS；
+- npm run smoke PASS；
+- 不读取或提交 private 数据；
+- tracked worktree 只包含本任务授权改动。
+
+若安装成功但 doctor 仍阻断，不能伪称就绪；继续定位并完成上述最小项目修复。
+若在授权边界内仍无法恢复，停止并返回：
+
+M2_EVALUATION_CONTRACT_V2_1_BLOCKED_TOOLCHAIN
+
+若 K0 有仓库改动：
+
+1. 普通 commit；
+2. 普通 push；
+3. 创建新的 Draft PR，base=main；
+4. 等待该 exact-head Linux/Windows CI；
+5. CI 成功后才进入 K1。
+
+若 K0 仅发生本机并排安装、无仓库改动，则在 K1 首个普通 commit 后创建 Draft PR。
+不得更新、重开或复用已合并的 PR #28。
+
+五、K1–K2 总目标
+
+基于已经完成的冻结预测受控重计分，把 M2 评价合同修订为 v2.1，并使评价结果能
+区分以下能力：
+
+- 作品现金点预测；
+- 发生概率；
+- 条件金额；
+- 排序与资源分配；
+- 组合预算；
+- 风险与区间；
+- 跨时间稳定性。
+
+本任务修订的是评价体系，不开发新算法。不得根据复核结果调整模型结构、重新拟合、
+选择冠军或改变历史 raw candidate 的成功/失败事实。
+
+当前角色必须保持：
+
+operational fallback=M2-WORK-OA03
+中文名=作品发生-金额校准模型 v0.3
+
+research baseline=M2-WORK-LG01
+中文名=人工锚定可学习全局模型
+
+portfolio reference=M2-PORT-ETS01
+中文名=组合现金 ETS/Holt-Winters
+
+activeCandidate=null
+approvedForAutomation=null
+
+六、K1–K2 授权边界
+
+允许：
+
+- 修改开发评价合同、评价实现、配置、测试、模型注册表中的评价定义和公开报告；
+- 只读使用上一轮已经核验、保持 Git ignored 的冻结预测；
+- 对同一冻结预测重新计算 v2.1 指标；
+- 生成和提交聚合结果；
+- 普通 commit、push、新 Draft PR 和 exact-head CI。
+
+禁止：
+
+- 生成、补造、修改或重新运行任何预测；
+- 模型训练、拟合、调参、blend、路由、选模、晋升或角色变更；
+- 执行渠道时间生成 v0.2 的任何 G1–G6；
+- 修复、替代或重新拟合冻结 G0 authority；
+- 使用未来 actual 补造 origin-visible 特征、MASE scale 或分群；
+- 打开 provider、数据库、final holdout、Canary/full160、release 或 M3 formal；
+- 修改 production loader、route、API 或 exact v0.3 预测；
+- 把 v2.1 设为 production/automation gate；
+- 提交行级 actual、prediction、作品 ID、渠道 ID 或 private 文件；
+- merge PR。
+
+七、v2.1 必须修正的评价语义
+
+### 7.1 身份、人口与可比性
+
+每条结果必须显式携带：
+
+- metricDefinitionId/version；
+- stableModelId；
+- 中文模型名与英文原名；
+- experimentId/armId（如适用）；
+- variant：raw_candidate、blend、selected_pipeline、operational_fallback 等；
+- comparabilityGroupId；
+- target、cash authority、actual definition；
+- as-of、grain、population、horizon；
+- case key 和冻结输入 digest。
+
+禁止跨 target、人口、grain、horizon 或现金权威直接排总体冠军。
+selected pipeline 不得伪造新的 stableModelId，也不得覆盖 raw candidate。
+
+### 7.2 作品现金点预测
+
+- 主指标仍为每个 horizon 的现金 WAPE；
+- signed bias 与 absolute bias 是校准护栏；
+- MAE、中位绝对误差、误差分位、头部与长尾分解并列报告；
+- raw candidate、selected pipeline、operational fallback 分开；
+- 跨 horizon 池化只作诊断；没有业务 horizon 权重时禁止统一冠军；
+- 所有配对 FVA 使用完全相同 case key、actual 和 population；
+- 同时报告绝对误差差、相对变化、case 数、work 数和 cluster interval。
+
+top 1%/5%/10% 必须明确：
+
+- case-level，或先按 standardWorkId 聚合后的 work-level；
+- 每个 origin×horizon 内排序，或全人口排序；
+- 排序依据是 origin-visible scale，还是未来 actual；
+- 使用未来 actual 时标记 POSTHOC_ATTRIBUTION_ONLY；
+- post-hoc 分群不得用于模型选择或部署路由。
+
+### 7.3 occurrence
+
+occurrence actual 必须绑定独立正发生事实 actualPositive。存在 reversal 时，不得用
+最终 net actual 的正负替代。
+
+必须同时报告：
+
+- evaluation prevalence/base rate；
+- Brier score；
+- log loss；
+- PR-AUC；
+- 辅助 ROC-AUC；
+- reliability/calibration；
+- 与“训练期已冻结 constant-probability baseline”的 Brier skill 和
+  log-loss improvement。
+
+evaluation population 自身 prevalence 只可作为描述性或 oracle-constant 参考，
+不得冒充可部署基线。缺少训练期冻结 prevalence 时必须标记：
+
+NOT_COMPUTABLE_FROZEN_TRAINING_BASE_RATE_MISSING
+
+0.5 threshold 下的 specificity、precision、recall 只能作为 diagnostic。
+业务阈值只能来自外层训练或事前成本合同，不得在评价 actual 上优化。
+PR-AUC 必须和 prevalence 并列；高 base-rate 下不得单凭 PR-AUC 宣称成功。
+
+### 7.4 conditional amount 与 reversal
+
+只允许显式 conditionalAmountPrediction 对比 actualPositiveAmount。
+必须单独保留 reversal component。
+
+最终 point estimate、positive-actual 子集上的无条件预测或 selected fallback，
+都不得冒名为条件金额模型。
+
+### 7.5 排序与资源分配
+
+排序是独立 diagnostic capability，不进入现金点预测晋升 gate。
+
+任何排序信号必须：
+
+- candidate 与 fallback 使用相同 origin×horizon 完整合格集合；
+- 分别报告 Spearman、Kendall、top-k capture；
+- 报告 candidate-minus-fallback 配对差；
+- 按 origin×horizon 展示分布、胜率和 work/time cluster interval；
+- 公开 group 数、case 数及加权方式；
+- 禁止只用 candidate mean Spearman 宣称改善。
+
+缺少 fallback 配对值或 interval 时只能写：
+
+UNCONFIRMED_RANKING_SIGNAL
+
+### 7.6 风险与区间
+
+使用 artifact 原生 quantile grid，不得插值补造未冻结分位。
+当前已知网格为 0.05/0.10/0.20/0.50/0.80/0.90/0.95。
+
+必须并列报告：
+
+- nominal 与 observed coverage；
+- interval width/sharpness；
+- WIS 或适用的 CRPS approximation；
+- 相同案例冻结 reference interval 的相对结果；
+- horizon/time block 条件覆盖；
+- 可用 case 数和缺失原因。
+
+只有 coverage 接近 nominal、但没有宽度或 reference 时，只能写：
+
+PROMISING_DEVELOPMENT_INTERVAL_EVIDENCE
+
+不得写“区间模型合格”。
+
+### 7.7 portfolio
+
+- 逐 horizon 报告 ETS 与 seasonal naive；
+- 每个 horizon 报告 origin 数、配对误差差和 origin-cluster uncertainty；
+- 30 cells 或约 10 origins/horizon 必须标记小样本；
+- 3/6 月胜、12 月负只能形成未来验证假设；
+- 不得自动创建 horizon router；
+- portfolio 结果不得分配回作品。
+
+### 7.8 稳定性、MASE、隐私与缺失
+
+- 作品评价按 standardWorkId cluster bootstrap；
+- 组合评价按 origin cluster bootstrap；
+- 连续时间块定义为相邻 calendar origin 的最大连通块；
+- 相邻月份不得冒充独立证据；
+- 公共 cell 至少 30 cases、20 works；
+- 组合 cell 至少 5 origins；
+- 不满足时使用 SUPPRESSED_PRIVACY_THRESHOLD；
+- 全零实际分母使用 UNDEFINED_ZERO_ACTUAL_DENOMINATOR；
+- 缺少严格 origin 前 MASE scale 时，MASE 是 optional capability gap，
+  不阻断其他指标；
+- 缺少 origin-visible revenue scale band 时，不得用未来 actual 补造；
+- 缺少 raw 行的历史模型保持 NOT_RESCORABLE_RAW_ROWS_UNAVAILABLE，
+  不得从聚合分数逆向伪造。
+
+八、冻结预测确定性复核
+
+只能读取上一轮已经授权并核验的冻结预测。先验证：
+
+- 文件仍为 Git ignored；
+- digest、schema、行数和唯一 case key 与准备度清单一致；
+- 不读取本任务不需要的 private 路径；
+- 不生成新的预测文件；
+- 不修改冻结源文件。
+
+上一轮权威重计分包含 716,801 条唯一冻结源行。若本地冻结工件与已登记 digest、
+行数或 schema 不一致，立即停止该重计分；不得补造、转换后冒充原工件或重新运行
+模型。
+
+必须复核：
+
+1. 第一版 WAPE/bias 在绝对容差 1e-8 内复现；
+2. 生命周期 occurrence 在 primary/strict 的基准相对表现；
+3. TSB 的 PR-AUC 相对冻结 base-rate baseline 的价值；
+4. 渠道倍率专家排序是否高于 fallback，配对差与 interval；
+5. 人工锚定原始分位在 width/WIS/reference 下的证据；
+6. portfolio 3/6 月优势在 origin-cluster uncertainty 下的可信度；
+7. top-revenue 长尾结论在 case/work 两种明确口径下是否保持；
+8. MASE、origin-visible scale、区间或 raw 行缺失的准确状态码。
+
+这些复核只能修正诊断解释，不能改变历史 raw 点预测失败状态。
+
+九、v2.1 激活条件
+
+只有在下列条件全部满足时，才将 v2.1 标记为：
+
+ACTIVE_FOR_DEVELOPMENT_EVALUATION_ONLY
+
+- 指标定义无歧义并机器可验证；
+- 可比性与 variant 身份测试通过；
+- occurrence、conditional amount、ranking、interval、portfolio 的边界通过；
+- bootstrap、time block、privacy、missingness 测试通过；
+- 第一版 WAPE/bias 确定性复现；
+- 同一冻结输入重复执行得到逐字节相同的聚合结果；
+- 没有生成或修改预测；
+- 没有泄露 private 行级内容；
+- Linux/Windows exact-head CI 均通过。
+
+该状态只表示后续 M2 development 实验必须使用 v2.1 报告，不代表：
+
+- 任一模型成功、晋升或可发布；
+- production/automation gate 激活；
+- final holdout 已打开；
+- horizon/cost 权重已授权；
+- 当前模型角色改变；
+- 可以跨能力选出单一总体冠军。
+
+任一关键语义不能可靠实现时保持：
+
+DRAFT_V2_1_REVISION_INCOMPLETE
+
+不得部分激活后宣称完成。
+
+十、交付物
+
+至少生成：
+
+- config/m2-evaluation-contract.v2.1.json
+- docs/analysis/m2-current/M2-evaluation-contract-v2.1.md
+- docs/analysis/m2-current/M2-evaluation-contract-v2.1-validation.md
+- docs/analysis/m2-current/M2-evaluation-v2.1-diagnostic-recheck.md
+- 对应机器可读 JSON
+- docs/analysis/m2-v2/M2-v2-current-state-index-v0.29.md
+- 确定性合同、指标、可比性、缺失状态和隐私测试
+- K0 Python resolver 的实现与测试（仅在确有需要时）
+
+更新 config/m2-model-registry.v1.json：
+
+- 只增加 v2.1 metric definition、评价合同状态和 latestStateIndex；
+- 不覆盖历史成绩或评价；
+- 不改变 operational fallback、research baseline、portfolio reference、
+  activeCandidate 或 approvedForAutomation。
+
+更新根/域 AGENTS：
+
+- 只固化长期有效的兼容 Python 解析规则和 v2.1 权威引用；
+- 中文优先，保留英文原名、stable ID 和机器状态码；
+- 禁止裸写 G1、A6 等实验缩写；
+- 不复制具体分数、当前 HEAD、临时 blocker、安装路径或一次性状态。
+
+所有给用户阅读的报告必须中文优先：
+
+- 首次出现时采用“中文名（English Name，stable ID）”；
+- 状态码保留英文，并紧随中文解释；
+- 表头和结论必须有中文；
+- 机器 JSON、schema key 和稳定 ID 可继续使用英文；
+- 不得用大量未翻译英文段落代替中文复盘。
+
+v0.29 必须准确区分：
+
+- v0.28 是合并前历史快照，不回写；
+- PR #28 当前已 MERGED；
+- 本任务的新分支、新 Draft PR 和 exact HEAD；
+- v2.1 的真实状态；
+- Python 环境修复是否为本机安装、仓库可移植性修复或二者都有；
+- production、provider、数据库、final holdout、release 仍关闭。
+
+十一、提交、PR 与 CI
+
+建议检查点：
+
+K0：
+- Python 3.13 可用；
+- 项目 Python resolver（如需要）；
+- doctor/dev 和公共验证通过；
+- ordinary commit/push；
+- 新 Draft PR；
+- exact-head Linux/Windows CI。
+
+K1：
+- v2.1 配置、实现和合同测试；
+- 冻结预测确定性重计分；
+- ordinary commit/push；
+- exact-head Linux/Windows CI。
+
+K2：
+- 中文优先报告；
+- Model Registry、AGENTS、v0.29；
+- 最终验证；
+- ordinary commit/push；
+- 更新新 Draft PR 中文说明；
+- exact-head Linux/Windows CI。
+
+禁止 amend、rebase、force-push、修改 main 或 merge PR。
+每一检查点的 CI 成功后才能进入下一检查点。若 CI 失败，先在当前范围内诊断修复，
+不得以换起点、降门禁或跳过 Windows/Linux 验证绕过。
+
+十二、最终停止状态
+
+最终状态只能是：
+
+M2_EVALUATION_CONTRACT_V2_1_ACTIVE_FOR_DEVELOPMENT_ONLY
+M2_EVALUATION_CONTRACT_V2_1_REVISION_INCOMPLETE
+M2_EVALUATION_CONTRACT_V2_1_BLOCKED_TOOLCHAIN
+M2_EVALUATION_CONTRACT_V2_1_BLOCKED_START_STATE
+M2_EVALUATION_CONTRACT_V2_1_BLOCKED_FROZEN_ARTIFACT
+
+最终中文反馈必须说明：
+
+- 固定起点、main 与 PR #28 实时核验结果；
+- Python 3.13 的安装/选择方式，是否保留 3.14；
+- doctor 实际使用的解释器路径和版本；
+- 是否修改了项目级 Python resolver，为什么；
+- v2.1 是否仅限开发评价生效；
+- occurrence、ranking、interval、portfolio 的解释如何修正；
+- 哪些历史结论保持，哪些仅被收窄；
+- 模型执行、训练、选择、预测生成和 production 变更次数；
+- private frozen rows 是否只读且未提交；
+- exact HEAD、各 commit、push、CI 和新 Draft PR 状态；
+- 旧本地分支 codex/m2-v2-evidence-pilot-v1 是否原样保留。
+
+完成 K0–K2 后停止。不得自动开始新模型、渠道时间生成、later-origin、holdout、
+production 或 release 工作。
