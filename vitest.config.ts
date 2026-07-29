@@ -5,6 +5,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
+      '@mystery-operations/catalog': fileURLToPath(
+        new URL('./packages/catalog/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/clipper': fileURLToPath(
         new URL('./apps/clipper/src/index.ts', import.meta.url),
       ),

@@ -1,4 +1,5 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
+export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteBrowserClipRepository } from './browser-clip-repository.js';
 export type {
@@ -17,6 +18,17 @@ export { SqliteSearchRepository } from './search-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
+export type {
+  CatalogCoverageViewV1,
+  CatalogResolutionCaseViewV1,
+  CatalogRunViewV1,
+  CatalogSummaryViewV1,
+  CatalogWorkDetailV1,
+  CatalogWorkListItemV1,
+  UndoDecisionPreviewV1,
+  WorkMergePreviewV1,
+  WorkSplitPreviewV1,
+} from './catalog-repository.js';
 export type { FetchRunSummaryRecordV1 } from './fetch-repository.js';
 export type {
   ClaimStoredJobInput,

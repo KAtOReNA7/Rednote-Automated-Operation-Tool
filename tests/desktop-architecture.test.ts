@@ -119,8 +119,9 @@ describe('Issue 006 architecture boundaries', () => {
     expect(production).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/u);
   });
 
-  it('keeps every destination outside overview and settings an explicit milestone placeholder', () => {
+  it('activates only the Issue 018 library while retaining seven milestone placeholders', () => {
     const routes = read('apps/web-ui/src/routes.ts');
-    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(8);
+    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(7);
+    expect(routes).toContain('管理本地书目实体、来源观察、发现覆盖与待确认消歧。');
   });
 });

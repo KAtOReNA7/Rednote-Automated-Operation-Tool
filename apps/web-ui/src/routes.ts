@@ -13,7 +13,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = Object.freeze([
     shortLabel: '总',
   },
   {
-    description: '书目与阅读材料管理尚未在当前里程碑实现。',
+    description: '管理本地书目实体、来源观察、发现覆盖与待确认消歧。',
     label: '书库',
     path: '/library',
     shortLabel: '书',

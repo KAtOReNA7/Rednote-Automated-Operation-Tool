@@ -4,9 +4,14 @@ import { isTrustedRendererUrl } from './security-policy.js';
 
 export type DesktopIpcOperation =
   | 'buildDiagnosticPreview'
+  | 'cancelCatalogDiscovery'
   | 'cancelProviderCapabilityProbe'
   | 'clearCredential'
   | 'confirmModelCacheClear'
+  | 'confirmCatalogDiscovery'
+  | 'confirmCatalogUndo'
+  | 'confirmCatalogWorkMerge'
+  | 'confirmCatalogWorkSplit'
   | 'confirmDataRootSelection'
   | 'createModelPriceSchedule'
   | 'createModelUnitPolicy'
@@ -16,6 +21,8 @@ export type DesktopIpcOperation =
   | 'getFoundationHealth'
   | 'getFetchState'
   | 'getBrowserClip'
+  | 'getCatalogState'
+  | 'getCatalogWork'
   | 'getModelAccounting'
   | 'getProviderCapabilityProbeProgress'
   | 'getProviderCapabilityState'
@@ -32,6 +39,10 @@ export type DesktopIpcOperation =
   | 'selectDataRoot'
   | 'setCredential'
   | 'previewProviderCapabilityProbe'
+  | 'previewCatalogDiscovery'
+  | 'previewCatalogUndo'
+  | 'previewCatalogWorkMerge'
+  | 'previewCatalogWorkSplit'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
   | 'startLocalApiPairing'
@@ -74,6 +85,13 @@ function exactKeys(value: Readonly<Record<string, unknown>>, keys: readonly stri
   return Object.keys(value).sort().join('\n') === [...keys].sort().join('\n');
 }
 
+function containsControlCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 31 || codePoint === 127;
+  });
+}
+
 function withinDepth(value: unknown, depth = 0): boolean {
   if (depth > MAX_IPC_DEPTH) {
     return false;
@@ -101,6 +119,24 @@ function noSecretLikeKeys(value: unknown): boolean {
 
 function optionalString(value: unknown): boolean {
   return value === null || (typeof value === 'string' && value.length <= 2_048);
+}
+
+function catalogId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value);
+}
+
+function catalogRevision(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
+}
+
+function catalogConfirmation(value: Readonly<Record<string, unknown>> | null): boolean {
+  return (
+    value?.confirmation === 'APPLY_CATALOG_DECISION' &&
+    typeof value.previewHash === 'string' &&
+    /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+    typeof value.token === 'string' &&
+    /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+  );
 }
 
 function nullableDecimal(value: unknown): boolean {
@@ -152,6 +188,124 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
     case 'buildDiagnosticPreview':
     case 'previewModelCacheClear':
       return args.length === 0;
+    case 'getCatalogState': {
+      const value = validateOneObject(args, ['limit', 'offset', 'query']);
+      return (
+        value !== null &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= 100 &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= 1_000_000 &&
+        typeof value.query === 'string' &&
+        value.query.length <= 512 &&
+        !containsControlCharacter(value.query)
+      );
+    }
+    case 'getCatalogWork': {
+      const value = validateOneObject(args, ['workId']);
+      return catalogId(value?.workId);
+    }
+    case 'previewCatalogDiscovery': {
+      const value = validateOneObject(args, [
+        'batchSize',
+        'maxObservations',
+        'maxRuntimeMs',
+        'originKinds',
+        'purpose',
+      ]);
+      const origins = ['BROWSER_CLIP_CANDIDATE', 'FETCH_DOCUMENT', 'SEARCH_CANDIDATE'];
+      return (
+        value !== null &&
+        Array.isArray(value.originKinds) &&
+        value.originKinds.length >= 1 &&
+        value.originKinds.length <= origins.length &&
+        value.originKinds.every((kind) => origins.includes(String(kind))) &&
+        new Set(value.originKinds).size === value.originKinds.length &&
+        ['CUSTOM', 'MARKET_MAP', 'PILOT_CONTENT'].includes(String(value.purpose)) &&
+        Number.isSafeInteger(value.maxObservations) &&
+        Number(value.maxObservations) >= 1 &&
+        Number(value.maxObservations) <= 1_000_000 &&
+        Number.isSafeInteger(value.batchSize) &&
+        Number(value.batchSize) >= 1 &&
+        Number(value.batchSize) <= 1_000 &&
+        Number(value.batchSize) <= Number(value.maxObservations) &&
+        Number.isSafeInteger(value.maxRuntimeMs) &&
+        Number(value.maxRuntimeMs) >= 100 &&
+        Number(value.maxRuntimeMs) <= 86_400_000
+      );
+    }
+    case 'confirmCatalogDiscovery': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'expectedRevision',
+        'previewHash',
+        'token',
+      ]);
+      return (
+        value?.confirmation === 'START_BIBLIOGRAPHY_DISCOVERY' &&
+        catalogRevision(value.expectedRevision) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'cancelCatalogDiscovery': {
+      const value = validateOneObject(args, ['confirmation', 'expectedRevision', 'runId']);
+      return (
+        value?.confirmation === 'CANCEL_BIBLIOGRAPHY_DISCOVERY' &&
+        catalogRevision(value.expectedRevision) &&
+        catalogId(value.runId)
+      );
+    }
+    case 'previewCatalogWorkMerge': {
+      const value = validateOneObject(args, [
+        'duplicateRevision',
+        'duplicateWorkId',
+        'survivorRevision',
+        'survivorWorkId',
+      ]);
+      return (
+        value !== null &&
+        catalogId(value.duplicateWorkId) &&
+        catalogId(value.survivorWorkId) &&
+        value.duplicateWorkId !== value.survivorWorkId &&
+        catalogRevision(value.duplicateRevision) &&
+        catalogRevision(value.survivorRevision)
+      );
+    }
+    case 'previewCatalogWorkSplit': {
+      const value = validateOneObject(args, [
+        'expressionIds',
+        'newCanonicalTitle',
+        'sourceRevision',
+        'sourceWorkId',
+      ]);
+      return (
+        value !== null &&
+        catalogId(value.sourceWorkId) &&
+        catalogRevision(value.sourceRevision) &&
+        Array.isArray(value.expressionIds) &&
+        value.expressionIds.length >= 1 &&
+        value.expressionIds.length <= 64 &&
+        value.expressionIds.every(catalogId) &&
+        new Set(value.expressionIds).size === value.expressionIds.length &&
+        typeof value.newCanonicalTitle === 'string' &&
+        value.newCanonicalTitle.trim().length >= 1 &&
+        value.newCanonicalTitle.length <= 512 &&
+        !containsControlCharacter(value.newCanonicalTitle)
+      );
+    }
+    case 'previewCatalogUndo': {
+      const value = validateOneObject(args, ['decisionId']);
+      return catalogId(value?.decisionId);
+    }
+    case 'confirmCatalogUndo':
+    case 'confirmCatalogWorkMerge':
+    case 'confirmCatalogWorkSplit':
+      return catalogConfirmation(validateOneObject(args, ['confirmation', 'previewHash', 'token']));
     case 'getBrowserClip': {
       const value = validateOneObject(args, ['clipId']);
       return (

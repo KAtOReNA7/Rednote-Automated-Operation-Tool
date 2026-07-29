@@ -1,0 +1,553 @@
+M2 Issue 018：书目发现、三级书目模型与可逆实体去重——仓库治理适配版增量指令
+==============================================================================
+
+本文件替代此前生成的 Issue 018 指令，是本轮唯一有效的增量指令。
+完整遵守根级及作用域内 `AGENTS.md`；
+本指令只定义当前 Issue 的增量规则，不复制公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；Schema 迁移、实体解析、合并/拆分和并发一致性使用 XHigh
+目标提交信息：feat(catalog): add bibliographic discovery and entity resolution
+
+
+一、用户授权的产品口径修正
+--------------------------
+
+旧 PRD/Roadmap 中“首轮至少 50 本”“fixture 生成 50 本”“M2 以 50 本为完成标志”
+不再是有效验收口径。
+
+原因：固定 50 条既不能代表出版业务规模，也不能证明分层覆盖、书目关系、实体去重或实际可用性。
+Issue 018 必须把完成标准改为：
+
+1. 版本化 DiscoveryPlan 声明覆盖层、目标和资源边界；
+2. 每个必要分层均有已处理结果或明确、可解释的缺口；
+3. 作品、文本表达和具体版本三级关系正确；
+4. 每个实体均可回溯到未验证的书目观察记录；
+5. 自动关联无已知误合并，疑似重复进入人工队列；
+6. 合并、拆分、撤销和并发冲突可审计；
+7. 使用大规模合成数据单独验证容量，不把合成条数冒充真实业务成果。
+
+本轮明确授权对下列当前规范文档做最小、定向修订：
+
+- `docs/product/xiaohongshu-mystery-account-prd-v1.md`
+- `docs/product/xiaohongshu-development-roadmap-v1.md`
+
+只修订与“固定 50 本书库门槛”直接相关的现行条款、验收和里程碑文字，并增加清晰修订说明。
+不得改动其他冻结产品约束、30 篇内容实验、28—40 篇周运营目标或历史 Issue 审计材料。
+不得批量替换数字；必须逐处理解语义后修改。
+
+
+二、远端基线与根目录治理
+------------------------
+
+本指令生成前已通过 GitHub 连接器核对公开远端
+`KAtOReNA7/Rednote-Automated-Operation-Tool`：
+
+- 默认分支为 `main`；
+- Issue 017 提交已进入远端历史；
+- 仓库治理 PR 已合并；
+- 后续本地 API smoke 回归修复已合并；
+- 根目录历史文件已分流到 `docs/product/`、`docs/governance/` 和
+  `docs/instructions/<milestone>/`；
+- 远端 README 与 `AGENTS.md` 均把 Issue 018 标为下一项、尚未开始；
+- `tests/repository-documentation.test.ts` 会阻止已完成 Issue 指令遗留在根目录。
+- 两个已合并治理/修复 PR 的 head CI 在核对时均为 `success`；该历史状态不替代
+  Issue 018 自身的本地门禁或未来托管 CI。
+
+以上只说明生成本指令时观察到的语义状态，不是固定 commit、路径或 hash 门禁。
+Codex 开工时仍须动态核对本地与 `origin/main`。
+
+本轮明确授权一次安全的远端同步前置步骤：
+
+1. 先检查工作树、当前分支、HEAD、remote 和 tracking；
+2. 只对已配置的 `origin` 刷新 `main` 远端引用；
+3. 若当前分支是 `main`、工作树干净、本地 HEAD 是 `origin/main` 的祖先且仅需快进，
+   允许执行 fast-forward-only；
+4. 若工作树不干净、分支不是 `main`、双方分叉、需要 merge commit/rebase/reset、
+   remote 不匹配或远端语义缺失，立即停止并报告，不实施 Issue 018；
+5. 不配置或替换 remote，不 force，不改写历史，不 push。
+
+同步后必须按语义确认：
+
+- `AGENTS.md` 已声明 Issues 001—017 完成、Issue 018 下一项；
+- 产品文档位于 `docs/product/`；
+- 历史 M2 指令位于 `docs/instructions/m2/`；
+- Issue 017 的合同、ADR、实现与验收证据存在；
+- repository-documentation 治理测试存在。
+
+不得把本文件生成时看到的具体 commit ID 复制成开工门禁。
+
+根目录规则：
+
+- 本 TXT 可由用户临时放到仓库根目录供本轮启动；
+- Codex 必须先完整读取，然后在运行任何 baseline/full gate 或修改业务代码之前立即移动并
+  规范命名为
+  `docs/instructions/m2/M2-Issue018-bibliographic-discovery-entity-resolution-Codex-instruction.txt`；
+- 移动必须保留内容；不得在根目录保留副本；
+- `docs/instructions/README.md` 在 Issue 完成时再把它列为已完成历史指令，避免开发中误报完成；
+- 最终提交不得在根目录保留本文件副本、旧版 Issue 018 指令或其他历史执行材料；
+- 不得为了通过治理测试删除本指令；应执行 Git move/等价受控移动并保留内容；
+- 新增产品、治理、合同、ADR、证据和历史指令均进入现有 `docs/` 分类，不在根目录另建副本。
+
+本段是用户对 `AGENTS.md` 内“任务指令暂存于根目录”和旧公共措辞之间歧义的明确裁决：
+Issue 018 最终只在 `docs/instructions/m2/` 保留一份归档指令。
+
+
+三、授权目标与停止点
+--------------------
+
+只实现 Roadmap Issue 018：
+
+- 从已持久化的 SearchCandidate、FetchDocument、BrowserClip Candidate 或合成 fixture
+  形成 `BibliographicObservationV1`；
+- 建立“作品 Work → 文本表达 Expression → 出版版本 Edition”三级书目模型；
+- 建立作者、译者、出版社、品牌、平台以及出版/授权关系的可追溯候选关系；
+- 实现多语种标题、人名、机构名和标识符规范化；
+- 实现保守、可解释的实体解析；
+- 实现人工合并、拆分、撤销和冲突复核；
+- 实现版本化 DiscoveryPlan、分层覆盖报告和本地持久队列执行；
+- 激活桌面“书库”页面，提供发现运行、覆盖、复核、列表和详情；
+- 追加下一条连续 migration、专项测试、合同、ADR、实施计划、验收映射和一个本地提交。
+
+完成后立即停止，不进入 Issue 019。
+
+
+四、本 Issue 明确不做
+--------------------
+
+- 不创建 `Source`、`Claim`、`ClaimEvidence`，不判定任何书目字段为事实证据；
+- 不实现事实冲突裁决、研究档案、内容选题、阅读状态或文案；
+- 不调用真实模型、真实搜索服务、真实页面、图片或其他业务 API；
+- 不读取真实密钥，不产生费用；
+- 不自动执行 Search 或 Fetch，不自动 enqueue Issue 015/016 的远程任务；
+- 不接受任意裸 URL、任意本地文件或任意 SQL 作为书目输入；
+- 不读取开卷、盗版电子书、磨铁内部经营数据或正式用户书库作为测试数据；
+- 不导入未经当前任务明确授权的真实公司目录；
+- 不把搜索标题、snippet、页面文本、模型记忆或插件备注直接升级成已验证事实；
+- 不按标题相似度直接自动合并作品；
+- 不把 ISBN 当作品标识；ISBN 只能标识具体 Edition；
+- 不把出版社相同、作者同名、系列相同或封面相同当作充分合并依据；
+- 不用版权、AI 参与、授权关系或公司关联影响门禁、评分、审批、优先级、排期或导出；
+- 不实现小红书平台动作；
+- 不进入 Issue 019、020、021 或后续范围。
+
+
+五、Issue 特有语义基线
+----------------------
+
+编码前以仓库当前事实确认，而不是使用预置路径、HEAD、hash 或版本号：
+
+- Issue 015 的 SearchCandidate 仍为
+  `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`；
+- Issue 016 的 FetchDocument 仍为
+  `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`；
+- Issue 017 的 BrowserClip Candidate 仍是被动本地候选；
+- 现有 `books`、`book_editions`、`authors` 及其所有引用关系和历史数据；
+- 当前 migration 尾部、索引、外键、STRICT 约束与冻结完整性测试；
+- Queue 仍采用 at-least-once；
+- renderer、preload、main、DB 和业务包的现有依赖方向。
+
+Issue 018 可以消费候选和抓取文档的持久化 ID，但不得修改它们的冻结真值状态，
+也不得把书目观察写回 Search/Fetch 成“事实”。
+
+
+六、三级书目模型
+----------------
+
+三级对象必须显式分离：
+
+1. Work：抽象作品
+   - 同一故事或文本作品的核心身份；
+   - 不因译名、语言、出版社、载体、再版、分册或 ISBN 改变；
+   - 现有 `books` 语义升级为 Work，既有 ID 和引用必须保留。
+
+2. Expression：作品的语言或文本表达
+   - 原文、特定译文、修订文本、改编文本或网络连载文本；
+   - 同一翻译的不同再版通常属于同一 Expression；
+   - 不同译者或实质不同文本必须可分开。
+
+3. Edition：具体出版或平台版本
+   - 特定出版社/品牌、日期、载体、版次、装帧、分册、ISBN 或平台作品 ID；
+   - 纸书、电子书、有声书、网络连载、合集收录和再版均可表示；
+   - 一个 Edition 必须属于一个 Expression，并可经 Expression 回溯 Work。
+
+`BibliographicObservation` 是不可变的发现输入与 provenance，不属于三级实体。
+Observation 可以未能关联任何实体，也可以进入人工复核；不得为了填满书库强制创建 Work。
+
+升级现有 `book_editions` 时不得留下 `book_id` 与 `expression_id` 两套可能不一致的真相来源。
+根据实际 Schema 选择安全重建或兼容迁移，并在 ADR 说明。
+
+
+七、书目观察合同
+----------------
+
+定义版本化、严格校验的 `BibliographicObservationV1`，至少包含：
+
+- observationId、originKind、originRecordId；
+- observedAt；
+- display title、original-title hint、language/script hints；
+- contributor name hints；
+- publisher/imprint/platform hints；
+- publication-date/year hint；
+- bounded identifier hints；
+- work-type/format/series hints；
+- source candidate/document/clip identity；
+- field-level provenance；
+- `truthStatus = UNVERIFIED`；
+- `factStatus = NOT_A_FACT`；
+- normalization version；
+- bounded warnings。
+
+要求：
+
+- exact-object、数组/字符串/深度/总序列化大小均有限；
+- 原始值与规范值分离，原始值不可被规范化覆盖；
+- 不复制整页正文、完整 snippet、用户备注、截图字节、token、URL query 或绝对路径；
+- Queue payload 只保存 Observation/Run/Plan ID 和有限版本身份；
+- 同一 origin identity 重放幂等；
+- 同一来源更新形成新 revision/observation，不静默改写历史观察；
+- 任何派生字段都标明算法版本和输入 Observation。
+
+SearchCandidate 只能提供发现线索；FetchDocument 或用户明确输入可以提供字段候选，
+但在 Issue 019 前仍是未验证书目观察。
+
+
+八、作者、机构与出版/授权关系
+-----------------------------
+
+书目模型必须反映真实出版业务中的多方关系，不再假设“一本书只有一个 author_id 和 publisher 字符串”。
+
+建立统一 Agent 或等价的规范模型：
+
+- Person：作者、合著者、译者、编者、改编者；
+- Organization：出版社、出版品牌/imprint、发行方、数字平台、代理机构及其他书目相关机构；
+- 原名、译名、笔名、旧名和机构别名必须独立保存。
+
+至少支持下列关系作用域：
+
+- Work：AUTHOR、COAUTHOR、ORIGINAL_CREATOR；
+- Expression：TRANSLATOR、ADAPTER、EDITOR；
+- Edition：PUBLISHER、IMPRINT、DISTRIBUTOR、PLATFORM；
+- Publication relationship：
+  RIGHTS_PARTY、LICENSOR、LICENSEE、AGENCY。
+
+出版/授权关系是“待核验的业务关系记录”，不是法律结论，也不是版权风险字段。
+关系应支持方向、主体/客体、适用 Work/Expression/Edition、语言、地区、载体、有效期和 provenance；
+未知项保持 NULL/UNKNOWN，不得猜测。
+
+Issue 018 只允许：
+
+- `OBSERVED_UNVERIFIED`
+- `USER_CONFIRMED`
+- `EVIDENCE_PENDING`
+
+不得伪造 `EVIDENCE_CONFIRMED`；该状态只能由后续 Issue 019 的证据链产生。
+任何关系值的增加、删除或变化都不得改变门禁、评分、审批、优先级、排期或导出资格。
+
+
+九、标识符与规范化
+------------------
+
+规范化必须版本化、确定性、可重算且保留原值：
+
+- Unicode NFKC、空白、宽窄字符、大小写和标点处理；
+- 中文、日文、拉丁文字及组合字符；
+- 标题主标题/副标题、卷次、系列名和版次分开；
+- 人名顺序、笔名和罗马字只作为 alias，不凭转换结果断言同一人；
+- 机构品牌与法人/母公司不自动视为同一实体。
+
+标识符至少支持：
+
+- ISBN-10 与 ISBN-13：去格式、校验 check digit、可规范转换；
+- scoped platform work ID；
+- scoped publisher/catalog ID；
+- 其他标识符必须带 namespace，不接受无来源的全局字符串。
+
+冻结规则：
+
+- 无效 ISBN 不进入 canonical identifier，但原始 hint 和错误原因可保留；
+- ISBN 只关联 Edition；
+- 同一合法 ISBN 出现冲突元数据时创建冲突 case，不自动覆盖或合并；
+- 网络作品没有 ISBN 是正常状态；
+- 标题、作者、年份缺失不得伪造成空字符串或占位事实。
+
+
+十、实体解析与可逆决策
+----------------------
+
+实体解析采用保守、可解释的规则，不调用模型。
+
+每次候选比较返回有限 feature vector、规则版本和 outcome：
+
+- `EXACT_LINK`
+- `PROBABLE_REVIEW`
+- `DISTINCT`
+- `CONFLICT`
+- `INSUFFICIENT`
+
+自动 `EXACT_LINK` 只允许由同类型强标识符及兼容上下文支持；
+任何冲突、仅标题相似、仅作者相似或跨实体层级匹配都必须进入人工复核。
+
+必须覆盖：
+
+- 同一 Work 的原名、日文/英文/中文译名；
+- 同一 Expression 的平装、精装、电子版和再版；
+- 不同译者形成不同 Expression；
+- 同名不同书；
+- 同名或笔名作者；
+- 合集与单篇、分册与合订本、系列与单卷；
+- 网络连载与实体出版；
+- 无 ISBN、错误 ISBN、重复 ISBN 和冲突 ISBN；
+- 出版品牌、出版社、平台和授权链的不同层级。
+
+人工操作必须提供：
+
+- merge/split/undo 预览；
+- 受影响的 Work、Expression、Edition、Observation、关系和下游引用计数；
+- expected revision；
+- 短期、单次、window-bound 确认 token；
+- 原子事务；
+- append-only decision/audit；
+- canonical survivor 与 alias 选择；
+- 并发修改检测；
+- 可逆 lineage，不硬删除 provenance。
+
+已被合并实体的旧 ID 必须可解析到 survivor；撤销后恢复原关联。
+下游引用不可被静默丢失或指向错误层级。
+
+
+十一、DiscoveryPlan 与“无固定 50”验收
+-----------------------------------
+
+定义版本化 `DiscoveryPortfolioProfileV1`、`DiscoveryPlanV1` 和 `DiscoveryRunV1`。
+
+计划至少声明：
+
+- 运行目的：`PILOT_CONTENT / MARKET_MAP / CUSTOM`；
+- 必要与可选 strata；
+- 每层目标、优先级、允许来源类型和缺口策略；
+- 最大 Observation、候选比较、DB 写入、运行时长和本地并发；
+- 可消费的已持久化输入范围；
+- normalization/entity-resolution 版本；
+- preview hash、过期时间和用户确认；
+- 预计本地工作量；外部请求数固定为 0。
+
+默认 strata 至少能表达：
+
+- 日本推理；
+- 欧美推理；
+- 中文出版推理；
+- 中文网络悬疑；
+- 原创/翻译；
+- 纸书/电子/网络连载；
+- 有强标识符/无 ISBN；
+- 新书/存量书，时间未知时单列 UNKNOWN。
+
+不得把“热门/冷门”从搜索排名或主观印象直接写成事实；热度数据属于后续有来源的分析。
+
+Run 状态：
+
+`DRAFT → PREVIEWED → CONFIRMED → RUNNING → AWAITING_REVIEW →
+COMPLETED | COMPLETED_WITH_GAPS | CANCELLED | FAILED | INTERRUPTED`
+
+完成不取决于一个全局固定书数。Coverage report 必须显示：
+
+- 每个 stratum 的计划、观察、Work/Expression/Edition 数和短缺；
+- 未解析、待复核、冲突、拒绝和无效标识符数量；
+- 自动关联和人工决策数量；
+- provenance 完整度；
+- 去重前后基数；
+- 明确的 gap reason；
+- 该报告是 fixture、synthetic 还是真实用户运行。
+
+fixture/synthetic 结果必须醒目标记，不能显示为“真实行业书库已完成”。
+
+
+十二、持久化、迁移与队列
+------------------------
+
+追加仓库运行时发现的下一条连续 migration；不得预置其 hash，不得修改历史 migration。
+
+根据实际 Schema 设计最小但完整的 STRICT 表。至少需要覆盖：
+
+- Expression 与三级关系；
+- title/name aliases；
+- Agent 与分层 contributor/organization relations；
+- publication relationship；
+- Observation 与 field-level provenance；
+- scoped identifiers；
+- Discovery profile/plan/run/stratum coverage；
+- resolution case、decision、membership/lineage。
+
+要求：
+
+- 保留现有 books、book_editions、authors 及所有下游行和 ID；
+- 为既有 Work/Edition 建立可解释的默认 Expression，不伪造译者或语言；
+- 外键、唯一约束、CHECK、删除策略和查询索引完整；
+- alias、identifier、候选比较和人工队列查询有合适索引；
+- migration 失败完整回滚，迁移前备份可独立打开；
+- 升级后 quick_check、foreign_key_check 和业务不变量通过；
+- 不把 Observation 正文、secret、raw response、完整 URL query 或绝对路径落库。
+
+新增本地 handler `BIBLIOGRAPHY_DISCOVERY_V1` 或语义等价名称：
+
+- 只处理已持久化输入 ID；
+- 不发送外部请求，不 enqueue Search/Fetch；
+- 有界批次、checkpoint、lease、heartbeat、暂停、取消和重启恢复；
+- executionId 幂等；
+- 重放不重复创建 Observation、实体、关系或 decision；
+- job result 只保存 run ID、状态、计数和稳定错误。
+
+
+十三、桌面 UI 与 IPC
+--------------------
+
+激活“书库”页面，至少提供：
+
+- Work / Expression / Edition / Observation 四类真实计数；
+- strata coverage 与 gap reason；
+- 发现计划 preview、明确确认、运行状态和取消；
+- Work 列表、筛选、分页和详情；
+- 三级关系树；
+- 标题/人名/机构 alias；
+- Edition 标识符与出版关系；
+- provenance 和 `UNVERIFIED/NOT_A_FACT` 状态；
+- duplicate review queue；
+- merge/split/undo 预览与确认；
+- 冲突、空、加载和错误状态。
+
+UI 不显示“已发现 50 本即完成”，也不把 fixture/synthetic 数据伪装成正式数据。
+
+preload 只增加固定、有限 DTO 和方法；main 负责 DB、队列和确认 token。
+renderer 不接收全文、原始响应、绝对路径、SQL、内部 lease、secret 或未净化 HTML。
+不得使用 `dangerouslySetInnerHTML`。
+
+
+十四、专项测试
+--------------
+
+新增独立 `test:bibliography`（名称可按现有脚本风格调整），纳入全量测试与 Windows CI。
+
+至少覆盖：
+
+1. 三级实体和 Observation 合同的 runtime 校验；
+2. 中文、日文、英文、Unicode、别名和规范化版本；
+3. ISBN-10/13 有效、无效、转换、冲突和重复；
+4. platform/publisher scoped identifier；
+5. 同作品多译名、多 Expression、多 Edition；
+6. 同名不同书、同名作者、系列/单卷、合集/单篇、分册/合订本；
+7. 网络连载与出版 Edition；
+8. 出版/授权关系方向、范围、UNKNOWN 与非门禁不变量；
+9. gold fixture 的预期 cluster 完全一致，自动合并 false positive 为 0；
+10. 保守 recall：无法证明的匹配进入 review，不为提高召回误合并；
+11. merge/split/undo、旧 ID redirect、下游引用和 audit；
+12. expected revision、并发决策和事务回滚；
+13. discovery preview/confirm/state/gap/coverage；
+14. executionId 重放、崩溃恢复、暂停和取消；
+15. 新库、升级库、历史数据保留、迁移失败及独立备份；
+16. UI/IPC exact-object、window 绑定、短期 token 和安全错误 DTO；
+17. Search/Fetch/Clip 冻结状态未被提升；
+18. sources/claims/evidence/research_dossiers 未被创建或修改；
+19. 真实网络、模型、费用、密钥读取均为 0；
+20. AI/版权/授权关系不参与门禁或决策。
+
+gold fixture 必须是合成、可审计且覆盖上述出版场景，不得使用真实公司目录。
+
+另增加由生成器产生的容量测试，至少验证 PRD 的 10,000 Work 级规模，并包含更多
+Expression、Edition、Observation 和 alias。容量测试用于：
+
+- 验证批处理有界；
+- 验证关键查询使用预期索引；
+- 验证分页而非全量载入；
+- 验证没有 O(n²) 全库两两比较；
+- 验证重启后 checkpoint 可继续。
+
+该容量数字只是工程容量测试，不是生产发现完成阈值。
+避免依赖机器速度的脆弱毫秒断言；使用有界操作数、查询计划和宽松性能证据。
+
+
+十五、文档与产品修订
+--------------------
+
+本轮至少按远端治理后的目录交付：
+
+- `docs/contracts/`：Bibliography Discovery V1 与 Entity Resolution V1 合同；
+- `docs/adr/`：三级模型、Observation 边界、保守匹配、可逆合并、出版关系和规模口径 ADR；
+- `docs/m2-issue018-implementation-plan.md`；
+- `docs/m2-issue018-acceptance-map.md`；
+- 如产生可公开的脱敏机器证据，放入 `docs/evidence/`；
+- 归档后的 Issue 018 指令及 `docs/instructions/README.md` 索引；
+- README 当前状态、包结构、命令和下一步 Issue 019；
+- PRD/Roadmap 的固定 50 门槛修订。
+
+新增治理测试，保证当前规范文档不再把固定 50 本作为生产或 M2 完成门槛；
+历史 Issue 指令和历史验收证据不因包含旧口径而失败。
+
+同时保持 `tests/repository-documentation.test.ts` 的根目录治理语义：
+
+- 产品基线不回到根目录；
+- 治理文件不回到根目录；
+- 已完成 Issue 指令不留在根目录；
+- README 和各文档索引中的相对链接全部可解析；
+- 不通过放宽或删除现有治理断言取得绿色结果。
+
+文档必须明确：
+
+- synthetic/fixture 与真实业务运行的区别；
+- Work/Expression/Edition 的边界；
+- Publication relationship 不是版权风险或法律判断；
+- Issue 019 才能建立 Source/Claim/Evidence；
+- 未验证观察不能用于公开事实。
+
+
+十六、实施顺序与完成定义
+------------------------
+
+按以下顺序实施：
+
+1. 动态检查本地/远端；只有满足本指令的安全快进条件才同步；
+2. 完整读取本 TXT，立即移动到 `docs/instructions/m2/`，确认根目录无副本；
+3. 运行 repository-documentation 治理测试，确认新目录结构 baseline；
+4. 动态基线、依赖、文档治理和现有 Schema 审计；
+5. 起草 implementation plan、合同和 acceptance map；
+6. 定向修订 `docs/product/` 中的固定 50 本产品口径；
+7. Core 合同、三级模型、规范化和解析算法；
+8. migration、repository 和升级路径；
+9. DiscoveryPlan、coverage、queue handler；
+10. 人工 merge/split/undo；
+11. Electron main / preload / renderer；
+12. 专项、容量、迁移、硬约束和 egress 测试；
+13. README、产品文档与文档索引同步；
+14. 将 Issue 018 加入 `docs/instructions/README.md`，并再次确认根目录无重复副本；
+15. 先运行 repository-documentation 和指令索引/链接治理测试；
+16. 从最新 `npm ci` 开始按当前 CI 顺序完整重跑全部适用门禁；
+17. 创建唯一一个 Issue 018 本地提交并核验 parent、范围和工作树。
+
+最终报告除 AGENTS.md 的通用内容外，必须明确给出：
+
+- 固定 50 门槛具体被哪些现行条款替换；
+- 三级模型与旧数据迁移结果；
+- gold fixture 的 cluster/误合并结果；
+- 容量测试的实际规模、查询计划和结果；
+- publication relationship 从未参与任何门禁；
+- 未调用真实网络、模型或真实数据；
+- Issue 018 指令最终只存在于 `docs/instructions/m2/`；
+- 根目录未重新堆积产品基线、历史指令或验收材料；
+- 本地开工基线是否与远端治理后的 main 一致，以及是否执行了安全快进；
+- 未进入 Issue 019。
+
+只有全部成立才可报告 PASS。任何无法证明的实体匹配应保留人工复核，不得为了通过验收强行合并。
+
+
+十七、Codex 启动指令
+--------------------
+
+继续当前仓库。先按本指令动态核对本地与 `origin/main`；只有工作树干净、当前为 main 且可以
+fast-forward-only 时才允许同步，否则停止报告。完整读取根级及作用域内 AGENTS.md、本指令、
+`docs/product/` 下的当前 PRD/Roadmap，以及 Issues 015—017 的合同与实现事实。
+只实施 Issue 018；先建立计划和验收映射，再完成三级书目模型、分层发现、可逆去重、桌面书库
+和产品口径修订。不得使用固定路径、预置 HEAD、文件 hash 或固定 50 本作为开工/完成门禁；
+不得调用真实网络、模型或真实业务数据。读取后、运行任何 baseline gate 或修改业务代码前，
+立即把本指令移动到 `docs/instructions/m2/`，根目录不得保留副本；Issue 完成时更新历史指令
+索引。全部适用门禁通过后只创建一个 Issue 018 本地提交，然后停止，不得 push，不得进入
+Issue 019。

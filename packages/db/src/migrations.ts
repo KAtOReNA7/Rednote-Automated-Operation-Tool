@@ -2694,6 +2694,645 @@ CREATE INDEX idx_clip_receipts_status_updated
 CREATE INDEX idx_clip_links_candidate ON clip_search_candidate_links(candidate_id);
 `;
 
+const BIBLIOGRAPHIC_CATALOG = `
+ALTER TABLE books ADD COLUMN catalog_state TEXT NOT NULL DEFAULT 'ACTIVE'
+  CHECK (catalog_state IN ('ACTIVE', 'MERGED', 'RETIRED'));
+ALTER TABLE books ADD COLUMN catalog_revision INTEGER NOT NULL DEFAULT 1
+  CHECK (typeof(catalog_revision) = 'integer' AND catalog_revision > 0);
+
+CREATE TABLE catalog_agents (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+  agent_type TEXT NOT NULL CHECK (agent_type IN ('PERSON', 'ORGANIZATION')),
+  canonical_name TEXT NOT NULL CHECK (length(trim(canonical_name)) BETWEEN 1 AND 512),
+  normalized_name TEXT NOT NULL CHECK (length(trim(normalized_name)) BETWEEN 1 AND 512),
+  country_or_region TEXT CHECK (
+    country_or_region IS NULL OR length(country_or_region) BETWEEN 1 AND 128
+  ),
+  catalog_state TEXT NOT NULL DEFAULT 'ACTIVE'
+    CHECK (catalog_state IN ('ACTIVE', 'MERGED', 'RETIRED')),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO catalog_agents (
+  id, agent_type, canonical_name, normalized_name, country_or_region
+)
+SELECT
+  id, 'PERSON', canonical_name, lower(trim(canonical_name)), country_or_region
+FROM authors;
+
+CREATE TABLE expressions (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+  work_id TEXT NOT NULL REFERENCES books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_kind TEXT NOT NULL CHECK (expression_kind IN (
+    'ORIGINAL', 'TRANSLATION', 'REVISED', 'ADAPTED', 'SERIALIZED', 'LEGACY_UNSPECIFIED'
+  )),
+  canonical_title TEXT CHECK (
+    canonical_title IS NULL OR length(trim(canonical_title)) BETWEEN 1 AND 512
+  ),
+  normalized_title TEXT CHECK (
+    normalized_title IS NULL OR length(trim(normalized_title)) BETWEEN 1 AND 512
+  ),
+  language TEXT CHECK (language IS NULL OR length(language) BETWEEN 1 AND 32),
+  script TEXT CHECK (script IS NULL OR length(script) BETWEEN 1 AND 32),
+  catalog_state TEXT NOT NULL DEFAULT 'ACTIVE'
+    CHECK (catalog_state IN ('ACTIVE', 'MERGED', 'RETIRED')),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (work_id, id)
+) STRICT;
+
+INSERT INTO expressions (
+  id, work_id, expression_kind, canonical_title, normalized_title, language
+)
+SELECT
+  'legacy-expression-' || id,
+  id,
+  'LEGACY_UNSPECIFIED',
+  canonical_title,
+  lower(trim(canonical_title)),
+  language
+FROM books;
+
+CREATE TABLE book_editions_issue018_new (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  expression_id TEXT NOT NULL
+    REFERENCES expressions(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  isbn TEXT UNIQUE,
+  translated_title TEXT,
+  translator TEXT,
+  publisher TEXT,
+  publication_date TEXT,
+  edition_label TEXT,
+  format TEXT CHECK (format IS NULL OR length(format) BETWEEN 1 AND 128),
+  platform TEXT CHECK (platform IS NULL OR length(platform) BETWEEN 1 AND 128),
+  cover_asset_id TEXT REFERENCES assets(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  is_motie INTEGER NOT NULL DEFAULT 0 CHECK (is_motie IN (0, 1)),
+  is_unreleased INTEGER NOT NULL DEFAULT 0 CHECK (is_unreleased IN (0, 1)),
+  source_id TEXT REFERENCES sources(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  catalog_state TEXT NOT NULL DEFAULT 'ACTIVE'
+    CHECK (catalog_state IN ('ACTIVE', 'MERGED', 'RETIRED')),
+  catalog_revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(catalog_revision) = 'integer' AND catalog_revision > 0
+  )
+) STRICT;
+
+INSERT INTO book_editions_issue018_new (
+  id, expression_id, isbn, translated_title, translator, publisher,
+  publication_date, edition_label, cover_asset_id, is_motie, is_unreleased, source_id
+)
+SELECT
+  edition.id,
+  expression.id,
+  edition.isbn,
+  edition.translated_title,
+  edition.translator,
+  edition.publisher,
+  edition.publication_date,
+  edition.edition_label,
+  edition.cover_asset_id,
+  edition.is_motie,
+  edition.is_unreleased,
+  edition.source_id
+FROM book_editions AS edition
+JOIN expressions AS expression
+  ON expression.work_id = edition.book_id
+ AND expression.expression_kind = 'LEGACY_UNSPECIFIED';
+
+DROP TABLE book_editions;
+ALTER TABLE book_editions_issue018_new RENAME TO book_editions;
+
+CREATE INDEX idx_expressions_work_state
+  ON expressions(work_id, catalog_state, canonical_title);
+CREATE INDEX idx_expressions_title
+  ON expressions(normalized_title, catalog_state);
+CREATE INDEX idx_book_editions_expression
+  ON book_editions(expression_id, catalog_state, id);
+CREATE INDEX idx_book_editions_cover_asset_id ON book_editions(cover_asset_id);
+CREATE INDEX idx_book_editions_source_id ON book_editions(source_id);
+CREATE INDEX idx_books_catalog_title
+  ON books(catalog_state, lower(canonical_title), id);
+
+CREATE TABLE bibliographic_observations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version = 'bibliographic-observation-v1'
+  ),
+  origin_kind TEXT NOT NULL CHECK (origin_kind IN (
+    'SEARCH_CANDIDATE', 'FETCH_DOCUMENT', 'BROWSER_CLIP_CANDIDATE', 'SYNTHETIC_FIXTURE'
+  )),
+  origin_record_id TEXT NOT NULL CHECK (length(origin_record_id) BETWEEN 1 AND 128),
+  origin_revision INTEGER NOT NULL CHECK (
+    typeof(origin_revision) = 'integer' AND origin_revision > 0
+  ),
+  observed_at TEXT NOT NULL CHECK (observed_at ${UTC_REQUIRED}),
+  display_title_raw TEXT CHECK (
+    display_title_raw IS NULL OR length(display_title_raw) BETWEEN 1 AND 2000
+  ),
+  display_title_normalized TEXT CHECK (
+    display_title_normalized IS NULL OR length(display_title_normalized) BETWEEN 1 AND 2000
+  ),
+  original_title_raw TEXT CHECK (
+    original_title_raw IS NULL OR length(original_title_raw) BETWEEN 1 AND 2000
+  ),
+  original_title_normalized TEXT CHECK (
+    original_title_normalized IS NULL OR length(original_title_normalized) BETWEEN 1 AND 2000
+  ),
+  payload_json TEXT NOT NULL CHECK (
+    json_valid(payload_json) AND json_type(payload_json) = 'object' AND
+    length(CAST(payload_json AS BLOB)) BETWEEN 2 AND 131072
+  ),
+  candidate_id TEXT REFERENCES search_result_candidates(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  document_id TEXT REFERENCES fetched_documents(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  clip_id TEXT REFERENCES clips(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  truth_status TEXT NOT NULL DEFAULT 'UNVERIFIED' CHECK (truth_status = 'UNVERIFIED'),
+  fact_status TEXT NOT NULL DEFAULT 'NOT_A_FACT' CHECK (fact_status = 'NOT_A_FACT'),
+  normalization_version TEXT NOT NULL CHECK (
+    normalization_version = 'bibliography-normalization-v1'
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (origin_kind, origin_record_id, origin_revision),
+  CHECK (
+    (display_title_raw IS NULL) = (display_title_normalized IS NULL) AND
+    (original_title_raw IS NULL) = (original_title_normalized IS NULL)
+  ),
+  CHECK (
+    (origin_kind = 'SEARCH_CANDIDATE' AND candidate_id IS NOT NULL AND
+      document_id IS NULL AND clip_id IS NULL) OR
+    (origin_kind = 'FETCH_DOCUMENT' AND candidate_id IS NOT NULL AND
+      document_id IS NOT NULL AND clip_id IS NULL) OR
+    (origin_kind = 'BROWSER_CLIP_CANDIDATE' AND candidate_id IS NOT NULL AND
+      clip_id IS NOT NULL AND document_id IS NULL) OR
+    (origin_kind = 'SYNTHETIC_FIXTURE' AND candidate_id IS NULL AND
+      document_id IS NULL AND clip_id IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE bibliographic_observation_fields (
+  observation_id TEXT NOT NULL REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  field_name TEXT NOT NULL CHECK (length(field_name) BETWEEN 1 AND 128),
+  ordinal INTEGER NOT NULL CHECK (typeof(ordinal) = 'integer' AND ordinal BETWEEN 0 AND 63),
+  raw_value TEXT CHECK (raw_value IS NULL OR length(raw_value) BETWEEN 1 AND 2000),
+  normalized_value TEXT CHECK (
+    normalized_value IS NULL OR length(normalized_value) BETWEEN 1 AND 2000
+  ),
+  algorithm_version TEXT NOT NULL CHECK (length(algorithm_version) BETWEEN 1 AND 128),
+  provenance_json TEXT NOT NULL CHECK (
+    json_valid(provenance_json) AND json_type(provenance_json) = 'object' AND
+    length(CAST(provenance_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  PRIMARY KEY (observation_id, field_name, ordinal)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE catalog_entity_aliases (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('WORK', 'EXPRESSION', 'EDITION', 'AGENT')),
+  entity_id TEXT NOT NULL CHECK (length(entity_id) >= 1),
+  alias_kind TEXT NOT NULL CHECK (alias_kind IN (
+    'CANONICAL', 'ORIGINAL', 'TRANSLATED', 'PEN_NAME', 'ROMANIZED',
+    'FORMER_NAME', 'IMPRINT_NAME', 'LEGACY'
+  )),
+  raw_value TEXT NOT NULL CHECK (length(raw_value) BETWEEN 1 AND 2000),
+  normalized_value TEXT NOT NULL CHECK (length(normalized_value) BETWEEN 1 AND 2000),
+  language TEXT CHECK (language IS NULL OR length(language) BETWEEN 1 AND 32),
+  script TEXT CHECK (script IS NULL OR length(script) BETWEEN 1 AND 32),
+  normalization_version TEXT NOT NULL CHECK (
+    normalization_version = 'bibliography-normalization-v1'
+  ),
+  observation_id TEXT REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (entity_type, entity_id, alias_kind, normalized_value)
+) STRICT;
+
+INSERT INTO catalog_entity_aliases (
+  id, entity_type, entity_id, alias_kind, raw_value, normalized_value,
+  normalization_version
+)
+SELECT
+  'legacy-work-title-' || id,
+  'WORK',
+  id,
+  'CANONICAL',
+  canonical_title,
+  lower(trim(canonical_title)),
+  'bibliography-normalization-v1'
+FROM books;
+
+INSERT OR IGNORE INTO catalog_entity_aliases (
+  id, entity_type, entity_id, alias_kind, raw_value, normalized_value,
+  normalization_version
+)
+SELECT
+  'legacy-work-original-' || id,
+  'WORK',
+  id,
+  'ORIGINAL',
+  original_title,
+  lower(trim(original_title)),
+  'bibliography-normalization-v1'
+FROM books
+WHERE original_title IS NOT NULL AND length(trim(original_title)) > 0;
+
+INSERT INTO catalog_entity_aliases (
+  id, entity_type, entity_id, alias_kind, raw_value, normalized_value,
+  normalization_version
+)
+SELECT
+  'legacy-agent-name-' || id,
+  'AGENT',
+  id,
+  'CANONICAL',
+  canonical_name,
+  lower(trim(canonical_name)),
+  'bibliography-normalization-v1'
+FROM authors;
+
+CREATE TABLE catalog_agent_relations (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) > 0),
+  scope_type TEXT NOT NULL CHECK (scope_type IN ('WORK', 'EXPRESSION', 'EDITION')),
+  scope_id TEXT NOT NULL CHECK (length(scope_id) >= 1),
+  agent_id TEXT NOT NULL REFERENCES catalog_agents(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  role TEXT NOT NULL CHECK (role IN (
+    'AUTHOR', 'COAUTHOR', 'ORIGINAL_CREATOR', 'TRANSLATOR', 'ADAPTER', 'EDITOR',
+    'PUBLISHER', 'IMPRINT', 'DISTRIBUTOR', 'PLATFORM'
+  )),
+  verification_state TEXT NOT NULL DEFAULT 'OBSERVED_UNVERIFIED' CHECK (
+    verification_state IN ('OBSERVED_UNVERIFIED', 'USER_CONFIRMED', 'EVIDENCE_PENDING')
+  ),
+  observation_id TEXT REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (scope_type, scope_id, agent_id, role)
+) STRICT;
+
+INSERT INTO catalog_agent_relations (
+  id, scope_type, scope_id, agent_id, role, verification_state
+)
+SELECT
+  'legacy-work-author-' || id,
+  'WORK',
+  id,
+  author_id,
+  'AUTHOR',
+  'OBSERVED_UNVERIFIED'
+FROM books
+WHERE author_id IS NOT NULL;
+
+CREATE TABLE publication_relationships (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  role TEXT NOT NULL CHECK (role IN ('RIGHTS_PARTY', 'LICENSOR', 'LICENSEE', 'AGENCY')),
+  subject_agent_id TEXT NOT NULL REFERENCES catalog_agents(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  object_agent_id TEXT REFERENCES catalog_agents(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  scope_type TEXT CHECK (scope_type IS NULL OR scope_type IN ('WORK', 'EXPRESSION', 'EDITION')),
+  scope_id TEXT CHECK (scope_id IS NULL OR length(scope_id) >= 1),
+  language TEXT CHECK (language IS NULL OR length(language) BETWEEN 1 AND 32),
+  territory TEXT CHECK (territory IS NULL OR length(territory) BETWEEN 1 AND 128),
+  format TEXT CHECK (format IS NULL OR length(format) BETWEEN 1 AND 128),
+  valid_from TEXT,
+  valid_until TEXT,
+  verification_state TEXT NOT NULL CHECK (
+    verification_state IN ('OBSERVED_UNVERIFIED', 'USER_CONFIRMED', 'EVIDENCE_PENDING')
+  ),
+  observation_id TEXT REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK ((scope_type IS NULL) = (scope_id IS NULL)),
+  CHECK (object_agent_id IS NULL OR object_agent_id <> subject_agent_id),
+  CHECK (valid_until IS NULL OR valid_from IS NULL OR valid_until >= valid_from)
+) STRICT;
+
+CREATE TABLE bibliographic_identifiers (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  entity_type TEXT NOT NULL CHECK (entity_type = 'EDITION'),
+  entity_id TEXT NOT NULL REFERENCES book_editions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  namespace TEXT NOT NULL CHECK (
+    namespace = 'ISBN_13' OR namespace GLOB 'PLATFORM:*' OR namespace GLOB 'PUBLISHER:*'
+  ),
+  normalized_value TEXT NOT NULL CHECK (length(normalized_value) BETWEEN 1 AND 256),
+  observation_id TEXT NOT NULL REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (namespace, normalized_value)
+) STRICT;
+
+CREATE TABLE observation_entity_links (
+  observation_id TEXT NOT NULL REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('WORK', 'EXPRESSION', 'EDITION', 'AGENT')),
+  entity_id TEXT NOT NULL CHECK (length(entity_id) >= 1),
+  link_outcome TEXT NOT NULL CHECK (link_outcome IN (
+    'EXACT_LINK', 'USER_CONFIRMED', 'CREATED_FROM_OBSERVATION'
+  )),
+  rule_version TEXT NOT NULL CHECK (
+    rule_version = 'entity-resolution-v1' OR rule_version = 'user-decision-v1'
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (observation_id, entity_type, entity_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE discovery_profiles (
+  id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (revision > 0),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version = 'discovery-portfolio-profile-v1'
+  ),
+  purpose TEXT NOT NULL CHECK (purpose IN ('PILOT_CONTENT', 'MARKET_MAP', 'CUSTOM')),
+  synthetic INTEGER NOT NULL CHECK (synthetic IN (0, 1)),
+  profile_json TEXT NOT NULL CHECK (
+    json_valid(profile_json) AND json_type(profile_json) = 'object' AND
+    length(CAST(profile_json AS BLOB)) BETWEEN 2 AND 131072
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (id, revision)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE discovery_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  contract_version TEXT NOT NULL CHECK (contract_version = 'discovery-plan-v1'),
+  profile_id TEXT NOT NULL,
+  profile_revision INTEGER NOT NULL,
+  plan_hash TEXT NOT NULL UNIQUE CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  plan_json TEXT NOT NULL CHECK (
+    json_valid(plan_json) AND json_type(plan_json) = 'object' AND
+    length(CAST(plan_json AS BLOB)) BETWEEN 2 AND 262144
+  ),
+  estimated_external_requests INTEGER NOT NULL DEFAULT 0
+    CHECK (estimated_external_requests = 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED}),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  FOREIGN KEY (profile_id, profile_revision)
+    REFERENCES discovery_profiles(id, revision) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (expires_at > created_at)
+) STRICT;
+
+CREATE TABLE discovery_plan_strata (
+  plan_id TEXT NOT NULL REFERENCES discovery_plans(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  stratum_id TEXT NOT NULL CHECK (length(stratum_id) BETWEEN 1 AND 128),
+  label TEXT NOT NULL CHECK (length(label) BETWEEN 1 AND 128),
+  required INTEGER NOT NULL CHECK (required IN (0, 1)),
+  target_observations INTEGER NOT NULL CHECK (target_observations >= 0),
+  priority INTEGER NOT NULL CHECK (priority BETWEEN 0 AND 1000),
+  gap_policy TEXT NOT NULL CHECK (gap_policy IN ('ALLOW_EXPLAINED', 'REQUIRE_PROCESSED')),
+  PRIMARY KEY (plan_id, stratum_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE discovery_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  contract_version TEXT NOT NULL CHECK (contract_version = 'discovery-run-v1'),
+  plan_id TEXT NOT NULL REFERENCES discovery_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  plan_hash TEXT NOT NULL CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  execution_id TEXT UNIQUE CHECK (
+    execution_id IS NULL OR length(execution_id) BETWEEN 1 AND 128
+  ),
+  job_id TEXT CHECK (job_id IS NULL OR length(job_id) BETWEEN 1 AND 128),
+  status TEXT NOT NULL CHECK (status IN (
+    'DRAFT', 'PREVIEWED', 'CONFIRMED', 'RUNNING', 'AWAITING_REVIEW',
+    'COMPLETED', 'COMPLETED_WITH_GAPS', 'CANCELLED', 'FAILED', 'INTERRUPTED'
+  )),
+  checkpoint_sequence INTEGER NOT NULL DEFAULT 0 CHECK (checkpoint_sequence >= 0),
+  observation_count INTEGER NOT NULL DEFAULT 0 CHECK (observation_count >= 0),
+  work_count INTEGER NOT NULL DEFAULT 0 CHECK (work_count >= 0),
+  expression_count INTEGER NOT NULL DEFAULT 0 CHECK (expression_count >= 0),
+  edition_count INTEGER NOT NULL DEFAULT 0 CHECK (edition_count >= 0),
+  review_case_count INTEGER NOT NULL DEFAULT 0 CHECK (review_case_count >= 0),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (external_request_count = 0),
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 96
+  ),
+  started_at TEXT,
+  finished_at TEXT,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK ((status = 'RUNNING') = (started_at IS NOT NULL AND finished_at IS NULL))
+) STRICT;
+
+CREATE TABLE discovery_run_origins (
+  run_id TEXT NOT NULL REFERENCES discovery_runs(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  sequence INTEGER NOT NULL CHECK (sequence > 0),
+  origin_kind TEXT NOT NULL CHECK (origin_kind IN (
+    'SEARCH_CANDIDATE', 'FETCH_DOCUMENT', 'BROWSER_CLIP_CANDIDATE', 'SYNTHETIC_FIXTURE'
+  )),
+  origin_record_id TEXT NOT NULL CHECK (length(origin_record_id) BETWEEN 1 AND 128),
+  origin_revision INTEGER NOT NULL CHECK (origin_revision > 0),
+  processed INTEGER NOT NULL DEFAULT 0 CHECK (processed IN (0, 1)),
+  PRIMARY KEY (run_id, sequence),
+  UNIQUE (run_id, origin_kind, origin_record_id, origin_revision)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE discovery_run_stratum_coverage (
+  run_id TEXT NOT NULL REFERENCES discovery_runs(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  stratum_id TEXT NOT NULL CHECK (length(stratum_id) BETWEEN 1 AND 128),
+  planned_observations INTEGER NOT NULL CHECK (planned_observations >= 0),
+  observation_count INTEGER NOT NULL DEFAULT 0 CHECK (observation_count >= 0),
+  work_count INTEGER NOT NULL DEFAULT 0 CHECK (work_count >= 0),
+  expression_count INTEGER NOT NULL DEFAULT 0 CHECK (expression_count >= 0),
+  edition_count INTEGER NOT NULL DEFAULT 0 CHECK (edition_count >= 0),
+  unresolved_count INTEGER NOT NULL DEFAULT 0 CHECK (unresolved_count >= 0),
+  review_count INTEGER NOT NULL DEFAULT 0 CHECK (review_count >= 0),
+  conflict_count INTEGER NOT NULL DEFAULT 0 CHECK (conflict_count >= 0),
+  rejected_count INTEGER NOT NULL DEFAULT 0 CHECK (rejected_count >= 0),
+  invalid_identifier_count INTEGER NOT NULL DEFAULT 0 CHECK (invalid_identifier_count >= 0),
+  exact_link_count INTEGER NOT NULL DEFAULT 0 CHECK (exact_link_count >= 0),
+  manual_decision_count INTEGER NOT NULL DEFAULT 0 CHECK (manual_decision_count >= 0),
+  provenance_complete_count INTEGER NOT NULL DEFAULT 0 CHECK (provenance_complete_count >= 0),
+  pre_resolution_count INTEGER NOT NULL DEFAULT 0 CHECK (pre_resolution_count >= 0),
+  post_resolution_count INTEGER NOT NULL DEFAULT 0 CHECK (post_resolution_count >= 0),
+  gap_reason TEXT CHECK (gap_reason IS NULL OR length(gap_reason) BETWEEN 1 AND 256),
+  synthetic INTEGER NOT NULL CHECK (synthetic IN (0, 1)),
+  PRIMARY KEY (run_id, stratum_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE resolution_cases (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  observation_id TEXT NOT NULL REFERENCES bibliographic_observations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('WORK', 'EXPRESSION', 'EDITION', 'AGENT')),
+  candidate_entity_id TEXT CHECK (
+    candidate_entity_id IS NULL OR length(candidate_entity_id) >= 1
+  ),
+  outcome TEXT NOT NULL CHECK (outcome IN (
+    'PROBABLE_REVIEW', 'CONFLICT', 'INSUFFICIENT'
+  )),
+  feature_vector_json TEXT NOT NULL CHECK (
+    json_valid(feature_vector_json) AND json_type(feature_vector_json) = 'object' AND
+    length(CAST(feature_vector_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  rule_version TEXT NOT NULL CHECK (rule_version = 'entity-resolution-v1'),
+  status TEXT NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'RESOLVED', 'DISMISSED')),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE entity_redirects (
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('WORK', 'EXPRESSION', 'EDITION', 'AGENT')),
+  from_entity_id TEXT NOT NULL CHECK (length(from_entity_id) >= 1),
+  to_entity_id TEXT NOT NULL CHECK (length(to_entity_id) >= 1),
+  decision_id TEXT NOT NULL CHECK (length(decision_id) BETWEEN 1 AND 128),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (entity_type, from_entity_id),
+  CHECK (from_entity_id <> to_entity_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE resolution_decisions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  decision_type TEXT NOT NULL CHECK (decision_type IN ('MERGE', 'SPLIT', 'UNDO')),
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('WORK', 'EXPRESSION', 'EDITION', 'AGENT')),
+  survivor_entity_id TEXT NOT NULL CHECK (length(survivor_entity_id) >= 1),
+  affected_entity_id TEXT NOT NULL CHECK (length(affected_entity_id) >= 1),
+  parent_decision_id TEXT REFERENCES resolution_decisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  preview_hash TEXT NOT NULL CHECK (
+    length(preview_hash) = 64 AND preview_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  before_json TEXT NOT NULL CHECK (
+    json_valid(before_json) AND json_type(before_json) = 'object' AND
+    length(CAST(before_json AS BLOB)) BETWEEN 2 AND 262144
+  ),
+  after_json TEXT NOT NULL CHECK (
+    json_valid(after_json) AND json_type(after_json) = 'object' AND
+    length(CAST(after_json AS BLOB)) BETWEEN 2 AND 262144
+  ),
+  actor TEXT NOT NULL CHECK (actor = 'USER'),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE entity_lineage_memberships (
+  decision_id TEXT NOT NULL REFERENCES resolution_decisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  entity_type TEXT NOT NULL CHECK (entity_type IN ('WORK', 'EXPRESSION', 'EDITION', 'AGENT')),
+  entity_id TEXT NOT NULL CHECK (length(entity_id) >= 1),
+  membership_kind TEXT NOT NULL CHECK (membership_kind IN (
+    'SURVIVOR', 'MERGED_ENTITY', 'MOVED_CHILD', 'RESTORED_ENTITY', 'CREATED_SPLIT'
+  )),
+  parent_entity_id TEXT CHECK (parent_entity_id IS NULL OR length(parent_entity_id) >= 1),
+  ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
+  PRIMARY KEY (decision_id, entity_type, entity_id, membership_kind, ordinal)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE catalog_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'DISCOVERY_PREVIEWED', 'DISCOVERY_CONFIRMED', 'DISCOVERY_CANCELLED',
+    'OBSERVATION_CREATED', 'ENTITY_CREATED', 'ENTITY_EXACT_LINKED',
+    'RESOLUTION_CASE_CREATED', 'ENTITY_MERGED', 'ENTITY_SPLIT', 'DECISION_UNDONE'
+  )),
+  entity_type TEXT NOT NULL CHECK (length(entity_type) BETWEEN 1 AND 64),
+  entity_id TEXT NOT NULL CHECK (length(entity_id) >= 1),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 65536
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE INDEX idx_catalog_agents_name_state
+  ON catalog_agents(normalized_name, catalog_state, id);
+CREATE INDEX idx_catalog_alias_lookup
+  ON catalog_entity_aliases(entity_type, normalized_value, entity_id);
+CREATE INDEX idx_catalog_alias_entity
+  ON catalog_entity_aliases(entity_type, entity_id, alias_kind);
+CREATE INDEX idx_catalog_agent_rel_scope
+  ON catalog_agent_relations(scope_type, scope_id, role);
+CREATE INDEX idx_catalog_agent_rel_agent
+  ON catalog_agent_relations(agent_id, role, scope_type);
+CREATE INDEX idx_publication_rel_scope
+  ON publication_relationships(scope_type, scope_id, role);
+CREATE INDEX idx_publication_rel_agents
+  ON publication_relationships(subject_agent_id, object_agent_id, role);
+CREATE INDEX idx_observation_origin
+  ON bibliographic_observations(origin_kind, origin_record_id, origin_revision);
+CREATE INDEX idx_observation_title
+  ON bibliographic_observations(display_title_normalized, observed_at DESC);
+CREATE INDEX idx_observation_candidate ON bibliographic_observations(candidate_id);
+CREATE INDEX idx_observation_document ON bibliographic_observations(document_id);
+CREATE INDEX idx_observation_clip ON bibliographic_observations(clip_id);
+CREATE INDEX idx_identifier_entity
+  ON bibliographic_identifiers(entity_type, entity_id, namespace);
+CREATE INDEX idx_observation_links_entity
+  ON observation_entity_links(entity_type, entity_id, observation_id);
+CREATE INDEX idx_discovery_runs_status_time
+  ON discovery_runs(status, updated_at DESC);
+CREATE INDEX idx_discovery_origins_pending
+  ON discovery_run_origins(run_id, processed, sequence);
+CREATE INDEX idx_resolution_cases_queue
+  ON resolution_cases(status, outcome, updated_at DESC);
+CREATE INDEX idx_redirect_target
+  ON entity_redirects(entity_type, to_entity_id, active);
+CREATE INDEX idx_resolution_decisions_entity
+  ON resolution_decisions(entity_type, survivor_entity_id, created_at DESC);
+
+CREATE TRIGGER bibliographic_observations_append_only_update
+BEFORE UPDATE ON bibliographic_observations
+BEGIN
+  SELECT RAISE(ABORT, 'bibliographic observations are append-only');
+END;
+
+CREATE TRIGGER bibliographic_observations_append_only_delete
+BEFORE DELETE ON bibliographic_observations
+BEGIN
+  SELECT RAISE(ABORT, 'bibliographic observations are append-only');
+END;
+
+CREATE TRIGGER resolution_decisions_append_only_update
+BEFORE UPDATE ON resolution_decisions
+BEGIN
+  SELECT RAISE(ABORT, 'resolution decisions are append-only');
+END;
+
+CREATE TRIGGER resolution_decisions_append_only_delete
+BEFORE DELETE ON resolution_decisions
+BEGIN
+  SELECT RAISE(ABORT, 'resolution decisions are append-only');
+END;
+
+CREATE TRIGGER catalog_audit_append_only_update
+BEFORE UPDATE ON catalog_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'catalog audit is append-only');
+END;
+
+CREATE TRIGGER catalog_audit_append_only_delete
+BEFORE DELETE ON catalog_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'catalog audit is append-only');
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -2746,5 +3385,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'browser_clipper_samples',
     sql: BROWSER_CLIPPER_SAMPLES,
     version: 10,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'bibliographic_catalog_and_entity_resolution',
+    sql: BIBLIOGRAPHIC_CATALOG,
+    version: 11,
   }),
 ]);

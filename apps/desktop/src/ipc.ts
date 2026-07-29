@@ -1,11 +1,15 @@
 import { app, ipcMain } from 'electron';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 
+import { CatalogError } from '@mystery-operations/catalog';
 import { LocalApiError } from '@mystery-operations/local-api';
 import {
+  type CancelCatalogDiscoveryInput,
   type CancelLocalApiPairingRequest,
   type CancelProviderCapabilityProbeInput,
   type ConfirmModelCacheClearInput,
+  type ConfirmCatalogActionInput,
+  type ConfirmCatalogDiscoveryInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -18,8 +22,14 @@ import {
   type FoundationHealth,
   type GetCredentialStatusInput,
   type GetBrowserClipInput,
+  type GetCatalogStateInput,
+  type GetCatalogWorkInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
+  type PreviewCatalogDiscoveryInput,
+  type PreviewCatalogUndoInput,
+  type PreviewCatalogWorkMergeInput,
+  type PreviewCatalogWorkSplitInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
   type SetCredentialInput,
@@ -62,6 +72,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof CatalogError) {
+    return failure(error.code, error.message, error.retryable, error.safeDetails);
+  }
   if (error instanceof LocalApiError) {
     return failure(error.code, error.message, error.retryable, error.context);
   }
@@ -162,6 +175,130 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   register('getBrowserClip', DESKTOP_IPC_CHANNELS.getBrowserClip, (_event, args) =>
     options.settingsRuntime.getBrowserClip((args[0] as GetBrowserClipInput).clipId),
   );
+  register('getCatalogState', DESKTOP_IPC_CHANNELS.getCatalogState, (_event, args) =>
+    options.settingsRuntime.getCatalogState(args[0] as GetCatalogStateInput),
+  );
+  register('getCatalogWork', DESKTOP_IPC_CHANNELS.getCatalogWork, (_event, args) =>
+    options.settingsRuntime.getCatalogWork((args[0] as GetCatalogWorkInput).workId),
+  );
+  register(
+    'previewCatalogDiscovery',
+    DESKTOP_IPC_CHANNELS.previewCatalogDiscovery,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new CatalogError('CATALOG_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewCatalogDiscovery(
+        args[0] as PreviewCatalogDiscoveryInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmCatalogDiscovery',
+    DESKTOP_IPC_CHANNELS.confirmCatalogDiscovery,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new CatalogError('CATALOG_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmCatalogDiscovery(
+        args[0] as ConfirmCatalogDiscoveryInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register('cancelCatalogDiscovery', DESKTOP_IPC_CHANNELS.cancelCatalogDiscovery, (_event, args) =>
+    options.settingsRuntime.cancelCatalogDiscovery(args[0] as CancelCatalogDiscoveryInput),
+  );
+  register(
+    'previewCatalogWorkMerge',
+    DESKTOP_IPC_CHANNELS.previewCatalogWorkMerge,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new CatalogError('CATALOG_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewCatalogWorkMerge(
+        args[0] as PreviewCatalogWorkMergeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmCatalogWorkMerge',
+    DESKTOP_IPC_CHANNELS.confirmCatalogWorkMerge,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new CatalogError('CATALOG_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmCatalogAction(
+        'MERGE_WORKS',
+        args[0] as ConfirmCatalogActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'previewCatalogWorkSplit',
+    DESKTOP_IPC_CHANNELS.previewCatalogWorkSplit,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new CatalogError('CATALOG_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewCatalogWorkSplit(
+        args[0] as PreviewCatalogWorkSplitInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmCatalogWorkSplit',
+    DESKTOP_IPC_CHANNELS.confirmCatalogWorkSplit,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new CatalogError('CATALOG_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmCatalogAction(
+        'SPLIT_WORK',
+        args[0] as ConfirmCatalogActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register('previewCatalogUndo', DESKTOP_IPC_CHANNELS.previewCatalogUndo, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new CatalogError('CATALOG_INVALID_REQUEST');
+    }
+    return options.settingsRuntime.previewCatalogUndo(
+      args[0] as PreviewCatalogUndoInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmCatalogUndo', DESKTOP_IPC_CHANNELS.confirmCatalogUndo, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new CatalogError('CATALOG_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.confirmCatalogAction(
+      'UNDO_DECISION',
+      args[0] as ConfirmCatalogActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
   register('previewModelCacheClear', DESKTOP_IPC_CHANNELS.previewModelCacheClear, (event) => {
     const window = options.getWindow();
     if (window === null || window.webContents.id !== event.sender.id) {

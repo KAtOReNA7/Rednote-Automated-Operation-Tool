@@ -18,13 +18,28 @@ import {
   initializeDatabase,
 } from '@mystery-operations/db';
 import type {
+  CancelCatalogDiscoveryInput,
   CancelProviderCapabilityProbeInput,
+  CatalogActionKind,
+  CatalogActionPreview,
+  CatalogActionResult,
+  CatalogDiscoveryPreview,
+  CatalogRunView,
+  CatalogSummaryView,
+  CatalogWorkDetail,
+  ConfirmCatalogActionInput,
+  ConfirmCatalogDiscoveryInput,
   ConfirmModelCacheClearInput,
   ConfirmModelCacheClearResult,
   ConfirmDataRootSelectionInput,
   CreateModelPriceScheduleInput,
   CreateModelUnitPolicyInput,
   DataRootSelection,
+  GetCatalogStateInput,
+  PreviewCatalogDiscoveryInput,
+  PreviewCatalogUndoInput,
+  PreviewCatalogWorkMergeInput,
+  PreviewCatalogWorkSplitInput,
   PreviewProviderCapabilityProbeInput,
   ProviderCapabilityProbePreview,
   ProviderCapabilityProbeProgressView,
@@ -69,6 +84,7 @@ import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import { DesktopSearchRuntime } from './search-runtime.js';
 import { DesktopFetchRuntime } from './fetch-runtime.js';
 import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
+import { DesktopCatalogRuntime } from './catalog-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -105,6 +121,7 @@ interface RuntimeVersions {
 
 interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
+  readonly catalog: DesktopCatalogRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
   readonly clipper: DesktopBrowserClipRuntime;
   readonly database: DatabaseSync;
@@ -400,9 +417,11 @@ export class DesktopSettingsRuntime {
         status: 'READY',
       };
       await previous?.capabilities.close();
+      await previous?.catalog.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
+      await prepared.catalog.close();
       prepared.database.close();
       throw error;
     }
@@ -449,6 +468,67 @@ export class DesktopSettingsRuntime {
 
   public getBrowserClip(clipId: string): BrowserClipViewV1 | null {
     return this.#requireActive().clipper.getClip(clipId);
+  }
+
+  public getCatalogState(input: GetCatalogStateInput): CatalogSummaryView {
+    return this.#requireActive().catalog.getState(input);
+  }
+
+  public getCatalogWork(workId: string): CatalogWorkDetail | null {
+    return this.#requireActive().catalog.getWork(workId);
+  }
+
+  public previewCatalogDiscovery(
+    input: PreviewCatalogDiscoveryInput,
+    senderId: number,
+    windowId: number,
+  ): CatalogDiscoveryPreview {
+    return this.#requireActive().catalog.previewDiscovery(input, senderId, windowId);
+  }
+
+  public confirmCatalogDiscovery(
+    input: ConfirmCatalogDiscoveryInput,
+    senderId: number,
+    windowId: number,
+  ): CatalogRunView {
+    return this.#requireActive().catalog.confirmDiscovery(input, senderId, windowId);
+  }
+
+  public cancelCatalogDiscovery(input: CancelCatalogDiscoveryInput): CatalogRunView {
+    return this.#requireActive().catalog.cancelDiscovery(input);
+  }
+
+  public previewCatalogWorkMerge(
+    input: PreviewCatalogWorkMergeInput,
+    senderId: number,
+    windowId: number,
+  ): CatalogActionPreview {
+    return this.#requireActive().catalog.previewWorkMerge(input, senderId, windowId);
+  }
+
+  public previewCatalogWorkSplit(
+    input: PreviewCatalogWorkSplitInput,
+    senderId: number,
+    windowId: number,
+  ): CatalogActionPreview {
+    return this.#requireActive().catalog.previewWorkSplit(input, senderId, windowId);
+  }
+
+  public previewCatalogUndo(
+    input: PreviewCatalogUndoInput,
+    senderId: number,
+    windowId: number,
+  ): CatalogActionPreview {
+    return this.#requireActive().catalog.previewUndo(input, senderId, windowId);
+  }
+
+  public confirmCatalogAction(
+    kind: CatalogActionKind,
+    input: ConfirmCatalogActionInput,
+    senderId: number,
+    windowId: number,
+  ): CatalogActionResult {
+    return this.#requireActive().catalog.confirmAction(kind, input, senderId, windowId);
   }
 
   public readBrowserClipScreenshot(
@@ -524,6 +604,7 @@ export class DesktopSettingsRuntime {
     this.#localApi.clearWindowPairings(windowId);
     this.#active?.capabilities.clearWindow(windowId);
     this.#active?.accounting.clearWindow(windowId);
+    this.#active?.catalog.clearWindow(windowId);
   }
 
   public getLocalApiStatus(): LocalApiStatusView {
@@ -561,6 +642,7 @@ export class DesktopSettingsRuntime {
   public async close(): Promise<void> {
     await this.#localApi.close();
     await this.#active?.capabilities.close();
+    await this.#active?.catalog.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -619,8 +701,10 @@ export class DesktopSettingsRuntime {
     const search = new DesktopSearchRuntime(database);
     const clipper = new DesktopBrowserClipRuntime(database, root);
     const fetch = new DesktopFetchRuntime(database, root);
+    const catalog = new DesktopCatalogRuntime(database);
+    catalog.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
-    return { accounting, capabilities, clipper, database, fetch, root, search, service };
+    return { accounting, capabilities, catalog, clipper, database, fetch, root, search, service };
   }
 
   #requireActive(): ActiveProject {

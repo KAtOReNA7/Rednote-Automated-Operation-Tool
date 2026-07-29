@@ -83,17 +83,21 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
     authors: ['id', 'canonical_name', 'original_name', 'country_or_region', 'profile', 'source_id'],
     book_editions: [
       'id',
-      'book_id',
+      'expression_id',
       'isbn',
       'translated_title',
       'translator',
       'publisher',
       'publication_date',
       'edition_label',
+      'format',
+      'platform',
       'cover_asset_id',
       'is_motie',
       'is_unreleased',
       'source_id',
+      'catalog_state',
+      'catalog_revision',
     ],
     books: [
       'id',
@@ -111,6 +115,8 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'topic_score',
       'created_at',
       'updated_at',
+      'catalog_state',
+      'catalog_revision',
     ],
     claim_evidence: [
       'claim_id',
@@ -412,10 +418,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
         backupPath: null,
         databasePath,
-        schemaVersion: 10,
+        schemaVersion: 11,
       });
       expect(tables).toEqual(
         [
@@ -442,6 +448,26 @@ describe('SQLite initialization and migrations', () => {
           'search_rate_limit_states',
           'search_result_candidates',
           'search_runs',
+          'bibliographic_identifiers',
+          'bibliographic_observation_fields',
+          'bibliographic_observations',
+          'catalog_agent_relations',
+          'catalog_agents',
+          'catalog_audit_events',
+          'catalog_entity_aliases',
+          'discovery_plan_strata',
+          'discovery_plans',
+          'discovery_profiles',
+          'discovery_run_origins',
+          'discovery_run_stratum_coverage',
+          'discovery_runs',
+          'entity_lineage_memberships',
+          'entity_redirects',
+          'expressions',
+          'observation_entity_links',
+          'publication_relationships',
+          'resolution_cases',
+          'resolution_decisions',
         ].sort(),
       );
     } finally {
@@ -502,9 +528,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 10,
+        schemaVersion: 11,
       });
-      expect(row.count).toBe(10);
+      expect(row.count).toBe(11);
     } finally {
       database.close();
     }

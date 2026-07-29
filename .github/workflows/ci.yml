@@ -89,6 +89,9 @@ jobs:
       - name: Run Chrome and Edge browser clipper suites
         run: npm run test:clipper
 
+      - name: Run bibliographic discovery and entity resolution suites
+        run: npm run test:bibliography
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

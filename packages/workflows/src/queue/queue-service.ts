@@ -35,6 +35,7 @@ export class JobQueueServiceError extends Error {
 }
 
 export interface JobQueueServiceOptions {
+  readonly allowedJobTypes?: readonly string[];
   readonly backoffPolicy?: BackoffPolicy;
   readonly clock?: QueueClock;
   readonly idFactory?: () => string;
@@ -103,6 +104,7 @@ function assertIdentifier(value: string, name: string, maximum: number): string 
 }
 
 export class JobQueueService {
+  readonly #allowedJobTypes: readonly string[] | undefined;
   readonly #backoffPolicy: BackoffPolicy;
   readonly #clock: QueueClock;
   readonly #idFactory: () => string;
@@ -118,6 +120,14 @@ export class JobQueueService {
   ) {
     this.#repository = repository;
     this.#registry = registry;
+    this.#allowedJobTypes =
+      options.allowedJobTypes === undefined
+        ? undefined
+        : Object.freeze(
+            options.allowedJobTypes.map((jobType) =>
+              assertIdentifier(jobType, 'allowedJobTypes[]', 128),
+            ),
+          );
     this.#clock = options.clock ?? new SystemQueueClock();
     this.#backoffPolicy = options.backoffPolicy ?? new ExponentialBackoffPolicy();
     this.#payloadValidator = options.payloadValidator ?? new JobPayloadValidator();
@@ -165,6 +175,7 @@ export class JobQueueService {
     assertPositiveInteger(duration, 'leaseDurationMilliseconds', 86_400_000);
     const now = this.#clock.now();
     const job = this.#repository.claimNext({
+      ...(this.#allowedJobTypes === undefined ? {} : { allowedJobTypes: this.#allowedJobTypes }),
       leaseExpiresAt: new Date(now.getTime() + duration).toISOString(),
       leaseToken: this.#idFactory(),
       now: isoDate(now, 'clock.now()'),

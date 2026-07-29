@@ -1,4 +1,8 @@
 export { ExponentialBackoffPolicy } from './queue/backoff.js';
+export {
+  createBibliographyDiscoveryJobHandler,
+  registerBibliographyDiscoveryJob,
+} from './bibliography-discovery-handler.js';
 export { QueueSleepAbortedError, SystemQueueClock, SystemQueueScheduler } from './queue/clock.js';
 export { JobHandlerExecutionError, sanitizeJobError } from './queue/error-sanitizer.js';
 export { JobHandlerRegistry } from './queue/handler-registry.js';

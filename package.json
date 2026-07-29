@@ -24,6 +24,7 @@
     "format-check": "prettier --check .",
     "lint": "eslint . --max-warnings=0",
     "test": "node scripts/run-portable-vitest.mjs run",
+    "test:bibliography": "node scripts/run-portable-vitest.mjs run tests/bibliography-contracts.test.ts tests/bibliography-repository.test.ts tests/bibliography-discovery.test.ts tests/bibliography-capacity.test.ts tests/bibliography-renderer.test.tsx tests/bibliography-governance.test.ts tests/settings-ipc.test.ts",
     "test:capabilities": "node scripts/run-portable-vitest.mjs run tests/provider-capability-plan.test.ts tests/provider-capability-classifier.test.ts tests/provider-capability-transport.test.ts tests/provider-capability-runner.test.ts tests/provider-capability-guard.test.ts tests/provider-capability-db.test.ts tests/provider-capability-runtime.test.ts tests/provider-capability-renderer.test.tsx tests/provider-capability-secret-egress.test.ts tests/provider-capability-architecture.test.ts",
     "test:clipper": "node scripts/run-portable-vitest.mjs run tests/clipper-contracts.test.ts tests/clipper-service-worker.test.ts tests/clipper-db.test.ts tests/clipper-local-api.test.ts tests/clipper-screenshot.test.ts tests/clipper-renderer.test.tsx tests/clipper-architecture.test.ts tests/clipper-egress.test.ts tests/clipper-real-smoke-harness.test.ts",
     "test:clipper-real": "npm run build:clipper && tsc -b --pretty false && node scripts/run-clipper-real-smoke.mjs",

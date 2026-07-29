@@ -7,6 +7,7 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "noEmit": true,
     "paths": {
+      "@mystery-operations/catalog": ["./packages/catalog/src/index.ts"],
       "@mystery-operations/core": ["./packages/core/src/index.ts"],
       "@mystery-operations/clipper": ["./apps/clipper/src/index.ts"],
       "@mystery-operations/db": ["./packages/db/src/index.ts"],

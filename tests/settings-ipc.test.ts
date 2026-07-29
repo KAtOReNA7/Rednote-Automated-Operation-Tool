@@ -9,6 +9,13 @@ const RENDERER = 'rednote://app/index.html';
 
 const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> = {
   buildDiagnosticPreview: [],
+  cancelCatalogDiscovery: [
+    {
+      confirmation: 'CANCEL_BIBLIOGRAPHY_DISCOVERY',
+      expectedRevision: 1,
+      runId: 'run-fixture-000001',
+    },
+  ],
   cancelProviderCapabilityProbe: [
     {
       confirmation: 'CANCEL_PROVIDER_CAPABILITY_PROBE',
@@ -27,6 +34,35 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       expectedBytes: 0,
       expectedCount: 0,
       previewToken: 'a'.repeat(43),
+    },
+  ],
+  confirmCatalogDiscovery: [
+    {
+      confirmation: 'START_BIBLIOGRAPHY_DISCOVERY',
+      expectedRevision: 1,
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmCatalogUndo: [
+    {
+      confirmation: 'APPLY_CATALOG_DECISION',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmCatalogWorkMerge: [
+    {
+      confirmation: 'APPLY_CATALOG_DECISION',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmCatalogWorkSplit: [
+    {
+      confirmation: 'APPLY_CATALOG_DECISION',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
     },
   ],
   confirmDataRootSelection: [
@@ -79,6 +115,8 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getBrowserClip: [
     { clipId: `clip-${'a'.repeat(8)}-${'b'.repeat(4)}-4ccc-8ddd-${'e'.repeat(12)}` },
   ],
+  getCatalogState: [{ limit: 25, offset: 0, query: '' }],
+  getCatalogWork: [{ workId: 'work-fixture-000001' }],
   getModelAccounting: [],
   getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
   getProviderCapabilityState: [],
@@ -104,6 +142,32 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       includeToolCalling: false,
       profile: 'CORE',
       selectedCapabilities: [],
+    },
+  ],
+  previewCatalogDiscovery: [
+    {
+      batchSize: 50,
+      maxObservations: 500,
+      maxRuntimeMs: 60_000,
+      originKinds: ['SEARCH_CANDIDATE', 'FETCH_DOCUMENT', 'BROWSER_CLIP_CANDIDATE'],
+      purpose: 'PILOT_CONTENT',
+    },
+  ],
+  previewCatalogUndo: [{ decisionId: 'decision-fixture-000001' }],
+  previewCatalogWorkMerge: [
+    {
+      duplicateRevision: 1,
+      duplicateWorkId: 'work-duplicate-000001',
+      survivorRevision: 1,
+      survivorWorkId: 'work-survivor-000001',
+    },
+  ],
+  previewCatalogWorkSplit: [
+    {
+      expressionIds: ['expression-fixture-000001'],
+      newCanonicalTitle: '拆分后的作品',
+      sourceRevision: 1,
+      sourceWorkId: 'work-source-000001',
     },
   ],
   previewModelCacheClear: [],
@@ -337,5 +401,30 @@ describe('Issue 010 strict IPC request policy', () => {
         'setCredential',
       ),
     ).toMatchObject({ error: { code: 'INVALID_REQUEST' } });
+  });
+
+  it('rejects catalog SQL, paths, raw payloads, invalid limits and malformed confirmation tokens', () => {
+    const state = validRequests.getCatalogState[0] as Record<string, unknown>;
+    const discovery = validRequests.previewCatalogDiscovery[0] as Record<string, unknown>;
+    const confirmation = validRequests.confirmCatalogWorkMerge[0] as Record<string, unknown>;
+    for (const invalid of [
+      [{ ...state, sql: 'SELECT * FROM books' }, 'getCatalogState'],
+      [{ ...state, absolutePath: 'C:\\private\\catalog.sqlite' }, 'getCatalogState'],
+      [{ ...discovery, maxObservations: 0 }, 'previewCatalogDiscovery'],
+      [{ ...discovery, batchSize: 1_001 }, 'previewCatalogDiscovery'],
+      [{ ...discovery, rawResponse: '<html>unsafe</html>' }, 'previewCatalogDiscovery'],
+      [{ ...confirmation, token: 'short' }, 'confirmCatalogWorkMerge'],
+      [{ ...confirmation, previewHash: 'not-a-hash' }, 'confirmCatalogWorkMerge'],
+      [{ ...confirmation, confirmation: 'YES' }, 'confirmCatalogWorkMerge'],
+    ] as const) {
+      expect(
+        validateDesktopIpcRequest(
+          RENDERER,
+          [invalid[0]],
+          RENDERER,
+          invalid[1] as DesktopIpcOperation,
+        ),
+      ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    }
   });
 });

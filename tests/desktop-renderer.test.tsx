@@ -327,9 +327,9 @@ describe('React desktop shell', () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText('本地安全底座已就绪');
-    await user.click(screen.getByRole('link', { name: /书库/u }));
+    await user.click(screen.getByRole('link', { name: /资料研究/u }));
 
-    expect(await screen.findByRole('heading', { name: '书库', level: 1 })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '资料研究', level: 1 })).toBeInTheDocument();
     expect(screen.getByText('这里还是一个清晰的占位页')).toBeInTheDocument();
     expect(screen.getByText(/尚未在当前里程碑实现/u)).toBeInTheDocument();
     expect(screen.queryByRole('button')).not.toBeInTheDocument();

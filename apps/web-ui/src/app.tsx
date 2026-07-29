@@ -4,6 +4,7 @@ import { NAVIGATION_ITEMS, resolveRoute } from './routes.js';
 import { ModelAccountingCenter } from './model-accounting-center.js';
 import { FetchRunPanel } from './fetch-run-panel.js';
 import { BrowserClipLibrary } from './browser-clip-library.js';
+import { LibraryPage } from './library-page.js';
 import { SettingsPage } from './settings-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
@@ -100,9 +101,9 @@ export function App(): React.JSX.Element {
                 key={item.path}
               >
                 <span aria-hidden="true" className="nav-icon">
-                  {item.shortLabel}
+                  {item.path === '/library' ? '书' : item.shortLabel}
                 </span>
-                <span>{item.label}</span>
+                <span>{item.path === '/library' ? '书库' : item.label}</span>
               </a>
             );
           })}
@@ -153,6 +154,8 @@ export function App(): React.JSX.Element {
               <ModelAccountingCenter />
               <FetchRunPanel />
             </div>
+          ) : route.path === '/library' ? (
+            <LibraryPage />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">

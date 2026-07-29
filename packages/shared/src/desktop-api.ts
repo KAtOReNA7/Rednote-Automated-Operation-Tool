@@ -27,6 +27,23 @@ import type {
   RevokeLocalApiClientRequest,
   UpdateLocalApiSettingsRequest,
 } from './local-api-contracts.js';
+import type {
+  CancelCatalogDiscoveryInput,
+  CatalogActionPreview,
+  CatalogActionResult,
+  CatalogDiscoveryPreview,
+  CatalogRunView,
+  CatalogSummaryView,
+  CatalogWorkDetail,
+  ConfirmCatalogActionInput,
+  ConfirmCatalogDiscoveryInput,
+  GetCatalogStateInput,
+  GetCatalogWorkInput,
+  PreviewCatalogDiscoveryInput,
+  PreviewCatalogUndoInput,
+  PreviewCatalogWorkMergeInput,
+  PreviewCatalogWorkSplitInput,
+} from './catalog-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -41,6 +58,17 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getFetchState: 'fetch:get-state',
   listBrowserClips: 'clipper:list-clips',
   getBrowserClip: 'clipper:get-clip',
+  getCatalogState: 'catalog:get-state',
+  getCatalogWork: 'catalog:get-work',
+  previewCatalogDiscovery: 'catalog:preview-discovery',
+  confirmCatalogDiscovery: 'catalog:confirm-discovery',
+  cancelCatalogDiscovery: 'catalog:cancel-discovery',
+  previewCatalogWorkMerge: 'catalog:preview-work-merge',
+  confirmCatalogWorkMerge: 'catalog:confirm-work-merge',
+  previewCatalogWorkSplit: 'catalog:preview-work-split',
+  confirmCatalogWorkSplit: 'catalog:confirm-work-split',
+  previewCatalogUndo: 'catalog:preview-undo',
+  confirmCatalogUndo: 'catalog:confirm-undo',
   getModelAccounting: 'models:get-accounting',
   previewModelCacheClear: 'models:preview-cache-clear',
   confirmModelCacheClear: 'models:confirm-cache-clear',
@@ -96,6 +124,16 @@ export interface DesktopError {
     | 'PROBE_INVALID_REQUEST'
     | 'PROBE_NOT_RUNNING'
     | 'PROBE_STALE'
+    | 'CATALOG_CONFIRMATION_EXPIRED'
+    | 'CATALOG_CONFIRMATION_INVALID'
+    | 'CATALOG_CONFLICT'
+    | 'CATALOG_ENTITY_NOT_FOUND'
+    | 'CATALOG_INVALID_IDENTIFIER'
+    | 'CATALOG_INVALID_OBSERVATION'
+    | 'CATALOG_INVALID_PLAN'
+    | 'CATALOG_INVALID_REQUEST'
+    | 'CATALOG_RUN_NOT_FOUND'
+    | 'CATALOG_STALE_REVISION'
     | LocalApiErrorCode
     | SettingsErrorCode;
   readonly context?: Readonly<Record<string, boolean | number | string>>;
@@ -548,6 +586,33 @@ export interface DesktopBridge {
   getFetchState?(): Promise<DesktopResult<FetchStateView>>;
   listBrowserClips?(): Promise<DesktopResult<readonly BrowserClipView[]>>;
   getBrowserClip?(input: GetBrowserClipInput): Promise<DesktopResult<BrowserClipView | null>>;
+  getCatalogState?(input: GetCatalogStateInput): Promise<DesktopResult<CatalogSummaryView>>;
+  getCatalogWork?(input: GetCatalogWorkInput): Promise<DesktopResult<CatalogWorkDetail | null>>;
+  previewCatalogDiscovery?(
+    input: PreviewCatalogDiscoveryInput,
+  ): Promise<DesktopResult<CatalogDiscoveryPreview>>;
+  confirmCatalogDiscovery?(
+    input: ConfirmCatalogDiscoveryInput,
+  ): Promise<DesktopResult<CatalogRunView>>;
+  cancelCatalogDiscovery?(
+    input: CancelCatalogDiscoveryInput,
+  ): Promise<DesktopResult<CatalogRunView>>;
+  previewCatalogWorkMerge?(
+    input: PreviewCatalogWorkMergeInput,
+  ): Promise<DesktopResult<CatalogActionPreview>>;
+  confirmCatalogWorkMerge?(
+    input: ConfirmCatalogActionInput,
+  ): Promise<DesktopResult<CatalogActionResult>>;
+  previewCatalogWorkSplit?(
+    input: PreviewCatalogWorkSplitInput,
+  ): Promise<DesktopResult<CatalogActionPreview>>;
+  confirmCatalogWorkSplit?(
+    input: ConfirmCatalogActionInput,
+  ): Promise<DesktopResult<CatalogActionResult>>;
+  previewCatalogUndo?(input: PreviewCatalogUndoInput): Promise<DesktopResult<CatalogActionPreview>>;
+  confirmCatalogUndo?(
+    input: ConfirmCatalogActionInput,
+  ): Promise<DesktopResult<CatalogActionResult>>;
   previewProviderCapabilityProbe(
     input: PreviewProviderCapabilityProbeInput,
   ): Promise<DesktopResult<ProviderCapabilityProbePreview>>;

@@ -72,6 +72,7 @@ export interface EnqueueStoredJobInput {
 }
 
 export interface ClaimStoredJobInput {
+  readonly allowedJobTypes?: readonly string[];
   readonly leaseExpiresAt: string;
   readonly leaseToken: string;
   readonly now: string;
@@ -198,6 +199,13 @@ export class JobQueueRepository {
 
   public claimNext(input: ClaimStoredJobInput): StoredJob | null {
     return runInTransaction(this.#database, () => {
+      if (input.allowedJobTypes !== undefined && input.allowedJobTypes.length === 0) {
+        return null;
+      }
+      const typeFilter =
+        input.allowedJobTypes === undefined
+          ? ''
+          : `AND job_type IN (${input.allowedJobTypes.map(() => '?').join(',')})`;
       const candidate = this.#database
         .prepare(
           `SELECT ${JOB_COLUMNS}
@@ -205,10 +213,11 @@ export class JobQueueRepository {
            WHERE status IN ('QUEUED', 'RETRY_WAIT')
              AND next_run_at <= ?
              AND attempt_count < max_attempts
+             ${typeFilter}
            ORDER BY priority DESC, next_run_at ASC, created_at ASC, id ASC
            LIMIT 1`,
         )
-        .get(input.now);
+        .get(input.now, ...(input.allowedJobTypes ?? []));
 
       if (candidate === undefined) {
         return null;
