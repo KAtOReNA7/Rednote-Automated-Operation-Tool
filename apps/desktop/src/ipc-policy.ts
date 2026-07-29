@@ -5,6 +5,7 @@ import { isTrustedRendererUrl } from './security-policy.js';
 export type DesktopIpcOperation =
   | 'buildDiagnosticPreview'
   | 'cancelCatalogDiscovery'
+  | 'cancelDossierBuild'
   | 'cancelSourceProcessing'
   | 'cancelProviderCapabilityProbe'
   | 'clearCredential'
@@ -14,6 +15,7 @@ export type DesktopIpcOperation =
   | 'confirmCatalogWorkMerge'
   | 'confirmCatalogWorkSplit'
   | 'confirmEvidenceConflict'
+  | 'confirmDossierBuild'
   | 'confirmSourceProcessing'
   | 'confirmDataRootSelection'
   | 'createModelPriceSchedule'
@@ -27,6 +29,7 @@ export type DesktopIpcOperation =
   | 'getCatalogState'
   | 'getCatalogWork'
   | 'getEvidenceState'
+  | 'getDossier'
   | 'getModelAccounting'
   | 'getProviderCapabilityProbeProgress'
   | 'getProviderCapabilityState'
@@ -38,6 +41,7 @@ export type DesktopIpcOperation =
   | 'getWindowState'
   | 'listLocalApiClients'
   | 'listBrowserClips'
+  | 'listDossiers'
   | 'cancelLocalApiPairing'
   | 'revokeLocalApiClient'
   | 'selectDataRoot'
@@ -48,7 +52,9 @@ export type DesktopIpcOperation =
   | 'previewCatalogWorkMerge'
   | 'previewCatalogWorkSplit'
   | 'previewEvidenceConflict'
+  | 'previewDossierBuild'
   | 'previewSourceProcessing'
+  | 'diffDossierVersions'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
   | 'startLocalApiPairing'
@@ -135,6 +141,16 @@ function catalogRevision(value: unknown): boolean {
   return typeof value === 'number' && Number.isSafeInteger(value) && value >= 1;
 }
 
+function dossierIdentifier(value: unknown, maximum = 768): value is string {
+  return (
+    typeof value === 'string' &&
+    value.trim() === value &&
+    value.length >= 1 &&
+    Buffer.byteLength(value, 'utf8') <= maximum &&
+    !containsControlCharacter(value)
+  );
+}
+
 function catalogConfirmation(value: Readonly<Record<string, unknown>> | null): boolean {
   return (
     value?.confirmation === 'APPLY_CATALOG_DECISION' &&
@@ -219,6 +235,68 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         Number.isSafeInteger(value.offset) &&
         Number(value.offset) >= 0 &&
         Number(value.offset) <= 1_000_000
+      );
+    }
+    case 'listDossiers': {
+      const value = validateOneObject(args, ['limit', 'offset']);
+      return (
+        value !== null &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= 100 &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= 1_000_000
+      );
+    }
+    case 'getDossier': {
+      const value = validateOneObject(args, ['dossierId', 'entryLimit', 'entryOffset']);
+      return (
+        value !== null &&
+        dossierIdentifier(value.dossierId) &&
+        Number.isSafeInteger(value.entryLimit) &&
+        Number(value.entryLimit) >= 1 &&
+        Number(value.entryLimit) <= 100 &&
+        Number.isSafeInteger(value.entryOffset) &&
+        Number(value.entryOffset) >= 0 &&
+        Number(value.entryOffset) <= 1_000_000
+      );
+    }
+    case 'previewDossierBuild': {
+      const value = validateOneObject(args, ['subjectId', 'subjectType']);
+      return (
+        value !== null &&
+        dossierIdentifier(value.subjectId, 128) &&
+        ['WORK', 'EXPRESSION', 'EDITION'].includes(String(value.subjectType))
+      );
+    }
+    case 'confirmDossierBuild': {
+      const value = validateOneObject(args, ['confirmation', 'planHash', 'previewHash', 'token']);
+      return (
+        value?.confirmation === 'START_DOSSIER_BUILD' &&
+        typeof value.planHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.planHash) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'cancelDossierBuild': {
+      const value = validateOneObject(args, ['confirmation', 'expectedRevision', 'runId']);
+      return (
+        value?.confirmation === 'CANCEL_DOSSIER_BUILD' &&
+        catalogRevision(value.expectedRevision) &&
+        dossierIdentifier(value.runId)
+      );
+    }
+    case 'diffDossierVersions': {
+      const value = validateOneObject(args, ['dossierId', 'fromVersionId', 'toVersionId']);
+      return (
+        value !== null &&
+        dossierIdentifier(value.dossierId) &&
+        (value.fromVersionId === null || dossierIdentifier(value.fromVersionId)) &&
+        dossierIdentifier(value.toVersionId)
       );
     }
     case 'previewEvidenceConflict': {

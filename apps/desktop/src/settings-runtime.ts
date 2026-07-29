@@ -28,8 +28,10 @@ import type {
   CatalogSummaryView,
   CatalogWorkDetail,
   CancelSourceProcessingInput,
+  CancelDossierBuildInput,
   ConfirmEvidenceConflictInput,
   ConfirmSourceProcessingInput,
+  ConfirmDossierBuildInput,
   ConfirmCatalogActionInput,
   ConfirmCatalogDiscoveryInput,
   ConfirmModelCacheClearInput,
@@ -40,12 +42,15 @@ import type {
   DataRootSelection,
   GetCatalogStateInput,
   GetEvidenceStateInput,
+  GetDossierInput,
+  ListDossiersInput,
   PreviewCatalogDiscoveryInput,
   PreviewCatalogUndoInput,
   PreviewCatalogWorkMergeInput,
   PreviewCatalogWorkSplitInput,
   PreviewEvidenceConflictInput,
   PreviewSourceProcessingInput,
+  PreviewDossierBuildInput,
   PreviewProviderCapabilityProbeInput,
   ProviderCapabilityProbePreview,
   ProviderCapabilityProbeProgressView,
@@ -60,6 +65,12 @@ import type {
   EvidenceConflictView,
   EvidenceStateView,
   SourceProcessingPreview,
+  DiffDossierVersionsInput,
+  DossierBuildPreview,
+  DossierBuildRun,
+  DossierDetailStateView,
+  DossierListStateView,
+  DossierVersionDiffView,
   SetupStateView,
   StartProviderCapabilityProbeInput,
   UpdateSearchProviderConfigInput,
@@ -96,6 +107,7 @@ import { DesktopFetchRuntime } from './fetch-runtime.js';
 import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
 import { DesktopCatalogRuntime } from './catalog-runtime.js';
 import { DesktopEvidenceRuntime } from './evidence-runtime.js';
+import { DesktopDossierRuntime } from './dossier-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -134,6 +146,7 @@ interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
+  readonly dossier: DesktopDossierRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
   readonly clipper: DesktopBrowserClipRuntime;
   readonly database: DatabaseSync;
@@ -430,10 +443,12 @@ export class DesktopSettingsRuntime {
       };
       await previous?.capabilities.close();
       await previous?.catalog.close();
+      await previous?.dossier.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
       await prepared.catalog.close();
+      await prepared.dossier.close();
       prepared.database.close();
       throw error;
     }
@@ -528,6 +543,38 @@ export class DesktopSettingsRuntime {
 
   public cancelSourceProcessing(input: CancelSourceProcessingInput): EvidenceStateView {
     return this.#requireActive().evidence.cancelProcessing(input);
+  }
+
+  public listDossiers(input: ListDossiersInput): DossierListStateView {
+    return this.#requireActive().dossier.list(input);
+  }
+
+  public getDossier(input: GetDossierInput): DossierDetailStateView {
+    return this.#requireActive().dossier.get(input);
+  }
+
+  public previewDossierBuild(
+    input: PreviewDossierBuildInput,
+    senderId: number,
+    windowId: number,
+  ): DossierBuildPreview {
+    return this.#requireActive().dossier.preview(input, senderId, windowId);
+  }
+
+  public confirmDossierBuild(
+    input: ConfirmDossierBuildInput,
+    senderId: number,
+    windowId: number,
+  ): DossierBuildRun {
+    return this.#requireActive().dossier.confirm(input, senderId, windowId);
+  }
+
+  public cancelDossierBuild(input: CancelDossierBuildInput): DossierBuildRun {
+    return this.#requireActive().dossier.cancel(input);
+  }
+
+  public diffDossierVersions(input: DiffDossierVersionsInput): DossierVersionDiffView {
+    return this.#requireActive().dossier.diff(input);
   }
 
   public previewCatalogDiscovery(
@@ -658,6 +705,7 @@ export class DesktopSettingsRuntime {
     this.#active?.accounting.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
+    this.#active?.dossier.clearWindow(windowId);
   }
 
   public getLocalApiStatus(): LocalApiStatusView {
@@ -696,6 +744,7 @@ export class DesktopSettingsRuntime {
     await this.#localApi.close();
     await this.#active?.capabilities.close();
     await this.#active?.catalog.close();
+    await this.#active?.dossier.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -756,12 +805,15 @@ export class DesktopSettingsRuntime {
     const fetch = new DesktopFetchRuntime(database, root);
     const catalog = new DesktopCatalogRuntime(database);
     const evidence = new DesktopEvidenceRuntime(database);
+    const dossier = new DesktopDossierRuntime(database);
     catalog.start();
+    dossier.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
     return {
       accounting,
       capabilities,
       catalog,
+      dossier,
       clipper,
       database,
       evidence,

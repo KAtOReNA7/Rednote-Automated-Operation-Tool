@@ -9,6 +9,11 @@ export {
   registerEvidenceProcessingJobs,
   validateEvidenceProcessingOutputV1,
 } from './evidence-processing-handler.js';
+export {
+  DossierBuildService,
+  createDossierBuildJobHandler,
+  registerDossierBuildJob,
+} from './dossier-build-handler.js';
 export { QueueSleepAbortedError, SystemQueueClock, SystemQueueScheduler } from './queue/clock.js';
 export { JobHandlerExecutionError, sanitizeJobError } from './queue/error-sanitizer.js';
 export { JobHandlerRegistry } from './queue/handler-registry.js';
@@ -69,3 +74,8 @@ export type {
   EvidenceProcessingServiceOptions,
   EvidenceSnapshotV1,
 } from './evidence-processing-handler.js';
+export type {
+  DossierBuildPersistence,
+  DossierBuildResultV1,
+  DossierBuildServiceOptions,
+} from './dossier-build-handler.js';

@@ -16,6 +16,13 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       runId: 'run-fixture-000001',
     },
   ],
+  cancelDossierBuild: [
+    {
+      confirmation: 'CANCEL_DOSSIER_BUILD',
+      expectedRevision: 2,
+      runId: 'dossier-run-fixture',
+    },
+  ],
   cancelSourceProcessing: [
     {
       confirmation: 'CANCEL_SOURCE_PROCESSING',
@@ -69,6 +76,14 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     {
       confirmation: 'APPLY_CATALOG_DECISION',
       previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmDossierBuild: [
+    {
+      confirmation: 'START_DOSSIER_BUILD',
+      planHash: 'a'.repeat(64),
+      previewHash: 'b'.repeat(64),
       token: 'a'.repeat(43),
     },
   ],
@@ -140,6 +155,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   ],
   getCatalogState: [{ limit: 25, offset: 0, query: '' }],
   getCatalogWork: [{ workId: 'work-fixture-000001' }],
+  getDossier: [{ dossierId: 'dossier-fixture', entryLimit: 25, entryOffset: 0 }],
   getEvidenceState: [{ limit: 25, offset: 0 }],
   getModelAccounting: [],
   getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
@@ -151,6 +167,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getSetupState: [],
   getWindowState: [],
   listLocalApiClients: [],
+  listDossiers: [{ limit: 25, offset: 0 }],
   listBrowserClips: [],
   cancelLocalApiPairing: [{ pairingSessionId: 'pairing-session-000011' }],
   revokeLocalApiClient: [
@@ -207,7 +224,15 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       sourceRevisionIds: ['source-fixture:1'],
     },
   ],
+  previewDossierBuild: [{ subjectId: 'work-fixture', subjectType: 'WORK' }],
   previewModelCacheClear: [],
+  diffDossierVersions: [
+    {
+      dossierId: 'dossier-fixture',
+      fromVersionId: null,
+      toVersionId: 'dossier-version-fixture',
+    },
+  ],
   setCredential: [
     {
       plaintext: 'runtime-only-unusable-value',
@@ -352,6 +377,45 @@ describe('Issue 010 strict IPC request policy', () => {
         'exportDiagnosticReport',
       ),
     ).toMatchObject({ error: { code: 'INVALID_REQUEST' } });
+  });
+
+  it('keeps dossier IPC exact, bounded, revisioned and free of content/path injection', () => {
+    const preview = validRequests.previewDossierBuild[0] as Record<string, unknown>;
+    for (const invalid of [
+      { ...preview, subjectType: 'AGENT' },
+      { ...preview, subjectId: '' },
+      { ...preview, excerpt: '正文不得进入 Dossier IPC' },
+      { ...preview, snapshotPath: 'C:\\arbitrary\\snapshot.txt' },
+    ]) {
+      expect(
+        validateDesktopIpcRequest(RENDERER, [invalid], RENDERER, 'previewDossierBuild'),
+      ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    }
+    expect(
+      validateDesktopIpcRequest(RENDERER, [{ limit: 101, offset: 0 }], RENDERER, 'listDossiers'),
+    ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+
+    const confirm = validRequests.confirmDossierBuild[0] as Record<string, unknown>;
+    for (const invalid of [
+      { ...confirm, confirmation: 'YES' },
+      { ...confirm, planHash: 'not-a-hash' },
+      { ...confirm, token: 'short' },
+      { ...confirm, rawResponse: '{}' },
+    ]) {
+      expect(
+        validateDesktopIpcRequest(RENDERER, [invalid], RENDERER, 'confirmDossierBuild'),
+      ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    }
+
+    const cancel = validRequests.cancelDossierBuild[0] as Record<string, unknown>;
+    expect(
+      validateDesktopIpcRequest(
+        RENDERER,
+        [{ ...cancel, expectedRevision: 0 }],
+        RENDERER,
+        'cancelDossierBuild',
+      ),
+    ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
   });
 
   it('enforces fixed credential slot, explicit clear confirmation, and bounded plaintext', () => {

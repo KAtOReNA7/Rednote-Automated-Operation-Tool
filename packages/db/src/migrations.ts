@@ -4097,6 +4097,1122 @@ BEGIN
 END;
 `;
 
+const VERSIONED_RESEARCH_DOSSIERS = `
+ALTER TABLE research_dossiers RENAME TO research_dossiers_issue020_legacy;
+
+INSERT OR IGNORE INTO fact_subjects(subject_type, subject_id, work_id)
+SELECT 'WORK', legacy.book_id, legacy.book_id
+FROM research_dossiers_issue020_legacy AS legacy
+JOIN books AS book ON book.id = legacy.book_id;
+
+CREATE TABLE research_dossiers (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  book_id TEXT NOT NULL REFERENCES books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  subject_type TEXT NOT NULL CHECK (subject_type IN ('WORK', 'EXPRESSION', 'EDITION')),
+  subject_id TEXT NOT NULL CHECK (length(subject_id) BETWEEN 1 AND 128),
+  current_version_id TEXT REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  state TEXT NOT NULL DEFAULT 'NOT_BUILT' CHECK (state IN (
+    'NOT_BUILT', 'CURRENT', 'REBUILD_REQUIRED', 'BUILDING', 'FAILED', 'SUPERSEDED'
+  )),
+  readiness TEXT NOT NULL DEFAULT 'NOT_BUILT' CHECK (readiness IN (
+    'NOT_BUILT', 'BUILD_REQUIRED', 'INSUFFICIENT_COVERAGE',
+    'FACT_BLOCKED', 'STALE', 'READY_FOR_CONTENT_BRIEF'
+  )),
+  invalidation_reasons_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(invalidation_reasons_json) AND
+    json_type(invalidation_reasons_json) = 'array' AND
+    length(CAST(invalidation_reasons_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (subject_type, subject_id),
+  FOREIGN KEY (subject_type, subject_id)
+    REFERENCES fact_subjects(subject_type, subject_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE research_dossier_versions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (
+    typeof(version_number) = 'integer' AND version_number > 0
+  ),
+  previous_version_id TEXT REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  schema_version TEXT NOT NULL CHECK (length(schema_version) BETWEEN 1 AND 64),
+  coverage_policy_version TEXT NOT NULL CHECK (
+    length(coverage_policy_version) BETWEEN 1 AND 64
+  ),
+  fact_policy_version TEXT NOT NULL CHECK (length(fact_policy_version) BETWEEN 1 AND 64),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  build_mode TEXT NOT NULL CHECK (
+    build_mode IN ('INITIAL', 'INCREMENTAL', 'FULL_REBUILD', 'LEGACY_MIGRATION')
+  ),
+  build_run_id TEXT CHECK (
+    build_run_id IS NULL OR length(build_run_id) BETWEEN 1 AND 256
+  ),
+  readiness TEXT NOT NULL CHECK (readiness IN (
+    'NOT_BUILT', 'BUILD_REQUIRED', 'INSUFFICIENT_COVERAGE',
+    'FACT_BLOCKED', 'STALE', 'READY_FOR_CONTENT_BRIEF'
+  )),
+  reason_codes_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  legacy_payload_json TEXT CHECK (
+    legacy_payload_json IS NULL OR (
+      json_valid(legacy_payload_json) AND json_type(legacy_payload_json) = 'object'
+    )
+  ),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision = 1),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  published_at TEXT NOT NULL CHECK (published_at ${UTC_REQUIRED}),
+  UNIQUE (dossier_id, version_number),
+  UNIQUE (dossier_id, input_hash),
+  UNIQUE (id, dossier_id)
+) STRICT;
+
+CREATE TABLE research_dossier_sections (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  version_id TEXT NOT NULL REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  section_key TEXT NOT NULL CHECK (section_key IN (
+    'IDENTITY', 'BIBLIOGRAPHY', 'CREATORS', 'PUBLICATION_HISTORY', 'AWARDS',
+    'SERIES_AND_RELATIONSHIPS', 'SYNOPSIS_AND_THEMES',
+    'RECEPTION_AND_DISCUSSION', 'OPEN_CONFLICTS', 'RESEARCH_GAPS'
+  )),
+  position INTEGER NOT NULL CHECK (position BETWEEN 0 AND 9),
+  readiness_required INTEGER NOT NULL CHECK (readiness_required IN (0, 1)),
+  coverage_basis_points INTEGER NOT NULL CHECK (coverage_basis_points BETWEEN 0 AND 10000),
+  verified_count INTEGER NOT NULL CHECK (verified_count >= 0),
+  blocked_count INTEGER NOT NULL CHECK (blocked_count >= 0),
+  stale_count INTEGER NOT NULL CHECK (stale_count >= 0),
+  insufficient_count INTEGER NOT NULL CHECK (insufficient_count >= 0),
+  gap_count INTEGER NOT NULL CHECK (gap_count >= 0),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (version_id, section_key),
+  UNIQUE (version_id, position),
+  UNIQUE (id, version_id)
+) STRICT;
+
+CREATE TABLE research_dossier_gaps (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  version_id TEXT NOT NULL REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  section_key TEXT NOT NULL CHECK (section_key IN (
+    'IDENTITY', 'BIBLIOGRAPHY', 'CREATORS', 'PUBLICATION_HISTORY', 'AWARDS',
+    'SERIES_AND_RELATIONSHIPS', 'SYNOPSIS_AND_THEMES',
+    'RECEPTION_AND_DISCUSSION', 'OPEN_CONFLICTS', 'RESEARCH_GAPS'
+  )),
+  semantic_key TEXT NOT NULL CHECK (length(semantic_key) BETWEEN 1 AND 1024),
+  reason_code TEXT NOT NULL CHECK (reason_code IN (
+    'NO_CLAIM', 'INSUFFICIENT_EVIDENCE', 'SOURCE_INDEPENDENCE_UNKNOWN',
+    'FACT_CONFLICTED', 'EVIDENCE_STALE', 'SOURCE_UNAVAILABLE',
+    'SECTION_NOT_RESEARCHED', 'POLICY_VERSION_STALE'
+  )),
+  required INTEGER NOT NULL CHECK (required IN (0, 1)),
+  blocking INTEGER NOT NULL CHECK (blocking IN (0, 1)),
+  audit_ref TEXT CHECK (audit_ref IS NULL OR length(audit_ref) BETWEEN 1 AND 256),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (version_id, semantic_key, reason_code),
+  UNIQUE (id, version_id)
+) STRICT;
+
+CREATE TABLE research_dossier_entries (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  version_id TEXT NOT NULL REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  section_id TEXT NOT NULL,
+  section_key TEXT NOT NULL CHECK (section_key IN (
+    'IDENTITY', 'BIBLIOGRAPHY', 'CREATORS', 'PUBLICATION_HISTORY', 'AWARDS',
+    'SERIES_AND_RELATIONSHIPS', 'SYNOPSIS_AND_THEMES',
+    'RECEPTION_AND_DISCUSSION', 'OPEN_CONFLICTS', 'RESEARCH_GAPS'
+  )),
+  entry_kind TEXT NOT NULL CHECK (entry_kind IN ('CONSENSUS', 'DISPUTED', 'GAP')),
+  semantic_key TEXT NOT NULL CHECK (length(semantic_key) BETWEEN 1 AND 1024),
+  predicate TEXT NOT NULL CHECK (length(predicate) BETWEEN 1 AND 128),
+  display_value TEXT NOT NULL CHECK (
+    length(CAST(display_value AS BLOB)) BETWEEN 0 AND 8000
+  ),
+  structured_value_json TEXT NOT NULL CHECK (
+    json_valid(structured_value_json) AND
+    length(CAST(structured_value_json AS BLOB)) BETWEEN 1 AND 32768
+  ),
+  fact_status TEXT NOT NULL CHECK (fact_status IN (
+    'NOT_EVALUATED', 'INSUFFICIENT', 'SUPPORTED_NOT_VERIFIED', 'VERIFIED',
+    'CONFLICTED', 'FACT_BLOCKED', 'STALE_REVIEW_REQUIRED', 'REJECTED'
+  )),
+  source_count INTEGER NOT NULL CHECK (source_count >= 0),
+  evidence_count INTEGER NOT NULL CHECK (evidence_count >= 0),
+  conflict_id TEXT REFERENCES fact_conflicts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  gap_id TEXT,
+  provenance TEXT NOT NULL CHECK (provenance = 'LOCAL_DETERMINISTIC'),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision = 1),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (version_id, entry_kind, semantic_key),
+  UNIQUE (id, version_id),
+  FOREIGN KEY (section_id, version_id)
+    REFERENCES research_dossier_sections(id, version_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (gap_id, version_id)
+    REFERENCES research_dossier_gaps(id, version_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE research_dossier_entry_claims (
+  entry_id TEXT NOT NULL REFERENCES research_dossier_entries(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_id TEXT NOT NULL REFERENCES claims(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_revision INTEGER NOT NULL CHECK (claim_revision > 0),
+  PRIMARY KEY (entry_id, claim_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE research_dossier_entry_evaluations (
+  entry_id TEXT NOT NULL REFERENCES research_dossier_entries(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  evaluation_id TEXT NOT NULL REFERENCES fact_evaluations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  input_identity_hash TEXT NOT NULL CHECK (
+    length(input_identity_hash) = 64 AND
+    input_identity_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  PRIMARY KEY (entry_id, evaluation_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE research_dossier_entry_evidence (
+  entry_id TEXT NOT NULL REFERENCES research_dossier_entries(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  evidence_id TEXT NOT NULL REFERENCES claim_evidence(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  evidence_revision INTEGER NOT NULL CHECK (evidence_revision > 0),
+  source_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL,
+  PRIMARY KEY (entry_id, evidence_id),
+  FOREIGN KEY (source_id, source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE research_dossier_gap_claims (
+  gap_id TEXT NOT NULL REFERENCES research_dossier_gaps(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_id TEXT NOT NULL REFERENCES claims(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  PRIMARY KEY (gap_id, claim_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE research_dossier_dependencies (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  version_id TEXT NOT NULL REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  entry_id TEXT REFERENCES research_dossier_entries(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'CLAIM', 'FACT_EVALUATION', 'EVIDENCE', 'SOURCE_REVISION',
+    'CONFLICT', 'FACT_POLICY', 'COVERAGE_POLICY', 'SUBJECT'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 256),
+  dependency_revision TEXT NOT NULL CHECK (length(dependency_revision) BETWEEN 1 AND 128),
+  dependency_key TEXT NOT NULL CHECK (
+    length(dependency_key) = 64 AND dependency_key NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (version_id, dependency_key)
+) STRICT;
+
+CREATE TABLE research_dossier_coverage_snapshots (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  version_id TEXT NOT NULL UNIQUE REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  coverage_policy_version TEXT NOT NULL CHECK (
+    coverage_policy_version = 'dossier-coverage-policy-v1'
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  overall_basis_points INTEGER NOT NULL CHECK (overall_basis_points BETWEEN 0 AND 10000),
+  required_basis_points INTEGER NOT NULL CHECK (required_basis_points BETWEEN 0 AND 10000),
+  optional_basis_points INTEGER NOT NULL CHECK (optional_basis_points BETWEEN 0 AND 10000),
+  verified_count INTEGER NOT NULL CHECK (verified_count >= 0),
+  blocked_count INTEGER NOT NULL CHECK (blocked_count >= 0),
+  stale_count INTEGER NOT NULL CHECK (stale_count >= 0),
+  insufficient_count INTEGER NOT NULL CHECK (insufficient_count >= 0),
+  gap_count INTEGER NOT NULL CHECK (gap_count >= 0),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE research_dossier_build_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  contract_version TEXT NOT NULL CHECK (contract_version = 'dossier-build-plan-v1'),
+  plan_hash TEXT NOT NULL UNIQUE CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  expected_dossier_revision INTEGER NOT NULL CHECK (expected_dossier_revision > 0),
+  expected_current_version_id TEXT REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  build_mode TEXT NOT NULL CHECK (build_mode IN ('INITIAL', 'INCREMENTAL', 'FULL_REBUILD')),
+  counts_json TEXT NOT NULL CHECK (
+    json_valid(counts_json) AND json_type(counts_json) = 'object' AND
+    length(CAST(counts_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  preview_json TEXT NOT NULL CHECK (
+    json_valid(preview_json) AND json_type(preview_json) = 'object' AND
+    length(CAST(preview_json AS BLOB)) BETWEEN 2 AND 262144
+  ),
+  no_op INTEGER NOT NULL CHECK (no_op IN (0, 1)),
+  estimated_local_writes INTEGER NOT NULL CHECK (
+    estimated_local_writes BETWEEN 0 AND 16384
+  ),
+  estimated_model_requests INTEGER NOT NULL DEFAULT 0 CHECK (estimated_model_requests = 0),
+  budget_conclusion TEXT NOT NULL DEFAULT 'NOT_APPLICABLE'
+    CHECK (budget_conclusion = 'NOT_APPLICABLE'),
+  status TEXT NOT NULL DEFAULT 'PLANNED' CHECK (
+    status IN ('PLANNED', 'CONFIRMED', 'CONSUMED', 'EXPIRED', 'CANCELLED')
+  ),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED} AND expires_at > created_at),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE research_dossier_build_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  plan_id TEXT NOT NULL REFERENCES research_dossier_build_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 256),
+  job_id TEXT,
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  status TEXT NOT NULL CHECK (status IN (
+    'CONFIRMED', 'QUEUED', 'RUNNING', 'SUCCEEDED', 'NO_OP',
+    'CANCEL_REQUESTED', 'CANCELLED', 'FAILED', 'AMBIGUOUS'
+  )),
+  result_version_id TEXT REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (external_request_count = 0),
+  cost_state TEXT NOT NULL DEFAULT 'NOT_INCURRED' CHECK (cost_state = 'NOT_INCURRED'),
+  error_code TEXT CHECK (error_code IS NULL OR length(error_code) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE research_dossier_invalidations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 512),
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  current_version_id TEXT NOT NULL REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'CLAIM', 'FACT_EVALUATION', 'EVIDENCE', 'SOURCE_REVISION',
+    'CONFLICT', 'FACT_POLICY', 'COVERAGE_POLICY', 'SUBJECT'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 256),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 128),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE research_dossier_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 768),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'DOSSIER_CREATED', 'BUILD_PLANNED', 'BUILD_CONFIRMED', 'BUILD_STARTED',
+    'VERSION_PUBLISHED', 'BUILD_NO_OP', 'BUILD_CANCELLED', 'BUILD_FAILED',
+    'DOSSIER_INVALIDATED'
+  )),
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  plan_id TEXT REFERENCES research_dossier_build_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  run_id TEXT REFERENCES research_dossier_build_runs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  before_json TEXT CHECK (
+    before_json IS NULL OR (
+      json_valid(before_json) AND length(CAST(before_json AS BLOB)) <= 65536
+    )
+  ),
+  after_json TEXT CHECK (
+    after_json IS NULL OR (
+      json_valid(after_json) AND length(CAST(after_json AS BLOB)) <= 65536
+    )
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO research_dossiers(
+  id, book_id, subject_type, subject_id, current_version_id, revision,
+  state, readiness, invalidation_reasons_json, created_at, updated_at
+)
+SELECT
+  min(legacy.id), legacy.book_id, 'WORK', legacy.book_id, NULL, 1,
+  'REBUILD_REQUIRED', 'BUILD_REQUIRED', '["LEGACY_DOSSIER_REQUIRES_REBUILD"]',
+  min(legacy.created_at), max(legacy.created_at)
+FROM research_dossiers_issue020_legacy AS legacy
+GROUP BY legacy.book_id;
+
+INSERT INTO research_dossier_versions(
+  id, dossier_id, version_number, previous_version_id, schema_version,
+  coverage_policy_version, fact_policy_version, input_hash, build_mode,
+  build_run_id, readiness, reason_codes_json, warnings_json,
+  legacy_payload_json, revision, created_at, published_at
+)
+SELECT
+  'legacy-version:' || legacy.id,
+  root.id,
+  legacy.version,
+  (
+    SELECT 'legacy-version:' || previous.id
+    FROM research_dossiers_issue020_legacy AS previous
+    WHERE previous.book_id = legacy.book_id AND previous.version < legacy.version
+    ORDER BY previous.version DESC, previous.id DESC
+    LIMIT 1
+  ),
+  'legacy-unversioned-v0',
+  'legacy-unversioned-v0',
+  'fact-policy-v1',
+  lower(hex(randomblob(32))),
+  'LEGACY_MIGRATION',
+  NULL,
+  'INSUFFICIENT_COVERAGE',
+  '["LEGACY_DOSSIER_REQUIRES_REBUILD"]',
+  '["LEGACY_UNVERIFIED_PAYLOAD_PRESERVED"]',
+  json_object(
+    'legacyId', legacy.id,
+    'researchQuestions', json(legacy.research_questions_json),
+    'summary', legacy.summary,
+    'consensus', json(legacy.consensus_json),
+    'disputes', json(legacy.disputes_json),
+    'sourceCoverageScore', legacy.source_coverage_score,
+    'status', legacy.status
+  ),
+  1,
+  legacy.created_at,
+  legacy.created_at
+FROM research_dossiers_issue020_legacy AS legacy
+JOIN research_dossiers AS root
+  ON root.subject_type = 'WORK' AND root.subject_id = legacy.book_id;
+
+UPDATE research_dossiers
+SET current_version_id = (
+  SELECT version.id
+  FROM research_dossier_versions AS version
+  WHERE version.dossier_id = research_dossiers.id
+  ORDER BY version.version_number DESC, version.id DESC
+  LIMIT 1
+)
+WHERE EXISTS (
+  SELECT 1 FROM research_dossier_versions AS version
+  WHERE version.dossier_id = research_dossiers.id
+);
+
+DROP TABLE research_dossiers_issue020_legacy;
+
+CREATE INDEX idx_research_dossiers_book ON research_dossiers(book_id);
+CREATE INDEX idx_research_dossiers_subject_id ON research_dossiers(subject_id, subject_type);
+CREATE INDEX idx_research_dossiers_current_version
+  ON research_dossiers(current_version_id) WHERE current_version_id IS NOT NULL;
+CREATE INDEX idx_research_dossiers_state ON research_dossiers(state, updated_at, id);
+CREATE INDEX idx_research_dossiers_readiness
+  ON research_dossiers(readiness, updated_at, id);
+CREATE INDEX idx_research_dossier_versions_history
+  ON research_dossier_versions(dossier_id, version_number DESC, id);
+CREATE INDEX idx_research_dossier_versions_previous
+  ON research_dossier_versions(previous_version_id) WHERE previous_version_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_sections_version
+  ON research_dossier_sections(version_id, position);
+CREATE INDEX idx_research_dossier_entries_page
+  ON research_dossier_entries(version_id, section_key, semantic_key, id);
+CREATE INDEX idx_research_dossier_entries_conflict
+  ON research_dossier_entries(conflict_id) WHERE conflict_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_entries_section
+  ON research_dossier_entries(section_id, version_id);
+CREATE INDEX idx_research_dossier_entries_gap
+  ON research_dossier_entries(gap_id, version_id) WHERE gap_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_gaps_page
+  ON research_dossier_gaps(version_id, blocking DESC, section_key, semantic_key, id);
+CREATE INDEX idx_research_dossier_entry_claims_claim
+  ON research_dossier_entry_claims(claim_id, entry_id);
+CREATE INDEX idx_research_dossier_entry_evaluations_evaluation
+  ON research_dossier_entry_evaluations(evaluation_id, entry_id);
+CREATE INDEX idx_research_dossier_entry_evidence_evidence
+  ON research_dossier_entry_evidence(evidence_id, entry_id);
+CREATE INDEX idx_research_dossier_entry_evidence_source
+  ON research_dossier_entry_evidence(source_id, source_revision, entry_id);
+CREATE INDEX idx_research_dossier_entry_evidence_source_revision
+  ON research_dossier_entry_evidence(source_revision, source_id, entry_id);
+CREATE INDEX idx_research_dossier_gap_claims_claim
+  ON research_dossier_gap_claims(claim_id, gap_id);
+CREATE INDEX idx_research_dossier_dependencies_lookup
+  ON research_dossier_dependencies(
+    dependency_type, dependency_id, dependency_revision, version_id
+  );
+CREATE INDEX idx_research_dossier_dependencies_version
+  ON research_dossier_dependencies(version_id, dependency_key);
+CREATE INDEX idx_research_dossier_dependencies_entry
+  ON research_dossier_dependencies(entry_id) WHERE entry_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_plans_dossier
+  ON research_dossier_build_plans(dossier_id, created_at DESC, id);
+CREATE INDEX idx_research_dossier_plans_current_version
+  ON research_dossier_build_plans(expected_current_version_id)
+  WHERE expected_current_version_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_runs_dossier
+  ON research_dossier_build_runs(dossier_id, created_at DESC, id);
+CREATE INDEX idx_research_dossier_runs_plan
+  ON research_dossier_build_runs(plan_id, created_at DESC, id);
+CREATE INDEX idx_research_dossier_runs_result_version
+  ON research_dossier_build_runs(result_version_id) WHERE result_version_id IS NOT NULL;
+CREATE UNIQUE INDEX idx_research_dossier_runs_one_active
+  ON research_dossier_build_runs(dossier_id)
+  WHERE status IN ('CONFIRMED', 'QUEUED', 'RUNNING', 'CANCEL_REQUESTED');
+CREATE INDEX idx_research_dossier_invalidations_dossier
+  ON research_dossier_invalidations(dossier_id, created_at DESC, id);
+CREATE INDEX idx_research_dossier_invalidations_current_version
+  ON research_dossier_invalidations(current_version_id, created_at DESC, id);
+CREATE INDEX idx_research_dossier_audit_dossier
+  ON research_dossier_audit_events(dossier_id, created_at DESC, id);
+CREATE INDEX idx_research_dossier_audit_version
+  ON research_dossier_audit_events(version_id) WHERE version_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_audit_plan
+  ON research_dossier_audit_events(plan_id) WHERE plan_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_audit_run
+  ON research_dossier_audit_events(run_id) WHERE run_id IS NOT NULL;
+
+CREATE TRIGGER research_dossiers_current_version_guard
+BEFORE UPDATE OF current_version_id ON research_dossiers
+WHEN NEW.current_version_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM research_dossier_versions AS version
+  WHERE version.id = NEW.current_version_id AND version.dossier_id = NEW.id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'current dossier version must belong to dossier');
+END;
+
+CREATE TRIGGER research_dossier_versions_append_only_update
+BEFORE UPDATE ON research_dossier_versions
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier versions are append-only');
+END;
+CREATE TRIGGER research_dossier_versions_append_only_delete
+BEFORE DELETE ON research_dossier_versions
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier versions are append-only');
+END;
+CREATE TRIGGER research_dossier_sections_append_only_update
+BEFORE UPDATE ON research_dossier_sections
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier sections are append-only');
+END;
+CREATE TRIGGER research_dossier_sections_append_only_delete
+BEFORE DELETE ON research_dossier_sections
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier sections are append-only');
+END;
+CREATE TRIGGER research_dossier_entries_append_only_update
+BEFORE UPDATE ON research_dossier_entries
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entries are append-only');
+END;
+CREATE TRIGGER research_dossier_entries_append_only_delete
+BEFORE DELETE ON research_dossier_entries
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entries are append-only');
+END;
+CREATE TRIGGER research_dossier_entry_claims_append_only_update
+BEFORE UPDATE ON research_dossier_entry_claims
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entry claims are append-only');
+END;
+CREATE TRIGGER research_dossier_entry_claims_append_only_delete
+BEFORE DELETE ON research_dossier_entry_claims
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entry claims are append-only');
+END;
+CREATE TRIGGER research_dossier_entry_evaluations_append_only_update
+BEFORE UPDATE ON research_dossier_entry_evaluations
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entry evaluations are append-only');
+END;
+CREATE TRIGGER research_dossier_entry_evaluations_append_only_delete
+BEFORE DELETE ON research_dossier_entry_evaluations
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entry evaluations are append-only');
+END;
+CREATE TRIGGER research_dossier_entry_evidence_append_only_update
+BEFORE UPDATE ON research_dossier_entry_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entry evidence is append-only');
+END;
+CREATE TRIGGER research_dossier_entry_evidence_append_only_delete
+BEFORE DELETE ON research_dossier_entry_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier entry evidence is append-only');
+END;
+CREATE TRIGGER research_dossier_gap_claims_append_only_update
+BEFORE UPDATE ON research_dossier_gap_claims
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier gap claims are append-only');
+END;
+CREATE TRIGGER research_dossier_gap_claims_append_only_delete
+BEFORE DELETE ON research_dossier_gap_claims
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier gap claims are append-only');
+END;
+CREATE TRIGGER research_dossier_gaps_append_only_update
+BEFORE UPDATE ON research_dossier_gaps
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier gaps are append-only');
+END;
+CREATE TRIGGER research_dossier_gaps_append_only_delete
+BEFORE DELETE ON research_dossier_gaps
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier gaps are append-only');
+END;
+CREATE TRIGGER research_dossier_dependencies_append_only_update
+BEFORE UPDATE ON research_dossier_dependencies
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier dependencies are append-only');
+END;
+CREATE TRIGGER research_dossier_dependencies_append_only_delete
+BEFORE DELETE ON research_dossier_dependencies
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier dependencies are append-only');
+END;
+CREATE TRIGGER research_dossier_coverage_append_only_update
+BEFORE UPDATE ON research_dossier_coverage_snapshots
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier coverage is append-only');
+END;
+CREATE TRIGGER research_dossier_coverage_append_only_delete
+BEFORE DELETE ON research_dossier_coverage_snapshots
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier coverage is append-only');
+END;
+CREATE TRIGGER research_dossier_invalidations_append_only_update
+BEFORE UPDATE ON research_dossier_invalidations
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier invalidations are append-only');
+END;
+CREATE TRIGGER research_dossier_invalidations_append_only_delete
+BEFORE DELETE ON research_dossier_invalidations
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier invalidations are append-only');
+END;
+CREATE TRIGGER research_dossier_audit_append_only_update
+BEFORE UPDATE ON research_dossier_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier audit is append-only');
+END;
+CREATE TRIGGER research_dossier_audit_append_only_delete
+BEFORE DELETE ON research_dossier_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'research dossier audit is append-only');
+END;
+
+CREATE TRIGGER research_dossier_invalidate_source_revision
+AFTER INSERT ON source_revisions
+WHEN NEW.revision > 1
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'SOURCE_REVISION:' || NEW.source_id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'SOURCE_REVISION',
+    NEW.source_id,
+    CAST(NEW.revision AS TEXT),
+    'SOURCE_REVISION_CHANGED',
+    NEW.created_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'SOURCE_REVISION'
+    AND dependency.dependency_id = NEW.source_id
+    AND dependency.dependency_revision NOT LIKE CAST(NEW.revision AS TEXT) || '.%';
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["SOURCE_REVISION_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.created_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'SOURCE_REVISION'
+      AND dependency.dependency_id = NEW.source_id
+      AND dependency.dependency_revision NOT LIKE CAST(NEW.revision AS TEXT) || '.%'
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_source_classification
+AFTER INSERT ON source_classifications
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'SOURCE_CLASSIFICATION:' || NEW.source_id || ':' || NEW.source_revision || ':' ||
+      NEW.classification_revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'SOURCE_REVISION',
+    NEW.source_id,
+    CAST(NEW.source_revision AS TEXT) || '.' || CAST(NEW.classification_revision AS TEXT),
+    'SOURCE_CLASSIFICATION_CHANGED',
+    NEW.created_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'SOURCE_REVISION'
+    AND dependency.dependency_id = NEW.source_id
+    AND dependency.dependency_revision <>
+      CAST(NEW.source_revision AS TEXT) || '.' || CAST(NEW.classification_revision AS TEXT);
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["SOURCE_CLASSIFICATION_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.created_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'SOURCE_REVISION'
+      AND dependency.dependency_id = NEW.source_id
+      AND dependency.dependency_revision <>
+        CAST(NEW.source_revision AS TEXT) || '.' || CAST(NEW.classification_revision AS TEXT)
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_evidence_insert
+AFTER INSERT ON claim_evidence
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'EVIDENCE_INSERT:' || NEW.id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'EVIDENCE',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'EVIDENCE_CHANGED',
+    NEW.created_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'CLAIM'
+    AND dependency.dependency_id = NEW.claim_id;
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["EVIDENCE_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.created_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'CLAIM'
+      AND dependency.dependency_id = NEW.claim_id
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_evidence_update
+AFTER UPDATE ON claim_evidence
+WHEN NEW.revision <> OLD.revision OR
+     NEW.verification_status <> OLD.verification_status OR
+     NEW.locator_json <> OLD.locator_json
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'EVIDENCE_UPDATE:' || NEW.id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'EVIDENCE',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'EVIDENCE_CHANGED',
+    (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'EVIDENCE'
+    AND dependency.dependency_id = NEW.id
+    AND dependency.dependency_revision <> CAST(NEW.revision AS TEXT);
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["EVIDENCE_CHANGED"]',
+      revision = revision + 1,
+      updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'EVIDENCE'
+      AND dependency.dependency_id = NEW.id
+      AND dependency.dependency_revision <> CAST(NEW.revision AS TEXT)
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_claim_update
+AFTER UPDATE ON claims
+WHEN NEW.revision <> OLD.revision OR NEW.status <> OLD.status OR
+     NEW.value_json <> OLD.value_json OR NEW.scope_json <> OLD.scope_json
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'CLAIM:' || NEW.id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'CLAIM',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'CLAIM_CHANGED',
+    (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'CLAIM'
+    AND dependency.dependency_id = NEW.id
+    AND dependency.dependency_revision <> CAST(NEW.revision AS TEXT);
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["CLAIM_CHANGED"]',
+      revision = revision + 1,
+      updated_at = (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'CLAIM'
+      AND dependency.dependency_id = NEW.id
+      AND dependency.dependency_revision <> CAST(NEW.revision AS TEXT)
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_evaluation_insert
+AFTER INSERT ON fact_evaluations
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'FACT_EVALUATION:' || NEW.id || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'FACT_EVALUATION',
+    NEW.id,
+    NEW.input_identity_hash,
+    'FACT_EVALUATION_CHANGED',
+    NEW.created_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'CLAIM'
+    AND dependency.dependency_id = NEW.claim_id;
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["FACT_EVALUATION_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.created_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'CLAIM'
+      AND dependency.dependency_id = NEW.claim_id
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_conflict_insert
+AFTER INSERT ON fact_conflicts
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT DISTINCT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'CONFLICT_INSERT:' || NEW.id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'CONFLICT',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'CONFLICT_CHANGED',
+    NEW.created_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'CLAIM'
+    AND dependency.dependency_id IN (NEW.claim_left_id, NEW.claim_right_id);
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["CONFLICT_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.created_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'CLAIM'
+      AND dependency.dependency_id IN (NEW.claim_left_id, NEW.claim_right_id)
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_conflict_update
+AFTER UPDATE ON fact_conflicts
+WHEN NEW.revision <> OLD.revision OR NEW.state <> OLD.state
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'CONFLICT_UPDATE:' || NEW.id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'CONFLICT',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'CONFLICT_CHANGED',
+    NEW.updated_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'CONFLICT'
+    AND dependency.dependency_id = NEW.id
+    AND dependency.dependency_revision <> CAST(NEW.revision AS TEXT);
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["CONFLICT_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.updated_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'CONFLICT'
+      AND dependency.dependency_id = NEW.id
+      AND dependency.dependency_revision <> CAST(NEW.revision AS TEXT)
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_work_subject
+AFTER UPDATE OF catalog_revision, catalog_state ON books
+WHEN NEW.catalog_revision <> OLD.catalog_revision OR NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'SUBJECT_WORK:' || NEW.id || ':' || NEW.catalog_revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'SUBJECT',
+    dependency.dependency_id,
+    CAST(NEW.catalog_revision AS TEXT),
+    'SUBJECT_CHANGED',
+    NEW.updated_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'SUBJECT'
+    AND (
+      dependency.dependency_id = 'WORK:' || NEW.id OR
+      dependency.dependency_id IN (
+        SELECT 'EXPRESSION:' || expression.id
+        FROM expressions AS expression
+        WHERE expression.work_id = NEW.id
+      ) OR
+      dependency.dependency_id IN (
+        SELECT 'EDITION:' || edition.id
+        FROM book_editions AS edition
+        JOIN expressions AS expression ON expression.id = edition.expression_id
+        WHERE expression.work_id = NEW.id
+      )
+    );
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["SUBJECT_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.updated_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'SUBJECT'
+      AND (
+        dependency.dependency_id = 'WORK:' || NEW.id OR
+        dependency.dependency_id IN (
+          SELECT 'EXPRESSION:' || expression.id
+          FROM expressions AS expression
+          WHERE expression.work_id = NEW.id
+        ) OR
+        dependency.dependency_id IN (
+          SELECT 'EDITION:' || edition.id
+          FROM book_editions AS edition
+          JOIN expressions AS expression ON expression.id = edition.expression_id
+          WHERE expression.work_id = NEW.id
+        )
+      )
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_expression_subject
+AFTER UPDATE OF work_id, revision, catalog_state ON expressions
+WHEN NEW.work_id <> OLD.work_id OR NEW.revision <> OLD.revision OR
+     NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'SUBJECT_EXPRESSION:' || NEW.id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'SUBJECT',
+    dependency.dependency_id,
+    CAST(NEW.revision AS TEXT),
+    'SUBJECT_CHANGED',
+    NEW.updated_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'SUBJECT'
+    AND (
+      dependency.dependency_id = 'EXPRESSION:' || NEW.id OR
+      dependency.dependency_id IN (
+        SELECT 'EDITION:' || edition.id
+        FROM book_editions AS edition
+        WHERE edition.expression_id = NEW.id
+      )
+    );
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["SUBJECT_CHANGED"]',
+      revision = revision + 1,
+      updated_at = NEW.updated_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'SUBJECT'
+      AND (
+        dependency.dependency_id = 'EXPRESSION:' || NEW.id OR
+        dependency.dependency_id IN (
+          SELECT 'EDITION:' || edition.id
+          FROM book_editions AS edition
+          WHERE edition.expression_id = NEW.id
+        )
+      )
+  );
+END;
+
+CREATE TRIGGER research_dossier_invalidate_edition_subject
+AFTER UPDATE OF expression_id, catalog_revision, catalog_state ON book_editions
+WHEN NEW.expression_id <> OLD.expression_id OR
+     NEW.catalog_revision <> OLD.catalog_revision OR
+     NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'SUBJECT_EDITION:' || NEW.id || ':' || NEW.catalog_revision || ':' || dossier.id,
+    dossier.id,
+    dossier.current_version_id,
+    'SUBJECT',
+    dependency.dependency_id,
+    CAST(NEW.catalog_revision AS TEXT),
+    'SUBJECT_CHANGED',
+    strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier
+    ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'SUBJECT'
+    AND dependency.dependency_id = 'EDITION:' || NEW.id;
+
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED',
+      readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["SUBJECT_CHANGED"]',
+      revision = revision + 1,
+      updated_at = strftime('%Y-%m-%dT%H:%M:%fZ', 'now')
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'SUBJECT'
+      AND dependency.dependency_id = 'EDITION:' || NEW.id
+  );
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -4161,5 +5277,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'source_evidence_atomic_facts_and_conflicts',
     sql: SOURCE_EVIDENCE_AND_FACT_CONFLICTS,
     version: 12,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'versioned_research_dossiers',
+    sql: VERSIONED_RESEARCH_DOSSIERS,
+    version: 13,
   }),
 ]);

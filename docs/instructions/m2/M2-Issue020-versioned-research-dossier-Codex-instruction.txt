@@ -1,0 +1,518 @@
+M2 Issue 020：版本化研究档案、覆盖度与增量重建——增量开发指令
+================================================================
+
+本文件是 Issue 020 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`。其中已有的动态基线、可迁移路径、安全边界、费用/密钥、硬约束、Windows、测试、Git、文档治理和最终报告规则全部继续适用，本文件不重复这些公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；档案版本、覆盖度算法、增量失效和并发事务使用 XHigh
+目标提交信息：feat(research): add versioned research dossiers
+
+
+一、起点、文件治理与停止点
+--------------------------
+
+以当前本地 `main` 的动态 HEAD 为起点。本地合法包含尚未 push 的 Issue 018 和 Issue 019 提交；ahead 状态本身不是异常。
+
+开工时按语义核对：
+
+- 工作树干净，当前分支为 `main`；
+- Issue 019 的 SourceRevision、AtomicClaim、EvidenceLocator、FactPolicy、FactEvaluation、Conflict、`FACT_BLOCKED` 和 Research UI 能力完整；
+- Issue 019 的专项测试、合同、ADR、验收映射和归档指令存在；
+- README、AGENTS、Roadmap 和文档索引一致指向 Issue 020；
+- 当前 migration 尾部、提交基线、仓库路径均由运行时动态发现。
+
+不得把本指令生成前报告中的提交 ID、盘符、绝对路径、migration 版本或校验值作为门禁。
+
+本 TXT 可临时放在仓库根目录启动，但 Codex 必须先完整读取，然后在 baseline gate 或业务修改前将它移动为：
+
+`docs/instructions/m2/M2-Issue020-versioned-research-dossier-Codex-instruction.txt`
+
+根目录和原位置不保留副本；完成时更新 `docs/instructions/README.md`。
+
+只实施 Issue 020。完成后停止，不进入 Issue 021。
+
+
+二、授权目标
+------------
+
+实现一个可审计、可重建、不可静默改写的 Research Dossier V1：
+
+- 每个研究对象拥有版本化档案；
+- 档案内容只来自 Issue 019 的受控 Claim、Evidence 和 FactEvaluation；
+- 汇总已验证共识、未解决争议、信息缺口和覆盖度；
+- 每个档案条目可追溯到精确 Claim/Evidence/SourceRevision；
+- Source、Evidence、Claim、Conflict 或政策变化时精确标记受影响档案；
+- 支持预览、显式确认、确定性构建、增量重建和历史版本比较；
+- 提供内容生产就绪判断，但不实现内容生产；
+- 激活“资料研究”中的档案工作区；
+- 追加下一条连续 migration、专项测试、合同、ADR、计划和验收映射；
+- 全部门禁通过后只创建一个本地提交。
+
+
+三、本 Issue 明确不做
+--------------------
+
+- 不实现 Issue 021 的阅读状态、真实性等级或第一人称授权；
+- 不实现选题生成、文章 brief、草稿、标题、正文、配图或标签；
+- 不实现质量审核、审批、排期、导出、发布或运营复盘；
+- 不自动执行 Search、Fetch、Clip、Catalog discovery 或 Source processing；
+- 不创建或修改事实，只消费 Issue 019 已有事实状态；
+- 不把 dossier summary 反写为 Claim、Evidence 或 FactEvaluation；
+- 不让模型输出直接改变 coverage、gap、conflict 或 readiness；
+- 不抓取新页面，不读取任意 URL、文件或完整 snapshot；
+- 不调用真实模型、搜索、网页、图片或业务 API；
+- 不读取真实密钥，不产生费用；
+- 不进入 Issue 021、022 或后续范围。
+
+
+四、Research Dossier V1 聚合根
+-----------------------------
+
+定义严格、版本化的合同和 runtime validator，至少包括：
+
+- `ResearchDossier`
+- `ResearchDossierVersion`
+- `DossierSection`
+- `DossierEntry`
+- `DossierCoverageSnapshot`
+- `DossierGap`
+- `DossierDependency`
+- `DossierBuildPlan`
+- `DossierBuildRun`
+
+档案聚合根必须绑定一个明确研究对象。V1 至少支持：
+
+- Work
+- Expression
+- Edition
+
+如采用 subject registry，必须由真实 FK 或 Issue 019 已验证的受控引用保证，不得接受任意 polymorphic ID。
+
+同一对象只能有一个 current dossier，但必须保留所有历史版本。任何发布 current version 的操作必须使用 expected revision、事务和审计。
+
+版本至少保存：
+
+- dossier/version identity；
+- subject identity；
+- schema、coverage policy 和 fact policy version；
+- 输入依赖集合的确定性 hash；
+- build mode 与 build run identity；
+- status、revision、createdAt、publishedAt；
+- bounded reason/warnings；
+- previous version identity；
+- 是否 current。
+
+历史版本不可原地覆盖或物理删除。
+
+
+五、档案章节和条目
+------------------
+
+V1 使用有限 Section Registry，不允许任意字符串直接成为系统语义。至少覆盖：
+
+- `IDENTITY`
+- `BIBLIOGRAPHY`
+- `CREATORS`
+- `PUBLICATION_HISTORY`
+- `AWARDS`
+- `SERIES_AND_RELATIONSHIPS`
+- `SYNOPSIS_AND_THEMES`
+- `RECEPTION_AND_DISCUSSION`
+- `OPEN_CONFLICTS`
+- `RESEARCH_GAPS`
+
+前六类优先承载结构化事实；后四类只能在证据足够且语义边界明确时承载摘要。
+
+每个 DossierEntry 至少包含：
+
+- section、entry kind、stable semantic key；
+- bounded display value 或结构化 value；
+- fact status；
+- source/evidence count；
+- Claim 与 FactEvaluation 引用；
+- Evidence/SourceRevision 依赖；
+- conflict/gap 引用；
+- provenance、revision 和 timestamps。
+
+冻结规则：
+
+- `VERIFIED` 条目只能来自当前且非 stale 的 `VERIFIED` FactEvaluation；
+- `FACT_BLOCKED` 只能显示在争议区，不得出现在“已确认事实”区；
+- `INSUFFICIENT`、`SUPPORTED_NOT_VERIFIED` 和 `STALE_REVIEW_REQUIRED` 必须保持原状态，不得通过摘要措辞伪装成确定事实；
+- BrowserClip、discussion context 和 dossier 自身文字不能独立验证关键事实；
+- 一个条目可引用多个 Claim，但每个 Claim/Evidence 仍须可单独追溯；
+- Dossier 不复制整页正文、完整 snapshot、原始 HTML 或 raw model response。
+
+
+六、共识、争议与缺口
+--------------------
+
+档案必须明确分离三种信息：
+
+1. `CONSENSUS`：满足 FactPolicy 且当前有效的事实；
+2. `DISPUTED`：存在未解决 material conflict 或 `FACT_BLOCKED`；
+3. `GAP`：研究计划要求但当前没有足够证据。
+
+争议条目必须显示：
+
+- conflict identity 和状态；
+- 互斥 Claim 的有限规范值；
+- 各自 Evidence/Source 数量；
+- 当前阻塞原因；
+- 是否 stale；
+- 跳转到 Issue 019 冲突处理的引用。
+
+Issue 020 不提供新的冲突解决器，只能调用或导航既有 Issue 019 能力。
+
+Gap 使用有限 reason code，至少覆盖：
+
+- `NO_CLAIM`
+- `INSUFFICIENT_EVIDENCE`
+- `SOURCE_INDEPENDENCE_UNKNOWN`
+- `FACT_CONFLICTED`
+- `EVIDENCE_STALE`
+- `SOURCE_UNAVAILABLE`
+- `SECTION_NOT_RESEARCHED`
+- `POLICY_VERSION_STALE`
+
+不得用模型“补全”缺失事实，也不得把 UNKNOWN 变成零、空值或否定结论。
+
+
+七、Coverage Policy V1
+----------------------
+
+实现确定性的、版本化的 CoveragePolicy。
+
+Coverage 不是模型评分，不使用浮点猜测，也不根据文章质量或市场热度调整。建议使用整数 basis points（0—10000）或等价精确表示。
+
+每个 section 定义：
+
+- required/optional；
+- 有限 required semantic keys/predicate groups；
+- 权重；
+- 最低 verified 条目数；
+- conflict/stale/insufficient 的处理；
+- readiness 是否要求该 section 达标。
+
+至少输出：
+
+- overall coverage；
+- section coverage；
+- verified/blocked/stale/insufficient/gap counts；
+- required coverage；
+- optional coverage；
+- coverage policy version；
+- 输入集合 hash；
+- reason codes。
+
+规则必须明确：
+
+- 只有当前 `VERIFIED` 事实贡献 verified coverage；
+- `FACT_BLOCKED` 不贡献 verified coverage，并产生 blocking gap；
+- stale evaluation 不贡献 current coverage；
+- supporting-only/context-only 不提升关键事实覆盖；
+- 同一 semantic key 重复 Claim 不重复计分；
+- 缺少某 section 的适用信息不是自动满分；
+- `NOT_APPLICABLE` 只能由有限政策规则或人工确认产生，并带 reason/audit；
+- publication relationship 只作为事实内容，不参与审核、排期、导出等产品门禁；
+- AI 参与度与版权信息不得进入 coverage 输入或算法。
+
+用 gold fixture 固定精确 coverage 结果，避免以后算法漂移。
+
+
+八、内容生产就绪门
+------------------
+
+定义只读、可解释的 `DossierReadinessV1`，供未来 Issue 使用。
+
+状态至少包括：
+
+- `NOT_BUILT`
+- `BUILD_REQUIRED`
+- `INSUFFICIENT_COVERAGE`
+- `FACT_BLOCKED`
+- `STALE`
+- `READY_FOR_CONTENT_BRIEF`
+
+`READY_FOR_CONTENT_BRIEF` 必须同时满足：
+
+- current dossier version 存在；
+- 输入依赖仍为 current；
+- required section coverage 达到政策阈值；
+- 不存在 blocking gap；
+- 不存在未解决的关键事实冲突；
+- 不存在 required entry 的 stale FactEvaluation；
+- coverage 与 fact policy version 均为当前版本。
+
+这只是未来内容流程的事实/研究就绪门。Issue 020 不得写入 topics、experiments、content_briefs、drafts、quality_checks、approvals、post_packages 或 publications。
+
+不得因 AI 标识、版权、出版归属、负面观点或普通争议改变 readiness。
+
+
+九、依赖图、失效与增量重建
+--------------------------
+
+为每个 dossier version 保存精确 dependency edge，至少关联：
+
+- Claim revision；
+- FactEvaluation identity/version；
+- Evidence identity/revision；
+- SourceRevision；
+- Conflict identity/revision；
+- FactPolicy version；
+- CoveragePolicy version。
+
+当以下事件发生时，只标记受影响档案，不全库重建：
+
+- Source 新 revision、撤回或 unavailable；
+- Evidence/locator 失效；
+- Claim 新 revision；
+- FactEvaluation 重算或 stale；
+- conflict open/resolve/undo/reopen；
+- independence/classification 变化；
+- fact/coverage policy version 变化；
+- subject merge/split/undo 影响引用。
+
+状态至少区分：
+
+- `CURRENT`
+- `REBUILD_REQUIRED`
+- `BUILDING`
+- `FAILED`
+- `SUPERSEDED`
+
+要求：
+
+- 失效标记幂等；
+- 同一事件不重复创建 rebuild work；
+- 不自动执行重建；
+- 用户预览并确认后才入队；
+- rebuild 产生新 version，旧 version 保留；
+- 输入未变化时 deterministic no-op，不创建空洞版本；
+- 构建期间输入变化时不得发布过时版本；
+- 失败或取消不能替换 current version；
+- 跨进程 lease、重启恢复与 ambiguous 状态沿用现有队列语义；
+- 不做 O(n²) 全库依赖扫描。
+
+
+十、确定性构建与可选摘要
+------------------------
+
+档案的事实选择、coverage、gap、conflict 和 readiness 全部由本地确定性代码生成。
+
+允许为以下展示字段定义 provider-neutral、可选的模型摘要合同：
+
+- synopsis/themes 的候选中文摘要；
+- reception/discussion 的候选中文摘要；
+- section 的候选阅读摘要。
+
+若实现可选摘要：
+
+- 必须复用 ModelExecutionService、能力矩阵、预算、缓存和成本账本；
+- 只发送用户明确选择的有界 Evidence excerpt/已验证 Claim；
+- 输出只保存为 `MODEL_CANDIDATE`，不能自动发布进 current dossier；
+- 用户确认前不改变 coverage/readiness；
+- prompt injection 不得改变 schema、policy 或引用；
+- 每句或每个 bullet 必须引用输入 Claim/Evidence；
+- 无引用、引用错位或新增事实时拒绝；
+- 测试只用 Scripted Mock，外部请求和费用为 0。
+
+手工及纯本地确定性构建必须在未配置模型时完整可用。
+
+不要为了“用上模型”而强制实现摘要；如会扩大范围，可只冻结合同和界面状态。
+
+
+十一、Build Plan、队列和并发
+----------------------------
+
+定义有界 `DossierBuildPlanV1`，preview 至少显示：
+
+- subject 与 current dossier version；
+- 输入 Claim/Evidence/Conflict/Gap 数量；
+- 将新增、更新、移除的条目摘要；
+- section coverage before/after；
+- readiness before/after；
+- dependency count；
+- 是否 no-op；
+- 本地写入上限；
+- 可选模型请求数与预算结论；
+- plan hash、expiry、expected revisions。
+
+确认使用 sender/window/config 绑定、短期、单次 token。
+
+新增一个有限 job handler，例如 `DOSSIER_BUILD_V1`：
+
+- producer 只能来自明确的桌面确认；
+- payload 只含 ID、版本、hash、有限计数，不含正文、excerpt 或 summary；
+- executionId 幂等；
+- 同 subject 同时最多一个 active build；
+- DB 事务只包围有限本地读写，不跨模型调用；
+- pause、cancel、shutdown 和 recovery 使用现有 JobQueue 契约；
+- after-send ambiguous 不自动重发模型请求；
+- 构建发布时再次校验 input hash 与 expected revision；
+- result 不含正文、路径、secret 或 raw response。
+
+
+十二、Migration 与仓储
+---------------------
+
+追加运行时发现的下一条连续 migration；不预置版本号或校验值，不修改历史 migration。
+
+优先使用现有 `research_dossiers` 表作为聚合根，安全扩展而不是建立第二套同名真相。
+
+根据现有 schema 设计至少覆盖：
+
+- dossier identity/current pointer；
+- immutable dossier versions；
+- sections/entries；
+- entry dependencies；
+- coverage snapshots；
+- gaps；
+- build plans/runs；
+- invalidation/rebuild state；
+- append-only publish/audit history。
+
+要求：
+
+- STRICT、FK、CHECK、unique、delete policy 和索引完整；
+- current version 切换事务化；
+- published historical versions append-only；
+- 旧表兼容数据安全迁移；
+- Issue 018 Catalog 和 Issue 019 Evidence 全部保留；
+- readiness、subject current dossier、stale dependency 和 rebuild queue 查询有索引；
+- 分页读取，不一次加载全部正文或完整依赖图；
+- 新库、升级、备份、失败回滚、quick_check、foreign_key_check 全部测试；
+- migration 身份兼容仓库现有跨平台换行策略。
+
+
+十三、桌面 UI 与 IPC
+--------------------
+
+在“资料研究”页面增加档案工作区，至少提供：
+
+- Work/Expression/Edition 档案列表与 current version；
+- section 导航；
+- consensus、disputed、gap 三类醒目标识；
+- entry 到 Claim/Evidence/SourceRevision 的逐级追溯；
+- overall/section coverage 和 reason；
+- readiness 状态及阻塞原因；
+- stale/rebuild-required 提示；
+- build preview、确认、进度、取消和历史；
+- current 与 previous version 的有限 diff；
+- loading/empty/error/not-built/stale/conflicted/insufficient/ready 状态。
+
+冲突解决跳转到 Issue 019 既有流程，不复制冲突状态机。
+
+preload 只暴露有限、定向、分页 DTO。
+
+IPC 严格校验 exact-object、sender/origin/window、revision、大小和 confirmation token。
+
+renderer 不接收 Node、SQLite、托管路径、整份 snapshot、HTML、raw model response、credential、lease 或无限 Evidence 文本。
+
+
+十四、专项测试与固定样本
+----------------------
+
+新增独立 `test:dossier`，并纳入 full test 与 Windows CI。
+
+合成 gold fixture 至少包含：
+
+- 1 个 Work、1 个 Expression、2 个 Edition；
+- 官方一手验证事实；
+- 两个独立二级来源验证事实；
+- dependent reprint 不重复计数；
+- 日文和英文 Evidence 及中文摘要；
+- 一个 `FACT_BLOCKED` 出版日期冲突；
+- 一个 stale SourceRevision；
+- required section 缺口；
+- optional section 缺口；
+- 至少两个 dossier version。
+
+必须验证：
+
+1. verified 共识条目可精确追溯；
+2. insufficient/context-only 不进入 consensus；
+3. conflict 显示并使 readiness 为 `FACT_BLOCKED`；
+4. resolve 后重建产生新 version；
+5. undo/reopen 后仅相关档案 `REBUILD_REQUIRED`；
+6. Source 新 revision 使相关依赖 stale；
+7. 无关 Source 变化不使档案失效；
+8. coverage 的精确整数结果与 reason codes；
+9. duplicate Claim 不重复计分；
+10. required/optional/NOT_APPLICABLE 语义；
+11. 低覆盖不能得到 `READY_FOR_CONTENT_BRIEF`；
+12. 输入不变重建为 no-op；
+13. 构建中输入改变不能发布旧结果；
+14. 失败/取消不替换 current version；
+15. executionId 重放和跨进程竞争；
+16. migration 新库/升级/备份/回滚/FK/quick check；
+17. 关键查询 pagination 与 index plan；
+18. UI version diff、追溯、coverage、gap、stale 和错误状态；
+19. IPC/egress 不泄漏正文、路径、secret 或 raw response；
+20. topics、content_briefs、drafts、approvals、post_packages、publications 不被写入；
+21. AI、版权和 publication relationship 不参与 coverage/readiness；
+22. 真实密钥、网络、模型和费用均为 0。
+
+若实现可选模型摘要，再覆盖：
+
+- capability unknown/unsupported/stale；
+- budget blocked 与 unknown cost；
+- cache hit；
+- citation mismatch/prompt injection；
+- after-send ambiguous；
+- Scripted Mock 结果不能自动改变 coverage/readiness。
+
+
+十五、文档与完成定义
+--------------------
+
+至少交付：
+
+- `docs/contracts/research-dossier-v1.md`
+- `docs/contracts/dossier-coverage-readiness-v1.md`
+- `docs/adr/` 下下一号 ADR；
+- `docs/m2-issue020-implementation-plan.md`
+- `docs/m2-issue020-acceptance-map.md`
+- 必要的脱敏证据放入 `docs/evidence/`；
+- 归档后的本指令和更新后的历史指令索引；
+- README、AGENTS、Roadmap 和文档索引同步指向 Issue 021。
+
+完成前：
+
+1. 从最新 `npm ci` 开始按当前 CI 顺序运行全部适用门禁；
+2. 所有测试、构建、打包、smoke 和依赖审计通过；
+3. 创建恰好一个 Issue 020 本地提交；
+4. 核验 parent 为动态开工基线、工作树干净、远端未改变；
+5. 停止，不进入 Issue 021。
+
+最终报告必须明确：
+
+- Dossier、Version、Section、Entry、Gap 和 Dependency 的 gold fixture 数量；
+- consensus、disputed、gap 的聚合结果；
+- 精确 coverage 与 readiness 结果；
+- conflict、stale、resolve、undo、reopen 触发的增量失效结果；
+- no-op、失败、取消、并发和重启恢复结果；
+- migration、旧 Catalog/Evidence 数据保留；
+- 真实网络、模型、密钥读取和费用均为 0；
+- 指令只归档于 `docs/instructions/m2/`；
+- 只创建一个本地提交、未 push、未进入 Issue 021。
+
+只有全部成立才可报告 PASS。
+
+
+十六、给 Codex 的启动指令
+------------------------
+
+继续当前本地 `main`，其合法领先 `origin/main`；不要 pull、rebase、reset 或 push。
+
+完整读取仓库 `AGENTS.md` 和本 TXT，随后立即把本 TXT 唯一归档到：
+
+`docs/instructions/m2/M2-Issue020-versioned-research-dossier-Codex-instruction.txt`
+
+只实施 Issue 020：完成版本化 Research Dossier、consensus/disputed/gap、确定性 coverage、内容生产 readiness、依赖失效、显式增量重建、档案 UI、migration 和全部增量验收。
+
+测试只用合成 fixture、临时 SQLite、Scripted Mock 和本机 loopback；真实密钥、业务网络、模型调用和费用保持为 0。
+
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 021。

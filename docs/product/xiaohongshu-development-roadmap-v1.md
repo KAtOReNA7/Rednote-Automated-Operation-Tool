@@ -405,6 +405,10 @@ flowchart TD
 
 依赖：019。
 
+状态：已完成（版本化 Dossier、确定性 coverage/readiness、精确依赖失效与显式本地重建）。
+
+下一项：Issue 021；未收到明确任务时不得自动开始。
+
 ### Issue 021：实现阅读状态和真实性规则
 
 标签：`epic:m2`、`type:domain`、`priority:p0`

@@ -19,6 +19,7 @@
     "dist"
   ],
   "dependencies": {
+    "@mystery-operations/dossier": "0.0.0",
     "@mystery-operations/providers": "0.0.0",
     "@mystery-operations/settings": "0.0.0"
   }

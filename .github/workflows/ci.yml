@@ -95,6 +95,9 @@ jobs:
       - name: Run source evidence and fact conflict suites
         run: npm run test:evidence
 
+      - name: Run versioned research dossier suites
+        run: npm run test:dossier
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

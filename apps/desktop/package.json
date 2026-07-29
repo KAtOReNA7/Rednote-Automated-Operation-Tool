@@ -12,6 +12,7 @@
     "@mystery-operations/catalog": "0.0.0",
     "@mystery-operations/core": "0.0.0",
     "@mystery-operations/db": "0.0.0",
+    "@mystery-operations/dossier": "0.0.0",
     "@mystery-operations/evidence": "0.0.0",
     "@mystery-operations/fetch": "0.0.0",
     "@mystery-operations/local-api": "0.0.0",

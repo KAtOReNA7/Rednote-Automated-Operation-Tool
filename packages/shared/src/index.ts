@@ -2,6 +2,7 @@ export { DESKTOP_BRIDGE_KEY, DESKTOP_IPC_CHANNELS, FOUNDATION_CHECK_KEYS } from 
 export * from './browser-clip-contracts.js';
 export * from './catalog-contracts.js';
 export * from './evidence-contracts.js';
+export * from './dossier-contracts.js';
 
 export type {
   CancelLocalApiPairingRequest,

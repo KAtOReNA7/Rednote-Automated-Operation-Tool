@@ -17,7 +17,7 @@ afterEach(cleanTemporaryDatabases);
 describe('Issue 019 migration v12', () => {
   it('appends one migration while preserving every v1-v11 identity', () => {
     expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
     ]);
     expect(MIGRATIONS[11]).toMatchObject({
       foreignKeysDisabled: true,
@@ -87,7 +87,7 @@ describe('Issue 019 migration v12', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [12], schemaVersion: 12 });
+    expect(result).toMatchObject({ appliedVersions: [12, 13], schemaVersion: 13 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

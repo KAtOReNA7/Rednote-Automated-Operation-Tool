@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import {
   type CancelCatalogDiscoveryInput,
+  type CancelDossierBuildInput,
   type CancelSourceProcessingInput,
   type CancelLocalApiPairingRequest,
   type CancelProviderCapabilityProbeInput,
@@ -12,6 +13,7 @@ import {
   type ConfirmCatalogActionInput,
   type ConfirmCatalogDiscoveryInput,
   type ConfirmEvidenceConflictInput,
+  type ConfirmDossierBuildInput,
   type ConfirmSourceProcessingInput,
   type ConfirmModelCacheClearInput,
   type CreateModelPriceScheduleInput,
@@ -22,6 +24,8 @@ import {
   type GetCatalogStateInput,
   type GetCatalogWorkInput,
   type GetEvidenceStateInput,
+  type GetDossierInput,
+  type ListDossiersInput,
   type GetBrowserClipInput,
   type GetProviderCapabilityProbeProgressInput,
   type NonSecretSettingsDraft,
@@ -31,7 +35,9 @@ import {
   type PreviewCatalogWorkMergeInput,
   type PreviewCatalogWorkSplitInput,
   type PreviewEvidenceConflictInput,
+  type PreviewDossierBuildInput,
   type PreviewSourceProcessingInput,
+  type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type SetCredentialInput,
   type StartProviderCapabilityProbeInput,
@@ -46,6 +52,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelProviderCapabilityProbe, input),
   cancelCatalogDiscovery: (input: CancelCatalogDiscoveryInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelCatalogDiscovery, input),
+  cancelDossierBuild: (input: CancelDossierBuildInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelDossierBuild, input),
   clearCredential: (input: ClearCredentialInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.clearCredential, input),
   confirmModelCacheClear: (input: ConfirmModelCacheClearInput) =>
@@ -62,6 +70,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmCatalogUndo, input),
   confirmEvidenceConflict: (input: ConfirmEvidenceConflictInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmEvidenceConflict, input),
+  confirmDossierBuild: (input: ConfirmDossierBuildInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmDossierBuild, input),
   confirmSourceProcessing: (input: ConfirmSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmSourceProcessing, input),
   cancelSourceProcessing: (input: CancelSourceProcessingInput) =>
@@ -81,6 +91,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCatalogWork, input),
   getEvidenceState: (input: GetEvidenceStateInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getEvidenceState, input),
+  getDossier: (input: GetDossierInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getDossier, input),
   getFoundationHealth: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFoundationHealth),
   getModelAccounting: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getModelAccounting),
   getProviderCapabilityProbeProgress: (input: GetProviderCapabilityProbeProgressInput) =>
@@ -93,6 +105,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
   getSearchState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSearchState),
   getFetchState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFetchState),
   listBrowserClips: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.listBrowserClips),
+  listDossiers: (input: ListDossiersInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.listDossiers, input),
   getBrowserClip: (input: GetBrowserClipInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getBrowserClip, input),
   getSetupState: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getSetupState),
@@ -111,9 +125,13 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewCatalogUndo, input),
   previewEvidenceConflict: (input: PreviewEvidenceConflictInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewEvidenceConflict, input),
+  previewDossierBuild: (input: PreviewDossierBuildInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewDossierBuild, input),
   previewSourceProcessing: (input: PreviewSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewSourceProcessing, input),
   previewModelCacheClear: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewModelCacheClear),
+  diffDossierVersions: (input: DiffDossierVersionsInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.diffDossierVersions, input),
   setCredential: (input: SetCredentialInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.setCredential, input),
   startLocalApiPairing: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.startLocalApiPairing),

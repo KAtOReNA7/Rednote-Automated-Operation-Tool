@@ -8,6 +8,8 @@ import type {
   SourceProcessingPreview,
 } from '@mystery-operations/shared';
 
+import { DossierWorkspace } from './dossier-workspace.js';
+
 function errorText(error: DesktopError): string {
   const messages: Partial<Record<DesktopError['code'], string>> = {
     EVIDENCE_CONFIRMATION_EXPIRED: '确认已过期，请重新预览。',
@@ -267,6 +269,8 @@ export function ResearchPage(): React.JSX.Element {
         </div>
       )}
 
+      <DossierWorkspace />
+
       <section aria-label="事实证据计数" className="evidence-metrics">
         {Object.entries(state?.counts ?? {}).map(([label, value]) => (
           <article className="metric-card" key={label}>
@@ -409,7 +413,7 @@ export function ResearchPage(): React.JSX.Element {
         </article>
       </section>
 
-      <section className="evidence-panel">
+      <section className="evidence-panel" id="evidence-conflicts">
         <div className="panel-heading">
           <div>
             <p className="section-kicker">Conflict guard</p>

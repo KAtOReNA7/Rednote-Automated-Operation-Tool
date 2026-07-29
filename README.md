@@ -3,8 +3,8 @@
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
   <img alt="M2 in progress" src="https://img.shields.io/badge/M2-进行中-ff2442" />
-  <img alt="Issues 001–019 completed" src="https://img.shields.io/badge/已完成-Issues%20001--019-2ea44f" />
-  <img alt="Next Issue 020" src="https://img.shields.io/badge/下一步-Issue%20020-ff2442" />
+  <img alt="Issues 001–020 completed" src="https://img.shields.io/badge/已完成-Issues%20001--020-2ea44f" />
+  <img alt="Next Issue 021" src="https://img.shields.io/badge/下一步-Issue%20021-ff2442" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
 </p>
@@ -31,19 +31,20 @@
 | 你想知道的                   | 当前答案                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------- |
 | **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认 |
-| **做到哪一步？**             | M0、M1 已完成；M2 已完成 Issue 012–019                                          |
-| **下一步是什么？**           | Issue 020（研究档案，仅规划；本轮未开始）                                       |
+| **做到哪一步？**             | M0、M1 已完成；M2 已完成 Issue 012–020                                          |
+| **下一步是什么？**           | Issue 021（阅读状态与真实性规则，仅规划）                                       |
 | **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                              |
 | **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                        |
 | **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                      |
 
 > [!TIP]
-> 里程碑快照：M1（Issue 006—011）与 M2 Issue 012—019 均已完成验收；下一步仅规划
-> Issue 020。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
+> 里程碑快照：M1（Issue 006—011）与 M2 Issue 012—020 均已完成验收；下一步仅规划
+> Issue 021。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
 > `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`，且外部请求数为 0。
 > Fetch 只处理研究流程明确选择的单个已持久化候选；结果仍是
 > `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`，不会自动入队或升级为事实。Issue 019
 > 只有在用户明确接纳受控文档后，才创建版本化 Source、原子 Claim、精确 Evidence 与事实评估。
+> Issue 020 再把已验证事实确定性投影为可追溯 Dossier；重建同样需要显式预览与确认。
 
 > [!IMPORTANT]
 > 本项目是**非官方开发项目**，不代表小红书或任何平台立场。当前版本没有接通真实内容工作流、
@@ -55,7 +56,7 @@
 flowchart LR
     M0["M0<br/>Issue 001–005<br/>基础与硬约束"] --> M1["M1<br/>Issue 006–011<br/>本地应用基础设施"]
     M1 --> M2["M2<br/>Issue 012–021<br/>模型、搜索、书库与研究"]
-    M2 --> NEXT["NEXT<br/>Issue 020<br/>研究档案，仅规划"]
+    M2 --> NEXT["NEXT<br/>Issue 021<br/>阅读状态与真实性规则"]
     NEXT -.-> FUTURE["M3–M6<br/>内容、视觉、运营与发布"]
 
     classDef done fill:#fff0f2,stroke:#ff2442,color:#111,stroke-width:2px;
@@ -73,7 +74,7 @@ flowchart LR
 | ------ | ---------: | -------------------------------------- | :---------------- |
 | M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**        |
 | M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**        |
-| M2     |    012–021 | 模型接口、搜索、书库与研究             | **进行中 · 8/10** |
+| M2     |    012–021 | 模型接口、搜索、书库与研究             | **进行中 · 9/10** |
 | M3–M6  |       后续 | 内容生产、视觉、审批、导出与发布       | **未开始**        |
 
 ### 最近完成
@@ -88,7 +89,7 @@ flowchart LR
 |   017 | Chrome / Edge MV3 公开页面样本收藏与本地只读查看         | **已完成** |
 |   018 | 三级书目、分层发现、保守实体消歧与可逆人工决策           | **已完成** |
 |   019 | 版本化来源、原子事实、精确证据、事实策略与冲突处理       | **已完成** |
-|   020 | 可版本化研究档案                                         | **未开始** |
+|   020 | 版本化研究档案、确定性覆盖度、精确失效与显式增量重建     | **已完成** |
 
 > [!NOTE]
 > “下一步”只表示路线图顺序，不表示已经开始开发。仓库不会自动进入后续 Issue。
@@ -98,8 +99,8 @@ flowchart LR
 | 已经具备                                                                  | 尚未接通                                                  |
 | ------------------------------------------------------------------------- | --------------------------------------------------------- |
 | 安全的 Electron + React 中文桌面壳                                        | 内容工作流中的真实 Provider wiring                        |
-| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                        | Issue 020 的可版本化研究档案                              |
-| 支持暂停、取消、租约和重启恢复的持久化任务队列                            | Issue 020 的可版本化研究档案                              |
+| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                        | Issue 021 的阅读状态和真实性规则                          |
+| 支持暂停、取消、租约和重启恢复的持久化任务队列                            | Issue 021 的阅读状态和真实性规则                          |
 | 受控 ProjectDataRoot、本地文件仓库、中文/空格/长路径                      | 选题、文案、质量编排、审批、排期、发布包与复盘            |
 | 本机设置、凭据引用、脱敏诊断与默认关闭的 `127.0.0.1` 本地 API             | 面向最终用户的安装器、自动更新与正式发布版本              |
 | Provider-neutral 接口、显式能力探测、统一 usage、有限重试与 Scripted Mock | 小红书自动登录、发布、评论、私信、验证码或风控处理        |
@@ -107,7 +108,8 @@ flowchart LR
 | 五类 SearchProvider、URL/domain 归一化、SearchRun、持久限速和被动本地输入 | Search API 生产 codec、浏览器插件业务                     |
 | 单候选受控 Fetch、DNS/socket 固定、robots、净化 HTML 与文本内容寻址快照   | 自动抓取、站点遍历、Source/Claim 或把抓取结果当作证据     |
 | Work / Expression / Edition 三级书目、分层 Coverage 与可逆实体决策        | 选题、文案、质量编排、审批、排期、发布包与复盘            |
-| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计 | 研究档案覆盖度与增量重建                                  |
+| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计 | 选题、文案、质量编排、审批、排期、发布包与复盘            |
+| 版本化 Dossier、共识/争议/缺口、整数 coverage、readiness 与精确增量重建   | 阅读状态与真实性规则（Issue 021）                         |
 
 ## 快速开始
 
@@ -154,6 +156,7 @@ flowchart LR
     MAIN --> FETCH["Controlled Fetch<br/>单候选、未核验、非证据"]
     MAIN --> CATALOG["Bibliographic Catalog<br/>Work / Expression / Edition"]
     MAIN --> EVIDENCE["Research Evidence<br/>Source / Claim / Conflict"]
+    MAIN --> DOSSIER["Research Dossier<br/>Version / Coverage / Gap"]
     MODEL --> PROBE["用户显式能力探测"]
     PROBE --> PROVIDERS["Provider 接口"]
     API -.-> CLIPPER["浏览器插件"]
@@ -165,6 +168,7 @@ flowchart LR
     CLIPPER --> CATALOG
     FETCH -.-> EVIDENCE
     CATALOG --> EVIDENCE
+    EVIDENCE --> DOSSIER
 ```
 
 关键边界：
@@ -183,6 +187,8 @@ flowchart LR
   审批、优先级、排期或导出。
 - 一条官方一手证据或两个已确认独立的二级证据才可验证关键事实；未解决的实质冲突固定为
   `FACT_BLOCKED`。中文摘要只帮助阅读，不能替代绑定不可变 Source revision 的原文摘录。
+- Dossier 只消费已验证事实并保留每个历史版本；coverage/readiness 由本地整数规则计算。
+  Source、Conflict 或书目实体变化只标记相关档案，用户预览并确认后才执行本地重建。
 
 ## 仓库结构
 
@@ -202,6 +208,7 @@ flowchart LR
 | `packages/fetch`     | 单候选抓取合同、SSRF/DNS、robots、传输、净化与抽取     |
 | `packages/catalog`   | 书目 Observation、三级实体、规范化、消歧与发现计划     |
 | `packages/evidence`  | Source/Claim/Evidence 合同、FactPolicy、冲突与确认令牌 |
+| `packages/dossier`   | 版本化 Dossier、CoveragePolicy、Gap、依赖与构建合同    |
 | `packages/shared`    | renderer / preload / main 共享 DTO                     |
 | `docs`               | ADR、稳定合同、验收映射和安全证据                      |
 | `tests`              | 领域、架构、SQLite、Electron、安全与回归测试           |
@@ -245,6 +252,7 @@ npm run test:fetch
 npm run test:clipper
 npm run test:bibliography
 npm run test:evidence
+npm run test:dossier
 npm run test:clipper-real
 npm run test:electron-smoke
 npm run package:clipper
@@ -343,6 +351,11 @@ npm run test:packaged-smoke
 - [ADR 0015：来源版本、原子事实与冲突守卫](./docs/adr/0015-source-revisions-atomic-facts-and-conflict-guard.md)
 - [Issue 019 实施计划](./docs/m2-issue019-implementation-plan.md)
 - [Issue 019 验收映射](./docs/m2-issue019-acceptance-map.md)
+- [Research Dossier V1 合同](./docs/contracts/research-dossier-v1.md)
+- [Dossier Coverage 与 Readiness V1 合同](./docs/contracts/dossier-coverage-readiness-v1.md)
+- [ADR 0016：版本化研究档案与确定性就绪门](./docs/adr/0016-versioned-research-dossiers.md)
+- [Issue 020 实施计划](./docs/m2-issue020-implementation-plan.md)
+- [Issue 020 验收映射](./docs/m2-issue020-acceptance-map.md)
 
 </details>
 
@@ -360,5 +373,5 @@ npm run test:packaged-smoke
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  下一步仅规划 Issue 020；仓库不会自动开始后续开发。
+  下一步仅规划 Issue 021；仓库不会自动开始后续开发。
 </p>

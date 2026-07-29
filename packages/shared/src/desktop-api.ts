@@ -56,6 +56,20 @@ import type {
   PreviewSourceProcessingInput,
   SourceProcessingPreview,
 } from './evidence-contracts.js';
+import type {
+  CancelDossierBuildInput,
+  ConfirmDossierBuildInput,
+  DiffDossierVersionsInput,
+  DossierBuildPreview,
+  DossierBuildRun,
+  DossierDetailStateView,
+  DossierErrorCode,
+  DossierListStateView,
+  DossierVersionDiffView,
+  GetDossierInput,
+  ListDossiersInput,
+  PreviewDossierBuildInput,
+} from './dossier-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -78,6 +92,12 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   previewSourceProcessing: 'evidence:preview-processing',
   confirmSourceProcessing: 'evidence:confirm-processing',
   cancelSourceProcessing: 'evidence:cancel-processing',
+  listDossiers: 'dossier:list',
+  getDossier: 'dossier:get',
+  previewDossierBuild: 'dossier:preview-build',
+  confirmDossierBuild: 'dossier:confirm-build',
+  cancelDossierBuild: 'dossier:cancel-build',
+  diffDossierVersions: 'dossier:diff-versions',
   previewCatalogDiscovery: 'catalog:preview-discovery',
   confirmCatalogDiscovery: 'catalog:confirm-discovery',
   cancelCatalogDiscovery: 'catalog:cancel-discovery',
@@ -163,6 +183,7 @@ export interface DesktopError {
     | 'EVIDENCE_NOT_FOUND'
     | 'EVIDENCE_POLICY_BLOCKED'
     | 'EVIDENCE_STALE_REVISION'
+    | DossierErrorCode
     | LocalApiErrorCode
     | SettingsErrorCode;
   readonly context?: Readonly<Record<string, boolean | number | string>>;
@@ -633,6 +654,16 @@ export interface DesktopBridge {
   cancelSourceProcessing?(
     input: CancelSourceProcessingInput,
   ): Promise<DesktopResult<EvidenceStateView>>;
+  listDossiers?(input: ListDossiersInput): Promise<DesktopResult<DossierListStateView>>;
+  getDossier?(input: GetDossierInput): Promise<DesktopResult<DossierDetailStateView>>;
+  previewDossierBuild?(
+    input: PreviewDossierBuildInput,
+  ): Promise<DesktopResult<DossierBuildPreview>>;
+  confirmDossierBuild?(input: ConfirmDossierBuildInput): Promise<DesktopResult<DossierBuildRun>>;
+  cancelDossierBuild?(input: CancelDossierBuildInput): Promise<DesktopResult<DossierBuildRun>>;
+  diffDossierVersions?(
+    input: DiffDossierVersionsInput,
+  ): Promise<DesktopResult<DossierVersionDiffView>>;
   previewCatalogDiscovery?(
     input: PreviewCatalogDiscoveryInput,
   ): Promise<DesktopResult<CatalogDiscoveryPreview>>;

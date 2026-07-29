@@ -59,7 +59,7 @@ describe('Issue 011 migration v5', () => {
       throw new Error('Migration v5 is missing.');
     }
     expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
     ]);
     expect(migrationV5.name).toBe('local_loopback_api_and_plugin_clients');
     expect(MIGRATIONS.slice(0, 4).map(migrationChecksum)).toEqual(KNOWN_MIGRATION_HASHES);
@@ -251,7 +251,7 @@ describe('Issue 011 migration v5', () => {
       backupDirectory: databasePath.replace(/content\.sqlite$/u, 'migration backups'),
       databasePath,
     });
-    expect(result.appliedVersions).toEqual([5, 6, 7, 8, 9, 10, 11, 12]);
+    expect(result.appliedVersions).toEqual([5, 6, 7, 8, 9, 10, 11, 12, 13]);
     expect(result.backupPath).not.toBeNull();
     if (result.backupPath === null) {
       throw new Error('Migration backup is missing.');

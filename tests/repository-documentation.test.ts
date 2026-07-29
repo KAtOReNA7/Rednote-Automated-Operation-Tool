@@ -8,12 +8,13 @@ const readme = readFileSync(resolve(projectRoot, 'README.md'), 'utf8');
 const agents = readFileSync(resolve(projectRoot, 'AGENTS.md'), 'utf8');
 
 describe('repository-facing documentation', () => {
-  it('reports completed Issue 019 and keeps Issue 020 as the bounded next milestone', () => {
+  it('reports completed Issue 020 and keeps Issue 021 as the bounded next milestone', () => {
     expect(readme).toContain('M1（Issue 006—011）');
-    expect(readme).toContain('M2 Issue 012—019 均已完成验收');
-    expect(readme).toContain('Issue 020（研究档案，仅规划；本轮未开始）');
+    expect(readme).toContain('M2 Issue 012—020 均已完成验收');
+    expect(readme).toContain('Issue 021（阅读状态与真实性规则，仅规划）');
     expect(readme).toContain('Work / Expression / Edition');
     expect(readme).toContain('Source revision、AtomicClaim、精确 EvidenceLocator');
+    expect(readme).toContain('版本化 Dossier、共识/争议/缺口');
     expect(readme).toContain('LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT');
     expect(readme).toContain('FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT');
     expect(readme).toContain('外部请求恒为 0');
@@ -44,6 +45,7 @@ describe('repository-facing documentation', () => {
       'docs/instructions/m2/M2-Issue017-Chrome-Edge-browser-clipper-Codex-instruction.txt',
       'docs/instructions/m2/M2-Issue018-bibliographic-discovery-entity-resolution-Codex-instruction.txt',
       'docs/instructions/m2/M2-Issue019-source-atomic-facts-conflict-handling-Codex-instruction.txt',
+      'docs/instructions/m2/M2-Issue020-versioned-research-dossier-Codex-instruction.txt',
     ]) {
       expect(existsSync(resolve(projectRoot, path)), path).toBe(true);
     }
@@ -56,6 +58,7 @@ describe('repository-facing documentation', () => {
       'M2-Issue018-bibliographic-discovery-entity-resolution-Codex-instruction.txt',
       'M2-Issue018-bibliographic-discovery-entity-resolution-repository-governance-v2-Codex-instruction.txt',
       'M2-Issue019-source-atomic-facts-conflict-handling-Codex-instruction.txt',
+      'M2-Issue020-versioned-research-dossier-Codex-instruction.txt',
     ]) {
       expect(existsSync(resolve(projectRoot, obsoleteRootPath)), obsoleteRootPath).toBe(false);
     }
@@ -95,9 +98,9 @@ describe('repository-facing documentation', () => {
       'migration 只能按连续版本追加',
       'npm run test:constraints',
       '未经用户明确授权，不得 push',
-      'Issue 012—019 已经完成',
-      '下一项规划是 Issue 020',
-      'migration v1—v12 已发布',
+      'Issue 012—020 已经完成',
+      '下一项规划是 Issue 021',
+      'migration v1—v13 已发布',
     ]) {
       expect(agents).toContain(required);
     }

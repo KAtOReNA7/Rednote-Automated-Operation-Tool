@@ -21,7 +21,7 @@ afterEach(cleanTemporaryDatabases);
 describe('fetch migration v9 and SQLite repository', () => {
   it('appends one frozen STRICT migration with all fetch tables and indexes', async () => {
     expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
     ]);
     expect(MIGRATIONS[8]).toMatchObject({
       name: 'controlled_public_page_fetch',
@@ -61,7 +61,7 @@ describe('fetch migration v9 and SQLite repository', () => {
     const candidate = insertFetchCandidate(database);
     database.close();
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [9, 10, 11, 12], schemaVersion: 12 });
+    expect(result).toMatchObject({ appliedVersions: [9, 10, 11, 12, 13], schemaVersion: 13 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     expect(

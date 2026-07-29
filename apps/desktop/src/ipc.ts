@@ -2,16 +2,19 @@ import { app, ipcMain } from 'electron';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 
 import { CatalogError } from '@mystery-operations/catalog';
+import { DossierError } from '@mystery-operations/dossier';
 import { EvidenceError } from '@mystery-operations/evidence';
 import { LocalApiError } from '@mystery-operations/local-api';
 import {
   type CancelCatalogDiscoveryInput,
+  type CancelDossierBuildInput,
   type CancelSourceProcessingInput,
   type CancelLocalApiPairingRequest,
   type CancelProviderCapabilityProbeInput,
   type ConfirmModelCacheClearInput,
   type ConfirmCatalogActionInput,
   type ConfirmCatalogDiscoveryInput,
+  type ConfirmDossierBuildInput,
   type ConfirmEvidenceConflictInput,
   type ConfirmSourceProcessingInput,
   DESKTOP_IPC_CHANNELS,
@@ -28,15 +31,19 @@ import {
   type GetBrowserClipInput,
   type GetCatalogStateInput,
   type GetCatalogWorkInput,
+  type GetDossierInput,
   type GetEvidenceStateInput,
+  type ListDossiersInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
   type PreviewCatalogDiscoveryInput,
   type PreviewCatalogUndoInput,
   type PreviewCatalogWorkMergeInput,
   type PreviewCatalogWorkSplitInput,
+  type PreviewDossierBuildInput,
   type PreviewEvidenceConflictInput,
   type PreviewSourceProcessingInput,
+  type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
   type SetCredentialInput,
@@ -79,6 +86,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof DossierError) {
+    return failure(error.code, error.message, error.retryable, error.safeDetails);
+  }
   if (error instanceof EvidenceError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -256,6 +266,40 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('cancelSourceProcessing', DESKTOP_IPC_CHANNELS.cancelSourceProcessing, (_event, args) =>
     options.settingsRuntime.cancelSourceProcessing(args[0] as CancelSourceProcessingInput),
+  );
+  register('listDossiers', DESKTOP_IPC_CHANNELS.listDossiers, (_event, args) =>
+    options.settingsRuntime.listDossiers(args[0] as ListDossiersInput),
+  );
+  register('getDossier', DESKTOP_IPC_CHANNELS.getDossier, (_event, args) =>
+    options.settingsRuntime.getDossier(args[0] as GetDossierInput),
+  );
+  register('previewDossierBuild', DESKTOP_IPC_CHANNELS.previewDossierBuild, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new DossierError('DOSSIER_INVALID_REQUEST');
+    }
+    return options.settingsRuntime.previewDossierBuild(
+      args[0] as PreviewDossierBuildInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmDossierBuild', DESKTOP_IPC_CHANNELS.confirmDossierBuild, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new DossierError('DOSSIER_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.confirmDossierBuild(
+      args[0] as ConfirmDossierBuildInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('cancelDossierBuild', DESKTOP_IPC_CHANNELS.cancelDossierBuild, (_event, args) =>
+    options.settingsRuntime.cancelDossierBuild(args[0] as CancelDossierBuildInput),
+  );
+  register('diffDossierVersions', DESKTOP_IPC_CHANNELS.diffDossierVersions, (_event, args) =>
+    options.settingsRuntime.diffDossierVersions(args[0] as DiffDossierVersionsInput),
   );
   register(
     'previewCatalogDiscovery',

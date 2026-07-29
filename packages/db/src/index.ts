@@ -2,6 +2,7 @@ export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
+export { SqliteDossierRepository } from './dossier-repository.js';
 export { SqliteBrowserClipRepository } from './browser-clip-repository.js';
 export type {
   BrowserClipScreenshotRecordV1,
@@ -43,6 +44,15 @@ export type {
   RegisterSourceInputV1,
   SourceClassificationInputV1,
 } from './evidence-repository.js';
+export type {
+  ConfirmDossierBuildResult,
+  DossierBuildExecutionResult,
+  DossierDetailView,
+  DossierInvalidationInput,
+  DossierListItem,
+  DossierListView,
+  DossierVersionDiff,
+} from './dossier-repository.js';
 export type {
   ClaimStoredJobInput,
   EnqueueStoredJobInput,
