@@ -194,19 +194,49 @@ function Find-VisibleNamedElement {
     [string]$Name
   )
 
-  $elements = $Root.FindAll(
-    [System.Windows.Automation.TreeScope]::Descendants,
-    [System.Windows.Automation.Condition]::TrueCondition
+  $nameCondition = [System.Windows.Automation.PropertyCondition]::new(
+    [System.Windows.Automation.AutomationElement]::NameProperty,
+    $Name
   )
-  foreach ($element in $elements) {
-    if (
-      [string]::Equals(
-        $element.Current.Name,
-        $Name,
-        [System.StringComparison]::Ordinal
-      )
-    ) {
-      return $element
+  try {
+    $match = $Root.FindFirst(
+      [System.Windows.Automation.TreeScope]::Descendants,
+      $nameCondition
+    )
+    if ($null -ne $match) {
+      return $match
+    }
+  } catch [System.Runtime.InteropServices.COMException] {
+    # Some unrelated top-level windows expose a broken UIA subtree. Search each
+    # desktop child independently so one inaccessible window cannot abort the
+    # exact-name lookup for the isolated browser popup.
+  }
+  if ($Root -eq [System.Windows.Automation.AutomationElement]::RootElement) {
+    $topLevelWindows = $Root.FindAll(
+      [System.Windows.Automation.TreeScope]::Children,
+      [System.Windows.Automation.Condition]::TrueCondition
+    )
+    foreach ($topLevelWindow in $topLevelWindows) {
+      try {
+        if (
+          [string]::Equals(
+            $topLevelWindow.Current.Name,
+            $Name,
+            [System.StringComparison]::Ordinal
+          )
+        ) {
+          return $topLevelWindow
+        }
+        $match = $topLevelWindow.FindFirst(
+          [System.Windows.Automation.TreeScope]::Descendants,
+          $nameCondition
+        )
+        if ($null -ne $match) {
+          return $match
+        }
+      } catch [System.Runtime.InteropServices.COMException] {
+        continue
+      }
     }
   }
   return $null

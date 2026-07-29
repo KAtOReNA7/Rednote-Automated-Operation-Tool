@@ -92,6 +92,9 @@ jobs:
       - name: Run bibliographic discovery and entity resolution suites
         run: npm run test:bibliography
 
+      - name: Run source evidence and fact conflict suites
+        run: npm run test:evidence
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

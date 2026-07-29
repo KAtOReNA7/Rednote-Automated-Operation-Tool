@@ -323,16 +323,17 @@ describe('React desktop shell', () => {
     expect(screen.getByText('43.2.0')).toBeInTheDocument();
   });
 
-  it('navigates to a real placeholder without presenting fake actions', async () => {
+  it('navigates to the real research page without presenting a placeholder as ready', async () => {
     const user = userEvent.setup();
     render(<App />);
     await screen.findByText('本地安全底座已就绪');
     await user.click(screen.getByRole('link', { name: /资料研究/u }));
 
     expect(await screen.findByRole('heading', { name: '资料研究', level: 1 })).toBeInTheDocument();
-    expect(screen.getByText('这里还是一个清晰的占位页')).toBeInTheDocument();
-    expect(screen.getByText(/尚未在当前里程碑实现/u)).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.getByText('让每一条关键事实都能回到原文')).toBeInTheDocument();
+    expect(screen.getByText('当前桌面桥接不支持资料证据功能。')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '冲突与 FACT_BLOCKED' })).toBeInTheDocument();
+    expect(screen.queryByText('这里还是一个清晰的占位页')).not.toBeInTheDocument();
   });
 
   it.each(NAVIGATION_ITEMS)('renders the $label route at $path', async (item) => {

@@ -17,6 +17,7 @@
   "dependencies": {
     "@mystery-operations/catalog": "0.0.0",
     "@mystery-operations/core": "0.0.0",
+    "@mystery-operations/evidence": "0.0.0",
     "@mystery-operations/fetch": "0.0.0",
     "@mystery-operations/local-api": "0.0.0",
     "@mystery-operations/providers": "0.0.0",

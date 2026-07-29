@@ -73,7 +73,7 @@ describe('Issue 018 SQLite catalog repository', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [11], schemaVersion: 11 });
+    expect(result).toMatchObject({ appliedVersions: [11, 12], schemaVersion: 12 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

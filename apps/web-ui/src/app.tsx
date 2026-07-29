@@ -5,6 +5,7 @@ import { ModelAccountingCenter } from './model-accounting-center.js';
 import { FetchRunPanel } from './fetch-run-panel.js';
 import { BrowserClipLibrary } from './browser-clip-library.js';
 import { LibraryPage } from './library-page.js';
+import { ResearchPage } from './research-page.js';
 import { SettingsPage } from './settings-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
@@ -156,6 +157,8 @@ export function App(): React.JSX.Element {
             </div>
           ) : route.path === '/library' ? (
             <LibraryPage />
+          ) : route.path === '/research' ? (
+            <ResearchPage />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">

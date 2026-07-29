@@ -17,6 +17,9 @@
       "path": "./packages/core"
     },
     {
+      "path": "./packages/evidence"
+    },
+    {
       "path": "./packages/db"
     },
     {

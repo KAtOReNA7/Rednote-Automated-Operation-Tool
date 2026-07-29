@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron';
 
 import {
   type CancelCatalogDiscoveryInput,
+  type CancelSourceProcessingInput,
   type CancelLocalApiPairingRequest,
   type CancelProviderCapabilityProbeInput,
   DESKTOP_BRIDGE_KEY,
@@ -10,6 +11,8 @@ import {
   type ConfirmDataRootSelectionInput,
   type ConfirmCatalogActionInput,
   type ConfirmCatalogDiscoveryInput,
+  type ConfirmEvidenceConflictInput,
+  type ConfirmSourceProcessingInput,
   type ConfirmModelCacheClearInput,
   type CreateModelPriceScheduleInput,
   type CreateModelUnitPolicyInput,
@@ -18,6 +21,7 @@ import {
   type GetCredentialStatusInput,
   type GetCatalogStateInput,
   type GetCatalogWorkInput,
+  type GetEvidenceStateInput,
   type GetBrowserClipInput,
   type GetProviderCapabilityProbeProgressInput,
   type NonSecretSettingsDraft,
@@ -26,6 +30,8 @@ import {
   type PreviewCatalogUndoInput,
   type PreviewCatalogWorkMergeInput,
   type PreviewCatalogWorkSplitInput,
+  type PreviewEvidenceConflictInput,
+  type PreviewSourceProcessingInput,
   type RevokeLocalApiClientRequest,
   type SetCredentialInput,
   type StartProviderCapabilityProbeInput,
@@ -54,6 +60,12 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmCatalogWorkSplit, input),
   confirmCatalogUndo: (input: ConfirmCatalogActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmCatalogUndo, input),
+  confirmEvidenceConflict: (input: ConfirmEvidenceConflictInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmEvidenceConflict, input),
+  confirmSourceProcessing: (input: ConfirmSourceProcessingInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmSourceProcessing, input),
+  cancelSourceProcessing: (input: CancelSourceProcessingInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelSourceProcessing, input),
   exportDiagnosticReport: (input: ExportDiagnosticReportInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.exportDiagnosticReport, input),
   createModelPriceSchedule: (input: CreateModelPriceScheduleInput) =>
@@ -67,6 +79,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCatalogState, input),
   getCatalogWork: (input: GetCatalogWorkInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCatalogWork, input),
+  getEvidenceState: (input: GetEvidenceStateInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getEvidenceState, input),
   getFoundationHealth: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFoundationHealth),
   getModelAccounting: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getModelAccounting),
   getProviderCapabilityProbeProgress: (input: GetProviderCapabilityProbeProgressInput) =>
@@ -95,6 +109,10 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewCatalogWorkSplit, input),
   previewCatalogUndo: (input: PreviewCatalogUndoInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewCatalogUndo, input),
+  previewEvidenceConflict: (input: PreviewEvidenceConflictInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewEvidenceConflict, input),
+  previewSourceProcessing: (input: PreviewSourceProcessingInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewSourceProcessing, input),
   previewModelCacheClear: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewModelCacheClear),
   setCredential: (input: SetCredentialInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.setCredential, input),

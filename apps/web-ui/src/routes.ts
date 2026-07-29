@@ -19,7 +19,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = Object.freeze([
     shortLabel: '书',
   },
   {
-    description: '资料采集、整理和研究尚未在当前里程碑实现。',
+    description: '管理版本化来源、精确证据、原子事实、事实评估与可逆冲突决定。',
     label: '资料研究',
     path: '/research',
     shortLabel: '研',

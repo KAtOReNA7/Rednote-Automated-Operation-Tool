@@ -26,7 +26,9 @@ afterEach(cleanTemporaryDatabases);
 describe('Issue 010 migration v4', () => {
   it('keeps v1-v3 immutable and appends one stable consecutive migration', () => {
     expect(MIGRATIONS.slice(0, 3).map(migrationChecksum)).toEqual(HISTORICAL_HASHES);
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(MIGRATIONS.map(({ version }) => version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    ]);
     expect(MIGRATIONS[3]).toMatchObject({
       name: 'local_settings_and_credential_reference',
       version: 4,
@@ -148,7 +150,7 @@ describe('Issue 010 migration v4', () => {
     await expect(initializeDatabase({ databasePath: path })).resolves.toMatchObject({
       appliedVersions: [],
       backupPath: null,
-      schemaVersion: 11,
+      schemaVersion: 12,
     });
   });
 
@@ -170,7 +172,7 @@ describe('Issue 010 migration v4', () => {
     before.close();
 
     const result = await initializeDatabase({ databasePath: path });
-    expect(result.appliedVersions).toEqual([4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(result.appliedVersions).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12]);
     expect(existsSync(result.backupPath ?? '')).toBe(true);
     const upgraded = connectDatabase(path);
     try {
@@ -214,14 +216,15 @@ describe('Issue 010 migration v4', () => {
   it('rolls back v4 when the following migration fails', async () => {
     const path = createTemporaryDatabasePath();
     await initializeDatabase({ databasePath: path, migrations: MIGRATIONS.slice(0, 3) });
+    const failingVersion = (MIGRATIONS.at(-1)?.version ?? 0) + 1;
     const failing: Migration = {
       name: 'issue010_failure_probe',
       sql: 'CREATE TABLE issue010_probe(id TEXT) STRICT; SELECT * FROM missing_issue010;',
-      version: 12,
+      version: failingVersion,
     };
     await expect(
       initializeDatabase({ databasePath: path, migrations: [...MIGRATIONS, failing] }),
-    ).rejects.toMatchObject({ migrationVersion: 12 });
+    ).rejects.toMatchObject({ migrationVersion: failingVersion });
     const database = connectDatabase(path);
     try {
       expect(

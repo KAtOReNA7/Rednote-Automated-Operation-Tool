@@ -19,7 +19,9 @@ afterEach(cleanTemporaryDatabases);
 
 describe('Issue 017 migration v10 and browser clip repository', () => {
   it('appends one frozen migration without changing v1-v9', () => {
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]);
+    expect(MIGRATIONS.map(({ version }) => version)).toEqual([
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,
+    ]);
     const migration = MIGRATIONS.at(9);
     expect(migration).toMatchObject({
       name: 'browser_clipper_samples',

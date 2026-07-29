@@ -64,7 +64,7 @@ describe('Issue 010 architecture boundaries', () => {
 
     expect(DESKTOP_BRIDGE_KEY).toBe('rednoteDesktop');
     expect(new Set(channels).size).toBe(channels.length);
-    expect(channels).toHaveLength(47);
+    expect(channels).toHaveLength(53);
     for (const key of Object.keys(DESKTOP_IPC_CHANNELS)) {
       expect(preload).toContain(`${key}:`);
       expect(preload).toContain(`DESKTOP_IPC_CHANNELS.${key}`);

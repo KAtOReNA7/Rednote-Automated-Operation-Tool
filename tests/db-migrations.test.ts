@@ -119,20 +119,47 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'catalog_revision',
     ],
     claim_evidence: [
+      'id',
       'claim_id',
       'source_id',
-      'evidence_excerpt',
-      'locator',
+      'source_revision',
+      'locator_version',
+      'locator_kind',
+      'locator_json',
+      'excerpt',
+      'excerpt_hash',
       'supports_or_contradicts',
+      'language',
+      'summary_zh',
+      'summary_method',
+      'model_execution_id',
+      'locator_validated',
+      'verification_status',
+      'revision',
+      'created_at',
     ],
     claims: [
       'id',
+      'contract_version',
       'subject_type',
       'subject_id',
       'predicate',
+      'predicate_version',
+      'value_type',
       'value_json',
+      'normalized_value',
+      'scope_json',
+      'normalized_scope_hash',
+      'policy_version',
+      'key_fact',
+      'claimant_source_id',
+      'claimant_source_revision',
+      'semantic_fingerprint',
+      'status',
+      'provenance_json',
       'confidence',
-      'conflict_status',
+      'legacy_conflict_status',
+      'revision',
       'created_at',
     ],
     clips: [
@@ -418,10 +445,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11],
+        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
         backupPath: null,
         databasePath,
-        schemaVersion: 11,
+        schemaVersion: 12,
       });
       expect(tables).toEqual(
         [
@@ -464,10 +491,21 @@ describe('SQLite initialization and migrations', () => {
           'entity_lineage_memberships',
           'entity_redirects',
           'expressions',
+          'fact_audit_events',
+          'fact_conflict_decisions',
+          'fact_conflicts',
+          'fact_evaluations',
+          'fact_subjects',
           'observation_entity_links',
+          'predicate_registry',
           'publication_relationships',
           'resolution_cases',
           'resolution_decisions',
+          'source_classifications',
+          'source_lineage',
+          'source_processing_plans',
+          'source_processing_runs',
+          'source_revisions',
         ].sort(),
       );
     } finally {
@@ -528,9 +566,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 11,
+        schemaVersion: 12,
       });
-      expect(row.count).toBe(11);
+      expect(row.count).toBe(12);
     } finally {
       database.close();
     }

@@ -2,14 +2,18 @@ import { app, ipcMain } from 'electron';
 import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
 
 import { CatalogError } from '@mystery-operations/catalog';
+import { EvidenceError } from '@mystery-operations/evidence';
 import { LocalApiError } from '@mystery-operations/local-api';
 import {
   type CancelCatalogDiscoveryInput,
+  type CancelSourceProcessingInput,
   type CancelLocalApiPairingRequest,
   type CancelProviderCapabilityProbeInput,
   type ConfirmModelCacheClearInput,
   type ConfirmCatalogActionInput,
   type ConfirmCatalogDiscoveryInput,
+  type ConfirmEvidenceConflictInput,
+  type ConfirmSourceProcessingInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -24,12 +28,15 @@ import {
   type GetBrowserClipInput,
   type GetCatalogStateInput,
   type GetCatalogWorkInput,
+  type GetEvidenceStateInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
   type PreviewCatalogDiscoveryInput,
   type PreviewCatalogUndoInput,
   type PreviewCatalogWorkMergeInput,
   type PreviewCatalogWorkSplitInput,
+  type PreviewEvidenceConflictInput,
+  type PreviewSourceProcessingInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
   type SetCredentialInput,
@@ -72,6 +79,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof EvidenceError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof CatalogError) {
     return failure(error.code, error.message, error.retryable, error.safeDetails);
   }
@@ -180,6 +190,72 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('getCatalogWork', DESKTOP_IPC_CHANNELS.getCatalogWork, (_event, args) =>
     options.settingsRuntime.getCatalogWork((args[0] as GetCatalogWorkInput).workId),
+  );
+  register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
+    options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),
+  );
+  register(
+    'previewEvidenceConflict',
+    DESKTOP_IPC_CHANNELS.previewEvidenceConflict,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewEvidenceConflict(
+        args[0] as PreviewEvidenceConflictInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmEvidenceConflict',
+    DESKTOP_IPC_CHANNELS.confirmEvidenceConflict,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmEvidenceConflict(
+        args[0] as ConfirmEvidenceConflictInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'previewSourceProcessing',
+    DESKTOP_IPC_CHANNELS.previewSourceProcessing,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewSourceProcessing(
+        args[0] as PreviewSourceProcessingInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmSourceProcessing',
+    DESKTOP_IPC_CHANNELS.confirmSourceProcessing,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmSourceProcessing(
+        args[0] as ConfirmSourceProcessingInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register('cancelSourceProcessing', DESKTOP_IPC_CHANNELS.cancelSourceProcessing, (_event, args) =>
+    options.settingsRuntime.cancelSourceProcessing(args[0] as CancelSourceProcessingInput),
   );
   register(
     'previewCatalogDiscovery',

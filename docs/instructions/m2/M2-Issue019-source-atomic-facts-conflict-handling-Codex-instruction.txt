@@ -1,0 +1,566 @@
+M2 Issue 019：来源、原子事实、证据独立性与冲突处理——增量开发指令
+====================================================================
+
+本文件是 Issue 019 的唯一有效增量指令。
+
+完整遵守根级及作用域内 `AGENTS.md`；本指令仅定义当前 Issue 的增量规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；证据政策、冲突状态机、模型外发、迁移和并发一致性使用 XHigh
+目标提交信息：feat(research): add source evidence and conflict handling
+
+
+一、合法起点与文件治理
+----------------------
+
+以当前本地 `main` 的动态 HEAD 为起点。Issue 018 的唯一本地提交合法领先
+`origin/main`，不得仅因 ahead 状态停止、回退、pull、rebase、squash 或 push。
+
+开工时按语义确认：
+
+- 工作树干净，当前分支为 `main`；
+- Issue 018 的 Work / Expression / Edition、BibliographicObservation、
+  DiscoveryPlan、可逆实体解析和迁移能力完整；
+- Issue 018 验收证据、合同、ADR、测试与归档指令存在；
+- README、AGENTS 和 Roadmap 指向 Issue 019；
+- SearchCandidate、FetchDocument、BrowserClip Candidate 的未验证状态仍被冻结；
+- 当前 migration 尾部由仓库动态发现，历史 migration 未被修改。
+
+不把本指令生成前报告中的 HEAD、迁移 hash、盘符或路径作为门禁。
+如缺失 Issue 018 语义、工作树不干净、分支不符或存在未知提交，停止报告，不覆盖用户工作。
+
+本 TXT 可临时放在根目录启动，但必须：
+
+1. 先完整读取；
+2. 在运行 baseline gate 或修改业务代码前，立即移动并规范命名为
+   `docs/instructions/m2/M2-Issue019-source-atomic-facts-conflict-handling-Codex-instruction.txt`；
+3. 根目录不保留副本；
+4. Issue 完成时加入 `docs/instructions/README.md`；
+5. 最终提交继续满足 repository-documentation 根目录治理。
+
+
+二、授权目标与停止点
+--------------------
+
+只实现 Roadmap Issue 019：
+
+- 将合格的受控抓取文档建立为版本化 Source；
+- 建立严格、可版本化的 AtomicClaim；
+- 将每条 Claim 与精确 EvidenceLocator 逐条关联；
+- 实现来源分类、独立性分组和关键事实证据政策；
+- 支持日文、英文来源的中文摘要，但保留原文证据；
+- 检测同一语义槽位的矛盾声明；
+- 实现冲突复核、解决、撤销与 `FACT_BLOCKED`；
+- 提供来源与事实处理计划、持久任务和明确用户确认；
+- 激活桌面“资料研究”页面；
+- 追加下一条连续 migration、专项测试、合同、ADR、计划、验收映射与唯一本地提交。
+
+完成后停止，不进入 Issue 020。
+
+
+三、本 Issue 明确不做
+--------------------
+
+- 不实现研究档案、覆盖度评分或增量 dossier 重建；
+- 不实现选题、文案、质量门禁、审批、排期或发布包；
+- 不自动修改 Work / Expression / Edition 的规范字段；
+- 不把 SearchCandidate、搜索标题、snippet 或模型记忆作为 Source/Evidence；
+- 不把 BrowserClip 默认当作关键事实证据；
+- 不自动执行 Search、Fetch、浏览器采集或全站遍历；
+- 不读取任意裸 URL、任意文件、Cookie、页面账号或私有内容；
+- 不调用真实模型、搜索、网页、图片或业务 API；
+- 不读取真实密钥，不产生费用；
+- 不使用开卷、盗版电子书、内部经营/采买/历史项目数据；
+- 不新增版权风险或 AI 标识检查；
+- 不让来源类型、授权关系或素材来源参与版权门禁；
+- 不进入 Issue 020、021 或后续范围。
+
+
+四、Search / Fetch / Catalog / Evidence 四层边界
+------------------------------------------------
+
+四层不可跨越：
+
+1. Search：只发现 `LEAD_ONLY / UNVERIFIED / NOT_A_FACT` 候选；
+2. Fetch：只生成 `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT` 文档；
+3. Catalog：只建立带 provenance 的未验证书目实体与关系；
+4. Evidence：Issue 019 才能创建 Source、Claim、Evidence、Conflict 和 FactEvaluation。
+
+创建 Source 不等于来源内容为真。
+创建 Claim 不等于 Claim 可公开使用。
+中文摘要不等于证据。
+模型输出只可生成候选 Claim，不能直接得到 `VERIFIED`。
+
+TypeScript 合同、SQLite CHECK、架构测试和 UI 文案必须共同冻结这些区别。
+
+
+五、Source V1
+-------------
+
+定义版本化 `SourceV1`、`SourceRevisionV1` 和严格 runtime validator。
+
+允许的正式输入：
+
+- 已持久化且成功完成的 Issue 016 FetchDocument；
+- 由 Issue 017 BrowserClip 形成的市场/讨论上下文，但默认只能是 `CONTEXT_ONLY`；
+- 合成 fixture。
+
+SearchCandidate 只能作为来源发现 lineage，不能直接创建 Source。
+
+Source 至少包含：
+
+- sourceId、currentRevisionId、originKind、originRecordId；
+- canonical URL identity/hash 与有限 display host；
+- title、publisher/site、language；
+- source authority kind；
+- evidence use policy；
+- independence group，可空；
+- immutable content hash 与受控 snapshot path identity；
+- retrieved/published time 及精度；
+- revision、status、createdAt、updatedAt；
+- provenance 与 bounded warnings。
+
+来源权威类型至少支持：
+
+- `OFFICIAL_PRIMARY`
+- `INDEPENDENT_SECONDARY`
+- `DISCUSSION_CONTEXT`
+- `UNKNOWN`
+
+证据用途至少支持：
+
+- `KEY_FACT_ELIGIBLE`
+- `SUPPORTING_ONLY`
+- `CONTEXT_ONLY`
+- `NOT_CLASSIFIED`
+
+来源分类必须由用户确认或明确 fixture 指定。
+不得仅按域名、TLD、搜索排名、页面自称或模型判断自动升级权威级别。
+
+Source revision：
+
+- 内容 hash 变化创建新 revision，不覆盖旧 revision；
+- 旧 Evidence 继续绑定旧 revision；
+- 新 revision 触发 `STALE_REVIEW_REQUIRED`，不静默继承验证结论；
+- unavailable/retracted/superseded 状态保留历史，不物理删除；
+- 同一 origin/revision 重放幂等。
+
+
+六、独立性与来源谱系
+--------------------
+
+“两个来源”必须是真正独立来源，不能只按两个 URL 或两个域名计数。
+
+定义版本化 independence/lineage：
+
+- organization/owner identity，可空；
+- upstream source identity，可空；
+- syndication/reprint/mirror relation；
+- shared content hash / near-identical content hint；
+- 用户确认的 independence group；
+- decision revision 与 audit。
+
+冻结规则：
+
+- 同一公告的转载、镜像、RSS 副本、同集团同稿和引用同一上游稿件不得计作两个独立来源；
+- 不同 URL、子域名或站点品牌不自动等于独立；
+- 相同 content hash 必须视为同一 lineage；
+- 自动算法只能产生 `DEPENDENCY_SUSPECTED`，不能把 UNKNOWN 自动升级为 INDEPENDENT；
+- 用户可合并、拆分 independence group，需 preview、expected revision、确认 token 和 audit。
+
+
+七、AtomicClaim V1
+------------------
+
+Claim 必须是单一主语、单一谓词、单一值与明确 scope 的原子声明。
+
+Subject 只允许引用现有：
+
+- Work
+- Expression
+- Edition
+- Person/Organization Agent
+- PublicationRelationship
+
+不得使用无法由外键或受控 subject registry 验证的任意 polymorphic ID。
+
+Claim 至少包含：
+
+- claimId、subjectRef、predicateId/predicateVersion；
+- typed canonical value；
+- scope：language、territory、format、valid/effective time；
+- keyFact boolean；
+- claimant/sourceRevision identity；
+- semantic fingerprint；
+- status、revision、createdAt；
+- extraction run/manual entry provenance。
+
+Typed value 至少支持：
+
+- `TEXT`
+- `INTEGER`
+- `DECIMAL_TEXT`
+- `DATE_WITH_PRECISION`
+- `IDENTIFIER`
+- `ENUM`
+- `ENTITY_REF`
+- `BOOLEAN`
+
+要求：
+
+- canonical JSON 确定性；
+- 不使用 SQLite REAL 表示精确值；
+- UNKNOWN 保持 NULL/UNKNOWN，不伪造空字符串、零或日期；
+- 日期区分 year/month/day precision；
+- 同 predicate 的 value schema 固定版本化；
+- 额外字段、超长值、非法 scope 和不匹配 value type 被拒绝；
+- 同语义 Claim 重放幂等，新值形成新 Claim/版本，不覆盖历史。
+
+建立有限 Predicate Registry。至少覆盖书目关键事实：
+
+- canonical/original/translated title；
+- author/translator/publisher/imprint；
+- publication date；
+- ISBN / platform identifier；
+- language/territory/format；
+- award nomination/win；
+- series membership/order；
+- publication/licensing relationship。
+
+不得允许任意用户字符串直接成为可执行 predicate。
+
+
+八、EvidenceLocator V1
+----------------------
+
+每条证据必须绑定一个不可变 SourceRevision。
+
+Evidence 至少包含：
+
+- evidenceId、claimId、sourceRevisionId；
+- relation：`SUPPORTS / CONTRADICTS / QUALIFIES`；
+- locator kind；
+- paragraph/block index 或受控 char range；
+- bounded exact excerpt；
+- excerpt hash；
+- source content hash；
+- source language；
+- Chinese summary，可空；
+- summary origin：`MANUAL / MODEL_CANDIDATE / NONE`；
+- verification status、revision、createdAt。
+
+运行时必须重新验证：
+
+- excerpt 在绑定的净化文本 revision 中精确存在；
+- range、block、hash 和 content hash 一致；
+- excerpt 长度有限；
+- 不允许 locator 指向 Search snippet、未净化 HTML、截图 OCR、模型回答或其他 revision；
+- Source 更新后旧 locator 不被重定向到新文本。
+
+正文不复制进 Claim、Job、audit、日志、诊断或普通报告。
+renderer 只按需取得有界、分页、纯文本片段，不接收整份 snapshot 或 HTML。
+
+中文摘要：
+
+- 日文/英文来源允许生成中文摘要；
+- 摘要必须绑定原 evidence，不能替换原文 excerpt；
+- 摘要不得新增原文不存在的事实；
+- 没有原文精确定位时拒绝保存模型摘要；
+- UI 必须明确显示“原文证据”和“中文摘要”。
+
+
+九、证据政策与 FactEvaluation
+-----------------------------
+
+定义版本化 `FactPolicyV1` 和确定性评估器。
+
+关键事实成为 `VERIFIED` 必须满足：
+
+- 一个 `OFFICIAL_PRIMARY + KEY_FACT_ELIGIBLE` 的支持证据；
+  或
+- 两个已确认相互独立的
+  `INDEPENDENT_SECONDARY + KEY_FACT_ELIGIBLE` 支持证据；
+- 且不存在未解决的 material contradiction；
+- 所有 EvidenceLocator 均对当前 SourceRevision 有效。
+
+明确规则：
+
+- `DISCUSSION_CONTEXT` 永远不能单独验证关键事实；
+- 两个 dependent/syndicated 来源只计一个；
+- UNKNOWN independence 不计作两份独立证据；
+- `SUPPORTING_ONLY` 可展示但不满足关键事实门槛；
+- 缺失 usage、模型置信度或来源数量不得猜测；
+- 来源分类变化、revision 更新、撤回或 lineage 变化必须重算。
+
+FactEvaluation 状态：
+
+- `NOT_EVALUATED`
+- `INSUFFICIENT`
+- `SUPPORTED_NOT_VERIFIED`
+- `VERIFIED`
+- `CONFLICTED`
+- `FACT_BLOCKED`
+- `STALE_REVIEW_REQUIRED`
+- `REJECTED`
+
+Evaluation 必须保存 policy version、输入 Claim/Evidence/Source revision 集合 hash、
+independence snapshot、原因码和 evaluatedAt。
+同输入重算幂等；政策版本变化生成新 evaluation，不覆盖旧结果。
+
+
+十、冲突检测与解决
+------------------
+
+冲突槽由 subject + predicate + normalized scope + policy version 定义。
+
+只有语义不可同时成立的 material value 才形成冲突：
+
+- UNKNOWN 与已知值不是冲突；
+- date precision 不同需先判断兼容；
+- 多值 predicate 按 registry 规则处理；
+- scope 不同的语言、地区、版本或时间不应误判；
+- 单纯标题 alias 不应成为冲突。
+
+Conflict 状态：
+
+- `OPEN`
+- `FACT_BLOCKED`
+- `RESOLVED_ACCEPT`
+- `RESOLVED_MULTIVALUE`
+- `RESOLVED_SCOPE_SPLIT`
+- `DISMISSED_DEPENDENT_SOURCE`
+- `SUPERSEDED`
+- `REOPENED`
+
+任何关键事实存在未解决 material conflict 时，当前 evaluation 必须为 `FACT_BLOCKED`。
+Issue 019 只提供可查询的 FactGuard/Readiness，不修改草稿、审批、排期或发布包。
+
+人工解决必须具有：
+
+- affected Claim/Evidence/Source/Entity preview；
+- before/after FactEvaluation；
+- expected revision；
+- window-bound、短期、单次确认 token；
+- 原子事务；
+- append-only decision/audit；
+- undo/reopen；
+- 并发冲突检测；
+- 必填 reason，不接受静默覆盖。
+
+
+十一、提取、翻译与模型边界
+--------------------------
+
+定义 provider-neutral `ClaimExtractionV1` 与 `EvidenceSummaryV1`，复用 Issues 012—014：
+
+- 只走 ModelExecutionService；
+- structured JSON capability 必须为当前、非 stale、SUPPORTED；
+- 明确 preview、预算结果、用户确认；
+- 缓存、usage、model_runs、reservation 和 cost ledger 保持原语义；
+- credential 只在 main transport 最终阶段解析；
+- after-send 不确定状态不得自动重试、repair、fallback 或换模型。
+
+本 Issue 的测试和验收只使用 Scripted Mock，真实外部请求与费用为 0。
+
+模型请求只发送：
+
+- 当前明确选择的有界纯文本片段；
+- 目标语言；
+- 有限 Predicate Registry；
+- strict output schema；
+- 不包含 credential、URL query、用户备注、整库数据或无关正文。
+
+来源文本一律视为不可信数据：
+
+- 页面中的 prompt injection 不得改变任务、工具、政策或输出 schema；
+- 模型只能提出 candidate Claim/Evidence；
+- 运行时必须验证 excerpt、locator、subject、predicate 和 typed value；
+- 没有精确证据的“模型常识”全部拒绝；
+- 模型 confidence 不参与 FactPolicy。
+
+手工录入路径必须可用；未配置模型时 UI 显示真实状态，不伪装为不可用系统整体失败。
+
+
+十二、计划、队列与恢复
+----------------------
+
+定义版本化 SourceProcessingPlan：
+
+- 只接收已持久化 Source/Revision ID；
+- 声明步骤：classify、extract、summarize、reconcile；
+- 精确模型请求上限、片段字节、Claim 数、Evidence 数、运行时间和预计本地写入；
+- 显示预算结论，未知费用保持 UNKNOWN；
+- preview hash、过期时间、sender/window/config 绑定确认；
+- 默认不自动确认。
+
+建议的有限 handler（可按现有架构合并，但必须保持语义）：
+
+- `SOURCE_INGEST_V1`：纯本地、无外部请求；
+- `CLAIM_EXTRACTION_V1`：可选模型执行；
+- `FACT_RECONCILE_V1`：纯本地、确定性。
+
+要求：
+
+- 不自动由 Search/Fetch/Clip enqueue；
+- payload 只保存 ID、计划/版本/hash 和有限计数；
+- executionId 幂等；
+- lease、heartbeat、暂停、取消、shutdown 和重启恢复；
+- 外部调用期间不持有 DB 长事务；
+- 相同 executionId 不重复模型请求、预算、Claim、Evidence 或 Evaluation；
+- pre-send/after-send/ambiguous 状态符合 AGENTS；
+- result 不含正文、excerpt、summary、raw response、路径或 secret。
+
+
+十三、迁移与数据保留
+--------------------
+
+追加运行时发现的下一条连续 migration，不预置版本号或 hash，不修改历史 migration。
+
+优先扩展并规范现有 `sources`、`claims`、`claim_evidence`，避免建立两套事实真相。
+根据实际 Schema 决定安全重建或新增表，至少覆盖：
+
+- source revision/classification/lineage/independence；
+- predicate registry；
+- typed atomic claims；
+- evidence locator；
+- conflict set/member/decision；
+- fact evaluation；
+- processing plan/run。
+
+要求：
+
+- 既有空表与未来兼容数据均安全升级；
+- Issue 018 的 Work/Expression/Edition/Observation/relationship 行和 ID 全部保留；
+- STRICT、FK、CHECK、唯一约束、删除策略与索引完整；
+- polymorphic subject 不得绕过引用完整性；
+- 关键 source revision、claim slot、conflict queue 和 readiness 查询使用预期索引；
+- append-only 历史由 trigger/repository 行为保护；
+- 新库、升级、迁移前备份、失败回滚、quick_check、foreign_key_check 全部验证；
+- DB/WAL/SHM 不保存 secret、raw model response、整页正文或任意绝对路径。
+
+
+十四、桌面 UI 与 IPC
+--------------------
+
+激活“资料研究”页面，至少提供：
+
+- 待分类 FetchDocument/Clip 上下文 inbox；
+- Source 列表、版本、authority、use policy、lineage 和 independence；
+- 有界纯文本证据定位；
+- 原文 excerpt 与中文摘要并列；
+- AtomicClaim 列表、typed value、scope 和 subject；
+- FactEvaluation 及可解释原因；
+- conflict queue、`FACT_BLOCKED`、解决/撤销/reopen；
+- processing plan preview、确认、进度、取消和历史；
+- loading/empty/error/stale/unconfigured/budget-blocked 状态。
+
+BrowserClip 默认醒目标记 `CONTEXT_ONLY`；不得用 UI 暗示其已验证事实。
+
+preload 只增加固定有限 DTO/方法。
+IPC 校验 exact-object、sender/origin/window、大小、revision 和 confirmation token。
+renderer 不接收 DB、Node、内部路径、整份快照、HTML、raw response、credential 或 lease。
+不得使用 `dangerouslySetInnerHTML`。
+
+
+十五、专项测试
+--------------
+
+新增独立 `test:evidence` 或与现有命名一致的专项门禁，并纳入全量测试与 Windows CI。
+
+合成 gold fixture 至少覆盖：
+
+1. 一个官方奖项来源验证关键 Claim；
+2. 两个真正独立的二级来源验证同一 Claim；
+3. 同一新闻稿的两个转载不能算独立；
+4. UNKNOWN independence 不满足两来源政策；
+5. discussion/social clip 只作 context；
+6. 日文证据 + 中文摘要；
+7. 英文证据 + 中文摘要；
+8. 摘要幻觉、错 locator、错 excerpt hash 被拒绝；
+9. 相互矛盾的出版日期产生 `FACT_BLOCKED`；
+10. scope/date precision 兼容不误报冲突；
+11. 冲突解决、撤销、reopen 和并发 revision；
+12. Source 新 revision 使旧 evaluation stale；
+13. retracted/unavailable Source 触发重算；
+14. 模型记忆但无证据的 Claim 被拒绝；
+15. prompt injection 不能改变 schema 或政策；
+16. manual path 在无模型配置时可用；
+17. structured capability unknown/unsupported/stale、预算阻止和缓存命中；
+18. executionId 重放、崩溃恢复、暂停、取消和 ambiguous；
+19. 新库/升级/备份/回滚/FK/quick check；
+20. UI/IPC/egress/Windows 中文空格长路径；
+21. Search/Fetch/Catalog 冻结状态不变；
+22. research_dossiers、topics、drafts、approvals、post_packages 不被写入；
+23. AI、版权、publication relationship 不参与 FactPolicy；
+24. 真实密钥、网络、模型、费用均为 0。
+
+必须测试 Evidence exact locator 的行为，不得只扫描源码字符串。
+必须对关键查询做索引/分页证据，避免全量正文载入和 O(n²) 冲突比较。
+
+
+十六、文档、状态与治理
+----------------------
+
+至少交付：
+
+- `docs/contracts/source-evidence-v1.md`
+- `docs/contracts/atomic-claim-v1.md`
+- `docs/contracts/fact-policy-v1.md`
+- `docs/adr/` 下按实际顺序新增 ADR；
+- `docs/m2-issue019-implementation-plan.md`
+- `docs/m2-issue019-acceptance-map.md`
+- 必要的脱敏机器证据放入 `docs/evidence/`；
+- 归档后的本指令及 `docs/instructions/README.md`；
+- README、AGENTS、文档索引和下一步 Issue 020。
+
+如当前 README 把 M2 错写为只到 Issue 019，而 Roadmap 实际仍包含 Issue 020/021，
+本轮授权按 Roadmap 做最小一致性修正；不得改写无关里程碑。
+
+历史 Issue 指令、ADR、验收映射和 migration 不为统一措辞而改写。
+根目录不得新增产品基线、历史指令、验收材料或重复文档。
+
+
+十七、实施顺序与完成定义
+------------------------
+
+1. 动态基线与 Issue 018 语义核对；
+2. 读取本 TXT 后立即归档，先通过 repository-documentation baseline；
+3. 起草 implementation plan、合同和 acceptance map；
+4. Source revision/classification/lineage；
+5. AtomicClaim、Predicate Registry 与 EvidenceLocator；
+6. independence 与 FactPolicy；
+7. conflict detection、resolution、undo 和 FactGuard；
+8. migration、repositories 和升级路径；
+9. processing plan、queue 与 Scripted ModelExecution；
+10. Electron main / preload / renderer；
+11. 专项、迁移、恢复、索引、egress 和硬约束测试；
+12. README、AGENTS 和文档索引同步；
+13. 将本指令加入历史指令索引；
+14. 从最新 `npm ci` 开始按当前 CI 顺序完整重跑全部适用门禁；
+15. 创建唯一一个 Issue 019 本地提交并核验工作树。
+
+最终报告必须明确：
+
+- Source/Claim/Evidence/Conflict/FactEvaluation 的数量与 gold fixture 结果；
+- 官方单来源、二级双独立来源和 dependent source 的政策结果；
+- 日文/英文摘要不替代原文证据；
+- `FACT_BLOCKED` 的触发、解决、撤销和 stale 重算证据；
+- migration 与旧 Catalog 数据保留；
+- 模型调用、网络、费用和密钥读取均为 0；
+- 本地 ahead 状态未被误处理，未 push；
+- 指令只归档于 `docs/instructions/m2/`；
+- 未进入 Issue 020。
+
+只有全部成立才可报告 PASS。
+
+
+十八、Codex 启动指令
+--------------------
+
+继续当前本地 `main`，允许其合法领先 `origin/main`，不要 pull、rebase、reset 或 push。
+完整读取 `AGENTS.md` 和本 TXT；读取后立即把 TXT 移入
+`docs/instructions/m2/M2-Issue019-source-atomic-facts-conflict-handling-Codex-instruction.txt`，
+根目录不保留副本。只实施 Issue 019：完成 Source revision、AtomicClaim、EvidenceLocator、
+来源独立性、FactPolicy、冲突处理、`FACT_BLOCKED`、资料研究 UI 和全部增量验收。
+测试只使用合成 fixture、Scripted Mock、临时 SQLite 与本机 loopback；真实密钥、网络、模型和
+费用保持为 0。全部适用门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 020。

@@ -5,6 +5,7 @@ import { isTrustedRendererUrl } from './security-policy.js';
 export type DesktopIpcOperation =
   | 'buildDiagnosticPreview'
   | 'cancelCatalogDiscovery'
+  | 'cancelSourceProcessing'
   | 'cancelProviderCapabilityProbe'
   | 'clearCredential'
   | 'confirmModelCacheClear'
@@ -12,6 +13,8 @@ export type DesktopIpcOperation =
   | 'confirmCatalogUndo'
   | 'confirmCatalogWorkMerge'
   | 'confirmCatalogWorkSplit'
+  | 'confirmEvidenceConflict'
+  | 'confirmSourceProcessing'
   | 'confirmDataRootSelection'
   | 'createModelPriceSchedule'
   | 'createModelUnitPolicy'
@@ -23,6 +26,7 @@ export type DesktopIpcOperation =
   | 'getBrowserClip'
   | 'getCatalogState'
   | 'getCatalogWork'
+  | 'getEvidenceState'
   | 'getModelAccounting'
   | 'getProviderCapabilityProbeProgress'
   | 'getProviderCapabilityState'
@@ -43,6 +47,8 @@ export type DesktopIpcOperation =
   | 'previewCatalogUndo'
   | 'previewCatalogWorkMerge'
   | 'previewCatalogWorkSplit'
+  | 'previewEvidenceConflict'
+  | 'previewSourceProcessing'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
   | 'startLocalApiPairing'
@@ -201,6 +207,83 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         typeof value.query === 'string' &&
         value.query.length <= 512 &&
         !containsControlCharacter(value.query)
+      );
+    }
+    case 'getEvidenceState': {
+      const value = validateOneObject(args, ['limit', 'offset']);
+      return (
+        value !== null &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= 100 &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= 1_000_000
+      );
+    }
+    case 'previewEvidenceConflict': {
+      const value = validateOneObject(args, ['acceptedClaimId', 'action', 'conflictId']);
+      const actions = [
+        'ACCEPT_CLAIM',
+        'ACCEPT_MULTIVALUE',
+        'SPLIT_SCOPE',
+        'DISMISS_DEPENDENT_SOURCE',
+        'UNDO',
+        'REOPEN',
+      ];
+      return (
+        value !== null &&
+        catalogId(value.conflictId) &&
+        actions.includes(String(value.action)) &&
+        (value.acceptedClaimId === null || catalogId(value.acceptedClaimId)) &&
+        ((value.action === 'ACCEPT_CLAIM' && value.acceptedClaimId !== null) ||
+          (value.action !== 'ACCEPT_CLAIM' && value.acceptedClaimId === null))
+      );
+    }
+    case 'confirmEvidenceConflict': {
+      const value = validateOneObject(args, ['confirmation', 'previewHash', 'reason', 'token']);
+      return (
+        value?.confirmation === 'APPLY_FACT_CONFLICT_DECISION' &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token) &&
+        typeof value.reason === 'string' &&
+        value.reason.trim().length >= 1 &&
+        value.reason.length <= 2_000 &&
+        !containsControlCharacter(value.reason)
+      );
+    }
+    case 'previewSourceProcessing': {
+      const value = validateOneObject(args, ['includeModelSteps', 'sourceRevisionIds']);
+      return (
+        value !== null &&
+        typeof value.includeModelSteps === 'boolean' &&
+        Array.isArray(value.sourceRevisionIds) &&
+        value.sourceRevisionIds.length >= 1 &&
+        value.sourceRevisionIds.length <= 64 &&
+        value.sourceRevisionIds.every(catalogId) &&
+        new Set(value.sourceRevisionIds).size === value.sourceRevisionIds.length
+      );
+    }
+    case 'confirmSourceProcessing': {
+      const value = validateOneObject(args, ['confirmation', 'planHash', 'previewHash', 'token']);
+      return (
+        value?.confirmation === 'START_SOURCE_PROCESSING' &&
+        typeof value.planHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.planHash) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'cancelSourceProcessing': {
+      const value = validateOneObject(args, ['confirmation', 'expectedRevision', 'runId']);
+      return (
+        value?.confirmation === 'CANCEL_SOURCE_PROCESSING' &&
+        catalogRevision(value.expectedRevision) &&
+        catalogId(value.runId)
       );
     }
     case 'getCatalogWork': {

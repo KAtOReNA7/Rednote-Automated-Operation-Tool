@@ -253,6 +253,34 @@ async function click(client, sessionId, selector) {
   );
 }
 
+async function pressSpace(client, sessionId, selector) {
+  const nodeId = await queryNode(client, sessionId, selector);
+  await client.send('DOM.focus', { nodeId }, sessionId);
+  await client.send(
+    'Input.dispatchKeyEvent',
+    {
+      code: 'Space',
+      key: ' ',
+      nativeVirtualKeyCode: 32,
+      text: ' ',
+      type: 'keyDown',
+      windowsVirtualKeyCode: 32,
+    },
+    sessionId,
+  );
+  await client.send(
+    'Input.dispatchKeyEvent',
+    {
+      code: 'Space',
+      key: ' ',
+      nativeVirtualKeyCode: 32,
+      type: 'keyUp',
+      windowsVirtualKeyCode: 32,
+    },
+    sessionId,
+  );
+}
+
 async function fill(client, sessionId, selector, value) {
   await waitFor(
     async () => {
@@ -831,21 +859,58 @@ async function runFamily(family) {
       );
     }
     await captureAction;
-    await client.send('Target.activateTarget', { targetId: popup.targetId });
-    await click(client, popupSession, '#public-confirmed');
     await client.send('Target.activateTarget', { targetId: fixtureTargetId });
     const saveAction = triggerAction(browserProcess.pid, family.slug);
     await verifyRealActionGrant(client, serviceWorkerSession, fixture.url, pageTitle, selectedText);
-    await evaluate(client, popupSession, 'document.querySelector("#clip-form").requestSubmit()');
+    await saveAction;
+    await client.send('Target.activateTarget', { targetId: popup.targetId });
+    await pressSpace(client, popupSession, '#public-confirmed');
     await waitFor(
       async () =>
-        (
-          await evaluate(client, popupSession, 'document.querySelector("#status").textContent')
-        ).startsWith('保存成功：') || undefined,
-      `${family.label} browser clip save`,
+        (await evaluate(
+          client,
+          popupSession,
+          'document.querySelector("#public-confirmed").checked',
+        )) || undefined,
+      `${family.label} public-page confirmation`,
+      5_000,
     );
-    await saveAction;
-
+    await client.send('Target.activateTarget', { targetId: fixtureTargetId });
+    await evaluate(client, popupSession, 'document.querySelector("#clip-form").requestSubmit()');
+    try {
+      await waitFor(
+        async () =>
+          (
+            await evaluate(client, popupSession, 'document.querySelector("#status").textContent')
+          ).startsWith('保存成功：') || undefined,
+        `${family.label} browser clip save`,
+      );
+    } catch (error) {
+      const saveState = await evaluate(
+        client,
+        popupSession,
+        `({
+          status: document.querySelector('#status').textContent,
+          submitDisabled: document.querySelector('#clip-form button[type="submit"]').disabled,
+          formValid: document.querySelector('#clip-form').checkValidity(),
+          publicConfirmed: document.querySelector('#public-confirmed').checked,
+          pageTitlePresent: document.querySelector('#page-title').value.length > 0,
+          pageUrlPresent: document.querySelector('#page-url').value.length > 0
+        })`,
+      );
+      const routes = requests.map((request) => `${request.method} ${request.path}`).join(', ');
+      const responseStatuses = responses
+        .map((response) => `${response.status} ${response.path}`)
+        .join(', ');
+      throw new Error(
+        `${error.message} Save state: ${JSON.stringify(saveState)}. Loopback routes: ${
+          routes || 'none'
+        }. Loopback responses: ${responseStatuses || 'none'}. Error codes: ${
+          responseErrors.join(', ') || 'none'
+        }.`,
+        { cause: error },
+      );
+    }
     const replayCaptureId = randomUUID();
     const replayClip = {
       accountName: null,

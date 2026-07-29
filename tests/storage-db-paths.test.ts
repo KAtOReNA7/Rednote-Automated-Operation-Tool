@@ -180,7 +180,7 @@ describe('managed local path migration', () => {
     expect(Object.isFrozen(MIGRATIONS[2])).toBe(true);
   });
 
-  it('enumerates exactly the nine real Schema path columns', async () => {
+  it('enumerates exactly the ten real Schema path columns', async () => {
     const databasePath = createTemporaryDatabasePath();
     await initializeDatabase({ databasePath });
     const database = connectDatabase(databasePath);
@@ -203,6 +203,7 @@ describe('managed local path migration', () => {
         { column_name: 'import_file_path', table_name: 'metric_snapshots' },
         { column_name: 'managed_relative_path', table_name: 'model_cache_entries' },
         { column_name: 'export_path', table_name: 'post_packages' },
+        { column_name: 'extracted_text_path', table_name: 'source_revisions' },
         { column_name: 'local_snapshot_path', table_name: 'sources' },
       ]);
     } finally {

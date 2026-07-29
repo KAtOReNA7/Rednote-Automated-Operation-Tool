@@ -27,6 +27,9 @@ import type {
   CatalogRunView,
   CatalogSummaryView,
   CatalogWorkDetail,
+  CancelSourceProcessingInput,
+  ConfirmEvidenceConflictInput,
+  ConfirmSourceProcessingInput,
   ConfirmCatalogActionInput,
   ConfirmCatalogDiscoveryInput,
   ConfirmModelCacheClearInput,
@@ -36,10 +39,13 @@ import type {
   CreateModelUnitPolicyInput,
   DataRootSelection,
   GetCatalogStateInput,
+  GetEvidenceStateInput,
   PreviewCatalogDiscoveryInput,
   PreviewCatalogUndoInput,
   PreviewCatalogWorkMergeInput,
   PreviewCatalogWorkSplitInput,
+  PreviewEvidenceConflictInput,
+  PreviewSourceProcessingInput,
   PreviewProviderCapabilityProbeInput,
   ProviderCapabilityProbePreview,
   ProviderCapabilityProbeProgressView,
@@ -50,6 +56,10 @@ import type {
   ModelUnitPolicyView,
   FetchStateView,
   SearchStateView,
+  EvidenceConflictActionPreview,
+  EvidenceConflictView,
+  EvidenceStateView,
+  SourceProcessingPreview,
   SetupStateView,
   StartProviderCapabilityProbeInput,
   UpdateSearchProviderConfigInput,
@@ -85,6 +95,7 @@ import { DesktopSearchRuntime } from './search-runtime.js';
 import { DesktopFetchRuntime } from './fetch-runtime.js';
 import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
 import { DesktopCatalogRuntime } from './catalog-runtime.js';
+import { DesktopEvidenceRuntime } from './evidence-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -122,6 +133,7 @@ interface RuntimeVersions {
 interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
   readonly catalog: DesktopCatalogRuntime;
+  readonly evidence: DesktopEvidenceRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
   readonly clipper: DesktopBrowserClipRuntime;
   readonly database: DatabaseSync;
@@ -478,6 +490,46 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().catalog.getWork(workId);
   }
 
+  public getEvidenceState(input: GetEvidenceStateInput): EvidenceStateView {
+    return this.#requireActive().evidence.getState(input);
+  }
+
+  public previewEvidenceConflict(
+    input: PreviewEvidenceConflictInput,
+    senderId: number,
+    windowId: number,
+  ): EvidenceConflictActionPreview {
+    return this.#requireActive().evidence.previewConflict(input, senderId, windowId);
+  }
+
+  public confirmEvidenceConflict(
+    input: ConfirmEvidenceConflictInput,
+    senderId: number,
+    windowId: number,
+  ): EvidenceConflictView {
+    return this.#requireActive().evidence.confirmConflict(input, senderId, windowId);
+  }
+
+  public previewSourceProcessing(
+    input: PreviewSourceProcessingInput,
+    senderId: number,
+    windowId: number,
+  ): SourceProcessingPreview {
+    return this.#requireActive().evidence.previewProcessing(input, senderId, windowId);
+  }
+
+  public confirmSourceProcessing(
+    input: ConfirmSourceProcessingInput,
+    senderId: number,
+    windowId: number,
+  ): EvidenceStateView {
+    return this.#requireActive().evidence.confirmProcessing(input, senderId, windowId);
+  }
+
+  public cancelSourceProcessing(input: CancelSourceProcessingInput): EvidenceStateView {
+    return this.#requireActive().evidence.cancelProcessing(input);
+  }
+
   public previewCatalogDiscovery(
     input: PreviewCatalogDiscoveryInput,
     senderId: number,
@@ -605,6 +657,7 @@ export class DesktopSettingsRuntime {
     this.#active?.capabilities.clearWindow(windowId);
     this.#active?.accounting.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
+    this.#active?.evidence.clearWindow(windowId);
   }
 
   public getLocalApiStatus(): LocalApiStatusView {
@@ -702,9 +755,21 @@ export class DesktopSettingsRuntime {
     const clipper = new DesktopBrowserClipRuntime(database, root);
     const fetch = new DesktopFetchRuntime(database, root);
     const catalog = new DesktopCatalogRuntime(database);
+    const evidence = new DesktopEvidenceRuntime(database);
     catalog.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
-    return { accounting, capabilities, catalog, clipper, database, fetch, root, search, service };
+    return {
+      accounting,
+      capabilities,
+      catalog,
+      clipper,
+      database,
+      evidence,
+      fetch,
+      root,
+      search,
+      service,
+    };
   }
 
   #requireActive(): ActiveProject {

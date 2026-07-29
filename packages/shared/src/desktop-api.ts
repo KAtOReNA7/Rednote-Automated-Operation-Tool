@@ -44,6 +44,18 @@ import type {
   PreviewCatalogWorkMergeInput,
   PreviewCatalogWorkSplitInput,
 } from './catalog-contracts.js';
+import type {
+  CancelSourceProcessingInput,
+  ConfirmEvidenceConflictInput,
+  ConfirmSourceProcessingInput,
+  EvidenceConflictActionPreview,
+  EvidenceConflictView,
+  EvidenceStateView,
+  GetEvidenceStateInput,
+  PreviewEvidenceConflictInput,
+  PreviewSourceProcessingInput,
+  SourceProcessingPreview,
+} from './evidence-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -60,6 +72,12 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getBrowserClip: 'clipper:get-clip',
   getCatalogState: 'catalog:get-state',
   getCatalogWork: 'catalog:get-work',
+  getEvidenceState: 'evidence:get-state',
+  previewEvidenceConflict: 'evidence:preview-conflict',
+  confirmEvidenceConflict: 'evidence:confirm-conflict',
+  previewSourceProcessing: 'evidence:preview-processing',
+  confirmSourceProcessing: 'evidence:confirm-processing',
+  cancelSourceProcessing: 'evidence:cancel-processing',
   previewCatalogDiscovery: 'catalog:preview-discovery',
   confirmCatalogDiscovery: 'catalog:confirm-discovery',
   cancelCatalogDiscovery: 'catalog:cancel-discovery',
@@ -134,6 +152,17 @@ export interface DesktopError {
     | 'CATALOG_INVALID_REQUEST'
     | 'CATALOG_RUN_NOT_FOUND'
     | 'CATALOG_STALE_REVISION'
+    | 'EVIDENCE_CONFIRMATION_EXPIRED'
+    | 'EVIDENCE_CONFIRMATION_INVALID'
+    | 'EVIDENCE_CONFLICT'
+    | 'EVIDENCE_INVALID_CLAIM'
+    | 'EVIDENCE_INVALID_LOCATOR'
+    | 'EVIDENCE_INVALID_PLAN'
+    | 'EVIDENCE_INVALID_REQUEST'
+    | 'EVIDENCE_INVALID_SOURCE'
+    | 'EVIDENCE_NOT_FOUND'
+    | 'EVIDENCE_POLICY_BLOCKED'
+    | 'EVIDENCE_STALE_REVISION'
     | LocalApiErrorCode
     | SettingsErrorCode;
   readonly context?: Readonly<Record<string, boolean | number | string>>;
@@ -588,6 +617,22 @@ export interface DesktopBridge {
   getBrowserClip?(input: GetBrowserClipInput): Promise<DesktopResult<BrowserClipView | null>>;
   getCatalogState?(input: GetCatalogStateInput): Promise<DesktopResult<CatalogSummaryView>>;
   getCatalogWork?(input: GetCatalogWorkInput): Promise<DesktopResult<CatalogWorkDetail | null>>;
+  getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
+  previewEvidenceConflict?(
+    input: PreviewEvidenceConflictInput,
+  ): Promise<DesktopResult<EvidenceConflictActionPreview>>;
+  confirmEvidenceConflict?(
+    input: ConfirmEvidenceConflictInput,
+  ): Promise<DesktopResult<EvidenceConflictView>>;
+  previewSourceProcessing?(
+    input: PreviewSourceProcessingInput,
+  ): Promise<DesktopResult<SourceProcessingPreview>>;
+  confirmSourceProcessing?(
+    input: ConfirmSourceProcessingInput,
+  ): Promise<DesktopResult<EvidenceStateView>>;
+  cancelSourceProcessing?(
+    input: CancelSourceProcessingInput,
+  ): Promise<DesktopResult<EvidenceStateView>>;
   previewCatalogDiscovery?(
     input: PreviewCatalogDiscoveryInput,
   ): Promise<DesktopResult<CatalogDiscoveryPreview>>;

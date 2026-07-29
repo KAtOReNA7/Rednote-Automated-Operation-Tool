@@ -16,6 +16,13 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       runId: 'run-fixture-000001',
     },
   ],
+  cancelSourceProcessing: [
+    {
+      confirmation: 'CANCEL_SOURCE_PROCESSING',
+      expectedRevision: 2,
+      runId: 'evidence-run-fixture',
+    },
+  ],
   cancelProviderCapabilityProbe: [
     {
       confirmation: 'CANCEL_PROVIDER_CAPABILITY_PROBE',
@@ -62,6 +69,22 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     {
       confirmation: 'APPLY_CATALOG_DECISION',
       previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmEvidenceConflict: [
+    {
+      confirmation: 'APPLY_FACT_CONFLICT_DECISION',
+      previewHash: 'a'.repeat(64),
+      reason: '用户核对了两个来源的限定范围。',
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmSourceProcessing: [
+    {
+      confirmation: 'START_SOURCE_PROCESSING',
+      planHash: 'a'.repeat(64),
+      previewHash: 'b'.repeat(64),
       token: 'a'.repeat(43),
     },
   ],
@@ -117,6 +140,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   ],
   getCatalogState: [{ limit: 25, offset: 0, query: '' }],
   getCatalogWork: [{ workId: 'work-fixture-000001' }],
+  getEvidenceState: [{ limit: 25, offset: 0 }],
   getModelAccounting: [],
   getProviderCapabilityProbeProgress: [{ runId: 'probe-runtime-000001' }],
   getProviderCapabilityState: [],
@@ -168,6 +192,19 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       newCanonicalTitle: '拆分后的作品',
       sourceRevision: 1,
       sourceWorkId: 'work-source-000001',
+    },
+  ],
+  previewEvidenceConflict: [
+    {
+      acceptedClaimId: 'claim-fixture-000001',
+      action: 'ACCEPT_CLAIM',
+      conflictId: 'conflict-fixture-000001',
+    },
+  ],
+  previewSourceProcessing: [
+    {
+      includeModelSteps: false,
+      sourceRevisionIds: ['source-fixture:1'],
     },
   ],
   previewModelCacheClear: [],

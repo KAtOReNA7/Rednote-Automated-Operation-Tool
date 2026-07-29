@@ -1,6 +1,7 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
+export { SqliteEvidenceRepository } from './evidence-repository.js';
 export { SqliteBrowserClipRepository } from './browser-clip-repository.js';
 export type {
   BrowserClipScreenshotRecordV1,
@@ -30,6 +31,18 @@ export type {
   WorkSplitPreviewV1,
 } from './catalog-repository.js';
 export type { FetchRunSummaryRecordV1 } from './fetch-repository.js';
+export type {
+  AddClaimEvidenceInputV1,
+  AddSourceRevisionInputV1,
+  EvidenceClaimViewV1,
+  EvidenceEvaluationViewV1,
+  EvidenceSourceViewV1,
+  EvidenceSummaryViewV1,
+  FactConflictPreviewV1,
+  FactConflictViewV1,
+  RegisterSourceInputV1,
+  SourceClassificationInputV1,
+} from './evidence-repository.js';
 export type {
   ClaimStoredJobInput,
   EnqueueStoredJobInput,

@@ -3,6 +3,12 @@ export {
   createBibliographyDiscoveryJobHandler,
   registerBibliographyDiscoveryJob,
 } from './bibliography-discovery-handler.js';
+export {
+  EvidenceProcessingService,
+  createEvidenceProcessingJobHandler,
+  registerEvidenceProcessingJobs,
+  validateEvidenceProcessingOutputV1,
+} from './evidence-processing-handler.js';
 export { QueueSleepAbortedError, SystemQueueClock, SystemQueueScheduler } from './queue/clock.js';
 export { JobHandlerExecutionError, sanitizeJobError } from './queue/error-sanitizer.js';
 export { JobHandlerRegistry } from './queue/handler-registry.js';
@@ -53,3 +59,13 @@ export type {
 } from './queue/types.js';
 export type { JobWorkerOptions } from './queue/worker.js';
 export type { FetchPlanReaderV1 } from './fetch-execution-handler.js';
+export type {
+  EvidenceModelSlotV1,
+  EvidenceProcessingCountsV1,
+  EvidenceProcessingOutputItemV1,
+  EvidenceProcessingOutputV1,
+  EvidenceProcessingPersistenceV1,
+  EvidenceProcessingResultV1,
+  EvidenceProcessingServiceOptions,
+  EvidenceSnapshotV1,
+} from './evidence-processing-handler.js';

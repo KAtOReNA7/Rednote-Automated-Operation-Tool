@@ -28,6 +28,9 @@ export default defineConfig({
       '@mystery-operations/catalog': fileURLToPath(
         new URL('./packages/catalog/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/evidence': fileURLToPath(
+        new URL('./packages/evidence/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/core': fileURLToPath(
         new URL('./packages/core/src/index.ts', import.meta.url),
       ),

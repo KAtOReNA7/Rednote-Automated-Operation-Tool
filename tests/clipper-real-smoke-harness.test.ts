@@ -32,9 +32,32 @@ describe('Issue 017 CDP real-browser recovery harness', () => {
     expect(action).toContain('SendInput');
     expect(action).toContain("ValidateSet('chrome', 'edge')");
     expect(action).toContain('AutomationElement');
+    expect(action).toContain('PropertyCondition');
+    expect(action).toContain('catch [System.Runtime.InteropServices.COMException]');
     expect(action).toContain('[char]0x63a8');
     expect(action).toContain('Invoke-VisibleElement');
     expect(action).not.toMatch(/AddressBar|LocationURL|window\.title|OCR/iu);
+  });
+
+  it('confirms the public-page checkbox after the real action and reactivates the page before save', () => {
+    const harness = source('scripts/run-clipper-real-smoke.mjs');
+    const actionStart = harness.indexOf('const saveAction = triggerAction');
+    const actionFinished = harness.indexOf('await saveAction;', actionStart);
+    const confirmation = harness.indexOf(
+      "pressSpace(client, popupSession, '#public-confirmed')",
+      actionFinished,
+    );
+    const submit = harness.indexOf(
+      'document.querySelector("#clip-form").requestSubmit()',
+      confirmation,
+    );
+    expect(actionStart).toBeGreaterThan(-1);
+    expect(actionFinished).toBeGreaterThan(actionStart);
+    expect(confirmation).toBeGreaterThan(actionFinished);
+    expect(submit).toBeGreaterThan(confirmation);
+    expect(harness.slice(confirmation, submit)).toContain(
+      "Target.activateTarget', { targetId: fixtureTargetId",
+    );
   });
 
   it('never persists or logs pairing codes, tokens, page text, or screenshot bodies', () => {

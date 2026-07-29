@@ -1628,7 +1628,7 @@ SELECT
   1,
   substr(input_hash, 1, 128),
   substr(input_hash, 1, 128),
-  lower(hex(randomblob(32))),
+  '0000000000000000000000000000000000000000000000000000000000000000',
   CASE WHEN output_hash IS NULL THEN NULL ELSE substr(output_hash, 1, 64) END,
   cached,
   'LEGACY',
@@ -3333,6 +3333,770 @@ BEGIN
 END;
 `;
 
+const SOURCE_EVIDENCE_AND_FACT_CONFLICTS = `
+CREATE TABLE source_revisions (
+  source_id TEXT NOT NULL REFERENCES sources(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version = 'source-evidence-v1' OR contract_version = 'legacy-source-v1'
+  ),
+  origin_kind TEXT NOT NULL CHECK (origin_kind IN (
+    'FETCH_DOCUMENT', 'BROWSER_CLIP', 'SYNTHETIC_FIXTURE', 'LEGACY_SOURCE'
+  )),
+  origin_record_id TEXT NOT NULL CHECK (length(origin_record_id) BETWEEN 1 AND 128),
+  origin_revision INTEGER NOT NULL CHECK (
+    typeof(origin_revision) = 'integer' AND origin_revision > 0
+  ),
+  content_hash TEXT NOT NULL CHECK (length(content_hash) BETWEEN 1 AND 128),
+  canonical_url_hash TEXT CHECK (
+    canonical_url_hash IS NULL OR
+    (length(canonical_url_hash) = 64 AND canonical_url_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  display_host TEXT CHECK (
+    display_host IS NULL OR length(display_host) BETWEEN 1 AND 253
+  ),
+  extracted_text_hash TEXT CHECK (
+    extracted_text_hash IS NULL OR
+    (length(extracted_text_hash) = 64 AND extracted_text_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  extracted_text_path TEXT CHECK (
+    extracted_text_path IS NULL OR (
+      length(extracted_text_path) BETWEEN 1 AND 1024 AND
+      extracted_text_path GLOB 'sources/snapshots/??/*' AND
+      instr(extracted_text_path, '..') = 0 AND
+      instr(extracted_text_path, char(92)) = 0 AND
+      instr(extracted_text_path, ':') = 0 AND
+      substr(extracted_text_path, 1, 1) <> '/'
+    )
+  ),
+  language TEXT NOT NULL CHECK (length(language) BETWEEN 1 AND 32),
+  availability TEXT NOT NULL CHECK (
+    availability IN ('AVAILABLE', 'UNAVAILABLE', 'RETRACTED', 'SUPERSEDED')
+  ),
+  retrieved_at TEXT NOT NULL CHECK (retrieved_at ${UTC_REQUIRED}),
+  published_at TEXT,
+  published_at_precision TEXT NOT NULL DEFAULT 'UNKNOWN' CHECK (
+    published_at_precision IN ('YEAR', 'MONTH', 'DAY', 'UNKNOWN') AND
+    ((published_at_precision = 'UNKNOWN' AND published_at IS NULL) OR
+      (published_at_precision <> 'UNKNOWN' AND published_at IS NOT NULL))
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  provenance_json TEXT NOT NULL CHECK (
+    json_valid(provenance_json) AND json_type(provenance_json) = 'object' AND
+    length(CAST(provenance_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  synthetic INTEGER NOT NULL DEFAULT 0 CHECK (synthetic IN (0, 1)),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (source_id, revision),
+  UNIQUE (origin_kind, origin_record_id, origin_revision),
+  CHECK ((extracted_text_hash IS NULL) = (extracted_text_path IS NULL)),
+  CHECK ((origin_kind = 'SYNTHETIC_FIXTURE') = (synthetic = 1)),
+  CHECK (
+    origin_kind IN ('LEGACY_SOURCE', 'BROWSER_CLIP') OR extracted_text_hash IS NOT NULL
+  ),
+  CHECK (
+    contract_version = 'legacy-source-v1' OR
+    (canonical_url_hash IS NOT NULL AND display_host IS NOT NULL)
+  )
+) STRICT, WITHOUT ROWID;
+
+INSERT INTO source_revisions (
+  source_id, revision, contract_version, origin_kind, origin_record_id,
+  origin_revision, content_hash, canonical_url_hash, display_host,
+  extracted_text_hash, extracted_text_path, language, availability,
+  retrieved_at, published_at, published_at_precision, warnings_json,
+  provenance_json, synthetic, created_at, updated_at
+)
+SELECT
+  id, 1, 'legacy-source-v1', 'LEGACY_SOURCE', id, 1, content_hash, NULL, NULL,
+  NULL, NULL, language, 'AVAILABLE', retrieved_at, NULL, 'UNKNOWN', '[]',
+  json_object(
+    'originKind', 'LEGACY_SOURCE',
+    'originRecordId', id,
+    'originRevision', 1
+  ),
+  0, retrieved_at, retrieved_at
+FROM sources;
+
+CREATE TABLE source_classifications (
+  source_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL,
+  classification_revision INTEGER NOT NULL CHECK (
+    typeof(classification_revision) = 'integer' AND classification_revision > 0
+  ),
+  authority_tier TEXT NOT NULL CHECK (authority_tier IN (
+    'OFFICIAL_PRIMARY', 'INDEPENDENT_SECONDARY', 'DISCUSSION_CONTEXT', 'UNKNOWN'
+  )),
+  use_class TEXT NOT NULL CHECK (use_class IN (
+    'KEY_FACT_ELIGIBLE', 'SUPPORTING_ONLY', 'CONTEXT_ONLY', 'NOT_CLASSIFIED'
+  )),
+  independence_state TEXT NOT NULL CHECK (independence_state IN (
+    'CONFIRMED_INDEPENDENT', 'DEPENDENT', 'UNKNOWN'
+  )),
+  lineage_group TEXT CHECK (
+    lineage_group IS NULL OR length(lineage_group) BETWEEN 1 AND 128
+  ),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  classified_by TEXT NOT NULL CHECK (
+    classified_by IN ('USER', 'DETERMINISTIC_RULE', 'SYNTHETIC_FIXTURE')
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (source_id, source_revision, classification_revision),
+  FOREIGN KEY (source_id, source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (
+    authority_tier <> 'DISCUSSION_CONTEXT' OR use_class = 'CONTEXT_ONLY'
+  ),
+  CHECK (
+    independence_state <> 'CONFIRMED_INDEPENDENT' OR lineage_group IS NOT NULL
+  )
+) STRICT, WITHOUT ROWID;
+
+INSERT INTO source_classifications (
+  source_id, source_revision, classification_revision, authority_tier,
+  use_class, independence_state, lineage_group, reason_code, classified_by, created_at
+)
+SELECT
+  source_id, revision, 1, 'UNKNOWN', 'NOT_CLASSIFIED', 'UNKNOWN',
+  NULL, 'LEGACY_SOURCE_REQUIRES_REVIEW', 'DETERMINISTIC_RULE', created_at
+FROM source_revisions;
+
+CREATE TABLE source_lineage (
+  source_id TEXT NOT NULL REFERENCES sources(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  parent_source_id TEXT NOT NULL REFERENCES sources(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  relation TEXT NOT NULL CHECK (relation IN (
+    'REPRINT_OF', 'MIRROR_OF', 'DERIVED_FROM', 'SAME_PRESS_RELEASE'
+  )),
+  confirmed_by TEXT NOT NULL CHECK (confirmed_by = 'USER'),
+  reason TEXT NOT NULL CHECK (length(reason) BETWEEN 1 AND 2000),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (source_id, parent_source_id, relation),
+  CHECK (source_id <> parent_source_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE fact_subjects (
+  subject_type TEXT NOT NULL CHECK (subject_type IN (
+    'WORK', 'EXPRESSION', 'EDITION', 'AGENT', 'PUBLICATION_RELATIONSHIP'
+  )),
+  subject_id TEXT NOT NULL CHECK (length(subject_id) BETWEEN 1 AND 128),
+  work_id TEXT REFERENCES books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_id TEXT REFERENCES expressions(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  edition_id TEXT REFERENCES book_editions(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  agent_id TEXT REFERENCES catalog_agents(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  publication_relationship_id TEXT REFERENCES publication_relationships(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (subject_type, subject_id),
+  CHECK (
+    (subject_type = 'WORK' AND work_id IS NOT NULL AND work_id = subject_id AND
+      expression_id IS NULL AND
+      edition_id IS NULL AND agent_id IS NULL AND publication_relationship_id IS NULL) OR
+    (subject_type = 'EXPRESSION' AND expression_id IS NOT NULL AND
+      expression_id = subject_id AND work_id IS NULL AND
+      edition_id IS NULL AND agent_id IS NULL AND publication_relationship_id IS NULL) OR
+    (subject_type = 'EDITION' AND edition_id IS NOT NULL AND
+      edition_id = subject_id AND work_id IS NULL AND
+      expression_id IS NULL AND agent_id IS NULL AND publication_relationship_id IS NULL) OR
+    (subject_type = 'AGENT' AND agent_id IS NOT NULL AND
+      agent_id = subject_id AND work_id IS NULL AND
+      expression_id IS NULL AND edition_id IS NULL AND publication_relationship_id IS NULL) OR
+    (subject_type = 'PUBLICATION_RELATIONSHIP' AND
+      publication_relationship_id IS NOT NULL AND
+      publication_relationship_id = subject_id AND work_id IS NULL AND
+      expression_id IS NULL AND edition_id IS NULL AND agent_id IS NULL)
+  )
+) STRICT, WITHOUT ROWID;
+
+INSERT OR IGNORE INTO fact_subjects(subject_type, subject_id, work_id)
+SELECT 'WORK', claim.subject_id, book.id
+FROM claims AS claim JOIN books AS book ON book.id = claim.subject_id
+WHERE claim.subject_type IN ('WORK', 'BOOK');
+
+INSERT OR IGNORE INTO fact_subjects(subject_type, subject_id, expression_id)
+SELECT 'EXPRESSION', claim.subject_id, expression.id
+FROM claims AS claim JOIN expressions AS expression ON expression.id = claim.subject_id
+WHERE claim.subject_type = 'EXPRESSION';
+
+INSERT OR IGNORE INTO fact_subjects(subject_type, subject_id, edition_id)
+SELECT 'EDITION', claim.subject_id, edition.id
+FROM claims AS claim JOIN book_editions AS edition ON edition.id = claim.subject_id
+WHERE claim.subject_type IN ('EDITION', 'BOOK_EDITION');
+
+INSERT OR IGNORE INTO fact_subjects(subject_type, subject_id, agent_id)
+SELECT 'AGENT', claim.subject_id, agent.id
+FROM claims AS claim JOIN catalog_agents AS agent ON agent.id = claim.subject_id
+WHERE claim.subject_type IN ('AGENT', 'AUTHOR');
+
+INSERT OR IGNORE INTO fact_subjects(
+  subject_type, subject_id, publication_relationship_id
+)
+SELECT 'PUBLICATION_RELATIONSHIP', claim.subject_id, relationship.id
+FROM claims AS claim
+JOIN publication_relationships AS relationship ON relationship.id = claim.subject_id
+WHERE claim.subject_type = 'PUBLICATION_RELATIONSHIP';
+
+CREATE TABLE issue019_claim_compatibility_guard (
+  incompatible_count INTEGER NOT NULL CHECK (incompatible_count = 0)
+) STRICT;
+
+INSERT INTO issue019_claim_compatibility_guard(incompatible_count)
+SELECT count(*)
+FROM claims AS claim
+LEFT JOIN fact_subjects AS subject
+  ON subject.subject_id = claim.subject_id
+ AND subject.subject_type = CASE claim.subject_type
+   WHEN 'BOOK' THEN 'WORK'
+   WHEN 'BOOK_EDITION' THEN 'EDITION'
+   WHEN 'AUTHOR' THEN 'AGENT'
+   ELSE claim.subject_type
+ END
+WHERE subject.subject_id IS NULL;
+
+DROP TABLE issue019_claim_compatibility_guard;
+
+CREATE TABLE predicate_registry (
+  predicate TEXT PRIMARY KEY CHECK (
+    length(predicate) BETWEEN 1 AND 128 AND
+    predicate NOT GLOB '*[^A-Za-z0-9._:-]*'
+  ),
+  predicate_version INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(predicate_version) = 'integer' AND predicate_version > 0
+  ),
+  value_type TEXT NOT NULL CHECK (value_type IN (
+    'TEXT', 'INTEGER', 'DECIMAL_TEXT', 'DATE_WITH_PRECISION', 'IDENTIFIER',
+    'ENUM', 'DATE', 'BOOLEAN', 'ENTITY_REF', 'LEGACY_JSON'
+  )),
+  value_schema_version TEXT NOT NULL CHECK (
+    length(value_schema_version) BETWEEN 1 AND 64
+  ),
+  multiple_allowed INTEGER NOT NULL DEFAULT 0 CHECK (multiple_allowed IN (0, 1)),
+  material_conflict INTEGER NOT NULL DEFAULT 1 CHECK (material_conflict IN (0, 1)),
+  normalization_version TEXT NOT NULL CHECK (
+    normalization_version = 'claim-normalization-v1' OR
+    normalization_version = 'legacy-json-v1'
+  ),
+  active INTEGER NOT NULL DEFAULT 1 CHECK (active IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO predicate_registry(
+  predicate, predicate_version, value_type, value_schema_version,
+  multiple_allowed, material_conflict, normalization_version
+) VALUES
+  ('canonical_title', 1, 'TEXT', 'text-v1', 0, 1, 'claim-normalization-v1'),
+  ('original_title', 1, 'TEXT', 'text-v1', 0, 1, 'claim-normalization-v1'),
+  ('translated_title', 1, 'TEXT', 'text-v1', 1, 1, 'claim-normalization-v1'),
+  ('author', 1, 'ENTITY_REF', 'entity-ref-v1', 1, 1, 'claim-normalization-v1'),
+  ('translator', 1, 'ENTITY_REF', 'entity-ref-v1', 1, 1, 'claim-normalization-v1'),
+  ('publisher', 1, 'ENTITY_REF', 'entity-ref-v1', 1, 1, 'claim-normalization-v1'),
+  ('imprint', 1, 'TEXT', 'text-v1', 1, 1, 'claim-normalization-v1'),
+  ('publication_date', 1, 'DATE_WITH_PRECISION', 'date-precision-v1', 0, 1,
+    'claim-normalization-v1'),
+  ('isbn', 1, 'IDENTIFIER', 'identifier-v1', 1, 1, 'claim-normalization-v1'),
+  ('platform_identifier', 1, 'IDENTIFIER', 'identifier-v1', 1, 1,
+    'claim-normalization-v1'),
+  ('language', 1, 'IDENTIFIER', 'identifier-v1', 1, 1, 'claim-normalization-v1'),
+  ('territory', 1, 'IDENTIFIER', 'identifier-v1', 1, 1, 'claim-normalization-v1'),
+  ('format', 1, 'ENUM', 'enum-v1', 1, 1, 'claim-normalization-v1'),
+  ('award_nomination', 1, 'TEXT', 'text-v1', 1, 1, 'claim-normalization-v1'),
+  ('award_win', 1, 'TEXT', 'text-v1', 1, 1, 'claim-normalization-v1'),
+  ('series_membership', 1, 'ENTITY_REF', 'entity-ref-v1', 1, 1,
+    'claim-normalization-v1'),
+  ('series_order', 1, 'DECIMAL_TEXT', 'decimal-text-v1', 0, 1,
+    'claim-normalization-v1'),
+  ('publication_relationship', 1, 'ENTITY_REF', 'entity-ref-v1', 1, 1,
+    'claim-normalization-v1'),
+  ('page_count', 1, 'INTEGER', 'integer-v1', 0, 1, 'claim-normalization-v1'),
+  ('official_title', 1, 'TEXT', 'text-v1', 0, 1, 'claim-normalization-v1');
+
+INSERT OR IGNORE INTO predicate_registry(
+  predicate, predicate_version, value_type, value_schema_version,
+  multiple_allowed, material_conflict, normalization_version
+)
+SELECT predicate, 1, 'LEGACY_JSON', 'legacy-json-v1', 0, 1, 'legacy-json-v1'
+FROM claims;
+
+CREATE TABLE claims_issue019_new (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version IN ('atomic-claim-v1', 'legacy-claim-v1')
+  ),
+  subject_type TEXT NOT NULL,
+  subject_id TEXT NOT NULL,
+  predicate TEXT NOT NULL REFERENCES predicate_registry(predicate)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  predicate_version INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(predicate_version) = 'integer' AND predicate_version > 0
+  ),
+  value_type TEXT NOT NULL CHECK (value_type IN (
+    'TEXT', 'INTEGER', 'DECIMAL_TEXT', 'DATE_WITH_PRECISION', 'IDENTIFIER',
+    'ENUM', 'DATE', 'BOOLEAN', 'ENTITY_REF', 'LEGACY_JSON'
+  )),
+  value_json TEXT NOT NULL CHECK (
+    json_valid(value_json) AND length(CAST(value_json AS BLOB)) BETWEEN 1 AND 32768
+  ),
+  normalized_value TEXT NOT NULL CHECK (length(normalized_value) BETWEEN 1 AND 8192),
+  scope_json TEXT NOT NULL DEFAULT '{}' CHECK (
+    json_valid(scope_json) AND json_type(scope_json) = 'object' AND
+    length(CAST(scope_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  normalized_scope_hash TEXT NOT NULL CHECK (
+    length(normalized_scope_hash) = 64 AND
+    normalized_scope_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  policy_version TEXT NOT NULL DEFAULT 'fact-policy-v1'
+    CHECK (policy_version = 'fact-policy-v1'),
+  key_fact INTEGER NOT NULL DEFAULT 0 CHECK (key_fact IN (0, 1)),
+  claimant_source_id TEXT,
+  claimant_source_revision INTEGER,
+  semantic_fingerprint TEXT NOT NULL CHECK (
+    length(semantic_fingerprint) = 64 AND
+    semantic_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  status TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (
+    status IN ('CANDIDATE', 'ACTIVE', 'REJECTED')
+  ),
+  provenance_json TEXT NOT NULL CHECK (
+    json_valid(provenance_json) AND json_type(provenance_json) = 'object' AND
+    length(CAST(provenance_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  confidence REAL CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1),
+  legacy_conflict_status TEXT,
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (subject_type, subject_id)
+    REFERENCES fact_subjects(subject_type, subject_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (claimant_source_id, claimant_source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (
+    (claimant_source_id IS NULL) = (claimant_source_revision IS NULL)
+  )
+) STRICT;
+
+INSERT INTO claims_issue019_new(
+  id, contract_version, subject_type, subject_id, predicate, predicate_version, value_type,
+  value_json, normalized_value, scope_json, normalized_scope_hash,
+  key_fact, semantic_fingerprint, status, provenance_json,
+  confidence, legacy_conflict_status, created_at
+)
+SELECT
+  claim.id,
+  'legacy-claim-v1',
+  CASE claim.subject_type
+    WHEN 'BOOK' THEN 'WORK'
+    WHEN 'BOOK_EDITION' THEN 'EDITION'
+    WHEN 'AUTHOR' THEN 'AGENT'
+    ELSE claim.subject_type
+  END,
+  claim.subject_id,
+  claim.predicate,
+  1,
+  registry.value_type,
+  claim.value_json,
+  claim.value_json,
+  '{}',
+  '44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a',
+  0,
+  lower(hex(randomblob(32))),
+  'ACTIVE',
+  json_object('kind', 'LEGACY_MIGRATION', 'runId', NULL),
+  claim.confidence,
+  claim.conflict_status,
+  claim.created_at
+FROM claims AS claim
+JOIN predicate_registry AS registry ON registry.predicate = claim.predicate;
+
+CREATE TABLE claim_evidence_issue019_new (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  claim_id TEXT NOT NULL REFERENCES claims_issue019_new(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  source_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL,
+  locator_version TEXT NOT NULL CHECK (
+    locator_version IN ('evidence-locator-v1', 'legacy-unlocated-v1')
+  ),
+  locator_kind TEXT NOT NULL CHECK (locator_kind IN ('CHAR_RANGE', 'LEGACY_UNLOCATED')),
+  locator_json TEXT NOT NULL CHECK (
+    json_valid(locator_json) AND json_type(locator_json) = 'object' AND
+    length(CAST(locator_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  excerpt TEXT NOT NULL CHECK (length(excerpt) BETWEEN 1 AND 8000),
+  excerpt_hash TEXT NOT NULL CHECK (
+    length(excerpt_hash) = 64 AND excerpt_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  supports_or_contradicts TEXT NOT NULL CHECK (
+    supports_or_contradicts IN ('SUPPORTS', 'CONTRADICTS', 'QUALIFIES')
+  ),
+  language TEXT NOT NULL CHECK (length(language) BETWEEN 1 AND 32),
+  summary_zh TEXT CHECK (summary_zh IS NULL OR length(summary_zh) BETWEEN 1 AND 8000),
+  summary_method TEXT CHECK (
+    summary_method IS NULL OR summary_method IN ('MANUAL', 'MODEL_CANDIDATE')
+  ),
+  model_execution_id TEXT CHECK (
+    model_execution_id IS NULL OR length(model_execution_id) BETWEEN 1 AND 128
+  ),
+  locator_validated INTEGER NOT NULL CHECK (locator_validated IN (0, 1)),
+  verification_status TEXT NOT NULL DEFAULT 'VALIDATED' CHECK (
+    verification_status IN ('PENDING', 'VALIDATED', 'REJECTED', 'STALE')
+  ),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (source_id, source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  UNIQUE (claim_id, source_id, source_revision, excerpt_hash),
+  CHECK ((summary_zh IS NULL) = (summary_method IS NULL)),
+  CHECK (
+    (summary_method = 'MODEL_CANDIDATE' AND model_execution_id IS NOT NULL) OR
+    summary_method IS NULL OR summary_method = 'MANUAL'
+  ),
+  CHECK (
+    (locator_kind = 'CHAR_RANGE' AND locator_validated = 1) OR
+    (locator_kind = 'LEGACY_UNLOCATED' AND locator_validated = 0)
+  )
+) STRICT;
+
+INSERT INTO claim_evidence_issue019_new(
+  id, claim_id, source_id, source_revision, locator_version, locator_kind,
+  locator_json, excerpt, excerpt_hash, supports_or_contradicts, language,
+  locator_validated
+)
+SELECT
+  'legacy:' || evidence.claim_id || ':' || evidence.source_id,
+  evidence.claim_id,
+  evidence.source_id,
+  1,
+  'legacy-unlocated-v1',
+  'LEGACY_UNLOCATED',
+  json_object('legacyLocator', evidence.locator),
+  evidence.evidence_excerpt,
+  '0000000000000000000000000000000000000000000000000000000000000000',
+  evidence.supports_or_contradicts,
+  source.language,
+  0
+FROM claim_evidence AS evidence
+JOIN sources AS source ON source.id = evidence.source_id;
+
+DROP TABLE claim_evidence;
+DROP TABLE claims;
+ALTER TABLE claims_issue019_new RENAME TO claims;
+ALTER TABLE claim_evidence_issue019_new RENAME TO claim_evidence;
+
+CREATE TABLE fact_conflicts (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  conflict_key TEXT NOT NULL UNIQUE CHECK (length(conflict_key) BETWEEN 1 AND 512),
+  claim_left_id TEXT NOT NULL REFERENCES claims(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_right_id TEXT NOT NULL REFERENCES claims(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  state TEXT NOT NULL CHECK (state IN (
+    'OPEN', 'FACT_BLOCKED', 'RESOLVED_ACCEPT', 'RESOLVED_MULTIVALUE',
+    'RESOLVED_SCOPE_SPLIT', 'DISMISSED_DEPENDENT_SOURCE', 'SUPERSEDED', 'REOPENED'
+  )),
+  material INTEGER NOT NULL DEFAULT 1 CHECK (material = 1),
+  policy_version TEXT NOT NULL CHECK (policy_version = 'fact-policy-v1'),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (claim_left_id < claim_right_id)
+) STRICT;
+
+CREATE TABLE fact_conflict_decisions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  conflict_id TEXT NOT NULL REFERENCES fact_conflicts(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  action TEXT NOT NULL CHECK (action IN (
+    'ACCEPT_CLAIM', 'ACCEPT_MULTIVALUE', 'SPLIT_SCOPE',
+    'DISMISS_DEPENDENT_SOURCE', 'UNDO', 'REOPEN'
+  )),
+  accepted_claim_id TEXT REFERENCES claims(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  parent_decision_id TEXT REFERENCES fact_conflict_decisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expected_revision INTEGER NOT NULL CHECK (expected_revision > 0),
+  resulting_revision INTEGER NOT NULL CHECK (
+    resulting_revision = expected_revision + 1
+  ),
+  reason TEXT NOT NULL CHECK (length(trim(reason)) BETWEEN 1 AND 2000),
+  preview_hash TEXT NOT NULL CHECK (
+    length(preview_hash) = 64 AND preview_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  actor TEXT NOT NULL CHECK (actor = 'USER'),
+  before_json TEXT NOT NULL CHECK (
+    json_valid(before_json) AND json_type(before_json) = 'object' AND
+    length(CAST(before_json AS BLOB)) BETWEEN 2 AND 65536
+  ),
+  after_json TEXT NOT NULL CHECK (
+    json_valid(after_json) AND json_type(after_json) = 'object' AND
+    length(CAST(after_json AS BLOB)) BETWEEN 2 AND 65536
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE fact_evaluations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  claim_id TEXT NOT NULL REFERENCES claims(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  status TEXT NOT NULL CHECK (status IN (
+    'NOT_EVALUATED', 'INSUFFICIENT', 'SUPPORTED_NOT_VERIFIED', 'VERIFIED',
+    'CONFLICTED', 'FACT_BLOCKED', 'STALE_REVIEW_REQUIRED', 'REJECTED'
+  )),
+  policy_version TEXT NOT NULL CHECK (policy_version = 'fact-policy-v1'),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  qualifying_source_ids_json TEXT NOT NULL CHECK (
+    json_valid(qualifying_source_ids_json) AND
+    json_type(qualifying_source_ids_json) = 'array' AND
+    length(CAST(qualifying_source_ids_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  source_revision_digest TEXT NOT NULL CHECK (
+    length(source_revision_digest) = 64 AND
+    source_revision_digest NOT GLOB '*[^0-9a-f]*'
+  ),
+  independence_snapshot_json TEXT NOT NULL CHECK (
+    json_valid(independence_snapshot_json) AND
+    json_type(independence_snapshot_json) = 'array' AND
+    length(CAST(independence_snapshot_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  input_identity_hash TEXT NOT NULL UNIQUE CHECK (
+    length(input_identity_hash) = 64 AND
+    input_identity_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE fact_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'SOURCE_REGISTERED', 'SOURCE_REVISION_ADDED', 'CLAIM_CREATED',
+    'SOURCE_LINEAGE_CONFIRMED', 'EVIDENCE_ATTACHED', 'FACT_EVALUATED', 'CONFLICT_OPENED',
+    'CONFLICT_RESOLVED', 'CONFLICT_UNDONE', 'CONFLICT_REOPENED',
+    'PROCESSING_PLAN_CONFIRMED', 'PROCESSING_CANCELLED'
+  )),
+  entity_type TEXT NOT NULL CHECK (entity_type IN (
+    'SOURCE', 'CLAIM', 'EVIDENCE', 'CONFLICT', 'PROCESSING_RUN'
+  )),
+  entity_id TEXT NOT NULL CHECK (length(entity_id) BETWEEN 1 AND 256),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 65536
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE source_processing_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  contract_version TEXT NOT NULL CHECK (
+    contract_version = 'source-processing-plan-v1'
+  ),
+  plan_hash TEXT NOT NULL UNIQUE CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  plan_json TEXT NOT NULL CHECK (
+    json_valid(plan_json) AND json_type(plan_json) = 'object' AND
+    length(CAST(plan_json AS BLOB)) BETWEEN 2 AND 131072
+  ),
+  estimated_external_requests INTEGER NOT NULL CHECK (
+    estimated_external_requests BETWEEN 0 AND 128
+  ),
+  estimated_fee TEXT NOT NULL CHECK (estimated_fee = 'UNKNOWN'),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED}),
+  CHECK (expires_at > created_at)
+) STRICT;
+
+CREATE TABLE source_processing_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 128),
+  plan_id TEXT NOT NULL REFERENCES source_processing_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  job_id TEXT REFERENCES jobs(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  status TEXT NOT NULL CHECK (status IN (
+    'PLANNED', 'CONFIRMED', 'RUNNING', 'PAUSED', 'CANCEL_REQUESTED',
+    'CANCELLED', 'SUCCEEDED', 'FAILED', 'AMBIGUOUS', 'BUDGET_BLOCKED',
+    'CAPABILITY_BLOCKED'
+  )),
+  current_step TEXT CHECK (
+    current_step IS NULL OR current_step IN (
+      'CLASSIFY', 'EXTRACT_CLAIMS', 'SUMMARIZE', 'RECONCILE'
+    )
+  ),
+  completed_steps_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(completed_steps_json) AND json_type(completed_steps_json) = 'array' AND
+    length(CAST(completed_steps_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    external_request_count BETWEEN 0 AND 128
+  ),
+  cost_state TEXT NOT NULL DEFAULT 'NOT_INCURRED' CHECK (
+    cost_state IN ('NOT_INCURRED', 'UNKNOWN_POSSIBLY_INCURRED', 'UNPRICED_USAGE')
+  ),
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 128
+  ),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE INDEX idx_source_revisions_origin
+  ON source_revisions(origin_kind, origin_record_id, origin_revision);
+CREATE INDEX idx_source_revisions_availability
+  ON source_revisions(availability, created_at DESC);
+CREATE INDEX idx_source_classification_current
+  ON source_classifications(source_id, source_revision, classification_revision DESC);
+CREATE INDEX idx_source_classification_revision
+  ON source_classifications(source_revision, source_id);
+CREATE INDEX idx_source_lineage_parent ON source_lineage(parent_source_id, relation);
+CREATE INDEX idx_fact_subjects_work ON fact_subjects(work_id);
+CREATE INDEX idx_fact_subjects_expression ON fact_subjects(expression_id);
+CREATE INDEX idx_fact_subjects_edition ON fact_subjects(edition_id);
+CREATE INDEX idx_fact_subjects_agent ON fact_subjects(agent_id);
+CREATE INDEX idx_fact_subjects_publication_relationship
+  ON fact_subjects(publication_relationship_id);
+CREATE INDEX idx_claims_fact_key
+  ON claims(subject_type, subject_id, predicate, normalized_scope_hash, policy_version);
+CREATE INDEX idx_claims_subject_id ON claims(subject_id, subject_type);
+CREATE INDEX idx_claims_claimant_source
+  ON claims(claimant_source_id, claimant_source_revision, id);
+CREATE INDEX idx_claims_claimant_source_revision
+  ON claims(claimant_source_revision, claimant_source_id, id);
+CREATE INDEX idx_claims_predicate_value
+  ON claims(predicate, normalized_value, id);
+CREATE INDEX idx_claim_evidence_claim ON claim_evidence(claim_id, created_at, id);
+CREATE INDEX idx_claim_evidence_source
+  ON claim_evidence(source_id, source_revision, claim_id);
+CREATE INDEX idx_claim_evidence_source_revision
+  ON claim_evidence(source_revision, source_id, claim_id);
+CREATE INDEX idx_fact_conflicts_claim_left ON fact_conflicts(claim_left_id, state);
+CREATE INDEX idx_fact_conflicts_claim_right ON fact_conflicts(claim_right_id, state);
+CREATE INDEX idx_fact_evaluations_claim_time
+  ON fact_evaluations(claim_id, created_at DESC, id DESC);
+CREATE INDEX idx_fact_decisions_conflict_time
+  ON fact_conflict_decisions(conflict_id, created_at DESC);
+CREATE INDEX idx_fact_decisions_accepted_claim
+  ON fact_conflict_decisions(accepted_claim_id, conflict_id);
+CREATE INDEX idx_fact_decisions_parent
+  ON fact_conflict_decisions(parent_decision_id, conflict_id);
+CREATE INDEX idx_source_processing_runs_status
+  ON source_processing_runs(status, updated_at DESC);
+CREATE INDEX idx_source_processing_runs_plan
+  ON source_processing_runs(plan_id, created_at DESC);
+CREATE INDEX idx_source_processing_runs_job ON source_processing_runs(job_id);
+
+CREATE TRIGGER source_revisions_append_only_update
+BEFORE UPDATE ON source_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'source revisions are append-only');
+END;
+
+CREATE TRIGGER source_revisions_append_only_delete
+BEFORE DELETE ON source_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'source revisions are append-only');
+END;
+
+CREATE TRIGGER source_classifications_append_only_update
+BEFORE UPDATE ON source_classifications
+BEGIN
+  SELECT RAISE(ABORT, 'source classifications are append-only');
+END;
+
+CREATE TRIGGER source_classifications_append_only_delete
+BEFORE DELETE ON source_classifications
+BEGIN
+  SELECT RAISE(ABORT, 'source classifications are append-only');
+END;
+
+CREATE TRIGGER source_lineage_append_only_update
+BEFORE UPDATE ON source_lineage
+BEGIN
+  SELECT RAISE(ABORT, 'source lineage is append-only');
+END;
+
+CREATE TRIGGER source_lineage_append_only_delete
+BEFORE DELETE ON source_lineage
+BEGIN
+  SELECT RAISE(ABORT, 'source lineage is append-only');
+END;
+
+CREATE TRIGGER claim_evidence_append_only_update
+BEFORE UPDATE ON claim_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'claim evidence is append-only');
+END;
+
+CREATE TRIGGER claim_evidence_append_only_delete
+BEFORE DELETE ON claim_evidence
+BEGIN
+  SELECT RAISE(ABORT, 'claim evidence is append-only');
+END;
+
+CREATE TRIGGER fact_evaluations_append_only_update
+BEFORE UPDATE ON fact_evaluations
+BEGIN
+  SELECT RAISE(ABORT, 'fact evaluations are append-only');
+END;
+
+CREATE TRIGGER fact_evaluations_append_only_delete
+BEFORE DELETE ON fact_evaluations
+BEGIN
+  SELECT RAISE(ABORT, 'fact evaluations are append-only');
+END;
+
+CREATE TRIGGER fact_conflict_decisions_append_only_update
+BEFORE UPDATE ON fact_conflict_decisions
+BEGIN
+  SELECT RAISE(ABORT, 'fact conflict decisions are append-only');
+END;
+
+CREATE TRIGGER fact_conflict_decisions_append_only_delete
+BEFORE DELETE ON fact_conflict_decisions
+BEGIN
+  SELECT RAISE(ABORT, 'fact conflict decisions are append-only');
+END;
+
+CREATE TRIGGER fact_audit_events_append_only_update
+BEFORE UPDATE ON fact_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'fact audit is append-only');
+END;
+
+CREATE TRIGGER fact_audit_events_append_only_delete
+BEFORE DELETE ON fact_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'fact audit is append-only');
+END;
+
+CREATE TRIGGER source_processing_plans_append_only_update
+BEFORE UPDATE ON source_processing_plans
+BEGIN
+  SELECT RAISE(ABORT, 'source processing plans are append-only');
+END;
+
+CREATE TRIGGER source_processing_plans_append_only_delete
+BEFORE DELETE ON source_processing_plans
+BEGIN
+  SELECT RAISE(ABORT, 'source processing plans are append-only');
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -3391,5 +4155,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'bibliographic_catalog_and_entity_resolution',
     sql: BIBLIOGRAPHIC_CATALOG,
     version: 11,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'source_evidence_atomic_facts_and_conflicts',
+    sql: SOURCE_EVIDENCE_AND_FACT_CONFLICTS,
+    version: 12,
   }),
 ]);

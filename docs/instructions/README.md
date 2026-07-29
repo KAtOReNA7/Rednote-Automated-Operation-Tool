@@ -22,3 +22,4 @@
 - [Issue 017：Chrome / Edge 浏览器收藏插件](./m2/M2-Issue017-Chrome-Edge-browser-clipper-Codex-instruction.txt)
 - [Issue 017：真实浏览器 smoke 恢复指令](./m2/M2-Issue017-recovery-CDP-real-browser-smoke-Codex-instruction.txt)
 - [Issue 018：书目发现、实体消歧与仓库治理](./m2/M2-Issue018-bibliographic-discovery-entity-resolution-Codex-instruction.txt)
+- [Issue 019：来源、原子事实与冲突处理](./m2/M2-Issue019-source-atomic-facts-conflict-handling-Codex-instruction.txt)

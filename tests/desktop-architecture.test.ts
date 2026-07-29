@@ -119,9 +119,10 @@ describe('Issue 006 architecture boundaries', () => {
     expect(production).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/u);
   });
 
-  it('activates only the Issue 018 library while retaining seven milestone placeholders', () => {
+  it('activates the Issue 018 library and Issue 019 research page while retaining six placeholders', () => {
     const routes = read('apps/web-ui/src/routes.ts');
-    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(7);
+    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(6);
     expect(routes).toContain('管理本地书目实体、来源观察、发现覆盖与待确认消歧。');
+    expect(routes).toContain('管理版本化来源、精确证据、原子事实、事实评估与可逆冲突决定。');
   });
 });
