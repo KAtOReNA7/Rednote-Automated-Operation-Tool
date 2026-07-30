@@ -58,6 +58,14 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       token: 'a'.repeat(43),
     },
   ],
+  confirmAuthenticityAction: [
+    {
+      confirmation: 'APPLY_AUTHENTICITY_ACTION',
+      kind: 'STATE_CHANGE',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
   confirmCatalogUndo: [
     {
       confirmation: 'APPLY_CATALOG_DECISION',
@@ -155,6 +163,15 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   ],
   getCatalogState: [{ limit: 25, offset: 0, query: '' }],
   getCatalogWork: [{ workId: 'work-fixture-000001' }],
+  getAuthenticityLibrary: [{ limit: 25, offset: 0, profileId: 'primary', query: '' }],
+  getAuthenticityWork: [
+    {
+      historyLimit: 25,
+      historyOffset: 0,
+      profileId: 'primary',
+      workId: 'work-fixture-000001',
+    },
+  ],
   getDossier: [{ dossierId: 'dossier-fixture', entryLimit: 25, entryOffset: 0 }],
   getEvidenceState: [{ limit: 25, offset: 0 }],
   getModelAccounting: [],
@@ -192,6 +209,29 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       maxRuntimeMs: 60_000,
       originKinds: ['SEARCH_CANDIDATE', 'FETCH_DOCUMENT', 'BROWSER_CLIP_CANDIDATE'],
       purpose: 'PILOT_CONTENT',
+    },
+  ],
+  previewAuthenticityAction: [
+    {
+      draft: {
+        confirmationKind: 'USER_EXPLICIT',
+        expectedRevision: 0,
+        finishedAt: null,
+        finishedAtPrecision: 'UNKNOWN',
+        lastReadAt: null,
+        lastReadAtPrecision: 'UNKNOWN',
+        memoryConfidence: 'UNKNOWN',
+        nextState: 'UNCLASSIFIED',
+        profileId: 'primary',
+        provenance: 'USER_UI',
+        subject: {
+          editionId: null,
+          expressionId: null,
+          workId: 'work-fixture-000001',
+        },
+        userNote: null,
+      },
+      kind: 'STATE_CHANGE',
     },
   ],
   previewCatalogUndo: [{ decisionId: 'decision-fixture-000001' }],

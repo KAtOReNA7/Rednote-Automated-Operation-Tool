@@ -5213,6 +5213,1006 @@ BEGIN
 END;
 `;
 
+const READING_AUTHENTICITY_POLICY = `
+DROP INDEX idx_reading_states_state;
+ALTER TABLE reading_states RENAME TO reading_states_issue021_legacy;
+
+CREATE TABLE reading_states_issue021_new (
+  id TEXT PRIMARY KEY CHECK (length(trim(id)) BETWEEN 1 AND 4096),
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  book_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  current_revision_id TEXT,
+  current_snapshot_id TEXT,
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (profile_id, book_id),
+  UNIQUE (book_id),
+  UNIQUE (id, profile_id, book_id),
+  FOREIGN KEY (current_revision_id, id)
+    REFERENCES reading_state_revisions(id, reading_state_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (current_snapshot_id, id)
+    REFERENCES expression_permission_snapshots(id, reading_state_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE reading_state_revisions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 4096),
+  reading_state_id TEXT NOT NULL REFERENCES reading_states_issue021_new(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  previous_revision_id TEXT REFERENCES reading_state_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  contract_version TEXT NOT NULL CHECK (contract_version = 'reading-state-v1'),
+  state TEXT NOT NULL CHECK (state IN (
+    'R1_READ_CLEAR', 'R2_READ_FUZZY', 'R3_READ_UNCONFIRMED_DETAILS',
+    'S1_RESEARCH_ONLY', 'S2_RESEARCH_INSUFFICIENT', 'UNCLASSIFIED'
+  )),
+  memory_confidence TEXT NOT NULL CHECK (memory_confidence IN (
+    'CLEAR', 'PARTIAL', 'FADED', 'NOT_APPLICABLE', 'UNKNOWN'
+  )),
+  confirmation_kind TEXT NOT NULL CHECK (confirmation_kind IN (
+    'USER_EXPLICIT', 'USER_BATCH_EXPLICIT', 'USER_UNDO', 'LEGACY_MIGRATION'
+  )),
+  finished_at TEXT CHECK (
+    finished_at IS NULL OR finished_at GLOB '????-??-??' OR
+    finished_at GLOB '????-??' OR finished_at GLOB '????'
+  ),
+  finished_at_precision TEXT NOT NULL CHECK (
+    finished_at_precision IN ('DAY', 'MONTH', 'YEAR', 'UNKNOWN')
+  ),
+  last_read_at TEXT CHECK (
+    last_read_at IS NULL OR last_read_at GLOB '????-??-??' OR
+    last_read_at GLOB '????-??' OR last_read_at GLOB '????'
+  ),
+  last_read_at_precision TEXT NOT NULL CHECK (
+    last_read_at_precision IN ('DAY', 'MONTH', 'YEAR', 'UNKNOWN')
+  ),
+  expression_id TEXT REFERENCES expressions(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  edition_id TEXT REFERENCES book_editions(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  user_note TEXT CHECK (
+    user_note IS NULL OR length(CAST(user_note AS BLOB)) BETWEEN 1 AND 65536
+  ),
+  provenance TEXT NOT NULL CHECK (provenance IN ('USER_UI', 'LEGACY_MIGRATION')),
+  provenance_identity TEXT NOT NULL CHECK (
+    length(provenance_identity) BETWEEN 1 AND 256
+  ),
+  legacy_payload_json TEXT CHECK (
+    legacy_payload_json IS NULL OR (
+      json_valid(legacy_payload_json) AND json_type(legacy_payload_json) = 'object'
+    )
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (reading_state_id, revision),
+  UNIQUE (id, reading_state_id),
+  CHECK (
+    (state = 'R1_READ_CLEAR' AND memory_confidence = 'CLEAR') OR
+    (state = 'R2_READ_FUZZY' AND memory_confidence IN ('PARTIAL', 'FADED')) OR
+    (state = 'R3_READ_UNCONFIRMED_DETAILS' AND memory_confidence IN ('FADED', 'UNKNOWN')) OR
+    (state IN ('S1_RESEARCH_ONLY', 'S2_RESEARCH_INSUFFICIENT') AND
+      memory_confidence = 'NOT_APPLICABLE') OR
+    (state = 'UNCLASSIFIED' AND memory_confidence = 'UNKNOWN')
+  ),
+  CHECK (
+    (finished_at IS NULL AND finished_at_precision = 'UNKNOWN') OR
+    (finished_at IS NOT NULL AND finished_at_precision <> 'UNKNOWN')
+  ),
+  CHECK (
+    (last_read_at IS NULL AND last_read_at_precision = 'UNKNOWN') OR
+    (last_read_at IS NOT NULL AND last_read_at_precision <> 'UNKNOWN')
+  )
+) STRICT;
+
+INSERT INTO reading_states_issue021_new (
+  id, profile_id, book_id, revision, created_at, updated_at
+)
+SELECT
+  legacy.id,
+  'primary',
+  legacy.book_id,
+  1,
+  COALESCE(legacy.user_confirmed_at, ${UTC_NOW}),
+  COALESCE(legacy.user_confirmed_at, ${UTC_NOW})
+FROM reading_states_issue021_legacy AS legacy;
+
+INSERT INTO reading_state_revisions (
+  id, reading_state_id, revision, previous_revision_id, contract_version,
+  state, memory_confidence, confirmation_kind,
+  finished_at, finished_at_precision, last_read_at, last_read_at_precision,
+  expression_id, edition_id, user_note, provenance, provenance_identity,
+  legacy_payload_json, created_at
+)
+SELECT
+  'legacy-reading-revision-' || legacy.rowid,
+  legacy.id,
+  1,
+  NULL,
+  'reading-state-v1',
+  CASE
+    WHEN legacy.state = 'READ_CLEAR' AND legacy.user_confirmed_at IS NOT NULL
+      THEN 'R1_READ_CLEAR'
+    WHEN legacy.state = 'READ_FUZZY' THEN 'R2_READ_FUZZY'
+    WHEN legacy.state = 'READ_UNVERIFIED' THEN 'R3_READ_UNCONFIRMED_DETAILS'
+    ELSE 'UNCLASSIFIED'
+  END,
+  CASE
+    WHEN legacy.state = 'READ_CLEAR' AND legacy.user_confirmed_at IS NOT NULL THEN 'CLEAR'
+    WHEN legacy.state = 'READ_FUZZY' THEN 'PARTIAL'
+    WHEN legacy.state = 'READ_UNVERIFIED' THEN 'UNKNOWN'
+    ELSE 'UNKNOWN'
+  END,
+  'LEGACY_MIGRATION',
+  NULL,
+  'UNKNOWN',
+  NULL,
+  'UNKNOWN',
+  NULL,
+  NULL,
+  legacy.memory_note,
+  'LEGACY_MIGRATION',
+  'migration-v14',
+  json_object(
+    'legacyState', legacy.state,
+    'legacyUserConfirmedAt', legacy.user_confirmed_at,
+    'legacyScoreConfirmedAt', legacy.score_confirmed_at
+  ),
+  COALESCE(legacy.user_confirmed_at, ${UTC_NOW})
+FROM reading_states_issue021_legacy AS legacy;
+
+UPDATE reading_states_issue021_new
+SET current_revision_id = (
+  SELECT revision.id
+  FROM reading_state_revisions AS revision
+  WHERE revision.reading_state_id = reading_states_issue021_new.id
+    AND revision.revision = 1
+);
+
+ALTER TABLE reading_states_issue021_new RENAME TO reading_states;
+
+CREATE TABLE experience_assertions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  reading_state_id TEXT NOT NULL REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  current_revision_id TEXT,
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (id, reading_state_id),
+  FOREIGN KEY (current_revision_id, id)
+    REFERENCES experience_assertion_revisions(id, assertion_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experience_assertion_revisions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  assertion_id TEXT NOT NULL REFERENCES experience_assertions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  previous_revision_id TEXT REFERENCES experience_assertion_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reading_state_revision_id TEXT NOT NULL REFERENCES reading_state_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  assertion_kind TEXT NOT NULL CHECK (assertion_kind IN (
+    'READING_IMPRESSION', 'PLOT_OR_STRUCTURE_MEMORY', 'CHARACTER_MEMORY',
+    'TRICK_OR_REASONING_MEMORY', 'PERSONAL_PREFERENCE', 'PERSONAL_SCORE'
+  )),
+  confirmation_scope TEXT NOT NULL CHECK (
+    confirmation_scope IN ('EXACT_STATEMENT', 'EXACT_STRUCTURED_OPINION')
+  ),
+  statement TEXT NOT NULL CHECK (
+    length(CAST(statement AS BLOB)) BETWEEN 1 AND 2000
+  ),
+  statement_hash TEXT NOT NULL CHECK (
+    length(statement_hash) = 64 AND statement_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  status TEXT NOT NULL CHECK (status IN ('CONFIRMED', 'REVOKED')),
+  provenance TEXT NOT NULL CHECK (provenance = 'USER_UI'),
+  confirmed_at TEXT NOT NULL CHECK (confirmed_at ${UTC_REQUIRED}),
+  invalidated_at TEXT CHECK (
+    invalidated_at IS NULL OR invalidated_at ${UTC_REQUIRED}
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (assertion_id, revision),
+  UNIQUE (id, assertion_id),
+  CHECK (
+    (status = 'CONFIRMED' AND invalidated_at IS NULL) OR
+    (status = 'REVOKED' AND invalidated_at IS NOT NULL)
+  )
+) STRICT;
+
+CREATE TABLE personal_score_records (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  reading_state_id TEXT NOT NULL REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reading_state_revision_id TEXT NOT NULL REFERENCES reading_state_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  assertion_revision_id TEXT REFERENCES experience_assertion_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  score_basis_points INTEGER CHECK (
+    score_basis_points IS NULL OR (
+      typeof(score_basis_points) = 'integer' AND score_basis_points BETWEEN 0 AND 10000
+    )
+  ),
+  status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'REVOKED')),
+  provenance TEXT NOT NULL CHECK (provenance IN ('USER_UI', 'LEGACY_MIGRATION')),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (reading_state_id, revision),
+  CHECK (
+    (status = 'ACTIVE' AND score_basis_points IS NOT NULL) OR
+    (status = 'REVOKED' AND score_basis_points IS NULL)
+  )
+) STRICT;
+
+INSERT INTO personal_score_records (
+  id, reading_state_id, reading_state_revision_id, assertion_revision_id,
+  revision, score_basis_points, status, provenance, created_at
+)
+SELECT
+  'legacy-personal-score-' || legacy.rowid,
+  legacy.id,
+  revision.id,
+  NULL,
+  1,
+  CAST(round(legacy.personal_score * 100) AS INTEGER),
+  'ACTIVE',
+  'LEGACY_MIGRATION',
+  COALESCE(legacy.score_confirmed_at, legacy.user_confirmed_at, ${UTC_NOW})
+FROM reading_states_issue021_legacy AS legacy
+JOIN reading_state_revisions AS revision
+  ON revision.reading_state_id = legacy.id AND revision.revision = 1
+WHERE legacy.personal_score IS NOT NULL
+  AND legacy.state = 'READ_CLEAR'
+  AND legacy.user_confirmed_at IS NOT NULL
+  AND legacy.score_confirmed_at IS NOT NULL;
+
+DROP TABLE reading_states_issue021_legacy;
+
+CREATE TABLE research_analysis_score_records (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  reading_state_id TEXT NOT NULL REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reading_state_revision_id TEXT NOT NULL REFERENCES reading_state_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dossier_version_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  score_basis_points INTEGER CHECK (
+    score_basis_points IS NULL OR (
+      typeof(score_basis_points) = 'integer' AND score_basis_points BETWEEN 0 AND 10000
+    )
+  ),
+  status TEXT NOT NULL CHECK (status IN ('ACTIVE', 'REVOKED')),
+  public_label TEXT NOT NULL CHECK (public_label = '资料分析评分'),
+  provenance TEXT NOT NULL CHECK (provenance = 'USER_UI'),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (reading_state_id, revision),
+  FOREIGN KEY (dossier_version_id, dossier_id)
+    REFERENCES research_dossier_versions(id, dossier_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (
+    (status = 'ACTIVE' AND score_basis_points IS NOT NULL) OR
+    (status = 'REVOKED' AND score_basis_points IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE system_prediction_scores (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  book_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  score_basis_points INTEGER CHECK (
+    score_basis_points IS NULL OR (
+      typeof(score_basis_points) = 'integer' AND score_basis_points BETWEEN 0 AND 10000
+    )
+  ),
+  purpose TEXT NOT NULL CHECK (purpose = 'INTERNAL_ORDERING_ONLY'),
+  provenance TEXT NOT NULL CHECK (provenance IN ('SCRIPTED_FIXTURE', 'FUTURE_INTERNAL')),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE reading_spoiler_preferences (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  reading_state_id TEXT NOT NULL UNIQUE REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  current_revision_id TEXT,
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (id, reading_state_id),
+  FOREIGN KEY (current_revision_id, id)
+    REFERENCES reading_spoiler_preference_revisions(id, preference_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE reading_spoiler_preference_revisions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  preference_id TEXT NOT NULL REFERENCES reading_spoiler_preferences(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  previous_revision_id TEXT REFERENCES reading_spoiler_preference_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  policy_version TEXT NOT NULL CHECK (policy_version = 'spoiler-policy-v1'),
+  spoiler_level TEXT NOT NULL CHECK (spoiler_level IN (
+    'NO_SPOILER', 'LIGHT_SPOILER', 'FULL_TRICK_ANALYSIS'
+  )),
+  warning_included INTEGER NOT NULL CHECK (warning_included IN (0, 1)),
+  user_confirmed INTEGER NOT NULL CHECK (user_confirmed IN (0, 1)),
+  provenance TEXT NOT NULL CHECK (provenance IN ('USER_UI', 'LEGACY_MIGRATION')),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (preference_id, revision),
+  UNIQUE (id, preference_id)
+) STRICT;
+
+INSERT INTO reading_spoiler_preferences (
+  id, reading_state_id, revision, created_at, updated_at
+)
+SELECT
+  'spoiler-preference-' || rowid,
+  id,
+  1,
+  created_at,
+  updated_at
+FROM reading_states;
+
+INSERT INTO reading_spoiler_preference_revisions (
+  id, preference_id, revision, previous_revision_id, policy_version,
+  spoiler_level, warning_included, user_confirmed, provenance, created_at
+)
+SELECT
+  'spoiler-revision-' || preference.rowid,
+  preference.id,
+  1,
+  NULL,
+  'spoiler-policy-v1',
+  'NO_SPOILER',
+  0,
+  0,
+  'LEGACY_MIGRATION',
+  preference.created_at
+FROM reading_spoiler_preferences AS preference;
+
+UPDATE reading_spoiler_preferences
+SET current_revision_id = (
+  SELECT revision.id
+  FROM reading_spoiler_preference_revisions AS revision
+  WHERE revision.preference_id = reading_spoiler_preferences.id
+    AND revision.revision = 1
+);
+
+CREATE TABLE expression_permission_snapshots (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  reading_state_id TEXT NOT NULL REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reading_state_revision_id TEXT NOT NULL REFERENCES reading_state_revisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  snapshot_version TEXT NOT NULL CHECK (snapshot_version = 'expression-permission-v1'),
+  authenticity_policy_version TEXT NOT NULL CHECK (
+    authenticity_policy_version = 'reading-authenticity-policy-v1'
+  ),
+  score_policy_version TEXT NOT NULL CHECK (score_policy_version = 'score-origin-policy-v1'),
+  spoiler_policy_version TEXT NOT NULL CHECK (spoiler_policy_version = 'spoiler-policy-v1'),
+  dossier_id TEXT REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dossier_version_id TEXT,
+  dossier_readiness TEXT CHECK (dossier_readiness IS NULL OR dossier_readiness IN (
+    'NOT_BUILT', 'BUILD_REQUIRED', 'INSUFFICIENT_COVERAGE',
+    'FACT_BLOCKED', 'STALE', 'READY_FOR_CONTENT_BRIEF'
+  )),
+  spoiler_level TEXT NOT NULL CHECK (spoiler_level IN (
+    'NO_SPOILER', 'LIGHT_SPOILER', 'FULL_TRICK_ANALYSIS'
+  )),
+  spoiler_warning_required INTEGER NOT NULL CHECK (
+    spoiler_warning_required IN (0, 1)
+  ),
+  spoiler_warning_placement TEXT NOT NULL CHECK (spoiler_warning_placement IN (
+    'NONE', 'BODY_OPENING', 'COVER_TITLE_AND_BODY_OPENING'
+  )),
+  spoiler_user_confirmation_required INTEGER NOT NULL CHECK (
+    spoiler_user_confirmation_required IN (0, 1)
+  ),
+  personal_experience_permission TEXT NOT NULL CHECK (
+    personal_experience_permission IN (
+      'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+      'BLOCKED', 'STALE_REVIEW_REQUIRED'
+    )
+  ),
+  first_person_permission TEXT NOT NULL CHECK (first_person_permission IN (
+    'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+    'BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  public_research_analysis_permission TEXT NOT NULL CHECK (
+    public_research_analysis_permission IN (
+      'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+      'BLOCKED', 'STALE_REVIEW_REQUIRED'
+    )
+  ),
+  personal_score_permission TEXT NOT NULL CHECK (personal_score_permission IN (
+    'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+    'BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  research_score_permission TEXT NOT NULL CHECK (research_score_permission IN (
+    'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+    'BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  personal_content_mode TEXT NOT NULL CHECK (personal_content_mode IN (
+    'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+    'BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  research_content_mode TEXT NOT NULL CHECK (research_content_mode IN (
+    'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+    'BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  content_brief_readiness TEXT NOT NULL CHECK (content_brief_readiness IN (
+    'ALLOWED', 'ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY', 'RESEARCH_ONLY',
+    'BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  blocking_reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(blocking_reason_codes_json) AND
+    json_type(blocking_reason_codes_json) = 'array' AND
+    length(CAST(blocking_reason_codes_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  warning_reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(warning_reason_codes_json) AND
+    json_type(warning_reason_codes_json) = 'array' AND
+    length(CAST(warning_reason_codes_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  evaluated_at TEXT NOT NULL CHECK (evaluated_at ${UTC_REQUIRED}),
+  published_at TEXT NOT NULL CHECK (published_at ${UTC_REQUIRED}),
+  UNIQUE (id, reading_state_id),
+  FOREIGN KEY (dossier_version_id, dossier_id)
+    REFERENCES research_dossier_versions(id, dossier_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK ((dossier_id IS NULL) = (dossier_version_id IS NULL)),
+  CHECK ((dossier_id IS NULL) = (dossier_readiness IS NULL))
+) STRICT;
+
+CREATE TABLE expression_permission_dependencies (
+  snapshot_id TEXT NOT NULL REFERENCES expression_permission_snapshots(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'READING_STATE', 'EXPERIENCE_ASSERTION', 'DOSSIER_VERSION',
+    'DOSSIER_READINESS', 'AUTHENTICITY_POLICY', 'SCORE_POLICY',
+    'SPOILER_POLICY', 'CATALOG_SUBJECT', 'PROFILE'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 256),
+  dependency_key TEXT NOT NULL CHECK (
+    length(dependency_key) = 64 AND dependency_key NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (snapshot_id, dependency_key)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE expression_permission_invalidations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  event_identity TEXT NOT NULL UNIQUE CHECK (
+    length(event_identity) BETWEEN 1 AND 1024
+  ),
+  snapshot_id TEXT NOT NULL REFERENCES expression_permission_snapshots(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reading_state_id TEXT NOT NULL REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'READING_STATE', 'EXPERIENCE_ASSERTION', 'DOSSIER_VERSION',
+    'DOSSIER_READINESS', 'AUTHENTICITY_POLICY', 'SCORE_POLICY',
+    'SPOILER_POLICY', 'CATALOG_SUBJECT', 'PROFILE'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 256),
+  reason_code TEXT NOT NULL CHECK (reason_code IN (
+    'READING_STATE_CHANGED', 'ASSERTION_CHANGED', 'DOSSIER_CHANGED',
+    'POLICY_CHANGED', 'CATALOG_SUBJECT_CHANGED', 'PROFILE_CHANGED',
+    'LEGACY_REVIEW_REQUIRED'
+  )),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE reading_authenticity_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'LEGACY_MIGRATED', 'STATE_CHANGED', 'STATE_UNDONE',
+    'ASSERTION_CONFIRMED', 'ASSERTION_REVOKED',
+    'PERSONAL_SCORE_SET', 'PERSONAL_SCORE_REVOKED',
+    'RESEARCH_SCORE_SET', 'RESEARCH_SCORE_REVOKED',
+    'SPOILER_PREFERENCE_CHANGED', 'BATCH_APPLIED', 'SNAPSHOT_PUBLISHED'
+  )),
+  reading_state_id TEXT NOT NULL REFERENCES reading_states(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  book_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'MIGRATION')),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO reading_authenticity_audit_events (
+  id, event_type, reading_state_id, profile_id, book_id,
+  revision, actor, details_json, created_at
+)
+SELECT
+  'legacy-authenticity-audit-' || rowid,
+  'LEGACY_MIGRATED',
+  id,
+  profile_id,
+  book_id,
+  revision,
+  'MIGRATION',
+  '{"result":"FAIL_CLOSED_MAPPING"}',
+  updated_at
+FROM reading_states;
+
+CREATE INDEX idx_reading_states_profile_work
+  ON reading_states(profile_id, book_id);
+CREATE INDEX idx_reading_states_current_revision
+  ON reading_states(current_revision_id);
+CREATE INDEX idx_reading_states_current_snapshot
+  ON reading_states(current_snapshot_id);
+CREATE INDEX idx_reading_state_revisions_state
+  ON reading_state_revisions(state, memory_confidence, reading_state_id);
+CREATE INDEX idx_reading_state_revisions_history
+  ON reading_state_revisions(reading_state_id, revision DESC);
+CREATE INDEX idx_reading_state_revisions_expression
+  ON reading_state_revisions(expression_id, reading_state_id);
+CREATE INDEX idx_reading_state_revisions_edition
+  ON reading_state_revisions(edition_id, reading_state_id);
+CREATE INDEX idx_reading_state_revisions_previous
+  ON reading_state_revisions(previous_revision_id);
+CREATE INDEX idx_experience_assertions_reading
+  ON experience_assertions(reading_state_id, updated_at DESC);
+CREATE INDEX idx_experience_assertions_current_revision
+  ON experience_assertions(current_revision_id);
+CREATE INDEX idx_assertion_revisions_reading_revision
+  ON experience_assertion_revisions(reading_state_revision_id, status, assertion_kind);
+CREATE INDEX idx_assertion_revisions_history
+  ON experience_assertion_revisions(assertion_id, revision DESC);
+CREATE INDEX idx_assertion_revisions_previous
+  ON experience_assertion_revisions(previous_revision_id);
+CREATE INDEX idx_personal_scores_current
+  ON personal_score_records(reading_state_id, revision DESC, status);
+CREATE INDEX idx_personal_scores_reading_revision
+  ON personal_score_records(reading_state_revision_id, status);
+CREATE INDEX idx_personal_scores_assertion
+  ON personal_score_records(assertion_revision_id);
+CREATE INDEX idx_research_scores_current
+  ON research_analysis_score_records(reading_state_id, revision DESC, status);
+CREATE INDEX idx_research_scores_reading_revision
+  ON research_analysis_score_records(reading_state_revision_id, status);
+CREATE INDEX idx_research_scores_dossier
+  ON research_analysis_score_records(dossier_id, dossier_version_id, status);
+CREATE INDEX idx_research_scores_dossier_version
+  ON research_analysis_score_records(dossier_version_id, dossier_id);
+CREATE INDEX idx_internal_scores_work
+  ON system_prediction_scores(profile_id, book_id, created_at DESC);
+CREATE INDEX idx_internal_scores_book
+  ON system_prediction_scores(book_id, profile_id, created_at DESC);
+CREATE INDEX idx_spoiler_preferences_reading
+  ON reading_spoiler_preferences(reading_state_id);
+CREATE INDEX idx_spoiler_preferences_current_revision
+  ON reading_spoiler_preferences(current_revision_id);
+CREATE INDEX idx_spoiler_revisions_history
+  ON reading_spoiler_preference_revisions(preference_id, revision DESC);
+CREATE INDEX idx_spoiler_revisions_previous
+  ON reading_spoiler_preference_revisions(previous_revision_id);
+CREATE INDEX idx_permission_snapshots_reading
+  ON expression_permission_snapshots(reading_state_id, published_at DESC);
+CREATE INDEX idx_permission_snapshots_reading_revision
+  ON expression_permission_snapshots(reading_state_revision_id);
+CREATE INDEX idx_permission_snapshots_dossier
+  ON expression_permission_snapshots(dossier_id, dossier_version_id);
+CREATE INDEX idx_permission_snapshots_dossier_version
+  ON expression_permission_snapshots(dossier_version_id, dossier_id);
+CREATE INDEX idx_permission_dependencies_lookup
+  ON expression_permission_dependencies(
+    dependency_type, dependency_id, observed_revision, snapshot_id
+  );
+CREATE INDEX idx_permission_invalidations_snapshot
+  ON expression_permission_invalidations(snapshot_id, created_at DESC);
+CREATE INDEX idx_permission_invalidations_reading
+  ON expression_permission_invalidations(reading_state_id, created_at DESC);
+CREATE INDEX idx_authenticity_audit_reading
+  ON reading_authenticity_audit_events(reading_state_id, created_at DESC);
+CREATE INDEX idx_authenticity_audit_profile_work
+  ON reading_authenticity_audit_events(profile_id, book_id, created_at DESC);
+CREATE INDEX idx_authenticity_audit_book
+  ON reading_authenticity_audit_events(book_id, created_at DESC);
+
+CREATE TRIGGER reading_states_immutable_identity
+BEFORE UPDATE OF id, profile_id, created_at ON reading_states
+BEGIN
+  SELECT RAISE(ABORT, 'reading state identity is immutable');
+END;
+
+CREATE TRIGGER reading_states_delete_guard
+BEFORE DELETE ON reading_states
+BEGIN
+  SELECT RAISE(ABORT, 'reading states cannot be deleted');
+END;
+
+CREATE TRIGGER reading_states_current_revision_guard
+BEFORE UPDATE OF current_revision_id, revision ON reading_states
+WHEN NEW.current_revision_id IS NOT OLD.current_revision_id OR NEW.revision <> OLD.revision
+BEGIN
+  SELECT CASE WHEN
+    NEW.current_revision_id IS NULL OR
+    NEW.revision <> OLD.revision + 1 OR
+    NOT EXISTS (
+      SELECT 1 FROM reading_state_revisions AS revision
+      WHERE revision.id = NEW.current_revision_id
+        AND revision.reading_state_id = NEW.id
+        AND revision.revision = NEW.revision
+    )
+  THEN RAISE(ABORT, 'reading state current revision invariant') END;
+END;
+
+CREATE TRIGGER reading_states_current_snapshot_guard
+BEFORE UPDATE OF current_snapshot_id ON reading_states
+WHEN NEW.current_snapshot_id IS NOT OLD.current_snapshot_id
+BEGIN
+  SELECT CASE WHEN
+    NEW.current_snapshot_id IS NOT NULL AND NOT EXISTS (
+      SELECT 1 FROM expression_permission_snapshots AS snapshot
+      WHERE snapshot.id = NEW.current_snapshot_id
+        AND snapshot.reading_state_id = NEW.id
+        AND snapshot.reading_state_revision_id = NEW.current_revision_id
+    )
+  THEN RAISE(ABORT, 'reading state current snapshot invariant') END;
+END;
+
+CREATE TRIGGER reading_state_revisions_append_only_update
+BEFORE UPDATE ON reading_state_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'reading state revisions are append-only');
+END;
+
+CREATE TRIGGER reading_state_revisions_append_only_delete
+BEFORE DELETE ON reading_state_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'reading state revisions are append-only');
+END;
+
+CREATE TRIGGER experience_assertions_immutable_identity
+BEFORE UPDATE OF id, reading_state_id, created_at ON experience_assertions
+BEGIN
+  SELECT RAISE(ABORT, 'experience assertion identity is immutable');
+END;
+
+CREATE TRIGGER experience_assertions_delete_guard
+BEFORE DELETE ON experience_assertions
+BEGIN
+  SELECT RAISE(ABORT, 'experience assertions cannot be deleted');
+END;
+
+CREATE TRIGGER experience_assertions_current_guard
+BEFORE UPDATE OF current_revision_id, revision ON experience_assertions
+WHEN NEW.current_revision_id IS NOT OLD.current_revision_id OR NEW.revision <> OLD.revision
+BEGIN
+  SELECT CASE WHEN
+    NEW.current_revision_id IS NULL OR
+    NEW.revision <> OLD.revision + 1 OR
+    NOT EXISTS (
+      SELECT 1 FROM experience_assertion_revisions AS revision
+      WHERE revision.id = NEW.current_revision_id
+        AND revision.assertion_id = NEW.id
+        AND revision.revision = NEW.revision
+    )
+  THEN RAISE(ABORT, 'experience assertion current revision invariant') END;
+END;
+
+CREATE TRIGGER experience_assertion_revisions_append_only_update
+BEFORE UPDATE ON experience_assertion_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'experience assertion revisions are append-only');
+END;
+
+CREATE TRIGGER experience_assertion_revisions_append_only_delete
+BEFORE DELETE ON experience_assertion_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'experience assertion revisions are append-only');
+END;
+
+CREATE TRIGGER personal_scores_append_only_update
+BEFORE UPDATE ON personal_score_records
+BEGIN
+  SELECT RAISE(ABORT, 'personal scores are append-only');
+END;
+
+CREATE TRIGGER personal_scores_append_only_delete
+BEFORE DELETE ON personal_score_records
+BEGIN
+  SELECT RAISE(ABORT, 'personal scores are append-only');
+END;
+
+CREATE TRIGGER research_scores_append_only_update
+BEFORE UPDATE ON research_analysis_score_records
+BEGIN
+  SELECT RAISE(ABORT, 'research scores are append-only');
+END;
+
+CREATE TRIGGER research_scores_append_only_delete
+BEFORE DELETE ON research_analysis_score_records
+BEGIN
+  SELECT RAISE(ABORT, 'research scores are append-only');
+END;
+
+CREATE TRIGGER internal_scores_append_only_update
+BEFORE UPDATE ON system_prediction_scores
+BEGIN
+  SELECT RAISE(ABORT, 'internal prediction scores are append-only');
+END;
+
+CREATE TRIGGER internal_scores_append_only_delete
+BEFORE DELETE ON system_prediction_scores
+BEGIN
+  SELECT RAISE(ABORT, 'internal prediction scores are append-only');
+END;
+
+CREATE TRIGGER spoiler_preferences_immutable_identity
+BEFORE UPDATE OF id, reading_state_id, created_at ON reading_spoiler_preferences
+BEGIN
+  SELECT RAISE(ABORT, 'spoiler preference identity is immutable');
+END;
+
+CREATE TRIGGER spoiler_preferences_current_guard
+BEFORE UPDATE OF current_revision_id, revision ON reading_spoiler_preferences
+WHEN NEW.current_revision_id IS NOT OLD.current_revision_id OR NEW.revision <> OLD.revision
+BEGIN
+  SELECT CASE WHEN
+    NEW.current_revision_id IS NULL OR
+    NEW.revision <> OLD.revision + 1 OR
+    NOT EXISTS (
+      SELECT 1 FROM reading_spoiler_preference_revisions AS revision
+      WHERE revision.id = NEW.current_revision_id
+        AND revision.preference_id = NEW.id
+        AND revision.revision = NEW.revision
+    )
+  THEN RAISE(ABORT, 'spoiler preference current revision invariant') END;
+END;
+
+CREATE TRIGGER spoiler_preferences_delete_guard
+BEFORE DELETE ON reading_spoiler_preferences
+BEGIN
+  SELECT RAISE(ABORT, 'spoiler preferences cannot be deleted');
+END;
+
+CREATE TRIGGER spoiler_revisions_append_only_update
+BEFORE UPDATE ON reading_spoiler_preference_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'spoiler preference revisions are append-only');
+END;
+
+CREATE TRIGGER spoiler_revisions_append_only_delete
+BEFORE DELETE ON reading_spoiler_preference_revisions
+BEGIN
+  SELECT RAISE(ABORT, 'spoiler preference revisions are append-only');
+END;
+
+CREATE TRIGGER permission_snapshots_append_only_update
+BEFORE UPDATE ON expression_permission_snapshots
+BEGIN
+  SELECT RAISE(ABORT, 'permission snapshots are append-only');
+END;
+
+CREATE TRIGGER permission_snapshots_append_only_delete
+BEFORE DELETE ON expression_permission_snapshots
+BEGIN
+  SELECT RAISE(ABORT, 'permission snapshots are append-only');
+END;
+
+CREATE TRIGGER permission_dependencies_append_only_update
+BEFORE UPDATE ON expression_permission_dependencies
+BEGIN
+  SELECT RAISE(ABORT, 'permission dependencies are append-only');
+END;
+
+CREATE TRIGGER permission_dependencies_append_only_delete
+BEFORE DELETE ON expression_permission_dependencies
+BEGIN
+  SELECT RAISE(ABORT, 'permission dependencies are append-only');
+END;
+
+CREATE TRIGGER permission_invalidations_append_only_update
+BEFORE UPDATE ON expression_permission_invalidations
+BEGIN
+  SELECT RAISE(ABORT, 'permission invalidations are append-only');
+END;
+
+CREATE TRIGGER permission_invalidations_append_only_delete
+BEFORE DELETE ON expression_permission_invalidations
+BEGIN
+  SELECT RAISE(ABORT, 'permission invalidations are append-only');
+END;
+
+CREATE TRIGGER authenticity_audit_append_only_update
+BEFORE UPDATE ON reading_authenticity_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'authenticity audit is append-only');
+END;
+
+CREATE TRIGGER authenticity_audit_append_only_delete
+BEFORE DELETE ON reading_authenticity_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'authenticity audit is append-only');
+END;
+
+CREATE TRIGGER invalidate_permission_on_reading_change
+AFTER UPDATE OF current_revision_id ON reading_states
+WHEN OLD.current_snapshot_id IS NOT NULL AND
+     NEW.current_revision_id IS NOT OLD.current_revision_id
+BEGIN
+  INSERT OR IGNORE INTO expression_permission_invalidations (
+    id, event_identity, snapshot_id, reading_state_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  ) VALUES (
+    'permission-invalidation-' || lower(hex(randomblob(16))),
+    'READING_STATE:' || NEW.id || ':' || NEW.revision || ':' || OLD.current_snapshot_id,
+    OLD.current_snapshot_id,
+    NEW.id,
+    'READING_STATE',
+    NEW.current_revision_id,
+    CAST(NEW.revision AS TEXT),
+    'READING_STATE_CHANGED',
+    NEW.updated_at
+  );
+END;
+
+CREATE TRIGGER invalidate_permission_on_assertion_change
+AFTER UPDATE OF current_revision_id ON experience_assertions
+WHEN NEW.current_revision_id IS NOT OLD.current_revision_id
+BEGIN
+  INSERT OR IGNORE INTO expression_permission_invalidations (
+    id, event_identity, snapshot_id, reading_state_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'permission-invalidation-' || lower(hex(randomblob(16))),
+    'ASSERTION:' || NEW.id || ':' || NEW.revision || ':' || state.current_snapshot_id,
+    state.current_snapshot_id,
+    state.id,
+    'EXPERIENCE_ASSERTION',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'ASSERTION_CHANGED',
+    NEW.updated_at
+  FROM reading_states AS state
+  WHERE state.id = NEW.reading_state_id
+    AND state.current_snapshot_id IS NOT NULL;
+END;
+
+CREATE TRIGGER invalidate_permission_on_spoiler_change
+AFTER UPDATE OF current_revision_id ON reading_spoiler_preferences
+WHEN NEW.current_revision_id IS NOT OLD.current_revision_id
+BEGIN
+  INSERT OR IGNORE INTO expression_permission_invalidations (
+    id, event_identity, snapshot_id, reading_state_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'permission-invalidation-' || lower(hex(randomblob(16))),
+    'SPOILER:' || NEW.id || ':' || NEW.revision || ':' || state.current_snapshot_id,
+    state.current_snapshot_id,
+    state.id,
+    'SPOILER_POLICY',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'POLICY_CHANGED',
+    NEW.updated_at
+  FROM reading_states AS state
+  WHERE state.id = NEW.reading_state_id
+    AND state.current_snapshot_id IS NOT NULL;
+END;
+
+CREATE TRIGGER invalidate_permission_on_dossier_change
+AFTER UPDATE OF current_version_id, readiness, state, revision ON research_dossiers
+WHEN NEW.current_version_id IS NOT OLD.current_version_id OR
+     NEW.readiness <> OLD.readiness OR
+     NEW.state <> OLD.state OR
+     NEW.revision <> OLD.revision
+BEGIN
+  INSERT OR IGNORE INTO expression_permission_invalidations (
+    id, event_identity, snapshot_id, reading_state_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'permission-invalidation-' || lower(hex(randomblob(16))),
+    'DOSSIER:' || NEW.id || ':' || NEW.revision || ':' || snapshot.id,
+    snapshot.id,
+    snapshot.reading_state_id,
+    'DOSSIER_READINESS',
+    NEW.id,
+    CAST(NEW.revision AS TEXT),
+    'DOSSIER_CHANGED',
+    NEW.updated_at
+  FROM expression_permission_dependencies AS dependency
+  JOIN expression_permission_snapshots AS snapshot
+    ON snapshot.id = dependency.snapshot_id
+  WHERE dependency.dependency_type IN ('DOSSIER_VERSION', 'DOSSIER_READINESS')
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_permission_on_catalog_work_change
+AFTER UPDATE OF catalog_revision, catalog_state ON books
+WHEN NEW.catalog_revision <> OLD.catalog_revision OR NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO expression_permission_invalidations (
+    id, event_identity, snapshot_id, reading_state_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'permission-invalidation-' || lower(hex(randomblob(16))),
+    'CATALOG_WORK:' || NEW.id || ':' || NEW.catalog_revision || ':' || snapshot.id,
+    snapshot.id,
+    snapshot.reading_state_id,
+    'CATALOG_SUBJECT',
+    NEW.id,
+    CAST(NEW.catalog_revision AS TEXT),
+    'CATALOG_SUBJECT_CHANGED',
+    NEW.updated_at
+  FROM expression_permission_dependencies AS dependency
+  JOIN expression_permission_snapshots AS snapshot
+    ON snapshot.id = dependency.snapshot_id
+  WHERE dependency.dependency_type = 'CATALOG_SUBJECT'
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_permission_on_profile_ownership_change
+AFTER UPDATE OF ownership ON account_profiles
+WHEN NEW.ownership <> OLD.ownership
+BEGIN
+  INSERT OR IGNORE INTO expression_permission_invalidations (
+    id, event_identity, snapshot_id, reading_state_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    'permission-invalidation-' || lower(hex(randomblob(16))),
+    'PROFILE:' || NEW.id || ':' || NEW.updated_at || ':' || snapshot.id,
+    snapshot.id,
+    snapshot.reading_state_id,
+    'PROFILE',
+    NEW.id,
+    NEW.updated_at,
+    'PROFILE_CHANGED',
+    NEW.updated_at
+  FROM expression_permission_dependencies AS dependency
+  JOIN expression_permission_snapshots AS snapshot
+    ON snapshot.id = dependency.snapshot_id
+  WHERE dependency.dependency_type = 'PROFILE'
+    AND dependency.dependency_id = NEW.id;
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -5283,5 +6283,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'versioned_research_dossiers',
     sql: VERSIONED_RESEARCH_DOSSIERS,
     version: 13,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'reading_authenticity_policy',
+    sql: READING_AUTHENTICITY_POLICY,
+    version: 14,
   }),
 ]);

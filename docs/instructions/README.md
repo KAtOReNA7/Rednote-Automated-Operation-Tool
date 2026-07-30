@@ -24,5 +24,7 @@
 - [Issue 018：书目发现、实体消歧与仓库治理](./m2/M2-Issue018-bibliographic-discovery-entity-resolution-Codex-instruction.txt)
 - [Issue 019：来源、原子事实与冲突处理](./m2/M2-Issue019-source-atomic-facts-conflict-handling-Codex-instruction.txt)
 - [Issue 020：版本化研究档案、覆盖度与增量重建](./m2/M2-Issue020-versioned-research-dossier-Codex-instruction.txt)
+- [Issue 021：阅读真实性、表达权限与 M2 收口](./m2/M2-Issue021-reading-authenticity-policy-Codex-instruction.txt)
 
-下一项仅规划 Issue 021；未收到明确任务时不创建或归档 Issue 021 指令。
+M2（Issue 012—021）已完成。下一项仅规划 M3 Issue 022；未收到明确任务时不得创建、
+归档或实施 Issue 022 指令。

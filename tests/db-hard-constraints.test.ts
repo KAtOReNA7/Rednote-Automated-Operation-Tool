@@ -9,6 +9,7 @@ import {
   ScoreType,
   SpoilerLevel,
 } from '../packages/core/src/index.js';
+import { SqliteAuthenticityRepository } from '../packages/db/src/index.js';
 import {
   cleanTemporaryDatabases,
   createInitializedDatabase,
@@ -221,6 +222,19 @@ describe('database enum alignment with Core', () => {
     const { database } = await createInitializedDatabase();
 
     try {
+      let sequence = 0;
+      const repository = new SqliteAuthenticityRepository(
+        database,
+        () => `db-hard-authenticity-${++sequence}`,
+      );
+      const confidence = {
+        [ReadingState.R1_READ_CLEAR]: 'CLEAR',
+        [ReadingState.R2_READ_FUZZY]: 'PARTIAL',
+        [ReadingState.R3_READ_UNCONFIRMED_DETAILS]: 'UNKNOWN',
+        [ReadingState.S1_RESEARCH_ONLY]: 'NOT_APPLICABLE',
+        [ReadingState.S2_RESEARCH_INSUFFICIENT]: 'NOT_APPLICABLE',
+        [ReadingState.UNCLASSIFIED]: 'UNKNOWN',
+      } as const;
       for (const [index, state] of Object.values(ReadingState).entries()) {
         const bookId = `book-reading-${index}`;
         database
@@ -230,18 +244,23 @@ describe('database enum alignment with Core', () => {
           )
           .run(bookId);
         expect(() =>
-          database
-            .prepare(
-              `INSERT INTO reading_states(
-                 id, book_id, state, user_confirmed_at
-               ) VALUES (?, ?, ?, ?)`,
-            )
-            .run(
-              `reading-${index}`,
-              bookId,
-              state,
-              state === ReadingState.READ_CLEAR ? '2026-07-27T01:02:03.000Z' : null,
-            ),
+          repository.applyStateChange(
+            {
+              confirmationKind: 'USER_EXPLICIT',
+              expectedRevision: 0,
+              finishedAt: null,
+              finishedAtPrecision: 'UNKNOWN',
+              lastReadAt: null,
+              lastReadAtPrecision: 'UNKNOWN',
+              memoryConfidence: confidence[state],
+              nextState: state,
+              profileId: 'primary',
+              provenance: 'USER_UI',
+              subject: { editionId: null, expressionId: null, workId: bookId },
+              userNote: null,
+            },
+            '2026-07-27T01:02:03.000Z',
+          ),
         ).not.toThrow();
       }
 
@@ -251,19 +270,40 @@ describe('database enum alignment with Core', () => {
            VALUES ('book-invalid-reading', 'Book', 'NOVEL', 'DISCOVERED')`,
         )
         .run();
+      database
+        .prepare(
+          `INSERT INTO reading_states(id, profile_id, book_id)
+           VALUES ('reading-invalid', 'primary', 'book-invalid-reading')`,
+        )
+        .run();
       expect(() =>
         database
           .prepare(
-            `INSERT INTO reading_states(id, book_id, state)
-             VALUES ('reading-invalid', 'book-invalid-reading', 'INVALID')`,
+            `INSERT INTO reading_state_revisions(
+               id, reading_state_id, revision, contract_version, state,
+               memory_confidence, confirmation_kind, finished_at_precision,
+               last_read_at_precision, provenance, provenance_identity, created_at
+             ) VALUES (
+               'reading-revision-invalid', 'reading-invalid', 1, 'reading-state-v1',
+               'INVALID', 'UNKNOWN', 'USER_EXPLICIT', 'UNKNOWN', 'UNKNOWN',
+               'USER_UI', 'test', '2026-07-27T01:02:03.000Z'
+             )`,
           )
           .run(),
       ).toThrow(/CHECK constraint failed/iu);
       expect(() =>
         database
           .prepare(
-            `INSERT INTO reading_states(id, book_id, state)
-             VALUES ('reading-unconfirmed', 'book-invalid-reading', 'READ_CLEAR')`,
+            `INSERT INTO reading_state_revisions(
+               id, reading_state_id, revision, contract_version, state,
+               memory_confidence, confirmation_kind, finished_at_precision,
+               last_read_at_precision, provenance, provenance_identity, created_at
+             ) VALUES (
+               'reading-revision-invalid-pair', 'reading-invalid', 1,
+               'reading-state-v1', 'R1_READ_CLEAR', 'UNKNOWN', 'USER_EXPLICIT',
+               'UNKNOWN', 'UNKNOWN', 'USER_UI', 'test',
+               '2026-07-27T01:02:03.000Z'
+             )`,
           )
           .run(),
       ).toThrow(/CHECK constraint failed/iu);

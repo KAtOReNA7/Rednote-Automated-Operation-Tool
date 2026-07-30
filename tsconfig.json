@@ -2,6 +2,9 @@
   "files": [],
   "references": [
     {
+      "path": "./packages/authenticity"
+    },
+    {
       "path": "./packages/catalog"
     },
     {

@@ -1,4 +1,11 @@
 import type { DesktopResult } from '@mystery-operations/shared';
+import {
+  assertBatchReadingStateDraft,
+  assertExperienceAssertionDraft,
+  assertReadingStateChangeDraft,
+  assertScoreRecordDraft,
+  assertSpoilerPreferenceDraft,
+} from '@mystery-operations/authenticity';
 
 import { isTrustedRendererUrl } from './security-policy.js';
 
@@ -11,6 +18,7 @@ export type DesktopIpcOperation =
   | 'clearCredential'
   | 'confirmModelCacheClear'
   | 'confirmCatalogDiscovery'
+  | 'confirmAuthenticityAction'
   | 'confirmCatalogUndo'
   | 'confirmCatalogWorkMerge'
   | 'confirmCatalogWorkSplit'
@@ -28,6 +36,8 @@ export type DesktopIpcOperation =
   | 'getBrowserClip'
   | 'getCatalogState'
   | 'getCatalogWork'
+  | 'getAuthenticityLibrary'
+  | 'getAuthenticityWork'
   | 'getEvidenceState'
   | 'getDossier'
   | 'getModelAccounting'
@@ -48,6 +58,7 @@ export type DesktopIpcOperation =
   | 'setCredential'
   | 'previewProviderCapabilityProbe'
   | 'previewCatalogDiscovery'
+  | 'previewAuthenticityAction'
   | 'previewCatalogUndo'
   | 'previewCatalogWorkMerge'
   | 'previewCatalogWorkSplit'
@@ -161,6 +172,84 @@ function catalogConfirmation(value: Readonly<Record<string, unknown>> | null): b
   );
 }
 
+const AUTHENTICITY_ACTION_KINDS = new Set([
+  'ASSERTION_CONFIRM',
+  'ASSERTION_REVOKE',
+  'BATCH_STATE_CHANGE',
+  'SCORE_CHANGE',
+  'SPOILER_CHANGE',
+  'STATE_CHANGE',
+  'STATE_UNDO',
+]);
+
+function validAuthenticityDraft(value: Readonly<Record<string, unknown>>): boolean {
+  try {
+    switch (value.kind) {
+      case 'STATE_CHANGE': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertReadingStateChangeDraft(value.draft);
+        return (
+          catalogId(draft.profileId) &&
+          catalogId(draft.subject.workId) &&
+          (draft.subject.expressionId === null || catalogId(draft.subject.expressionId)) &&
+          (draft.subject.editionId === null || catalogId(draft.subject.editionId))
+        );
+      }
+      case 'STATE_UNDO':
+        return (
+          exactKeys(value, ['expectedRevision', 'kind', 'profileId', 'workId']) &&
+          catalogId(value.profileId) &&
+          catalogId(value.workId) &&
+          catalogRevision(value.expectedRevision)
+        );
+      case 'ASSERTION_CONFIRM': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertExperienceAssertionDraft(value.draft);
+        return (
+          catalogId(draft.profileId) &&
+          catalogId(draft.workId) &&
+          (draft.assertionId === null || catalogId(draft.assertionId))
+        );
+      }
+      case 'ASSERTION_REVOKE':
+        return (
+          exactKeys(value, [
+            'assertionId',
+            'expectedAssertionRevision',
+            'expectedReadingRevision',
+            'kind',
+            'profileId',
+            'workId',
+          ]) &&
+          catalogId(value.assertionId) &&
+          catalogId(value.profileId) &&
+          catalogId(value.workId) &&
+          catalogRevision(value.expectedAssertionRevision) &&
+          catalogRevision(value.expectedReadingRevision)
+        );
+      case 'SCORE_CHANGE': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertScoreRecordDraft(value.draft);
+        return catalogId(draft.profileId) && catalogId(draft.workId);
+      }
+      case 'SPOILER_CHANGE': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertSpoilerPreferenceDraft(value.draft);
+        return catalogId(draft.profileId) && catalogId(draft.workId);
+      }
+      case 'BATCH_STATE_CHANGE': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertBatchReadingStateDraft(value.draft);
+        return catalogId(draft.profileId) && draft.items.every((item) => catalogId(item.workId));
+      }
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
 function nullableDecimal(value: unknown): boolean {
   return (
     value === null ||
@@ -223,6 +312,59 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         typeof value.query === 'string' &&
         value.query.length <= 512 &&
         !containsControlCharacter(value.query)
+      );
+    }
+    case 'getAuthenticityLibrary': {
+      const value = validateOneObject(args, ['limit', 'offset', 'profileId', 'query']);
+      return (
+        value !== null &&
+        catalogId(value.profileId) &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= 100 &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= 1_000_000 &&
+        typeof value.query === 'string' &&
+        Buffer.byteLength(value.query, 'utf8') <= 200 &&
+        !containsControlCharacter(value.query)
+      );
+    }
+    case 'getAuthenticityWork': {
+      const value = validateOneObject(args, [
+        'historyLimit',
+        'historyOffset',
+        'profileId',
+        'workId',
+      ]);
+      return (
+        value !== null &&
+        catalogId(value.profileId) &&
+        catalogId(value.workId) &&
+        Number.isSafeInteger(value.historyLimit) &&
+        Number(value.historyLimit) >= 1 &&
+        Number(value.historyLimit) <= 100 &&
+        Number.isSafeInteger(value.historyOffset) &&
+        Number(value.historyOffset) >= 0 &&
+        Number(value.historyOffset) <= 1_000_000
+      );
+    }
+    case 'previewAuthenticityAction': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      return value !== null && validAuthenticityDraft(value);
+    }
+    case 'confirmAuthenticityAction': {
+      const value = validateOneObject(args, ['confirmation', 'kind', 'previewHash', 'token']);
+      return (
+        value?.confirmation === 'APPLY_AUTHENTICITY_ACTION' &&
+        AUTHENTICITY_ACTION_KINDS.has(String(value.kind)) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
       );
     }
     case 'getEvidenceState': {

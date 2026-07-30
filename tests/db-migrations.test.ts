@@ -246,6 +246,30 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'status',
       'created_at',
     ],
+    experience_assertion_revisions: [
+      'id',
+      'assertion_id',
+      'revision',
+      'previous_revision_id',
+      'reading_state_revision_id',
+      'assertion_kind',
+      'confirmation_scope',
+      'statement',
+      'statement_hash',
+      'status',
+      'provenance',
+      'confirmed_at',
+      'invalidated_at',
+      'created_at',
+    ],
+    experience_assertions: [
+      'id',
+      'reading_state_id',
+      'current_revision_id',
+      'revision',
+      'created_at',
+      'updated_at',
+    ],
     experiments: [
       'id',
       'name',
@@ -338,6 +362,65 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'updated_at',
       'revision',
     ],
+    expression_permission_dependencies: [
+      'snapshot_id',
+      'dependency_type',
+      'dependency_id',
+      'observed_revision',
+      'dependency_key',
+      'created_at',
+    ],
+    expression_permission_invalidations: [
+      'id',
+      'event_identity',
+      'snapshot_id',
+      'reading_state_id',
+      'dependency_type',
+      'dependency_id',
+      'observed_revision',
+      'reason_code',
+      'created_at',
+    ],
+    expression_permission_snapshots: [
+      'id',
+      'reading_state_id',
+      'reading_state_revision_id',
+      'snapshot_version',
+      'authenticity_policy_version',
+      'score_policy_version',
+      'spoiler_policy_version',
+      'dossier_id',
+      'dossier_version_id',
+      'dossier_readiness',
+      'spoiler_level',
+      'spoiler_warning_required',
+      'spoiler_warning_placement',
+      'spoiler_user_confirmation_required',
+      'personal_experience_permission',
+      'first_person_permission',
+      'public_research_analysis_permission',
+      'personal_score_permission',
+      'research_score_permission',
+      'personal_content_mode',
+      'research_content_mode',
+      'content_brief_readiness',
+      'blocking_reason_codes_json',
+      'warning_reason_codes_json',
+      'dependency_hash',
+      'evaluated_at',
+      'published_at',
+    ],
+    personal_score_records: [
+      'id',
+      'reading_state_id',
+      'reading_state_revision_id',
+      'assertion_revision_id',
+      'revision',
+      'score_basis_points',
+      'status',
+      'provenance',
+      'created_at',
+    ],
     post_packages: [
       'id',
       'draft_id',
@@ -366,14 +449,80 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'checker_version',
       'created_at',
     ],
+    reading_authenticity_audit_events: [
+      'id',
+      'event_type',
+      'reading_state_id',
+      'profile_id',
+      'book_id',
+      'revision',
+      'actor',
+      'details_json',
+      'created_at',
+    ],
+    reading_spoiler_preference_revisions: [
+      'id',
+      'preference_id',
+      'revision',
+      'previous_revision_id',
+      'policy_version',
+      'spoiler_level',
+      'warning_included',
+      'user_confirmed',
+      'provenance',
+      'created_at',
+    ],
+    reading_spoiler_preferences: [
+      'id',
+      'reading_state_id',
+      'current_revision_id',
+      'revision',
+      'created_at',
+      'updated_at',
+    ],
+    reading_state_revisions: [
+      'id',
+      'reading_state_id',
+      'revision',
+      'previous_revision_id',
+      'contract_version',
+      'state',
+      'memory_confidence',
+      'confirmation_kind',
+      'finished_at',
+      'finished_at_precision',
+      'last_read_at',
+      'last_read_at_precision',
+      'expression_id',
+      'edition_id',
+      'user_note',
+      'provenance',
+      'provenance_identity',
+      'legacy_payload_json',
+      'created_at',
+    ],
     reading_states: [
       'id',
+      'profile_id',
       'book_id',
-      'state',
-      'memory_note',
-      'user_confirmed_at',
-      'personal_score',
-      'score_confirmed_at',
+      'current_revision_id',
+      'current_snapshot_id',
+      'revision',
+      'created_at',
+      'updated_at',
+    ],
+    research_analysis_score_records: [
+      'id',
+      'reading_state_id',
+      'reading_state_revision_id',
+      'dossier_id',
+      'dossier_version_id',
+      'revision',
+      'score_basis_points',
+      'status',
+      'public_label',
+      'provenance',
+      'created_at',
     ],
     research_dossier_audit_events: [
       'id',
@@ -587,6 +736,15 @@ const EXPECTED_DATABASE_COLUMNS: Readonly<Record<(typeof BUSINESS_TABLE_NAMES)[n
       'priority_score',
       'status',
     ],
+    system_prediction_scores: [
+      'id',
+      'profile_id',
+      'book_id',
+      'score_basis_points',
+      'purpose',
+      'provenance',
+      'created_at',
+    ],
   };
 
 describe('SQLite initialization and migrations', () => {
@@ -607,10 +765,10 @@ describe('SQLite initialization and migrations', () => {
         .map((row) => (row as { readonly name: string }).name);
 
       expect(result).toMatchObject({
-        appliedVersions: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+        appliedVersions: MIGRATIONS.map(({ version }) => version),
         backupPath: null,
         databasePath,
-        schemaVersion: 13,
+        schemaVersion: MIGRATIONS.length,
       });
       expect(tables).toEqual(
         [
@@ -728,9 +886,9 @@ describe('SQLite initialization and migrations', () => {
       expect(secondRun).toMatchObject({
         appliedVersions: [],
         backupPath: null,
-        schemaVersion: 13,
+        schemaVersion: MIGRATIONS.length,
       });
-      expect(row.count).toBe(13);
+      expect(row.count).toBe(MIGRATIONS.length);
     } finally {
       database.close();
     }
@@ -854,8 +1012,8 @@ describe('SQLite initialization and migrations', () => {
         .run();
       database
         .prepare(
-          `INSERT INTO reading_states(id, book_id)
-           VALUES ('reading-1', 'book-1')`,
+          `INSERT INTO reading_states(id, profile_id, book_id)
+           VALUES ('reading-1', 'primary', 'book-1')`,
         )
         .run();
 
@@ -864,12 +1022,14 @@ describe('SQLite initialization and migrations', () => {
         author_id: null,
       });
 
-      database.prepare("DELETE FROM books WHERE id = 'book-1'").run();
+      expect(() => database.prepare("DELETE FROM books WHERE id = 'book-1'").run()).toThrow(
+        /FOREIGN KEY constraint failed/iu,
+      );
       expect(
         database
           .prepare("SELECT count(*) AS count FROM reading_states WHERE id = 'reading-1'")
           .get(),
-      ).toEqual({ count: 0 });
+      ).toEqual({ count: 1 });
 
       database
         .prepare(

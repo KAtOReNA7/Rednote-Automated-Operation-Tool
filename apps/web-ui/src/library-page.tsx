@@ -7,6 +7,7 @@ import type {
   CatalogWorkDetail,
   DesktopError,
 } from '@mystery-operations/shared';
+import { AuthenticityLibrary } from './authenticity-library.js';
 
 function errorText(error: DesktopError): string {
   const messages: Partial<Record<DesktopError['code'], string>> = {
@@ -230,6 +231,7 @@ export function LibraryPage(): React.JSX.Element {
 
   return (
     <div className="catalog-page">
+      <AuthenticityLibrary />
       <section className="catalog-hero">
         <div>
           <p className="section-kicker">Issue 018 · 本地书目发现</p>

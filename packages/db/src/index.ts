@@ -1,4 +1,5 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
+export { SqliteAuthenticityRepository } from './authenticity-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
@@ -20,6 +21,25 @@ export { SqliteSearchRepository } from './search-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
+export type {
+  AssertionActionPreview,
+  AssertionRevokeActionPreview,
+  AuthenticityActionPreviewPayload,
+  AuthenticityLibraryItem,
+  AuthenticityLibraryView,
+  AuthenticityPermissionView,
+  AuthenticityWorkDetail,
+  BatchActionPreview,
+  BatchApplyResult,
+  ExperienceAssertionView,
+  PublicScoreView,
+  ReadingStateActionPreview,
+  ReadingStateRevisionView,
+  ReadingUndoActionPreview,
+  ScoreActionPreview,
+  SpoilerActionPreview,
+  SpoilerPreferenceView,
+} from './authenticity-repository.js';
 export type {
   CatalogCoverageViewV1,
   CatalogResolutionCaseViewV1,

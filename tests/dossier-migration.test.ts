@@ -18,7 +18,7 @@ afterEach(cleanTemporaryDatabases);
 
 describe('Issue 020 dossier migration', () => {
   it('appends one migration without changing v1-v12 identities', () => {
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([
+    expect(MIGRATIONS.slice(0, 13).map(({ version }) => version)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13,
     ]);
     expect(MIGRATIONS[12]).toMatchObject({
@@ -74,7 +74,10 @@ describe('Issue 020 dossier migration', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [13], schemaVersion: 13 });
+    expect(result).toMatchObject({
+      appliedVersions: MIGRATIONS.slice(12).map(({ version }) => version),
+      schemaVersion: MIGRATIONS.length,
+    });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

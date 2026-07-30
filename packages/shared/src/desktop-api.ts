@@ -70,6 +70,17 @@ import type {
   ListDossiersInput,
   PreviewDossierBuildInput,
 } from './dossier-contracts.js';
+import type {
+  AuthenticityActionPreview,
+  AuthenticityActionResult,
+  AuthenticityErrorCode,
+  AuthenticityLibraryView,
+  AuthenticityWorkDetail,
+  ConfirmAuthenticityActionInput,
+  GetAuthenticityLibraryInput,
+  GetAuthenticityWorkInput,
+  PreviewAuthenticityActionInput,
+} from './authenticity-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -86,6 +97,10 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getBrowserClip: 'clipper:get-clip',
   getCatalogState: 'catalog:get-state',
   getCatalogWork: 'catalog:get-work',
+  getAuthenticityLibrary: 'authenticity:get-library',
+  getAuthenticityWork: 'authenticity:get-work',
+  previewAuthenticityAction: 'authenticity:preview-action',
+  confirmAuthenticityAction: 'authenticity:confirm-action',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -172,6 +187,7 @@ export interface DesktopError {
     | 'CATALOG_INVALID_REQUEST'
     | 'CATALOG_RUN_NOT_FOUND'
     | 'CATALOG_STALE_REVISION'
+    | AuthenticityErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -638,6 +654,18 @@ export interface DesktopBridge {
   getBrowserClip?(input: GetBrowserClipInput): Promise<DesktopResult<BrowserClipView | null>>;
   getCatalogState?(input: GetCatalogStateInput): Promise<DesktopResult<CatalogSummaryView>>;
   getCatalogWork?(input: GetCatalogWorkInput): Promise<DesktopResult<CatalogWorkDetail | null>>;
+  getAuthenticityLibrary?(
+    input: GetAuthenticityLibraryInput,
+  ): Promise<DesktopResult<AuthenticityLibraryView>>;
+  getAuthenticityWork?(
+    input: GetAuthenticityWorkInput,
+  ): Promise<DesktopResult<AuthenticityWorkDetail>>;
+  previewAuthenticityAction?(
+    input: PreviewAuthenticityActionInput,
+  ): Promise<DesktopResult<AuthenticityActionPreview>>;
+  confirmAuthenticityAction?(
+    input: ConfirmAuthenticityActionInput,
+  ): Promise<DesktopResult<AuthenticityActionResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

@@ -1,7 +1,8 @@
-import { app, ipcMain } from 'electron';
-import type { BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import { BrowserWindow, app, ipcMain } from 'electron';
+import type { IpcMainInvokeEvent } from 'electron';
 
 import { CatalogError } from '@mystery-operations/catalog';
+import { AuthenticityError } from '@mystery-operations/authenticity';
 import { DossierError } from '@mystery-operations/dossier';
 import { EvidenceError } from '@mystery-operations/evidence';
 import { LocalApiError } from '@mystery-operations/local-api';
@@ -13,6 +14,7 @@ import {
   type CancelProviderCapabilityProbeInput,
   type ConfirmModelCacheClearInput,
   type ConfirmCatalogActionInput,
+  type ConfirmAuthenticityActionInput,
   type ConfirmCatalogDiscoveryInput,
   type ConfirmDossierBuildInput,
   type ConfirmEvidenceConflictInput,
@@ -31,12 +33,15 @@ import {
   type GetBrowserClipInput,
   type GetCatalogStateInput,
   type GetCatalogWorkInput,
+  type GetAuthenticityLibraryInput,
+  type GetAuthenticityWorkInput,
   type GetDossierInput,
   type GetEvidenceStateInput,
   type ListDossiersInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
   type PreviewCatalogDiscoveryInput,
+  type PreviewAuthenticityActionInput,
   type PreviewCatalogUndoInput,
   type PreviewCatalogWorkMergeInput,
   type PreviewCatalogWorkSplitInput,
@@ -86,6 +91,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof AuthenticityError) {
+    return failure(error.code, error.message, error.retryable, error.safeDetails);
+  }
   if (error instanceof DossierError) {
     return failure(error.code, error.message, error.retryable, error.safeDetails);
   }
@@ -200,6 +208,42 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('getCatalogWork', DESKTOP_IPC_CHANNELS.getCatalogWork, (_event, args) =>
     options.settingsRuntime.getCatalogWork((args[0] as GetCatalogWorkInput).workId),
+  );
+  register('getAuthenticityLibrary', DESKTOP_IPC_CHANNELS.getAuthenticityLibrary, (_event, args) =>
+    options.settingsRuntime.getAuthenticityLibrary(args[0] as GetAuthenticityLibraryInput),
+  );
+  register('getAuthenticityWork', DESKTOP_IPC_CHANNELS.getAuthenticityWork, (_event, args) =>
+    options.settingsRuntime.getAuthenticityWork(args[0] as GetAuthenticityWorkInput),
+  );
+  register(
+    'previewAuthenticityAction',
+    DESKTOP_IPC_CHANNELS.previewAuthenticityAction,
+    (event, args) => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window === null) {
+        throw new AuthenticityError('AUTHENTICITY_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewAuthenticityAction(
+        args[0] as PreviewAuthenticityActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmAuthenticityAction',
+    DESKTOP_IPC_CHANNELS.confirmAuthenticityAction,
+    (event, args) => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window === null) {
+        throw new AuthenticityError('AUTHENTICITY_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmAuthenticityAction(
+        args[0] as ConfirmAuthenticityActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
   );
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),

@@ -243,6 +243,9 @@ flowchart TD
 
 ## M2：模型、搜索、书库和研究
 
+状态：**已完成**（Issue 012—021）。M2 建立本地模型接口、搜索/抓取边界、三级书目、
+版本化证据/Dossier 与阅读真实性 guard；不包含内容生成。
+
 ### Issue 012：实现供应商无关的模型接口
 
 标签：`epic:m2`、`type:provider`、`priority:p0`
@@ -407,28 +410,36 @@ flowchart TD
 
 状态：已完成（版本化 Dossier、确定性 coverage/readiness、精确依赖失效与显式本地重建）。
 
-下一项：Issue 021；未收到明确任务时不得自动开始。
-
 ### Issue 021：实现阅读状态和真实性规则
 
 标签：`epic:m2`、`type:domain`、`priority:p0`
 
 目标：
 
-- 实现 UNKNOWN、READ_CLEAR、READ_FUZZY、READ_UNVERIFIED、NOT_READ。
+- 实现 R1/R2/R3/S1/S2/UNCLASSIFIED、Memory Confidence 与显式用户确认历史；
+- 将个人体验、公开资料分析、个人评分、资料分析评分和内部预测分严格隔离；
+- 提供 R2 逐条观点确认、剧透政策、Expression Permission Snapshot 与书库 UI。
 
 验收：
 
-- 默认 UNKNOWN；
-- 只有用户操作可设 READ_CLEAR；
-- 非 READ_CLEAR 不能生成具体第一人称体验；
-- 资料分析评分与个人评分严格区分。
+- 默认 UNCLASSIFIED，系统不从购买、持有、Clip、搜索、Dossier 或模型推断已读；
+- 所有状态变更均需 preview、expected revision、窗口绑定单次 token 与用户再次确认；
+- R1 可使用第一人称，R2 只使用 current 逐条确认观点，R3/S1/S2/UNCLASSIFIED 阻止具体
+  第一人称；
+- Dossier readiness 与个人体验权限正交，R1 不绕过 FactPolicy；
+- 个人、资料分析、内部预测三类整数评分隔离，内部预测不进入 renderer DTO；
+- FULL_TRICK 允许但强制醒目 warning，warning 不提升真实性；
+- v14、六 Work 金标、专项门禁、书库 UI 与 M2 收口完成。
 
 依赖：007、018。
+
+状态：已完成（Reading Authenticity Policy V1、Expression Permission V1、Spoiler Policy V1）。
 
 ---
 
 ## M3：选题、文案和质量门禁
+
+下一项：**M3 Issue 022**；未收到明确任务时不得自动开始。
 
 ### Issue 022：实现选题池与首批 30 篇配额
 

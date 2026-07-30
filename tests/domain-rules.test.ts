@@ -14,27 +14,27 @@ import {
 } from '../packages/core/src/index.js';
 
 describe('reading authenticity rules', () => {
-  it('starts every work at UNKNOWN', () => {
-    expect(createDefaultReadingState()).toBe(ReadingState.UNKNOWN);
+  it('starts every work at UNCLASSIFIED', () => {
+    expect(createDefaultReadingState()).toBe(ReadingState.UNCLASSIFIED);
   });
 
-  it('allows only an explicit user action to set READ_CLEAR', () => {
+  it('allows only an explicit user action to change any reading state', () => {
     expect(
-      transitionReadingState(ReadingState.UNKNOWN, ReadingState.READ_CLEAR, {
+      transitionReadingState(ReadingState.UNCLASSIFIED, ReadingState.R1_READ_CLEAR, {
         actor: ReadingTransitionActor.USER,
         explicitlyConfirmed: true,
       }),
-    ).toBe(ReadingState.READ_CLEAR);
+    ).toBe(ReadingState.R1_READ_CLEAR);
 
     expect(() =>
-      transitionReadingState(ReadingState.UNKNOWN, ReadingState.READ_CLEAR, {
+      transitionReadingState(ReadingState.UNCLASSIFIED, ReadingState.S1_RESEARCH_ONLY, {
         actor: ReadingTransitionActor.SYSTEM,
         explicitlyConfirmed: true,
       }),
     ).toThrow(ReadingStateConfirmationRequiredError);
 
     expect(() =>
-      transitionReadingState(ReadingState.UNKNOWN, ReadingState.READ_CLEAR, {
+      transitionReadingState(ReadingState.UNCLASSIFIED, ReadingState.R2_READ_FUZZY, {
         actor: ReadingTransitionActor.USER,
         explicitlyConfirmed: false,
       }),
@@ -42,18 +42,21 @@ describe('reading authenticity rules', () => {
   });
 
   it.each([
-    ReadingState.UNKNOWN,
-    ReadingState.READ_FUZZY,
-    ReadingState.READ_UNVERIFIED,
-    ReadingState.NOT_READ,
+    ReadingState.R2_READ_FUZZY,
+    ReadingState.R3_READ_UNCONFIRMED_DETAILS,
+    ReadingState.S1_RESEARCH_ONLY,
+    ReadingState.S2_RESEARCH_INSUFFICIENT,
+    ReadingState.UNCLASSIFIED,
   ])('forbids specific first-person experience for %s', (readingState) => {
     expect(allowsSpecificFirstPersonExperience(readingState)).toBe(false);
   });
 
-  it('allows a personal public score only after clear reading and score confirmation', () => {
+  it('allows personal score for R1, or R2 with a current per-item score assertion', () => {
     expect(
       allowsPublicScore({
-        readingState: ReadingState.READ_CLEAR,
+        currentPersonalScoreAssertion: false,
+        readingState: ReadingState.R1_READ_CLEAR,
+        researchDossierReady: false,
         scoreType: ScoreType.PERSONAL,
         userConfirmedScore: true,
       }),
@@ -61,7 +64,9 @@ describe('reading authenticity rules', () => {
 
     expect(
       allowsPublicScore({
-        readingState: ReadingState.READ_CLEAR,
+        currentPersonalScoreAssertion: false,
+        readingState: ReadingState.R1_READ_CLEAR,
+        researchDossierReady: false,
         scoreType: ScoreType.PERSONAL,
         userConfirmedScore: false,
       }),
@@ -69,17 +74,31 @@ describe('reading authenticity rules', () => {
 
     expect(
       allowsPublicScore({
-        readingState: ReadingState.UNKNOWN,
+        currentPersonalScoreAssertion: true,
+        readingState: ReadingState.R2_READ_FUZZY,
+        researchDossierReady: false,
+        scoreType: ScoreType.PERSONAL,
+        userConfirmedScore: true,
+      }),
+    ).toBe(true);
+
+    expect(
+      allowsPublicScore({
+        currentPersonalScoreAssertion: false,
+        readingState: ReadingState.R2_READ_FUZZY,
+        researchDossierReady: false,
         scoreType: ScoreType.PERSONAL,
         userConfirmedScore: true,
       }),
     ).toBe(false);
   });
 
-  it('allows research analysis publicly and keeps internal prediction private', () => {
+  it('requires a ready dossier for research score and keeps internal prediction private', () => {
     expect(
       allowsPublicScore({
-        readingState: ReadingState.UNKNOWN,
+        currentPersonalScoreAssertion: false,
+        readingState: ReadingState.S1_RESEARCH_ONLY,
+        researchDossierReady: true,
         scoreType: ScoreType.RESEARCH_ANALYSIS,
         userConfirmedScore: false,
       }),
@@ -87,9 +106,21 @@ describe('reading authenticity rules', () => {
 
     expect(
       allowsPublicScore({
-        readingState: ReadingState.READ_CLEAR,
+        currentPersonalScoreAssertion: false,
+        readingState: ReadingState.R1_READ_CLEAR,
+        researchDossierReady: false,
         scoreType: ScoreType.INTERNAL_PREDICTION,
         userConfirmedScore: true,
+      }),
+    ).toBe(false);
+
+    expect(
+      allowsPublicScore({
+        currentPersonalScoreAssertion: false,
+        readingState: ReadingState.S1_RESEARCH_ONLY,
+        researchDossierReady: false,
+        scoreType: ScoreType.RESEARCH_ANALYSIS,
+        userConfirmedScore: false,
       }),
     ).toBe(false);
   });

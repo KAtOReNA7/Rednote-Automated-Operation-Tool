@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron';
 
 import {
+  type ConfirmAuthenticityActionInput,
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
   type CancelSourceProcessingInput,
@@ -23,6 +24,8 @@ import {
   type GetCredentialStatusInput,
   type GetCatalogStateInput,
   type GetCatalogWorkInput,
+  type GetAuthenticityLibraryInput,
+  type GetAuthenticityWorkInput,
   type GetEvidenceStateInput,
   type GetDossierInput,
   type ListDossiersInput,
@@ -31,6 +34,7 @@ import {
   type NonSecretSettingsDraft,
   type PreviewProviderCapabilityProbeInput,
   type PreviewCatalogDiscoveryInput,
+  type PreviewAuthenticityActionInput,
   type PreviewCatalogUndoInput,
   type PreviewCatalogWorkMergeInput,
   type PreviewCatalogWorkSplitInput,
@@ -68,6 +72,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmCatalogWorkSplit, input),
   confirmCatalogUndo: (input: ConfirmCatalogActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmCatalogUndo, input),
+  confirmAuthenticityAction: (input: ConfirmAuthenticityActionInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmAuthenticityAction, input),
   confirmEvidenceConflict: (input: ConfirmEvidenceConflictInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmEvidenceConflict, input),
   confirmDossierBuild: (input: ConfirmDossierBuildInput) =>
@@ -89,6 +95,10 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCatalogState, input),
   getCatalogWork: (input: GetCatalogWorkInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCatalogWork, input),
+  getAuthenticityLibrary: (input: GetAuthenticityLibraryInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getAuthenticityLibrary, input),
+  getAuthenticityWork: (input: GetAuthenticityWorkInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getAuthenticityWork, input),
   getEvidenceState: (input: GetEvidenceStateInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getEvidenceState, input),
   getDossier: (input: GetDossierInput) =>
@@ -123,6 +133,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewCatalogWorkSplit, input),
   previewCatalogUndo: (input: PreviewCatalogUndoInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewCatalogUndo, input),
+  previewAuthenticityAction: (input: PreviewAuthenticityActionInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewAuthenticityAction, input),
   previewEvidenceConflict: (input: PreviewEvidenceConflictInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewEvidenceConflict, input),
   previewDossierBuild: (input: PreviewDossierBuildInput) =>

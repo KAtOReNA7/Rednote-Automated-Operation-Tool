@@ -18,6 +18,10 @@ import {
   initializeDatabase,
 } from '@mystery-operations/db';
 import type {
+  AuthenticityActionPreview,
+  AuthenticityActionResult,
+  AuthenticityLibraryView,
+  AuthenticityWorkDetail,
   CancelCatalogDiscoveryInput,
   CancelProviderCapabilityProbeInput,
   CatalogActionKind,
@@ -36,15 +40,19 @@ import type {
   ConfirmCatalogDiscoveryInput,
   ConfirmModelCacheClearInput,
   ConfirmModelCacheClearResult,
+  ConfirmAuthenticityActionInput,
   ConfirmDataRootSelectionInput,
   CreateModelPriceScheduleInput,
   CreateModelUnitPolicyInput,
   DataRootSelection,
   GetCatalogStateInput,
+  GetAuthenticityLibraryInput,
+  GetAuthenticityWorkInput,
   GetEvidenceStateInput,
   GetDossierInput,
   ListDossiersInput,
   PreviewCatalogDiscoveryInput,
+  PreviewAuthenticityActionInput,
   PreviewCatalogUndoInput,
   PreviewCatalogWorkMergeInput,
   PreviewCatalogWorkSplitInput,
@@ -108,6 +116,7 @@ import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
 import { DesktopCatalogRuntime } from './catalog-runtime.js';
 import { DesktopEvidenceRuntime } from './evidence-runtime.js';
 import { DesktopDossierRuntime } from './dossier-runtime.js';
+import { DesktopAuthenticityRuntime } from './authenticity-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -144,6 +153,7 @@ interface RuntimeVersions {
 
 interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
+  readonly authenticity: DesktopAuthenticityRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
   readonly dossier: DesktopDossierRuntime;
@@ -505,6 +515,30 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().catalog.getWork(workId);
   }
 
+  public getAuthenticityLibrary(input: GetAuthenticityLibraryInput): AuthenticityLibraryView {
+    return this.#requireActive().authenticity.list(input);
+  }
+
+  public getAuthenticityWork(input: GetAuthenticityWorkInput): AuthenticityWorkDetail {
+    return this.#requireActive().authenticity.get(input);
+  }
+
+  public previewAuthenticityAction(
+    input: PreviewAuthenticityActionInput,
+    senderId: number,
+    windowId: number,
+  ): AuthenticityActionPreview {
+    return this.#requireActive().authenticity.preview(input, senderId, windowId);
+  }
+
+  public confirmAuthenticityAction(
+    input: ConfirmAuthenticityActionInput,
+    senderId: number,
+    windowId: number,
+  ): AuthenticityActionResult {
+    return this.#requireActive().authenticity.confirm(input, senderId, windowId);
+  }
+
   public getEvidenceState(input: GetEvidenceStateInput): EvidenceStateView {
     return this.#requireActive().evidence.getState(input);
   }
@@ -703,6 +737,7 @@ export class DesktopSettingsRuntime {
     this.#localApi.clearWindowPairings(windowId);
     this.#active?.capabilities.clearWindow(windowId);
     this.#active?.accounting.clearWindow(windowId);
+    this.#active?.authenticity.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -804,6 +839,7 @@ export class DesktopSettingsRuntime {
     const clipper = new DesktopBrowserClipRuntime(database, root);
     const fetch = new DesktopFetchRuntime(database, root);
     const catalog = new DesktopCatalogRuntime(database);
+    const authenticity = new DesktopAuthenticityRuntime(database);
     const evidence = new DesktopEvidenceRuntime(database);
     const dossier = new DesktopDossierRuntime(database);
     catalog.start();
@@ -811,6 +847,7 @@ export class DesktopSettingsRuntime {
     accountingRepository.recoverInterrupted(new Date().toISOString());
     return {
       accounting,
+      authenticity,
       capabilities,
       catalog,
       dossier,

@@ -80,7 +80,7 @@ describe('Issue 020 dossier architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/Issue 021/u);
+      expect(source(path), path).toMatch(/M3 Issue 022/u);
     }
   });
 });

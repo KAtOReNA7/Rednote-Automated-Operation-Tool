@@ -1,0 +1,520 @@
+# M2 Issue 021：阅读状态、记忆可信度与表达真实性——增量开发指令
+
+本文件是 Issue 021 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`。本文件只定义 Issue 021 的增量目标，不重复动态基线、可迁移路径、安全、费用、硬约束、Windows、测试、Git 和文档治理等公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；状态策略、确认状态机、审计、迁移和并发使用 XHigh
+目标提交信息：feat(library): add reading authenticity policy
+
+## 一、合法起点、归档与停止点
+
+以当前本地 `main` 的动态 HEAD 为起点。本地合法包含尚未 push 的 Issues 018—020 提交；ahead 状态本身不是异常。
+
+开工时按语义确认：
+
+* 工作树干净，当前分支为 `main`；
+* Issue 020 的版本化 Dossier、coverage、readiness、依赖失效和增量重建完整；
+* Issue 019 的事实证据与冲突能力仍完整；
+* README、AGENTS、Roadmap 和文档索引一致指向 Issue 021；
+* migration 尾部、Git 基线和仓库位置全部动态发现。
+
+不得把报告中的提交 ID、盘符、绝对路径、migration 版本或 checksum 写成门禁。
+
+本 TXT 可临时放在仓库根目录启动。Codex 必须完整读取后、在 baseline gate 或业务修改前，将其唯一归档为：
+
+`docs/instructions/m2/M2-Issue021-reading-authenticity-policy-Codex-instruction.txt`
+
+根目录及原位置不保留副本；完成时更新历史指令索引。
+
+只实施 Issue 021。完成后停止，不进入 Issue 022。Issue 021 完成即代表 M2 完成，下一阶段为 M3 Issue 022。
+
+## 二、用户已冻结的真实性规则
+
+本 Issue 必须把以下既定规则实现为可测试的产品政策：
+
+1. 只有用户明确标记并允许的真实阅读经历才能支持第一人称体验表达；
+2. 未亲自体验的作品可以进行资料型分析，但必须标记为“公开资料整理”；
+3. 可以依据可靠资料给出“资料分析评分”，但必须明确区别于个人评分；
+4. 模型、Dossier、购买/持有记录、BrowserClip、搜索记录和系统推断不能证明用户读过一本书；
+5. 记忆模糊时不得由模型补写或伪造个人体验；
+6. 系统预测分只能用于内部排序，不能作为公开个人评分或资料分析评分；
+7. 完整核心诡计分析允许存在，但必须使用明确剧透警告；
+8. AI 标识与版权信息不参与真实性、表达权限、评分权限或剧透政策。
+
+## 三、授权目标
+
+实现 Reading Authenticity Policy V1：
+
+* 以现有 Catalog 实体为对象记录用户手工确认的阅读状态；
+* 保存状态历史、记忆可信度、确认范围、来源和撤销记录；
+* 确定性计算第一人称、资料分析、个人评分和资料评分权限；
+* 对 R2 的具体个人观点提供逐条重新确认；
+* 将 Dossier readiness 与个人体验权限保持正交；
+* 建立有界、可解释的 Expression Permission Snapshot；
+* 支持剧透级别和警告要求，但不生成实际内容；
+* 激活“书库”页面的阅读状态与真实性管理；
+* 追加下一条连续 migration、合同、ADR、专项测试和文档；
+* 完成 M2，并只创建一个本地提交。
+
+## 四、本 Issue 明确不做
+
+* 不生成选题、brief、标题、正文、评分文案、封面或标签；
+* 不实现 Issue 022 或任何 M3 内容生产功能；
+* 不抓取或导入盗版电子书，不解析 Kindle 文件或阅读进度；
+* 不把购书、持有实体书、出版社任职或文件存在推断为已读；
+* 不读取浏览器历史、电子书账户、平台账户或个人云数据；
+* 不自动改变 R1/R2/R3/S1/S2；
+* 不让模型创建、确认或提升阅读状态；
+* 不让模型伪造“我读过”“我认为”“读到这里时”等个人体验；
+* 不让 Dossier ready 自动获得第一人称权限；
+* 不让 R1 绕过 Issue 019/020 的事实冲突和研究就绪规则；
+* 不实现审批、排期、导出、发布或运营数据回收；
+* 不调用真实模型、搜索、网页、图片或业务 API；
+* 不读取真实密钥，不产生费用；
+* 不进入 Issue 022。
+
+## 五、Reading State V1
+
+实现有限状态：
+
+* `R1_READ_CLEAR`
+* `R2_READ_FUZZY`
+* `R3_READ_UNCONFIRMED_DETAILS`
+* `S1_RESEARCH_ONLY`
+* `S2_RESEARCH_INSUFFICIENT`
+* `UNCLASSIFIED`
+
+产品文案保持用户可理解：
+
+* R1：读过且记忆明确；
+* R2：读过但记忆模糊，只能使用重新确认过的个人观点；
+* R3：记得读过但无法确认细节，不得生成具体第一人称体验；
+* S1：未读或不能确认，但公开资料充分，只允许资料型分析；
+* S2：资料不足或互相冲突，不能进入未来内容生产；
+* UNCLASSIFIED：尚未由用户确认。
+
+ReadingState 至少包含：
+
+* state identity；
+* account/profile identity；
+* subject identity；
+* reading state；
+* memory confidence；
+* user confirmation kind；
+* optional finished/last-read date with precision；
+* optional edition/context reference；
+* bounded user note；
+* revision、createdAt、updatedAt；
+* current/history 标记；
+* provenance 和 audit identity。
+
+V1 subject 至少支持 Work，可选择性关联 Expression/Edition；不得创建无真实 FK 的任意 polymorphic ID。一个 profile + Work 只能有一个 current state。
+
+状态变化必须：
+
+* 由明确用户操作触发；
+* 使用 expected revision；
+* preview before/after；
+* 使用 sender/window 绑定的短期、单次确认 token；
+* 事务化保存新 revision；
+* 保留旧版本；
+* 支持撤销到前一状态；
+* 写入 append-only audit；
+* 并发 stale 时 fail closed。
+
+系统只能提出 `UNCLASSIFIED` 候选或提醒用户填写，不能根据任何间接数据自动选择 R1—S2。
+
+## 六、Memory Confidence 与个人观点确认
+
+ReadingState 和 Memory Confidence 不得混成一个自由文本分数。
+
+有限 Memory Confidence 至少包括：
+
+* `CLEAR`
+* `PARTIAL`
+* `FADED`
+* `NOT_APPLICABLE`
+* `UNKNOWN`
+
+状态与 confidence 的合法组合由合同和数据库 CHECK 冻结。例如：
+
+* R1 只能使用 CLEAR；
+* R2 使用 PARTIAL 或 FADED；
+* R3 使用 FADED 或 UNKNOWN；
+* S1/S2 使用 NOT_APPLICABLE；
+* UNCLASSIFIED 使用 UNKNOWN。
+
+为 R2 实现 `ExperienceAssertionConfirmation`：
+
+* 绑定 profile、Work、reading-state revision；
+* 绑定有限 assertion kind；
+* 保存用户明确确认的有界陈述或结构化观点；
+* 保存 confirmation scope；
+* revision、confirmedAt、expires/invalidatedAt；
+* provenance 与 append-only audit。
+
+Assertion kind 至少支持：
+
+* `READING_IMPRESSION`
+* `PLOT_OR_STRUCTURE_MEMORY`
+* `CHARACTER_MEMORY`
+* `TRICK_OR_REASONING_MEMORY`
+* `PERSONAL_PREFERENCE`
+* `PERSONAL_SCORE`
+
+规则：
+
+* R2 只能使用当前有效、逐条确认的 assertion；
+* 一次笼统点击不得授权任意未来第一人称内容；
+* ReadingState revision 改变时旧 assertion 自动变为 stale；
+* 撤销状态或 assertion 后立即失去对应权限；
+* R3 不允许创建可供公开第一人称使用的 assertion；
+* 模型不能替用户确认或改写 assertion 的事实含义；
+* 用户 note 不得被系统自动扩大成更强声明。
+
+## 七、真实性与表达权限策略
+
+定义版本化 `AuthenticityPolicyV1` 和纯确定性 evaluator。
+
+输出 `ExpressionPermissionSnapshotV1`，至少包含：
+
+* profile、subject、reading-state revision；
+* dossier/current version 与 readiness，可空；
+* policy versions；
+* personal-experience permission；
+* first-person permission；
+* public-research-analysis permission；
+* personal-score permission；
+* research-analysis-score permission；
+* content-brief readiness；
+* spoiler requirement；
+* blocking/warning reason codes；
+* dependency hash、evaluatedAt、stale 状态。
+
+建议使用以下有限权限状态：
+
+* `ALLOWED`
+* `ALLOWED_WITH_CONFIRMED_ASSERTIONS_ONLY`
+* `RESEARCH_ONLY`
+* `BLOCKED`
+* `STALE_REVIEW_REQUIRED`
+
+冻结矩阵：
+
+1. R1
+
+   * 可以使用第一人称体验；
+   * 可以给个人评分；
+   * 具体可核验事实仍受 Dossier/FactPolicy 约束；
+   * 不得把未验证事实包装成个人记忆来绕过事实政策。
+
+2. R2
+
+   * 只能使用当前有效、逐条重新确认的 assertion；
+   * 未确认的第一人称陈述被阻止；
+   * 个人评分只有存在当前有效 `PERSONAL_SCORE` assertion 时才允许；
+   * 可同时使用明确标记的资料分析。
+
+3. R3
+
+   * 不允许具体第一人称阅读体验或个人评分；
+   * 不能因为“记得读过”生成细节；
+   * Dossier ready 时可采用资料型分析，但必须标记来源类型。
+
+4. S1
+
+   * 不允许第一人称体验或个人评分；
+   * 只有 Dossier 为 `READY_FOR_CONTENT_BRIEF` 时允许资料型分析；
+   * 资料分析必须显示“公开资料整理”；
+   * 资料评分必须显示“资料分析评分”。
+
+5. S2
+
+   * 不允许第一人称、个人评分、资料分析评分或未来 content brief；
+   * 即使存在局部资料，也保持 `BLOCKED`，直到用户改变状态且 Dossier 满足政策。
+
+6. UNCLASSIFIED
+
+   * 默认不允许第一人称和个人评分；
+   * 不得自动降级成 S1；
+   * 可以查看档案，但未来内容生产保持阻止或要求先分类。
+
+Authenticity 和 Dossier readiness 是两个独立维度：
+
+* R1 不等于研究事实 ready；
+* Dossier ready 不等于用户读过；
+* 未来 content brief 必须选择明确模式，例如 `PERSONAL_EXPERIENCE` 或 `PUBLIC_RESEARCH_ANALYSIS`，并同时满足对应权限；
+* Issue 021 只提供 evaluator/guard，不创建 content brief。
+
+## 八、评分来源与公开标签
+
+定义有限 Score Origin：
+
+* `PERSONAL_SCORE`
+* `RESEARCH_ANALYSIS_SCORE`
+* `SYSTEM_PREDICTION_INTERNAL`
+
+所有评分使用有限精确量表和整数表示，不使用 SQLite REAL。
+
+规则：
+
+* `PERSONAL_SCORE` 只允许 R1，或 R2 当前有效的 PERSONAL_SCORE assertion；
+* `RESEARCH_ANALYSIS_SCORE` 必须依赖 current READY Dossier，并携带“资料分析评分”公开标签要求；
+* `SYSTEM_PREDICTION_INTERNAL` 只能进入内部排序/实验元数据，不能出现在 renderer 的公开内容预览 DTO、导出或未来发布包；
+* 三种分数不得相互复制、自动转换或用同一字段混存；
+* UNKNOWN 保持 NULL，不伪造 0；
+* 模型置信度不是评分；
+* 资料评分不得使用“我给”“我读完认为”等第一人称措辞；
+* 个人评分不能证明书目事实。
+
+Issue 021 可保存用户手工输入的个人评分和资料分析评分政策元数据，但不生成评分内容。
+
+## 九、剧透级别与警告规则
+
+实现有限 `SpoilerPolicyV1`：
+
+* `NO_SPOILER`
+* `LIGHT_SPOILER`
+* `FULL_TRICK_ANALYSIS`
+
+用户既定规则允许 `FULL_TRICK_ANALYSIS`，但未来公开内容必须带明确、醒目的剧透警告。
+
+策略输出至少包含：
+
+* spoiler level；
+* warning required；
+* warning placement requirement；
+* core trick/ending disclosure flags；
+* user confirmation requirement；
+* reason codes。
+
+冻结规则：
+
+* `FULL_TRICK_ANALYSIS` 不因“涉及剧透”本身被禁止；
+* 缺少必要警告时未来 content brief readiness 为 blocked；
+* 警告只解决剧透提示，不提升事实或个人体验权限；
+* R3/S1 不能借剧透模式伪装成亲身阅读；
+* Issue 021 不生成实际警告文案或内容，只提供政策合同、状态和 UI 配置；
+* AI 标识与版权不进入 spoiler evaluator。
+
+## 十、状态失效与依赖
+
+ExpressionPermissionSnapshot 必须保存确定性依赖：
+
+* ReadingState revision；
+* ExperienceAssertion revision 集合；
+* current Dossier version；
+* Dossier readiness/coverage policy version；
+* AuthenticityPolicy version；
+* ScorePolicy version；
+* SpoilerPolicy version。
+
+以下变化只失效相关 snapshot：
+
+* 阅读状态修改或撤销；
+* assertion 新增、修改、撤销或 stale；
+* Dossier current version/readiness 变化；
+* authenticity/score/spoiler policy version 变化；
+* Catalog subject merge/split/undo；
+* profile identity/ownership 变化。
+
+要求：
+
+* 失效幂等且可解释；
+* 不自动改写阅读状态；
+* 不自动重新确认 assertion；
+* 不自动创建内容任务；
+* 无关 Work 的变化不触发全库失效；
+* 关键查询使用依赖索引，不做 O(n²) 扫描；
+* evaluator 相同输入得到相同输出；
+* stale snapshot fail closed。
+
+## 十一、批量管理与本地导入边界
+
+书库 UI 可支持有界批量分类，以便用户处理已有书目，但必须遵守：
+
+* 每页/每批有明确上限；
+* 每个 Work 单独显示 before/after；
+* 批量操作只设置用户明确选择的同一目标状态；
+* 默认不勾选；
+* 需要 preview hash、expected revisions 和一次性确认；
+* 部分并发冲突时不得静默覆盖；
+* 结果逐项报告成功/失败；
+* 不从文件名、照片、ISBN、出版社、购买记录或 Dossier 自动推断状态。
+
+如实现 CSV 导入，只允许有限模板和纯本地受控 import：
+
+* 只接受 Work identity 或可唯一解析的 Catalog identity；
+* 不能导入电子书正文、阅读笔记全文或任意路径；
+* 每行初始为待确认 preview；
+* 不确定匹配 fail closed；
+* 原始导入文件按既有 Managed File Repository 规则处理；
+* 本 Issue 不要求实现 CSV；不得因此扩大范围。
+
+## 十二、Migration 与仓储
+
+追加运行时发现的下一条连续 migration，不预置版本号或 checksum，不修改历史 migration。
+
+优先安全扩展现有 `reading_states`，避免第二套当前状态真相。按实际 schema 至少覆盖：
+
+* reading state identity/current revision/history；
+* memory confidence；
+* user confirmation/provenance；
+* experience assertion confirmations；
+* personal score record或引用；
+* expression permission snapshots/dependencies；
+* policy versions；
+* append-only state transition/audit。
+
+要求：
+
+* profile + Work current state 唯一；
+* 真实 FK、STRICT、CHECK、unique、delete policy 和索引完整；
+* current revision 切换事务化；
+* 历史 state/assertion/snapshot append-only；
+* 旧 reading_states 数据可证明迁移；无法证明的值 fail closed，不自动升级为 R1；
+* Issue 018 Catalog、Issue 019 Evidence、Issue 020 Dossier 全部保留；
+* profile/Work/current state、stale assertion 和 permission lookup 使用预期索引；
+* 新库、升级、备份、失败回滚、quick_check 和 foreign_key_check 全部测试；
+* DB/WAL/SHM 不保存密钥、电子书正文、完整阅读笔记、raw model response 或绝对路径。
+
+## 十三、书库 UI 与 IPC
+
+激活或扩展“书库”页面，至少提供：
+
+* Work/Expression/Edition 基本书目；
+* 当前 R1/R2/R3/S1/S2/未分类状态；
+* 状态含义和可用表达的直白中文说明；
+* memory confidence；
+* 状态历史和撤销；
+* 单本 preview/confirm；
+* 有界批量分类；
+* R2 assertion 列表、确认、撤销和 stale 状态；
+* 个人评分与资料分析评分的清晰区分；
+* Dossier readiness 与个人体验权限并列显示；
+* 第一人称、资料分析、两类评分和 content-brief readiness 矩阵；
+* spoiler level 与警告要求；
+* loading/empty/error/unclassified/stale/conflicted/insufficient/ready 状态。
+
+UI 必须醒目标明：
+
+* “公开资料整理”不代表用户亲自读过；
+* “资料分析评分”不是个人评分；
+* R3 不生成具体个人体验；
+* S2 当前不能进入内容生产；
+* 系统不会根据持有、购买或资料研究自动判断已读。
+
+preload 只增加固定、有限、分页 DTO 和方法。
+
+IPC 必须校验 exact-object、sender/origin/window、profile、subject、revision、大小和 confirmation token。
+
+renderer 不接收 Node、SQLite、内部路径、整份 Dossier、完整 Evidence 正文、credential、raw model response 或任意文件读取能力。
+
+## 十四、专项测试与金标
+
+新增独立 `test:authenticity` 或语义等价专项门禁，纳入 full test 和 Windows CI。
+
+金标至少包括：
+
+* 6 个 Work，分别覆盖 R1、R2、R3、S1、S2、UNCLASSIFIED；
+* R2 至少两个 assertion，其中一个 current、一个 stale/revoked；
+* 一个 READY Dossier；
+* 一个 FACT_BLOCKED Dossier；
+* 一个 INSUFFICIENT_COVERAGE Dossier；
+* personal、research-analysis、internal prediction 三类评分；
+* no-spoiler、light 和 full-trick 三类剧透策略。
+
+必须验证：
+
+1. 状态只能由用户确认改变；
+2. 购买、持有、Clip、搜索、Dossier 和模型不能推断已读；
+3. R1 第一人称与个人评分允许；
+4. R1 仍不能绕过事实冲突；
+5. R2 只允许当前逐条确认的 assertion；
+6. R2 stale/revoked assertion 立即失效；
+7. R3 不允许具体第一人称或个人评分；
+8. R3 + READY Dossier 只能走资料分析模式；
+9. S1 + READY Dossier 允许资料分析及资料分析评分；
+10. S1 缺少 READY Dossier 时阻止；
+11. S2 全部内容模式保持阻止；
+12. UNCLASSIFIED 不被自动当作 S1；
+13. personal/research/internal score 严格隔离；
+14. internal prediction 不进入公开 DTO；
+15. UNKNOWN score 不伪造 0；
+16. FULL_TRICK_ANALYSIS 允许但强制 warning requirement；
+17. spoiler warning 不提升真实性或事实权限；
+18. 状态 preview、确认、undo 和并发 stale；
+19. 批量分类默认不选择、逐项 revision 和部分失败；
+20. 状态/assertion/Dossier/policy 变化精确失效；
+21. 无关 Work 不失效；
+22. evaluator 重放确定；
+23. migration 新库/升级/备份/回滚/FK/quick check；
+24. 关键分页查询使用预期索引；
+25. UI/IPC 状态矩阵和 egress；
+26. content_briefs、drafts、approvals、post_packages、publications 不被写入；
+27. AI、版权和 publication relationship 不参与策略；
+28. 盗版电子书无入口、无解析、无保存、无索引；
+29. 真实网络、模型、密钥读取和费用均为 0；
+30. Issue 022 功能不存在。
+
+## 十五、文档、M2 收口与完成定义
+
+至少交付：
+
+* `docs/contracts/reading-authenticity-policy-v1.md`
+* `docs/contracts/expression-permission-v1.md`
+* `docs/contracts/spoiler-policy-v1.md`
+* `docs/adr/` 下下一号 ADR；
+* `docs/m2-issue021-implementation-plan.md`
+* `docs/m2-issue021-acceptance-map.md`
+* 必要的脱敏证据放入 `docs/evidence/`；
+* 归档后的本指令及更新后的历史指令索引；
+* README、AGENTS、Roadmap 和文档索引完成 M2 收口，并把下一步明确写为 `M3 Issue 022`。
+
+M2 收口文档必须准确说明：
+
+* Issues 012—021 已完成的能力；
+* 当前仍未实现的 M3 内容生产、审核、审批、导出和复盘能力；
+* `READY_FOR_CONTENT_BRIEF` 只是前置就绪，不代表已生成内容；
+* 所有真实 API/模型调用仍须后续独立授权和配置；
+* 当前禁止范围和人工最终发布边界未改变。
+
+完成前：
+
+1. 从最新 `npm ci` 开始按当前 CI 顺序运行全部适用门禁；
+2. 所有专项、全量测试、构建、桌面/Clipper 打包、Electron smoke 和依赖审计通过；
+3. 交互式真实浏览器 smoke 若属于当前 CI 门禁则必须通过；若不是门禁，只能如实单独报告，不得用其环境限制掩盖当前功能失败；
+4. 创建恰好一个 Issue 021 本地提交；
+5. 核验 parent 为动态开工基线、工作树干净、远端未改变；
+6. 停止，不进入 Issue 022。
+
+最终报告必须明确：
+
+* 六类 reading state 金标数量与权限矩阵；
+* R2 current/stale/revoked assertion 结果；
+* 第一人称、资料分析、个人评分、资料评分和内部预测分的隔离结果；
+* Dossier readiness 与个人体验权限的正交证据；
+* FULL_TRICK 警告规则；
+* 状态变更、undo、并发、依赖失效与批量操作结果；
+* migration 和旧 Catalog/Evidence/Dossier 数据保留；
+* 盗版电子书入口、真实网络、模型、密钥读取和费用均为 0；
+* M2 已完成，下一步为 M3 Issue 022；
+* 只创建一个本地提交、未 push、未进入 Issue 022。
+
+只有全部成立才可报告 PASS。
+
+## 十六、给 Codex 的启动指令
+
+继续当前本地 `main`，允许其合法领先 `origin/main`；不要 pull、rebase、reset 或 push。
+
+完整读取仓库 `AGENTS.md` 和本 TXT，随后立即把本 TXT 唯一归档到：
+
+`docs/instructions/m2/M2-Issue021-reading-authenticity-policy-Codex-instruction.txt`
+
+只实施 M2 Issue 021：完成 R1/R2/R3/S1/S2 阅读状态、记忆可信度、R2 逐条观点确认、第一人称与资料分析权限、三类评分来源隔离、剧透警告政策、书库 UI、migration 和全部增量验收；同步完成 M2 收口。
+
+测试只使用合成 fixture、临时 SQLite、Scripted Mock 和本机 loopback，真实密钥、业务网络、模型调用和费用保持为 0。
+
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 M3 Issue 022。

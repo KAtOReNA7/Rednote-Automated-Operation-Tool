@@ -11,20 +11,22 @@ export interface ReadingTransitionContext {
 }
 
 export interface PublicScoreContext {
+  readonly currentPersonalScoreAssertion: boolean;
   readonly readingState: ReadingState;
+  readonly researchDossierReady: boolean;
   readonly scoreType: ScoreType;
   readonly userConfirmedScore: boolean;
 }
 
 export class ReadingStateConfirmationRequiredError extends Error {
   public constructor() {
-    super('READ_CLEAR requires an explicit user confirmation.');
+    super('Reading state changes require an explicit user confirmation.');
     this.name = 'ReadingStateConfirmationRequiredError';
   }
 }
 
 export function createDefaultReadingState(): ReadingState {
-  return ReadingState.UNKNOWN;
+  return ReadingState.UNCLASSIFIED;
 }
 
 export function transitionReadingState(
@@ -36,10 +38,7 @@ export function transitionReadingState(
     return current;
   }
 
-  if (
-    next === ReadingState.READ_CLEAR &&
-    (context.actor !== ReadingTransitionActor.USER || !context.explicitlyConfirmed)
-  ) {
+  if (context.actor !== ReadingTransitionActor.USER || !context.explicitlyConfirmed) {
     throw new ReadingStateConfirmationRequiredError();
   }
 
@@ -47,15 +46,24 @@ export function transitionReadingState(
 }
 
 export function allowsSpecificFirstPersonExperience(readingState: ReadingState): boolean {
-  return readingState === ReadingState.READ_CLEAR;
+  return readingState === ReadingState.R1_READ_CLEAR;
 }
 
 export function allowsPublicScore(context: PublicScoreContext): boolean {
   switch (context.scoreType) {
     case ScoreType.PERSONAL:
-      return context.readingState === ReadingState.READ_CLEAR && context.userConfirmedScore;
+      return (
+        context.userConfirmedScore &&
+        (context.readingState === ReadingState.R1_READ_CLEAR ||
+          (context.readingState === ReadingState.R2_READ_FUZZY &&
+            context.currentPersonalScoreAssertion))
+      );
     case ScoreType.RESEARCH_ANALYSIS:
-      return true;
+      return (
+        context.researchDossierReady &&
+        context.readingState !== ReadingState.S2_RESEARCH_INSUFFICIENT &&
+        context.readingState !== ReadingState.UNCLASSIFIED
+      );
     case ScoreType.INTERNAL_PREDICTION:
       return false;
   }

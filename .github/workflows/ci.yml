@@ -98,6 +98,9 @@ jobs:
       - name: Run versioned research dossier suites
         run: npm run test:dossier
 
+      - name: Run reading authenticity and expression permission suites
+        run: npm run test:authenticity
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

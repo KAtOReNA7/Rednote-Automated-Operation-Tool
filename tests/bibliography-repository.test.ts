@@ -73,7 +73,10 @@ describe('Issue 018 SQLite catalog repository', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [11, 12, 13], schemaVersion: 13 });
+    expect(result).toMatchObject({
+      appliedVersions: MIGRATIONS.slice(10).map(({ version }) => version),
+      schemaVersion: MIGRATIONS.length,
+    });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {
@@ -347,8 +350,8 @@ describe('Issue 018 SQLite catalog repository', () => {
       expect(duplicate).toBeDefined();
       database
         .prepare(
-          `INSERT INTO reading_states(id, book_id, state)
-           VALUES ('reading-decision', ?, 'NOT_READ')`,
+          `INSERT INTO reading_states(id, profile_id, book_id)
+           VALUES ('reading-decision', 'primary', ?)`,
         )
         .run(duplicate?.workId as string);
 
