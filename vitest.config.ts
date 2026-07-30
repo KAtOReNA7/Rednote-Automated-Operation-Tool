@@ -5,6 +5,9 @@ import { defineConfig } from 'vitest/config';
 export default defineConfig({
   resolve: {
     alias: {
+      '@mystery-operations/authenticity': fileURLToPath(
+        new URL('./packages/authenticity/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/briefs': fileURLToPath(
         new URL('./packages/briefs/src/index.ts', import.meta.url),
       ),
@@ -16,6 +19,9 @@ export default defineConfig({
       ),
       '@mystery-operations/core': fileURLToPath(
         new URL('./packages/core/src/index.ts', import.meta.url),
+      ),
+      '@mystery-operations/copy': fileURLToPath(
+        new URL('./packages/copy/src/index.ts', import.meta.url),
       ),
       '@mystery-operations/db': fileURLToPath(
         new URL('./packages/db/src/index.ts', import.meta.url),
@@ -52,6 +58,9 @@ export default defineConfig({
       ),
       '@mystery-operations/storage': fileURLToPath(
         new URL('./packages/storage/src/index.ts', import.meta.url),
+      ),
+      '@mystery-operations/topics': fileURLToPath(
+        new URL('./packages/topics/src/index.ts', import.meta.url),
       ),
       '@mystery-operations/workflows': fileURLToPath(
         new URL('./packages/workflows/src/index.ts', import.meta.url),

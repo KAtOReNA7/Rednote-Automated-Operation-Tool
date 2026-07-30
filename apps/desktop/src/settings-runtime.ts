@@ -107,6 +107,16 @@ import type {
   GetBriefInput,
   GetBriefsInput,
   PreviewBriefActionInput,
+  ConfirmCopyActionInput,
+  CopyActionPreview,
+  CopyActionResult,
+  CopyDraftDetailView,
+  CopyDraftListView,
+  CopyDraftVersionDiffView,
+  DiffCopyDraftVersionsInput,
+  GetCopyDraftInput,
+  GetCopyDraftsInput,
+  PreviewCopyActionInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -144,6 +154,7 @@ import { DesktopAuthenticityRuntime } from './authenticity-runtime.js';
 import { DesktopTopicRuntime } from './topic-runtime.js';
 import { DesktopExperimentRuntime } from './experiment-runtime.js';
 import { DesktopBriefRuntime } from './brief-runtime.js';
+import { DesktopCopyRuntime } from './copy-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -182,6 +193,7 @@ interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
   readonly authenticity: DesktopAuthenticityRuntime;
   readonly briefs: DesktopBriefRuntime;
+  readonly copy: DesktopCopyRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
   readonly experiments: DesktopExperimentRuntime;
@@ -486,6 +498,7 @@ export class DesktopSettingsRuntime {
       await previous?.dossier.close();
       await previous?.topics.close();
       await previous?.briefs.close();
+      await previous?.copy.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
@@ -493,6 +506,7 @@ export class DesktopSettingsRuntime {
       await prepared.dossier.close();
       await prepared.topics.close();
       await prepared.briefs.close();
+      await prepared.copy.close();
       prepared.database.close();
       throw error;
     }
@@ -627,6 +641,34 @@ export class DesktopSettingsRuntime {
 
   public getBrief(input: GetBriefInput): BriefDetailView {
     return this.#requireActive().briefs.get(input);
+  }
+
+  public getCopyDrafts(input: GetCopyDraftsInput): CopyDraftListView {
+    return this.#requireActive().copy.list(input);
+  }
+
+  public getCopyDraft(input: GetCopyDraftInput): CopyDraftDetailView {
+    return this.#requireActive().copy.get(input);
+  }
+
+  public previewCopyAction(
+    input: PreviewCopyActionInput,
+    senderId: number,
+    windowId: number,
+  ): CopyActionPreview {
+    return this.#requireActive().copy.preview(input, senderId, windowId);
+  }
+
+  public confirmCopyAction(
+    input: ConfirmCopyActionInput,
+    senderId: number,
+    windowId: number,
+  ): CopyActionResult {
+    return this.#requireActive().copy.confirm(input, senderId, windowId);
+  }
+
+  public diffCopyDraftVersions(input: DiffCopyDraftVersionsInput): CopyDraftVersionDiffView {
+    return this.#requireActive().copy.diff(input);
   }
 
   public previewBriefAction(
@@ -847,6 +889,7 @@ export class DesktopSettingsRuntime {
     this.#active?.topics.clearWindow(windowId);
     this.#active?.experiments.clearWindow(windowId);
     this.#active?.briefs.clearWindow(windowId);
+    this.#active?.copy.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -891,6 +934,7 @@ export class DesktopSettingsRuntime {
     await this.#active?.dossier.close();
     await this.#active?.topics.close();
     await this.#active?.briefs.close();
+    await this.#active?.copy.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -956,15 +1000,18 @@ export class DesktopSettingsRuntime {
     const topics = new DesktopTopicRuntime(database);
     const experiments = new DesktopExperimentRuntime(database);
     const briefs = new DesktopBriefRuntime(database);
+    const copy = new DesktopCopyRuntime(database);
     catalog.start();
     dossier.start();
     topics.start();
     briefs.start();
+    copy.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
     return {
       accounting,
       authenticity,
       briefs,
+      copy,
       capabilities,
       catalog,
       dossier,

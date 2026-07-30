@@ -9,6 +9,7 @@ import { LocalApiError } from '@mystery-operations/local-api';
 import { TopicError } from '@mystery-operations/topics';
 import { ExperimentError } from '@mystery-operations/experiments';
 import { BriefError } from '@mystery-operations/briefs';
+import { CopyError } from '@mystery-operations/copy';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -63,6 +64,11 @@ import {
   type PreviewTopicActionInput,
   type PreviewExperimentActionInput,
   type PreviewBriefActionInput,
+  type ConfirmCopyActionInput,
+  type DiffCopyDraftVersionsInput,
+  type GetCopyDraftInput,
+  type GetCopyDraftsInput,
+  type PreviewCopyActionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -106,6 +112,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof CopyError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof BriefError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -357,6 +366,33 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       window.id,
     );
   });
+  register('getCopyDrafts', DESKTOP_IPC_CHANNELS.getCopyDrafts, (_event, args) =>
+    options.settingsRuntime.getCopyDrafts(args[0] as GetCopyDraftsInput),
+  );
+  register('getCopyDraft', DESKTOP_IPC_CHANNELS.getCopyDraft, (_event, args) =>
+    options.settingsRuntime.getCopyDraft(args[0] as GetCopyDraftInput),
+  );
+  register('previewCopyAction', DESKTOP_IPC_CHANNELS.previewCopyAction, (event, args) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window === null) throw new CopyError('COPY_CONFIRMATION_INVALID');
+    return options.settingsRuntime.previewCopyAction(
+      args[0] as PreviewCopyActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmCopyAction', DESKTOP_IPC_CHANNELS.confirmCopyAction, (event, args) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window === null) throw new CopyError('COPY_CONFIRMATION_INVALID');
+    return options.settingsRuntime.confirmCopyAction(
+      args[0] as ConfirmCopyActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('diffCopyDraftVersions', DESKTOP_IPC_CHANNELS.diffCopyDraftVersions, (_event, args) =>
+    options.settingsRuntime.diffCopyDraftVersions(args[0] as DiffCopyDraftVersionsInput),
+  );
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),
   );

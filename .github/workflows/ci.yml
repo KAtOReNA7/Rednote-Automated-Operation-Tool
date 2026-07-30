@@ -110,6 +110,9 @@ jobs:
       - name: Run structured Content Brief suites
         run: npm run test:briefs
 
+      - name: Run versioned Copy generation suites
+        run: npm run test:copy
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

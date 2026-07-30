@@ -9,6 +9,8 @@ import type {
   TopicPoolItem,
 } from '@mystery-operations/shared';
 
+import { CopyWorkbench } from './copy-workbench.js';
+
 const PROFILE_LABELS: Readonly<Record<string, string>> = {
   CROSS_WORK_COMPARISON: '跨作品比较',
   FULL_TRICK_LOGIC_ANALYSIS: '全剧透诡计逻辑分析',
@@ -528,6 +530,8 @@ export function ContentProductionPage(): React.JSX.Element {
           <span>锁定字段不会被覆盖；能力或预算未知时不会发送请求</span>
         </div>
       </section>
+
+      <CopyWorkbench />
 
       <div className="brief-layout">
         <aside className="brief-list-panel">

@@ -1,0 +1,742 @@
+# M3 Issue 025：版本化文案生成、局部重写与写作工作台——增量开发指令
+
+本文件是 Issue 025 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`。本文件只定义 Issue 025 增量范围，不重复动态基线、可迁移路径、Windows、安全、费用、硬约束、测试、Git 和文档治理公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；结构化生成、局部重写、版本化、锁定、恢复和并发使用 XHigh
+目标提交信息：feat(content): add versioned copy generation
+
+## 一、合法起点、Git 边界、归档与停止点
+
+以当前本地 `main` 动态 HEAD 为起点。开工报告显示 Issue 024 已同步到远端，当前本地 `main`、`origin/main` 与远端 `main` 一致；必须在开工时只读复核，不写死任何 SHA。
+
+开工时按语义确认：
+
+* 工作树干净，当前分支为 `main`；
+* Issue 024 ContentBrief、Readiness、EvidenceMap、FieldLock 和生成基础完整；
+* Issues 019—023 的 Evidence、Dossier、Authenticity、Topic 和 Experiment 仍可追溯；
+* README、AGENTS、Roadmap 和索引一致指向 Issue 025；
+* migration 尾部、Git 基线和仓库位置动态发现。
+
+如本地或远端状态与报告不同、工作树不干净或存在未知提交，停止报告，不覆盖用户工作。
+
+不得把报告中的提交 ID、盘符、绝对路径、migration 版本或 checksum 写成门禁。
+
+本 Issue 只授权创建一个本地提交。不得 push、不得直接更新远端 `main`、不得创建或合并 PR，除非用户在后续消息中另行明确授权。
+
+本 TXT 可临时放在仓库根目录。完整读取后、在 baseline gate 或业务修改前，唯一归档到：
+
+`docs/instructions/m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt`
+
+根目录和原位置不留副本；更新历史指令索引。
+
+只实施 Issue 025。完成后停止，不进入 Issue 026。
+
+## 二、授权目标
+
+实现 Copy Generation V1：
+
+* 从 current 且 `READY_FOR_DRAFT_GENERATION` 的 ContentBrief 生成版本化文案；
+* 生成标题、正文、标签、置顶评论和适用的实际剧透警告文本；
+* 支持 Issue 022 的五类内容；
+* 固化“观点鲜明、短句直接、少量冷幽默”的账号文风；
+* 保存 prompt、schema、policy、model、execution 和 input 版本；
+* 支持纯手工 Draft 创建与编辑；
+* 支持标题、正文块、标签、置顶评论和警告的有界局部重写；
+* 严格保持 Brief 中 USER_LOCKED、SYSTEM_LOCKED 字段及 Experiment controlled conditions；
+* 保留 Brief argument/field lineage，供 Issue 026 做正文事实映射；
+* 提供 generation preview、显式确认、成本预算、幂等、取消与恢复；
+* 激活内容生产的文案工作台；
+* 追加下一条连续 migration、专项测试、合同、ADR、计划和验收映射；
+* 全部门禁通过后只创建一个本地提交。
+
+## 三、本 Issue 明确不做
+
+* 不实现 Issue 026 的正文事实—Claim 最终映射检查；
+* 不实现 Issue 027 的完整真实性与评分扫描；
+* 不实现 Issue 028 的完整剧透泄露检测；
+* 不实现 Issue 029 的历史重复度、标题正文一致性和模板损坏检查；
+* 不实现 Issue 030 的质量编排器；
+* 不生成或处理图片、封面和信息卡；
+* 不进入审批、排期、发布包、导出或发布流程；
+* 不把生成成功等同于质量通过、审批通过或可发布；
+* 不自动修改 Brief、Topic、Experiment、Dossier、Claim 或 ReadingState；
+* 不自动重试、repair、fallback、切换协议或更换模型；
+* 不读取真实密钥，不执行真实模型、API、搜索、网页或图片调用，不产生费用；
+* 不进入 Issue 026 或后续范围。
+
+## 四、Draft 聚合根与版本
+
+定义严格、版本化合同：
+
+* `ContentDraft`
+* `ContentDraftVersion`
+* `DraftTitle`
+* `DraftBody`
+* `DraftBlock`
+* `DraftTagSet`
+* `DraftPinnedComment`
+* `DraftSpoilerWarnings`
+* `DraftLineageRef`
+* `DraftFieldLock`
+* `DraftDependency`
+* `DraftStructuralValidation`
+* `DraftGenerationPlan`
+* `DraftGenerationRun`
+* `DraftRewritePlan`
+* `DraftRewriteRun`
+
+ContentDraft 是稳定 identity，绑定：
+
+* 一个 ContentBrief identity；
+* 创建时 BriefVersion；
+* TopicCandidate identity/version；
+* 可选 Experiment Design/Assignment；
+* 主要 Work 集合；
+* current DraftVersion pointer。
+
+每个 DraftVersion immutable，至少保存：
+
+* title；
+* ordered body blocks；
+* tags；
+* pinned comment；
+* spoiler warning artifacts；
+* lineage refs；
+* field provenance/lock snapshot；
+* prompt/schema/style/model/execution versions；
+* input/output hash；
+* structural validation；
+* dependencies；
+* status、revision、previous version；
+* createdAt、confirmedAt；
+* bounded warnings/reasons。
+
+同一 Draft 只能有一个 current version。历史版本不得原地覆盖或物理删除。
+
+## 五、产物边界和状态
+
+Issue 025 产物必须醒目标记为“未经质量检查”。
+
+Draft status 至少包括：
+
+* `MANUAL_DRAFT`
+* `MODEL_CANDIDATE`
+* `STRUCTURE_INVALID`
+* `READY_FOR_QUALITY_PIPELINE`
+* `STALE`
+* `SUPERSEDED`
+* `ARCHIVED`
+
+`READY_FOR_QUALITY_PIPELINE` 只表示：
+
+* 结构化字段齐全；
+* Brief、锁定和权限依赖在生成时匹配；
+* 输出满足基本长度、字符、JSON 和引用 allowlist；
+* 可以交给未来 Issue 026—030。
+
+它不表示：
+
+* 事实已经逐句核验；
+* 第一人称或评分已完成全文检查；
+* 剧透泄露检查通过；
+* 重复度和标题一致性通过；
+* 已审批、可导出或可发布。
+
+UI、DTO、文档和测试不得使用 `APPROVED`、`PUBLISHABLE`、`QUALITY_PASSED` 等错误状态。
+
+## 六、文案产物 V1
+
+1. 标题
+
+* 至少一个 current selected title；
+* 可以有有限数量备选标题；
+* 每个标题有 title ID、kind、text、provenance；
+* 标题长度由版本化 `ContentFormatPolicyV1` 限制；
+* 不把该限制宣称为小红书实时官方规则；
+* 非剧透标题不得泄露答案；
+* FULL 类型必须携带 Brief 要求的标题剧透标识。
+
+2. 正文
+
+* 由有序、稳定 ID 的 DraftBlock 组成；
+* block kind 来自有限 registry；
+* 每个 block 绑定 Brief structure slot/argument lineage；
+* 允许观点、事实综合、反方、限定、结论、警告等有限功能；
+* 不保存模型内部推理；
+* 不要求 Issue 025 直接生成 Claim 映射结论。
+
+3. 标签
+
+* 有界数组；
+* Unicode 规范化；
+* 去重；
+* 单项及总字符上限；
+* 不保存 `#` 的多种等价形式造成重复；
+* 不生成无关热点、AI 实验或粉圈引战标签。
+
+4. 置顶评论
+
+* 有界纯文本；
+* 不得新增 Brief 外的新关键事实；
+* 非剧透内容不得在评论中泄露答案；
+* 资料分析与评分标签要求保持；
+* FULL 内容必要时重复剧透提示。
+
+5. 剧透警告
+
+* `coverWarningText`：供后续视觉阶段使用的文本，不生成图片；
+* `titleWarningMarker`；
+* `bodyOpeningWarningText`；
+* 可选 `pinnedCommentWarningText`；
+* 与 Brief spoiler plan 的 required placements 精确一致；
+* 完整剧透本身允许，缺少要求的 warning artifact 时结构验证失败。
+
+## 七、五类 Copy Profile
+
+建立与 Topic、Brief 一致的 `CopyProfileRegistryV1`。
+
+1. `NON_SPOILER_SINGLE_BOOK_VERDICT`
+
+   * 明确判断是否值得读、适合与不适合谁；
+   * 包含优点、缺点和限定；
+   * 标题、正文、标签、置顶评论均不得泄露核心答案。
+
+2. `FULL_TRICK_LOGIC_ANALYSIS`
+
+   * 允许完整拆解；
+   * 必须生成 cover、title、body opening 所需警告文本；
+   * 结构覆盖诡计、伏线公平性、逻辑成立性、误导和漏洞；
+   * 不因为完整剧透本身拒绝 Draft。
+
+3. `CROSS_WORK_COMPARISON`
+
+   * 对所有 Work 使用相同比较维度；
+   * 结构和篇幅基本对称；
+   * 不用一部作品的 Evidence 替代另一部；
+   * 结论允许有胜负，但要保留适用条件。
+
+4. `WEB_VS_PUBLISHED_MYSTERY`
+
+   * 明确网络或出版形态；
+   * 比较结构、阅读体验或创作机制；
+   * 不自动推导商业价值或版权归属；
+   * publication relationship 不参与门禁和排序。
+
+5. `MYSTERY_AND_CULTURAL_PHENOMENON`
+
+   * 书目主体和文化主题均可追溯；
+   * context-only 只能作为背景措辞；
+   * 不退化为无书目的泛热点文章。
+
+每类 profile 必须验证对应 Brief slots 已被消费，并保留遗漏 reason。
+
+## 八、账号文风 V1
+
+定义版本化 `AccountVoicePolicyV1`：
+
+* `OPINIONATED`
+* `SHORT_DIRECT_SENTENCES`
+* `LIGHT_DRY_HUMOR`
+
+具体规则：
+
+* 核心判断明确，不堆砌模糊褒义词；
+* 句子和段落偏短，但不机械切碎；
+* 冷幽默有限、服务观点，不嘲讽作者或读者；
+* 可以批评作品，不攻击作者、读者或群体；
+* 不为互动刻意制造对立；
+* 不讨论账号是 AI 运营实验；
+* 避免把“神作”“封神”“后劲太大”当作无解释判断；
+* 不模仿具体在世作者、博主或账号的独特风格；
+* 不凭空加入网络流行语或热点。
+
+Style policy 输出：
+
+* required traits；
+* forbidden traits；
+* bounded sentence/paragraph targets；
+* humor upper bound；
+* reason codes；
+* policy version。
+
+这些是生成约束，不替代 Issue 029 的完整风格、一致性与重复度检查。
+
+## 九、真实性、评分和公开标签继承
+
+Draft 必须逐值继承 Brief 的：
+
+* expression mode；
+* allowed first-person state；
+* R2 ExperienceAssertion allowlist；
+* score origin；
+* score value/reference；
+* required public labels；
+* spoiler plan；
+* system forbidden expressions。
+
+规则：
+
+* R1 可按 Brief 使用第一人称；
+* R2 只能消费 Brief 明确 allowlist 内的 current assertion；
+* R3、S1、S2、UNCLASSIFIED 不得由 generator 获得新的第一人称权限；
+* PUBLIC_RESEARCH 必须包含“公开资料整理”要求对应的可见文本 artifact；
+* RESEARCH_ANALYSIS_SCORE 必须包含“资料分析评分”可见文本 artifact；
+* PERSONAL_SCORE 不得由模型新建或修改；
+* INTERNAL_PREDICTION 不进入 prompt、schema、Draft、DTO 或 renderer；
+* Brief 未授权的第一人称或评分输出直接拒绝保存；
+* Issue 027 仍须对完整正文做独立真实性检查。
+
+## 十、Brief Lineage 与未来事实映射准备
+
+每个 title、body block、tag、comment 可以保存有限 `DraftLineageRefV1`：
+
+* Brief field、argument、structure slot ID；
+* Work identity；
+* 允许的 BriefEvidenceRef ID 集合；
+* 可选 ExperienceAssertion ID；
+* provenance；
+* input hash。
+
+冻结规则：
+
+* lineage 只表示“生成来源于哪个 Brief 槽位”；
+* 不等于正文事实已经映射或验证；
+* 模型输出只能引用输入 allowlist 中的 ID；
+* 不允许编造 Claim、Evidence、Source、Brief field 或 assertion ID；
+* 不复制 Evidence excerpt、完整 Dossier 或 Source 正文；
+* 没有 lineage 的事实性 block 可保存为 STRUCTURE_INVALID 或待人工修正，但不能进入 `READY_FOR_QUALITY_PIPELINE`；
+* Issue 026 将建立正文 statement—Claim—Evidence 的正式映射。
+
+## 十一、Prompt 与模型运行版本
+
+定义不可变、版本化：
+
+* `CopyPromptTemplateV1`
+* `CopyOutputSchemaV1`
+* `CopyGenerationPolicyV1`
+* `CopyRewritePolicyV1`
+
+每次模型运行保存：
+
+* prompt template version；
+* schema、style、profile、policy versions；
+* provider、model、protocol identity；
+* ModelExecution ID；
+* Brief、input、lock hash；
+* cache、usage、cost 状态；
+* output hash；
+* run outcome；
+* createdAt。
+
+不得保存：
+
+* 明文密钥；
+* Authorization header；
+* raw provider response；
+* 模型内部推理；
+* 完整渲染 prompt 到普通日志或 audit；
+* 无关 Dossier、Source 正文。
+
+Prompt 只消费当前选择的有界 Brief 字段、lineage allowlist、locked values 和系统政策。
+
+所有研究文本均视为不可信数据，prompt injection 不得改变任务、schema、锁定字段或政策。
+
+## 十二、完整生成
+
+实现 provider-neutral `CopyGenerationV1`：
+
+* 只经 ModelExecutionService；
+* structured JSON capability 必须 current、SUPPORTED；
+* 明确 preview、预算和用户确认；
+* 复用缓存、usage、model_runs、reservation 和 cost ledger；
+* credential 只在 main transport 最终阶段解析；
+* 每次完整生成最多一个外部模型请求；
+* 不自动 retry、repair、fallback 或换模型；
+* after-send ambiguous 不自动重发。
+
+模型输入至少包括：
+
+* current READY ContentBrief；
+* 五类 Copy Profile；
+* locked values；
+* Brief evidence/lineage allowlist；
+* expression、score、spoiler、public-label requirements；
+* Experiment arm/controlled conditions，可空；
+* AccountVoicePolicy；
+* forbidden expressions；
+* strict output schema。
+
+模型输出必须：
+
+* 是 exact structured object；
+* 只包含标题、正文块、标签、置顶评论、warning artifacts 和 lineage refs；
+* 不包含图片 prompt、质量结论、审批或发布字段；
+* 通过大小、枚举、字符、allowlist、lock preservation 和 profile validator；
+* 不能声明实验结果；
+* 不能修改 Topic、Brief 或 Experiment；
+* 验证失败时保留失败 run，不保存 current DraftVersion。
+
+本轮测试只使用 Scripted Mock，真实调用和费用为 0。
+
+## 十三、手工 Draft 路径
+
+未配置模型时，用户必须仍可：
+
+* 从 READY Brief 建立空白结构化 Draft scaffold；
+* 手工编辑标题、正文块、标签、置顶评论和 warning 文本；
+* 添加、删除、排序允许的正文块；
+* 绑定 Brief lineage；
+* 预览并保存新版本；
+* 锁定字段；
+* 将结构完整的版本标记为 `READY_FOR_QUALITY_PIPELINE`。
+
+手工路径使用相同 schema、profile、permission、lineage 和结构 validator。
+
+不得因“手工输入”绕过系统锁定或生成新的真实性权限。
+
+## 十四、局部重写
+
+定义有限 `RewriteScopeV1`：
+
+* `SELECTED_TITLE`
+* `TITLE_VARIANTS`
+* `BODY_BLOCK`
+* `BODY_BLOCK_RANGE`
+* `TAG_SET`
+* `PINNED_COMMENT`
+* `SPOILER_WARNING_ARTIFACT`
+
+每次 rewrite 必须：
+
+* 用户明确选择 DraftVersion 和 scope；
+* 显示 before/after preview；
+* 只允许一个连续、有界 scope；
+* 绑定 expected revision、input hash 和 lock snapshot；
+* 最多一个模型请求；
+* 保存 rewrite instruction 的有限结构，不保存自由形式秘密；
+* 新建 DraftVersion，不原地覆盖。
+
+不可变规则：
+
+* scope 外所有字段逐字节或逐规范值保持不变；
+* USER_LOCKED 和 SYSTEM_LOCKED 字段不可重写；
+* BODY_BLOCK rewrite 保留 block ID 或明确生成新 ID、lineage；
+* 不允许通过局部重写改变 content type、expression mode、score origin、spoiler level、Experiment arm 或 controlled conditions；
+* rewrite 输出仍通过完整 schema、profile、permission、lineage validator；
+* after-send ambiguous 不自动重发；
+* 同 input、scope、instruction、cache key 幂等；
+* 用户可以撤销到历史版本。
+
+## 十五、字段锁、编辑和版本 Diff
+
+Draft 字段 provenance 至少包括：
+
+* `SYSTEM_DERIVED`
+* `MODEL_GENERATED`
+* `USER_EDITED`
+* `USER_CONFIRMED`
+
+锁状态：
+
+* `EDITABLE`
+* `USER_LOCKED`
+* `SYSTEM_LOCKED`
+
+SYSTEM_LOCKED 至少包括：
+
+* Brief、Topic、Experiment identities；
+* expression、score、spoiler mode；
+* required public labels；
+* system forbidden rules；
+* policy、schema versions。
+
+用户可锁定：
+
+* selected title；
+* 单个正文 block；
+* tag set；
+* pinned comment；
+* warning text；
+* 允许的 style choices。
+
+要求：
+
+* 编辑、锁定、解锁、重排都创建新版本；
+* expected revision、preview diff、显式确认；
+* sender/window 绑定、短期、单次 token；
+* transition、audit append-only；
+* 并发 stale fail closed；
+* lock 在完整生成和局部重写中保持；
+* 支持 undo、archive、restore；
+* diff 有界，长正文按 block 或字段比较，不输出无限全文。
+
+## 十六、结构验证与质量边界
+
+Issue 025 只实现 `DraftStructuralValidationV1`：
+
+* schema exactness；
+* required fields；
+* 长度、字符和集合边界；
+* 五类 profile slots；
+* Brief lineage allowlist；
+* field lock preservation；
+* required public-label artifacts；
+* spoiler warning artifact presence；
+* Experiment controlled-condition shape；
+* forbidden exact 或 system patterns 的基础拒绝；
+* dependency currentness。
+
+明确不在 Issue 025 完成：
+
+* 正文事实是否与 Claim 一致；
+* 每个句子的 factual 或 opinion 分类；
+* 复杂第一人称语义识别；
+* 隐含剧透检测；
+* 历史相似度；
+* 标题正文语义一致性；
+* 模板损坏综合判断；
+* 质量总分或质量通过状态。
+
+这些分别留给 Issues 026—030。
+
+## 十七、Generation、Rewrite Plan、队列与恢复
+
+定义有界 preview，至少显示：
+
+* Draft、Brief、Topic、Experiment IDs；
+* operation：FULL_GENERATION 或 REWRITE；
+* profile 和 rewrite scope；
+* 输入 Brief fields、lineage refs、locked fields 数量；
+* 最大输入字符、输出字节、标题、block、tag 数；
+* 精确最大模型请求数；
+* capability、cache 和预算结论；
+* 预计本地写入；
+* dependency、input、lock、preview hash；
+* expiry、expected revisions。
+
+新增有限 handler：
+
+* `COPY_GENERATE_V1`
+* `COPY_REWRITE_V1`
+
+可共享内部执行器，但必须：
+
+* 只有桌面显式确认的 producer；
+* payload 只含 ID、版本、hash、scope 和有限计数；
+* executionId 幂等；
+* 同 Draft 同时最多一个 active mutation；
+* 模型调用期间不持有 DB 长事务；
+* pause、cancel、shutdown 和 recovery 沿用 JobQueue；
+* pre-send 可安全恢复；
+* after-send ambiguous 不自动重发；
+* 发布新版本前重验 Brief、dependency、lock、input hash；
+* stale、失败、取消不替换 current version；
+* result 不含 Draft 正文、Brief 内容、路径、secret 或 raw response；
+* 不自动启动 Issue 026 或质量流程。
+
+## 十八、依赖与精确失效
+
+至少保存：
+
+* BriefVersion、readiness、locks；
+* TopicCandidate version、state、eligibility；
+* Experiment Design、Assignment，可空；
+* Dossier、Evidence、Authenticity dependencies 的 Brief snapshot；
+* Work identities；
+* profile、style、schema、prompt、policy versions；
+* ModelExecution、run；
+* Draft lock snapshot。
+
+以下变化只失效相关 Draft：
+
+* Brief current、readiness、field lock 或内容变化；
+* Topic version、eligibility、hold、archive；
+* Experiment design、assignment、stale；
+* Dossier、Evidence、ReadingState 或 permission 导致 Brief stale；
+* Work merge、split、undo；
+* profile、style、schema、prompt、forbidden policy 版本变化。
+
+要求：
+
+* 失效幂等；
+* 不自动 regenerate 或 rewrite；
+* 不自动解锁；
+* 不自动运行质量检查；
+* 无关 Brief、Topic、Work 不触发全库 stale；
+* 显式生成创建新版本；
+* 相同 input 与 locks 为 deterministic no-op；
+* 依赖查询有索引，不做 O(n²) 扫描。
+
+## 十九、Migration 与仓储
+
+追加运行时发现的下一条连续 migration；不预置版本号或 checksum，不修改历史 migration。
+
+优先规范并扩展现有 `drafts`，避免第二套 Draft 真相。至少覆盖：
+
+* draft identity、current version；
+* immutable draft versions；
+* titles、body blocks、tags、pinned comments、warnings；
+* lineage refs；
+* field provenance、locks；
+* structural validation；
+* generation、rewrite plan/run；
+* prompt、model execution references；
+* dependencies、invalidation；
+* transition、audit。
+
+要求：
+
+* 真实 FK、STRICT、CHECK、unique、delete policy 和索引完整；
+* current 切换事务化；
+* historical versions、blocks、locks、transitions append-only；
+* 旧 `drafts` 数据保守迁移为 MANUAL_DRAFT 或 STRUCTURE_INVALID，不伪装 quality-ready；
+* Issues 018—024 数据完整保留；
+* brief、current draft、status、block lineage、stale、generation 查询使用索引；
+* 列表、详情、历史、diff 有界分页；
+* 新库、升级、迁移前备份、失败回滚、quick_check、foreign_key_check 全部测试；
+* DB、WAL、SHM 不保存 raw response、secret、Authorization、内部推理或绝对路径。
+
+## 二十、文案工作台 UI 与 IPC
+
+在“内容生产”页面增加文案工作台，至少提供：
+
+* Draft 列表、筛选和分页；
+* 从 READY Brief 创建手工 scaffold；
+* 完整 generation preview、confirm、progress、cancel、history；
+* 标题备选与 selected title；
+* 有序正文 block editor；
+* 标签和置顶评论 editor；
+* 剧透 warning artifacts；
+* Brief lineage 和 experiment binding；
+* expression、score、public labels；
+* 字段 provenance、lock、unlock；
+* 局部 rewrite scope 选择与 diff preview；
+* version history、undo、archive、restore；
+* structural validation 和“待质量检查”提示；
+* loading、empty、error、manual、generating、invalid、ready-for-quality、stale、ambiguous 状态。
+
+UI 必须明确：
+
+* “生成文案尚未通过事实、真实性、剧透、重复度和一致性检查”；
+* “READY_FOR_QUALITY_PIPELINE 不等于可发布”；
+* “局部重写不会修改选择范围以外或已锁定的字段”；
+* “公开资料整理或资料分析评分不是个人体验”；
+* “完整剧透允许，但警告文本必须齐全”；
+* “实验绑定不代表实验已有结果”。
+
+preload 只增加固定、有限、分页 DTO 和方法。
+
+IPC 校验 exact-object、sender/origin/window、revision、scope、大小、input、lock、preview hash 和 token。
+
+renderer 不接收 Node、SQLite、内部路径、完整 Dossier/Evidence、credential、raw response、模型内部推理或 INTERNAL_PREDICTION。
+
+## 二十一、专项测试与金标
+
+新增独立 `test:copy`，纳入 full test 与 Windows CI。
+
+金标至少包含：
+
+* 五类 Copy Profile 各一个 Draft；
+* R1 PERSONAL；
+* R2 current assertion；
+* S1 PUBLIC_RESEARCH + RESEARCH_ANALYSIS_SCORE；
+* FULL spoiler 的四类 warning artifacts；
+* 手工 scaffold；
+* Scripted Mock 完整生成；
+* 标题、正文 block、tag、comment、warning 各一种局部 rewrite；
+* USER_LOCKED 与 SYSTEM_LOCKED；
+* stale、structure invalid、ambiguous；
+* 至少三个 immutable DraftVersion。
+
+必须验证：
+
+1. 标题、正文、标签、置顶评论结构完整；
+2. Draft 与 Brief、Quality、Approval、Publish 严格分离；
+3. 五类 profile 的结构和主体规则；
+4. NON_SPOILER 不生成答案性显式槽位；
+5. FULL 允许且 warning artifacts 齐全；
+6. Cross-work 对称 slots；
+7. 账号 style 的 required 和 forbidden traits；
+8. 不讨论 AI 实验、不攻击作者或读者；
+9. R1、R2、S1 权限和 labels 继承；
+10. 未授权第一人称、错误 score、INTERNAL_PREDICTION 被拒绝；
+11. lineage 只引用 Brief allowlist；
+12. 编造 ID、Prompt injection、越界字段被拒绝；
+13. 实验 arm、controlled conditions 保持；
+14. 手工路径无模型配置时可用；
+15. structured capability unknown、unsupported、stale、budget blocked；
+16. Scripted Mock 完整生成，外部请求计数符合 preview；
+17. 无自动 retry、repair、fallback；
+18. scope 外字段在局部重写后逐值不变；
+19. locked fields 不被 full generation 或 rewrite 覆盖；
+20. 非法 rewrite scope、跨 block、改政策被拒绝；
+21. edit、lock、unlock、reorder、undo、version diff 和并发 stale；
+22. 结构验证与 Issues 026—030 质量检查边界；
+23. READY_FOR_QUALITY_PIPELINE 不等于 quality passed；
+24. executionId 重放、cache、no-op、失败、取消、重启、after-send ambiguous；
+25. 依赖变化精确失效，无关实体不失效；
+26. migration 新库、升级、备份、回滚、FK、quick check；
+27. 分页、容量和关键 query plan；
+28. UI、IPC、egress 状态矩阵；
+29. assets、quality_checks、approvals、post_packages、publications 不被写入；
+30. 真实密钥、业务网络、模型调用和费用均为 0；
+31. Issue 026—030 功能不存在。
+
+## 二十二、文档与完成定义
+
+至少交付：
+
+* `docs/contracts/copy-generation-v1.md`
+* `docs/contracts/copy-rewrite-v1.md`
+* `docs/contracts/draft-structure-v1.md`
+* `docs/adr/` 下下一号 ADR；
+* `docs/m3-issue025-implementation-plan.md`
+* `docs/m3-issue025-acceptance-map.md`
+* 必要的脱敏 egress 或本地证据放入 `docs/evidence/`；
+* 归档后的本指令和更新后的历史指令索引；
+* README、AGENTS、Roadmap 和文档中心同步，下一步明确为 Issue 026。
+
+完成前：
+
+1. 从最新 `npm ci` 开始按当前 CI 顺序运行全部适用门禁；
+2. 所有专项、全量测试、构建、桌面及 Clipper 打包、Electron smoke 和依赖审计通过；
+3. 非 CI 人工浏览器工具如因 kernel assets 或前台限制失败，单独如实报告，不削弱自动化断言；
+4. 创建恰好一个 Issue 025 本地提交；
+5. 核验 parent 为动态开工基线、工作树干净；
+6. 核验 `origin/main` 和远端未因本轮改变；
+7. 停止，不进入 Issue 026。
+
+最终报告必须明确：
+
+* 五类 Draft 和各状态数量；
+* DraftVersion、Block、LineageRef、FieldLock、Dependency 数量；
+* R1、R2、S1、两类评分和 FULL spoiler 金标；
+* 手工 scaffold、完整生成和各局部 rewrite 结果；
+* locked、scope preservation、Experiment compatibility 和结构验证结果；
+* cache、no-op、失败、取消、recovery、ambiguous 结果；
+* migration 和 Issues 018—024 数据保留；
+* Issues 026—030 质量流程仍未实现；
+* 真实网络、模型、密钥读取和费用均为 0；
+* 指令只归档于 `docs/instructions/m3/`；
+* 只创建一个本地提交，未 push、未进入 Issue 026。
+
+只有全部成立才可报告 PASS。
+
+## 二十三、给 Codex 的启动指令
+
+继续当前本地 `main`，先只读确认本地、`origin/main` 和远端基线一致；不要 pull、rebase、reset 或 push。
+
+完整读取仓库 `AGENTS.md` 和本 TXT，随后立即把本 TXT 唯一归档到：
+
+`docs/instructions/m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt`
+
+只实施 M3 Issue 025：完成五类标题、正文、标签、置顶评论生成，实际剧透警告文本、账号文风、Brief lineage、Prompt/Model 版本、手工 Draft、完整生成、局部重写、字段锁、Draft 版本、结构验证、文案工作台、migration 和全部增量验收。
+
+所有产物只能进入待质量检查状态，不得实现 Issue 026—030、图片、审批、导出或发布。
+
+测试只使用合成 fixture、临时 SQLite、Scripted Mock 和本机 loopback；真实密钥、业务网络、模型调用和费用保持为 0。
+
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 026。

@@ -228,6 +228,26 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       versionOffset: 0,
     },
   ],
+  getCopyDrafts: [
+    {
+      briefId: null,
+      limit: 25,
+      offset: 0,
+      profileId: null,
+      query: '',
+      state: null,
+      status: null,
+    },
+  ],
+  getCopyDraft: [
+    {
+      draftId: 'draft-fixture-000001',
+      runLimit: 25,
+      runOffset: 0,
+      versionLimit: 25,
+      versionOffset: 0,
+    },
+  ],
   getWindowState: [],
   listLocalApiClients: [],
   listDossiers: [{ limit: 25, offset: 0 }],
@@ -315,6 +335,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     { design: experimentDraft(3), kind: 'CREATE_DRAFT', profileId: 'primary' },
   ],
   previewBriefAction: [{ briefId: 'brief-fixture-000001', expectedRevision: 1, kind: 'ARCHIVE' }],
+  previewCopyAction: [{ briefId: 'brief-fixture-000001', kind: 'CREATE_MANUAL_SCAFFOLD' }],
   previewDossierBuild: [{ subjectId: 'work-fixture', subjectType: 'WORK' }],
   previewModelCacheClear: [],
   diffDossierVersions: [
@@ -322,6 +343,13 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       dossierId: 'dossier-fixture',
       fromVersionId: null,
       toVersionId: 'dossier-version-fixture',
+    },
+  ],
+  diffCopyDraftVersions: [
+    {
+      draftId: 'draft-fixture-000001',
+      fromVersionId: 'draft-version-fixture-000001',
+      toVersionId: 'draft-version-fixture-000002',
     },
   ],
   setCredential: [
@@ -362,6 +390,15 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       confirmation: 'APPLY_CONTENT_BRIEF_ACTION',
       executionId: null,
       kind: 'ARCHIVE',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmCopyAction: [
+    {
+      confirmation: 'APPLY_COPY_ACTION',
+      executionId: null,
+      kind: 'CREATE_MANUAL_SCAFFOLD',
       previewHash: 'a'.repeat(64),
       token: 'a'.repeat(43),
     },

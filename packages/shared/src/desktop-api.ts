@@ -21,6 +21,7 @@ import type {
 import type { TopicErrorCode } from '@mystery-operations/topics';
 import type { ExperimentErrorCode } from '@mystery-operations/experiments';
 import type { BriefErrorCode } from '@mystery-operations/briefs';
+import type { CopyErrorCode } from '@mystery-operations/copy';
 import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
@@ -114,6 +115,18 @@ import type {
   GetBriefsInput,
   PreviewBriefActionInput,
 } from './brief-contracts.js';
+import type {
+  ConfirmCopyActionInput,
+  CopyActionPreview,
+  CopyActionResult,
+  CopyDraftDetailView,
+  CopyDraftListView,
+  CopyDraftVersionDiffView,
+  DiffCopyDraftVersionsInput,
+  GetCopyDraftInput,
+  GetCopyDraftsInput,
+  PreviewCopyActionInput,
+} from './copy-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -146,6 +159,11 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getBrief: 'briefs:get',
   previewBriefAction: 'briefs:preview-action',
   confirmBriefAction: 'briefs:confirm-action',
+  getCopyDrafts: 'copy:list',
+  getCopyDraft: 'copy:get',
+  previewCopyAction: 'copy:preview-action',
+  confirmCopyAction: 'copy:confirm-action',
+  diffCopyDraftVersions: 'copy:diff-versions',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -236,6 +254,7 @@ export interface DesktopError {
     | TopicErrorCode
     | ExperimentErrorCode
     | BriefErrorCode
+    | CopyErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -730,6 +749,13 @@ export interface DesktopBridge {
   getBrief?(input: GetBriefInput): Promise<DesktopResult<BriefDetailView>>;
   previewBriefAction?(input: PreviewBriefActionInput): Promise<DesktopResult<BriefActionPreview>>;
   confirmBriefAction?(input: ConfirmBriefActionInput): Promise<DesktopResult<BriefActionResult>>;
+  getCopyDrafts?(input: GetCopyDraftsInput): Promise<DesktopResult<CopyDraftListView>>;
+  getCopyDraft?(input: GetCopyDraftInput): Promise<DesktopResult<CopyDraftDetailView>>;
+  previewCopyAction?(input: PreviewCopyActionInput): Promise<DesktopResult<CopyActionPreview>>;
+  confirmCopyAction?(input: ConfirmCopyActionInput): Promise<DesktopResult<CopyActionResult>>;
+  diffCopyDraftVersions?(
+    input: DiffCopyDraftVersionsInput,
+  ): Promise<DesktopResult<CopyDraftVersionDiffView>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

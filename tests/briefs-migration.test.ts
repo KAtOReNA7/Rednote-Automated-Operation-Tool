@@ -12,7 +12,7 @@ afterEach(cleanTemporaryDatabases);
 
 describe('M3 Issue 024 migration', () => {
   it('appends exactly v17 and creates normalized strict Brief tables', async () => {
-    expect(MIGRATIONS.at(-1)).toMatchObject({
+    expect(MIGRATIONS[16]).toMatchObject({
       name: 'structured_content_brief_generator',
       version: 17,
     });
@@ -54,7 +54,7 @@ describe('M3 Issue 024 migration', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [17], schemaVersion: 17 });
+    expect(result).toMatchObject({ appliedVersions: [17, 18], schemaVersion: 18 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

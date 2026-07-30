@@ -25,6 +25,9 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@mystery-operations/authenticity': fileURLToPath(
+        new URL('./packages/authenticity/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/briefs': fileURLToPath(
         new URL('./packages/briefs/src/index.ts', import.meta.url),
       ),
@@ -34,11 +37,20 @@ export default defineConfig({
       '@mystery-operations/evidence': fileURLToPath(
         new URL('./packages/evidence/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/experiments': fileURLToPath(
+        new URL('./packages/experiments/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/core': fileURLToPath(
         new URL('./packages/core/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/copy': fileURLToPath(
+        new URL('./packages/copy/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/db': fileURLToPath(
         new URL('./packages/db/src/index.ts', import.meta.url),
+      ),
+      '@mystery-operations/dossier': fileURLToPath(
+        new URL('./packages/dossier/src/index.ts', import.meta.url),
       ),
       '@mystery-operations/fetch': fileURLToPath(
         new URL('./packages/fetch/src/index.ts', import.meta.url),
@@ -63,6 +75,9 @@ export default defineConfig({
       ),
       '@mystery-operations/storage': fileURLToPath(
         new URL('./packages/storage/src/index.ts', import.meta.url),
+      ),
+      '@mystery-operations/topics': fileURLToPath(
+        new URL('./packages/topics/src/index.ts', import.meta.url),
       ),
       '@mystery-operations/workflows': fileURLToPath(
         new URL('./packages/workflows/src/index.ts', import.meta.url),

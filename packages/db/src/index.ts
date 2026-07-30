@@ -1,6 +1,7 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { SqliteAuthenticityRepository } from './authenticity-repository.js';
 export { SqliteBriefRepository } from './brief-repository.js';
+export { SqliteCopyRepository } from './copy-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
@@ -14,6 +15,14 @@ export type {
   BriefListView,
   BriefVersionDiff,
 } from './brief-repository.js';
+export { COPY_PROTECTED_TABLES, COPY_REPOSITORY_INVARIANTS } from './copy-repository.js';
+export type {
+  CopyDetailView,
+  CopyListItem,
+  CopyListView,
+  CopyMutationExecution,
+  CopyVersionDiff,
+} from './copy-repository.js';
 export type {
   BrowserClipScreenshotRecordV1,
   BrowserClipViewV1,

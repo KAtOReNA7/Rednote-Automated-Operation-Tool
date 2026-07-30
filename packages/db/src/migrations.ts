@@ -9993,6 +9993,560 @@ BEGIN
 END;
 `;
 
+const VERSIONED_COPY_GENERATION = `
+CREATE TABLE content_draft_versions (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (version_number > 0),
+  previous_version_id TEXT REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  brief_version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  profile_id TEXT NOT NULL CHECK (profile_id IN (
+    'LEGACY_UNCLASSIFIED',
+    'NON_SPOILER_SINGLE_BOOK_VERDICT',
+    'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON',
+    'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  payload_json TEXT NOT NULL CHECK (json_valid(payload_json)),
+  content_hash TEXT NOT NULL CHECK (length(content_hash) = 64),
+  source_kind TEXT NOT NULL CHECK (source_kind IN ('LEGACY', 'MANUAL', 'MODEL', 'REWRITE')),
+  status TEXT NOT NULL CHECK (status IN (
+    'MANUAL_DRAFT',
+    'MODEL_CANDIDATE',
+    'STRUCTURE_INVALID',
+    'READY_FOR_QUALITY_PIPELINE',
+    'STALE',
+    'SUPERSEDED',
+    'ARCHIVED'
+  )),
+  structural_valid INTEGER NOT NULL CHECK (structural_valid IN (0, 1)),
+  structural_reason_codes_json TEXT NOT NULL DEFAULT '[]'
+    CHECK (json_valid(structural_reason_codes_json)),
+  structural_policy_version TEXT NOT NULL CHECK (length(trim(structural_policy_version)) > 0),
+  contract_version TEXT NOT NULL CHECK (length(trim(contract_version)) > 0),
+  schema_version TEXT NOT NULL CHECK (length(trim(schema_version)) > 0),
+  format_policy_version TEXT NOT NULL CHECK (length(trim(format_policy_version)) > 0),
+  profile_version TEXT NOT NULL CHECK (length(trim(profile_version)) > 0),
+  style_version TEXT NOT NULL CHECK (length(trim(style_version)) > 0),
+  generation_policy_version TEXT NOT NULL CHECK (length(trim(generation_policy_version)) > 0),
+  rewrite_policy_version TEXT NOT NULL CHECK (length(trim(rewrite_policy_version)) > 0),
+  prompt_template_version TEXT CHECK (
+    prompt_template_version IS NULL OR length(trim(prompt_template_version)) > 0
+  ),
+  model_execution_id TEXT CHECK (
+    model_execution_id IS NULL OR length(model_execution_id) BETWEEN 1 AND 128
+  ),
+  input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+  dependency_hash TEXT NOT NULL CHECK (length(dependency_hash) = 64),
+  lock_snapshot_hash TEXT NOT NULL CHECK (length(lock_snapshot_hash) = 64),
+  output_hash TEXT CHECK (output_hash IS NULL OR length(output_hash) = 64),
+  change_kinds_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(change_kinds_json)),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (draft_id, version_number)
+) STRICT;
+
+CREATE TABLE content_draft_heads (
+  draft_id TEXT PRIMARY KEY NOT NULL REFERENCES drafts(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  current_version_id TEXT NOT NULL UNIQUE REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  draft_revision INTEGER NOT NULL CHECK (draft_revision >= 0),
+  draft_state TEXT NOT NULL CHECK (draft_state IN ('ACTIVE', 'ARCHIVED')),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE content_draft_titles (
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  title_id TEXT NOT NULL CHECK (length(trim(title_id)) > 0),
+  title_kind TEXT NOT NULL CHECK (title_kind IN ('SELECTED', 'VARIANT')),
+  title_order INTEGER NOT NULL CHECK (title_order >= 0),
+  title_text TEXT NOT NULL CHECK (length(trim(title_text)) > 0 AND length(title_text) <= 80),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  )),
+  PRIMARY KEY (version_id, title_id),
+  UNIQUE (version_id, title_order)
+) STRICT;
+
+CREATE UNIQUE INDEX idx_content_draft_one_selected_title
+  ON content_draft_titles(version_id)
+  WHERE title_kind = 'SELECTED';
+
+CREATE TABLE content_draft_blocks (
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  block_id TEXT NOT NULL CHECK (length(trim(block_id)) > 0),
+  block_kind TEXT NOT NULL CHECK (block_kind IN (
+    'OPENING_JUDGMENT',
+    'SUPPORTING_POINT',
+    'FACT_SYNTHESIS',
+    'COUNTERARGUMENT',
+    'QUALIFICATION',
+    'COMPARISON',
+    'CONCLUSION',
+    'WARNING',
+    'PUBLIC_LABEL'
+  )),
+  block_order INTEGER NOT NULL CHECK (block_order >= 0),
+  block_text TEXT NOT NULL CHECK (length(trim(block_text)) > 0 AND length(block_text) <= 1500),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  )),
+  PRIMARY KEY (version_id, block_id),
+  UNIQUE (version_id, block_order)
+) STRICT;
+
+CREATE TABLE content_draft_tags (
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  tag_id TEXT NOT NULL CHECK (length(trim(tag_id)) > 0),
+  tag_order INTEGER NOT NULL CHECK (tag_order >= 0),
+  tag_text TEXT NOT NULL CHECK (
+    length(trim(tag_text)) > 0 AND
+    length(tag_text) <= 32 AND
+    substr(tag_text, 1, 1) <> '#'
+  ),
+  normalized_tag TEXT NOT NULL CHECK (length(trim(normalized_tag)) > 0),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  )),
+  PRIMARY KEY (version_id, tag_id),
+  UNIQUE (version_id, tag_order),
+  UNIQUE (version_id, normalized_tag)
+) STRICT;
+
+CREATE TABLE content_draft_pinned_comments (
+  version_id TEXT PRIMARY KEY NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  comment_text TEXT NOT NULL CHECK (
+    length(trim(comment_text)) > 0 AND length(comment_text) <= 1000
+  ),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  ))
+) STRICT;
+
+CREATE TABLE content_draft_spoiler_warnings (
+  version_id TEXT PRIMARY KEY NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  cover_warning_text TEXT CHECK (
+    cover_warning_text IS NULL OR
+    (length(trim(cover_warning_text)) > 0 AND length(cover_warning_text) <= 240)
+  ),
+  title_warning_marker TEXT CHECK (
+    title_warning_marker IS NULL OR
+    (length(trim(title_warning_marker)) > 0 AND length(title_warning_marker) <= 32)
+  ),
+  body_opening_warning_text TEXT CHECK (
+    body_opening_warning_text IS NULL OR
+    (length(trim(body_opening_warning_text)) > 0 AND length(body_opening_warning_text) <= 240)
+  ),
+  pinned_comment_warning_text TEXT CHECK (
+    pinned_comment_warning_text IS NULL OR
+    (length(trim(pinned_comment_warning_text)) > 0 AND
+     length(pinned_comment_warning_text) <= 240)
+  ),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  ))
+) STRICT;
+
+CREATE TABLE content_draft_lineage_refs (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  artifact_kind TEXT NOT NULL CHECK (artifact_kind IN ('TITLE', 'BLOCK', 'TAG', 'COMMENT')),
+  artifact_id TEXT NOT NULL CHECK (length(trim(artifact_id)) > 0),
+  lineage_order INTEGER NOT NULL CHECK (lineage_order >= 0),
+  brief_field_path TEXT NOT NULL CHECK (length(trim(brief_field_path)) > 0),
+  argument_id TEXT,
+  structure_slot_id TEXT,
+  work_id TEXT REFERENCES books(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  evidence_ref_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(evidence_ref_ids_json)),
+  experience_assertion_id TEXT REFERENCES experience_assertions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  )),
+  input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+  UNIQUE (version_id, artifact_kind, artifact_id, lineage_order)
+) STRICT;
+
+CREATE TABLE content_draft_field_states (
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  field_path TEXT NOT NULL CHECK (length(trim(field_path)) > 0),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'SYSTEM_DERIVED', 'MODEL_GENERATED', 'USER_EDITED', 'USER_CONFIRMED'
+  )),
+  lock_state TEXT NOT NULL CHECK (lock_state IN ('EDITABLE', 'USER_LOCKED', 'SYSTEM_LOCKED')),
+  PRIMARY KEY (version_id, field_path)
+) STRICT;
+
+CREATE TABLE content_draft_dependencies (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  dependency_type TEXT NOT NULL CHECK (length(trim(dependency_type)) > 0),
+  dependency_id TEXT NOT NULL CHECK (length(trim(dependency_id)) > 0),
+  dependency_revision TEXT NOT NULL CHECK (length(trim(dependency_revision)) > 0),
+  dependency_hash TEXT NOT NULL CHECK (length(dependency_hash) = 64),
+  current_at_creation INTEGER NOT NULL CHECK (current_at_creation = 1),
+  UNIQUE (version_id, dependency_type, dependency_id)
+) STRICT;
+
+CREATE TABLE content_draft_mutation_plans (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  operation TEXT NOT NULL CHECK (operation IN ('FULL_GENERATION', 'REWRITE')),
+  rewrite_scope_json TEXT CHECK (
+    rewrite_scope_json IS NULL OR json_valid(rewrite_scope_json)
+  ),
+  rewrite_instruction_json TEXT CHECK (
+    rewrite_instruction_json IS NULL OR json_valid(rewrite_instruction_json)
+  ),
+  expected_draft_revision INTEGER NOT NULL CHECK (expected_draft_revision >= 0),
+  input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+  dependency_hash TEXT NOT NULL CHECK (length(dependency_hash) = 64),
+  lock_snapshot_hash TEXT NOT NULL CHECK (length(lock_snapshot_hash) = 64),
+  preview_hash TEXT NOT NULL CHECK (length(preview_hash) = 64),
+  capability_state TEXT NOT NULL CHECK (
+    capability_state IN ('SUPPORTED', 'UNSUPPORTED', 'UNKNOWN', 'STALE')
+  ),
+  budget_state TEXT NOT NULL CHECK (budget_state IN ('AVAILABLE', 'BLOCKED', 'UNKNOWN')),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED}),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE content_draft_mutation_runs (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(trim(execution_id)) > 0),
+  plan_id TEXT NOT NULL REFERENCES content_draft_mutation_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  job_id TEXT REFERENCES jobs(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  operation TEXT NOT NULL CHECK (operation IN ('FULL_GENERATION', 'REWRITE')),
+  status TEXT NOT NULL CHECK (status IN (
+    'PREVIEWED',
+    'CONFIRMED',
+    'QUEUED',
+    'RUNNING',
+    'PAUSED',
+    'SUCCEEDED',
+    'NO_OP',
+    'CANCELLED',
+    'FAILED',
+    'AMBIGUOUS'
+  )),
+  prompt_template_version TEXT NOT NULL CHECK (length(trim(prompt_template_version)) > 0),
+  schema_version TEXT NOT NULL CHECK (length(trim(schema_version)) > 0),
+  style_version TEXT NOT NULL CHECK (length(trim(style_version)) > 0),
+  profile_version TEXT NOT NULL CHECK (length(trim(profile_version)) > 0),
+  policy_version TEXT NOT NULL CHECK (length(trim(policy_version)) > 0),
+  model_execution_id TEXT CHECK (
+    model_execution_id IS NULL OR length(model_execution_id) BETWEEN 1 AND 128
+  ),
+  model_identity_json TEXT CHECK (
+    model_identity_json IS NULL OR json_valid(model_identity_json)
+  ),
+  cache_state TEXT NOT NULL CHECK (cache_state IN ('NOT_CHECKED', 'MISS', 'HIT')),
+  usage_state TEXT NOT NULL CHECK (usage_state IN ('NONE', 'RECORDED', 'UNKNOWN')),
+  cost_state TEXT NOT NULL CHECK (
+    cost_state IN ('NOT_INCURRED', 'UNPRICED_USAGE', 'UNKNOWN_POSSIBLY_INCURRED')
+  ),
+  external_request_count INTEGER NOT NULL CHECK (external_request_count IN (0, 1)),
+  output_hash TEXT CHECK (output_hash IS NULL OR length(output_hash) = 64),
+  result_version_id TEXT REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  stable_error_code TEXT,
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  finished_at TEXT CHECK (finished_at ${UTC_OPTIONAL} finished_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE content_draft_invalidations (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(trim(event_identity)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  dependency_type TEXT NOT NULL CHECK (length(trim(dependency_type)) > 0),
+  dependency_id TEXT NOT NULL CHECK (length(trim(dependency_id)) > 0),
+  observed_revision TEXT NOT NULL CHECK (length(trim(observed_revision)) > 0),
+  reason_code TEXT NOT NULL CHECK (length(trim(reason_code)) > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE content_draft_transitions (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  version_id TEXT REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (revision >= 0),
+  action TEXT NOT NULL CHECK (length(trim(action)) > 0),
+  from_state TEXT,
+  to_state TEXT NOT NULL CHECK (length(trim(to_state)) > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (draft_id, revision)
+) STRICT;
+
+CREATE TABLE content_draft_audit_events (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(trim(event_identity)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  version_id TEXT REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  mutation_run_id TEXT REFERENCES content_draft_mutation_runs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  action TEXT NOT NULL CHECK (length(trim(action)) > 0),
+  detail_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(detail_json)),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO content_brief_versions (
+  id, brief_id, version_number, previous_version_id, schema_version,
+  profile_version, readiness_policy_version, prompt_version, payload_json,
+  status, readiness_status, readiness_reason_codes_json,
+  dependency_hash, input_hash, lock_snapshot_hash, warnings_json,
+  created_at, confirmed_at, locked_at
+)
+SELECT
+  'legacy-copy-brief-version:' || brief.id,
+  brief.id,
+  1,
+  NULL,
+  'legacy-content-brief-v0',
+  'legacy-content-brief-v0',
+  'brief-readiness-policy-v1',
+  'legacy-no-model',
+  json_object('legacyBriefId', brief.id, 'migrationState', 'DRAFT_INCOMPLETE'),
+  'DRAFT',
+  'DRAFT_INCOMPLETE',
+  json_array('LEGACY_BRIEF_REQUIRES_REVIEW'),
+  lower(hex(zeroblob(32))),
+  lower(hex(zeroblob(32))),
+  lower(hex(zeroblob(32))),
+  json_array('LEGACY_FIELDS_NOT_ASSUMED_CURRENT'),
+  brief.created_at,
+  NULL,
+  NULL
+FROM content_briefs AS brief
+WHERE brief.current_version_id IS NULL
+  AND EXISTS (SELECT 1 FROM drafts AS legacy WHERE legacy.brief_id = brief.id);
+
+UPDATE content_briefs
+SET
+  current_version_id = 'legacy-copy-brief-version:' || id,
+  updated_at = ${UTC_NOW}
+WHERE current_version_id IS NULL
+  AND EXISTS (SELECT 1 FROM drafts AS legacy WHERE legacy.brief_id = content_briefs.id);
+
+INSERT INTO content_draft_versions (
+  id, draft_id, version_number, previous_version_id, brief_version_id,
+  profile_id, payload_json, content_hash, source_kind, status,
+  structural_valid, structural_reason_codes_json, structural_policy_version,
+  contract_version, schema_version, format_policy_version, profile_version,
+  style_version, generation_policy_version, rewrite_policy_version,
+  prompt_template_version, model_execution_id, input_hash, dependency_hash,
+  lock_snapshot_hash, output_hash, change_kinds_json, created_at
+)
+SELECT
+  'legacy-draft-version-' || legacy.id,
+  legacy.id,
+  1,
+  NULL,
+  brief.current_version_id,
+  brief.profile_id,
+  json_object(
+    'legacyDraftId', legacy.id,
+    'title', legacy.title,
+    'body', legacy.body,
+    'tags', json(legacy.tags_json),
+    'pinnedComment', legacy.pinned_comment,
+    'migrationState', 'STRUCTURE_INVALID'
+  ),
+  lower(hex(zeroblob(32))),
+  'LEGACY',
+  'STRUCTURE_INVALID',
+  0,
+  json_array('LEGACY_DRAFT_REQUIRES_MANUAL_REVIEW'),
+  'draft-structural-validation-v1',
+  'versioned-copy-v1',
+  'copy-output-schema-v1',
+  'content-format-policy-v1',
+  'copy-profile-registry-v1',
+  'account-voice-policy-v1',
+  'copy-generation-policy-v1',
+  'copy-rewrite-policy-v1',
+  NULL,
+  NULL,
+  lower(hex(zeroblob(32))),
+  lower(hex(zeroblob(32))),
+  lower(hex(zeroblob(32))),
+  NULL,
+  json_array('LEGACY_MIGRATION'),
+  legacy.created_at
+FROM drafts AS legacy
+JOIN content_briefs AS brief ON brief.id = legacy.brief_id;
+
+INSERT INTO content_draft_heads (
+  draft_id, current_version_id, draft_revision, draft_state, updated_at
+)
+SELECT
+  legacy.id,
+  'legacy-draft-version-' || legacy.id,
+  0,
+  CASE WHEN legacy.status = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'ACTIVE' END,
+  legacy.created_at
+FROM drafts AS legacy;
+
+CREATE INDEX idx_content_draft_versions_brief
+  ON content_draft_versions(brief_version_id, status, created_at DESC);
+CREATE INDEX idx_content_draft_versions_draft
+  ON content_draft_versions(draft_id, version_number DESC);
+CREATE INDEX idx_content_draft_versions_status
+  ON content_draft_versions(status, profile_id, created_at DESC);
+CREATE INDEX idx_content_draft_heads_current
+  ON content_draft_heads(current_version_id, draft_state);
+CREATE INDEX idx_content_draft_blocks_version_order
+  ON content_draft_blocks(version_id, block_order);
+CREATE INDEX idx_content_draft_lineage_version
+  ON content_draft_lineage_refs(version_id, artifact_kind, artifact_id);
+CREATE INDEX idx_content_draft_lineage_work
+  ON content_draft_lineage_refs(work_id, version_id);
+CREATE INDEX idx_content_draft_lineage_assertion
+  ON content_draft_lineage_refs(experience_assertion_id, version_id);
+CREATE INDEX idx_content_draft_dependency_lookup
+  ON content_draft_dependencies(dependency_type, dependency_id, draft_id, version_id);
+CREATE INDEX idx_content_draft_dependency_version
+  ON content_draft_dependencies(version_id, dependency_type);
+CREATE INDEX idx_content_draft_mutation_plan_draft
+  ON content_draft_mutation_plans(draft_id, created_at DESC);
+CREATE INDEX idx_content_draft_mutation_run_plan
+  ON content_draft_mutation_runs(plan_id, draft_id);
+CREATE INDEX idx_content_draft_mutation_run_job
+  ON content_draft_mutation_runs(job_id, draft_id);
+CREATE INDEX idx_content_draft_mutation_run_execution
+  ON content_draft_mutation_runs(execution_id, status);
+CREATE UNIQUE INDEX idx_content_draft_one_active_mutation
+  ON content_draft_mutation_runs(draft_id)
+  WHERE status IN ('CONFIRMED', 'QUEUED', 'RUNNING', 'PAUSED');
+CREATE INDEX idx_content_draft_invalidation_dependency
+  ON content_draft_invalidations(dependency_type, dependency_id, created_at DESC);
+CREATE INDEX idx_content_draft_invalidation_draft
+  ON content_draft_invalidations(draft_id, version_id, created_at DESC);
+CREATE INDEX idx_content_draft_transition_history
+  ON content_draft_transitions(draft_id, revision DESC);
+CREATE INDEX idx_content_draft_audit_history
+  ON content_draft_audit_events(draft_id, created_at DESC);
+
+CREATE TRIGGER content_draft_head_same_draft_insert
+BEFORE INSERT ON content_draft_heads
+WHEN NOT EXISTS (
+  SELECT 1 FROM content_draft_versions AS version
+  WHERE version.id = NEW.current_version_id AND version.draft_id = NEW.draft_id
+)
+BEGIN SELECT RAISE(ABORT, 'draft head must point to a version of the same draft'); END;
+
+CREATE TRIGGER content_draft_head_same_draft_update
+BEFORE UPDATE OF current_version_id ON content_draft_heads
+WHEN NOT EXISTS (
+  SELECT 1 FROM content_draft_versions AS version
+  WHERE version.id = NEW.current_version_id AND version.draft_id = NEW.draft_id
+)
+BEGIN SELECT RAISE(ABORT, 'draft head must point to a version of the same draft'); END;
+
+CREATE TRIGGER content_draft_versions_immutable_update
+BEFORE UPDATE ON content_draft_versions
+BEGIN SELECT RAISE(ABORT, 'content draft versions are immutable'); END;
+CREATE TRIGGER content_draft_versions_immutable_delete
+BEFORE DELETE ON content_draft_versions
+BEGIN SELECT RAISE(ABORT, 'content draft versions are immutable'); END;
+CREATE TRIGGER content_draft_titles_immutable_update
+BEFORE UPDATE ON content_draft_titles
+BEGIN SELECT RAISE(ABORT, 'content draft title history is immutable'); END;
+CREATE TRIGGER content_draft_titles_immutable_delete
+BEFORE DELETE ON content_draft_titles
+BEGIN SELECT RAISE(ABORT, 'content draft title history is immutable'); END;
+CREATE TRIGGER content_draft_blocks_immutable_update
+BEFORE UPDATE ON content_draft_blocks
+BEGIN SELECT RAISE(ABORT, 'content draft block history is immutable'); END;
+CREATE TRIGGER content_draft_blocks_immutable_delete
+BEFORE DELETE ON content_draft_blocks
+BEGIN SELECT RAISE(ABORT, 'content draft block history is immutable'); END;
+CREATE TRIGGER content_draft_tags_immutable_update
+BEFORE UPDATE ON content_draft_tags
+BEGIN SELECT RAISE(ABORT, 'content draft tag history is immutable'); END;
+CREATE TRIGGER content_draft_tags_immutable_delete
+BEFORE DELETE ON content_draft_tags
+BEGIN SELECT RAISE(ABORT, 'content draft tag history is immutable'); END;
+CREATE TRIGGER content_draft_lineage_immutable_update
+BEFORE UPDATE ON content_draft_lineage_refs
+BEGIN SELECT RAISE(ABORT, 'content draft lineage is immutable'); END;
+CREATE TRIGGER content_draft_lineage_immutable_delete
+BEFORE DELETE ON content_draft_lineage_refs
+BEGIN SELECT RAISE(ABORT, 'content draft lineage is immutable'); END;
+CREATE TRIGGER content_draft_field_states_immutable_update
+BEFORE UPDATE ON content_draft_field_states
+BEGIN SELECT RAISE(ABORT, 'content draft field history is immutable'); END;
+CREATE TRIGGER content_draft_field_states_immutable_delete
+BEFORE DELETE ON content_draft_field_states
+BEGIN SELECT RAISE(ABORT, 'content draft field history is immutable'); END;
+CREATE TRIGGER content_draft_dependencies_immutable_update
+BEFORE UPDATE ON content_draft_dependencies
+BEGIN SELECT RAISE(ABORT, 'content draft dependencies are immutable'); END;
+CREATE TRIGGER content_draft_dependencies_immutable_delete
+BEFORE DELETE ON content_draft_dependencies
+BEGIN SELECT RAISE(ABORT, 'content draft dependencies are immutable'); END;
+CREATE TRIGGER content_draft_invalidations_immutable_update
+BEFORE UPDATE ON content_draft_invalidations
+BEGIN SELECT RAISE(ABORT, 'content draft invalidations are immutable'); END;
+CREATE TRIGGER content_draft_invalidations_immutable_delete
+BEFORE DELETE ON content_draft_invalidations
+BEGIN SELECT RAISE(ABORT, 'content draft invalidations are immutable'); END;
+CREATE TRIGGER content_draft_transitions_immutable_update
+BEFORE UPDATE ON content_draft_transitions
+BEGIN SELECT RAISE(ABORT, 'content draft transitions are immutable'); END;
+CREATE TRIGGER content_draft_transitions_immutable_delete
+BEFORE DELETE ON content_draft_transitions
+BEGIN SELECT RAISE(ABORT, 'content draft transitions are immutable'); END;
+CREATE TRIGGER content_draft_audit_immutable_update
+BEFORE UPDATE ON content_draft_audit_events
+BEGIN SELECT RAISE(ABORT, 'content draft audit is immutable'); END;
+CREATE TRIGGER content_draft_audit_immutable_delete
+BEFORE DELETE ON content_draft_audit_events
+BEGIN SELECT RAISE(ABORT, 'content draft audit is immutable'); END;
+
+CREATE TRIGGER invalidate_draft_on_brief_invalidation
+AFTER INSERT ON content_brief_invalidations
+BEGIN
+  INSERT OR IGNORE INTO content_draft_invalidations (
+    id, event_identity, draft_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'BRIEF_INVALIDATED:' || NEW.id || ':' || head.current_version_id,
+    head.draft_id,
+    head.current_version_id,
+    'BRIEF_VERSION',
+    NEW.version_id,
+    NEW.observed_revision,
+    'BRIEF_INVALIDATED',
+    NEW.created_at
+  FROM content_draft_heads AS head
+  JOIN content_draft_versions AS version ON version.id = head.current_version_id
+  WHERE version.brief_version_id = NEW.version_id;
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -10085,5 +10639,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'structured_content_brief_generator',
     sql: STRUCTURED_CONTENT_BRIEF_GENERATOR,
     version: 17,
+  }),
+  Object.freeze({
+    name: 'versioned_copy_generation',
+    sql: VERSIONED_COPY_GENERATION,
+    version: 18,
   }),
 ]);

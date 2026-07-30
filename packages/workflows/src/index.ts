@@ -6,6 +6,12 @@ export {
   registerContentBriefGenerationJob,
 } from './content-brief-generation-handler.js';
 export {
+  COPY_MODEL_BOUNDARY,
+  CopyGenerationService,
+  createCopyMutationJobHandler,
+  registerCopyMutationJobs,
+} from './copy-generation-handler.js';
+export {
   createBibliographyDiscoveryJobHandler,
   registerBibliographyDiscoveryJob,
 } from './bibliography-discovery-handler.js';
@@ -63,6 +69,12 @@ export type {
   ContentBriefGenerationServiceOptions,
   ContentBriefModelSlotV1,
 } from './content-brief-generation-handler.js';
+export type {
+  CopyGenerationServiceOptions,
+  CopyModelSlotV1,
+  CopyMutationExecutionV1,
+  CopyMutationPersistenceV1,
+} from './copy-generation-handler.js';
 export type {
   JobPayloadValidatorOptions,
   PayloadValidationErrorCode,

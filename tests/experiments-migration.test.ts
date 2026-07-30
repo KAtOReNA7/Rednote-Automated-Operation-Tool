@@ -17,7 +17,7 @@ afterEach(cleanTemporaryDatabases);
 describe('M3 Issue 023 versioned experiment migration', () => {
   it('keeps v16 as the sole Issue 023 append after frozen v1-v15 history', () => {
     expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
     ]);
     expect(MIGRATIONS[15]).toMatchObject({
       name: 'versioned_experiment_management',
@@ -45,7 +45,7 @@ describe('M3 Issue 023 versioned experiment migration', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [16, 17], schemaVersion: 17 });
+    expect(result).toMatchObject({ appliedVersions: [16, 17, 18], schemaVersion: 18 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

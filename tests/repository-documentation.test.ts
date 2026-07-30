@@ -8,15 +8,16 @@ const readme = readFileSync(resolve(projectRoot, 'README.md'), 'utf8');
 const agents = readFileSync(resolve(projectRoot, 'AGENTS.md'), 'utf8');
 
 describe('repository-facing documentation', () => {
-  it('reports completed M2 and Issue 022–024 while keeping Issue 025 bounded', () => {
+  it('reports completed M2 and Issue 022–025 while keeping Issue 026 bounded', () => {
     expect(readme).toContain('M1（Issue 006—011）');
     expect(readme).toContain('M2（Issue 012—021）均已完成验收');
-    expect(readme).toContain('M3 Issue 025（文案生成器，仅规划，尚未授权或开始）');
+    expect(readme).toContain('M3 Issue 026（事实映射检查，仅规划，尚未授权或开始）');
     expect(readme).toContain('五类 Topic Pool、可解释排序、状态控制与 First-30 配额');
     expect(readme).toContain('可检验单变量实验、跨作品复现、确定性分配与版本状态');
     expect(readme).toContain(
       '五类 Content Brief、Evidence 映射、真实性/评分/剧透约束、字段锁与就绪门',
     );
+    expect(readme).toContain('五类版本化文案、实际剧透警告、局部重写、结构门与工作台');
     expect(readme).toContain('Work / Expression / Edition');
     expect(readme).toContain('Source revision、AtomicClaim、精确 EvidenceLocator');
     expect(readme).toContain('版本化 Dossier、共识/争议/缺口');
@@ -57,6 +58,7 @@ describe('repository-facing documentation', () => {
       'docs/instructions/m3/M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue023-versioned-experiment-management-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt',
+      'docs/instructions/m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt',
     ]) {
       expect(existsSync(resolve(projectRoot, path)), path).toBe(true);
     }
@@ -74,6 +76,7 @@ describe('repository-facing documentation', () => {
       'M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt',
       'M3-Issue023-versioned-experiment-management-Codex-instruction.txt',
       'M3-Issue024-structured-content-brief-generator-Codex-instruction.txt',
+      'M3-Issue025-versioned-copy-generation-Codex-instruction.txt',
     ]) {
       expect(existsSync(resolve(projectRoot, obsoleteRootPath)), obsoleteRootPath).toBe(false);
     }
@@ -113,10 +116,10 @@ describe('repository-facing documentation', () => {
       'migration 只能按连续版本追加',
       'npm run test:constraints',
       '未经用户明确授权，不得 push',
-      'M2（Issue 012—021）、M3 Issue 022、',
-      'Issue 023 与 Issue 024 已经完成',
-      '下一项规划是 M3 Issue 025',
-      'migration v1—v17 已发布',
+      'M2（Issue 012—021）以及 M3 Issue 022、',
+      'Issue 023、Issue 024、Issue 025 已经完成',
+      '下一项规划是 M3 Issue 026',
+      'migration v1—v18 已发布',
     ]) {
       expect(agents).toContain(required);
     }

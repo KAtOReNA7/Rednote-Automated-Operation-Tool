@@ -33,6 +33,7 @@ M2（Issue 012—021）已完成。
 - [Issue 022：Topic Pool、可解释排序与首批 30 篇配额](./m3/M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt)
 - [Issue 023：版本化实验设计与确定性分配](./m3/M3-Issue023-versioned-experiment-management-Codex-instruction.txt)
 - [Issue 024：结构化 Content Brief、字段锁定与受控生成](./m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt)
+- [Issue 025：版本化文案生成与局部重写](./m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt)
 
-M3 Issue 022—024 已完成；Issue 024 指令只归档于本目录。下一项仅规划 Issue 025，未收到明确
+M3 Issue 022—025 已完成；Issue 025 指令只归档于本目录。下一项仅规划 Issue 026，未收到明确
 授权时不得自动开始。

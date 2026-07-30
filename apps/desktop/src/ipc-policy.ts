@@ -26,6 +26,13 @@ import {
   BRIEF_LIMITS,
   assertContentBriefDraft,
 } from '@mystery-operations/briefs';
+import {
+  COPY_DRAFT_STATUSES,
+  COPY_LIMITS,
+  COPY_PROFILE_REGISTRY,
+  assertContentDraftPayload,
+  assertRewriteScope,
+} from '@mystery-operations/copy';
 
 import { isTrustedRendererUrl } from './security-policy.js';
 
@@ -49,6 +56,7 @@ export type DesktopIpcOperation =
   | 'confirmTopicAction'
   | 'confirmExperimentAction'
   | 'confirmBriefAction'
+  | 'confirmCopyAction'
   | 'createModelPriceSchedule'
   | 'createModelUnitPolicy'
   | 'exportDiagnosticReport'
@@ -77,6 +85,8 @@ export type DesktopIpcOperation =
   | 'getExperiments'
   | 'getBrief'
   | 'getBriefs'
+  | 'getCopyDraft'
+  | 'getCopyDrafts'
   | 'getWindowState'
   | 'listLocalApiClients'
   | 'listBrowserClips'
@@ -97,6 +107,8 @@ export type DesktopIpcOperation =
   | 'previewTopicAction'
   | 'previewExperimentAction'
   | 'previewBriefAction'
+  | 'previewCopyAction'
+  | 'diffCopyDraftVersions'
   | 'diffDossierVersions'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
@@ -108,6 +120,7 @@ export type DesktopIpcOperation =
 
 const MAX_IPC_BYTES = 32 * 1024;
 const MAX_BRIEF_IPC_BYTES = 2 * 1024 * 1024;
+const MAX_COPY_IPC_BYTES = 2 * 1024 * 1024;
 const MAX_IPC_DEPTH = 8;
 const SECRET_LIKE_KEY = /api.?key|authorization|ciphertext|credential|password|secret|token/iu;
 const CAPABILITIES = new Set([
@@ -232,6 +245,82 @@ const EXPERIMENT_ACTION_VALUES = new Set<unknown>(
 );
 const BRIEF_PROFILE_VALUES = new Set<unknown>(BRIEF_PROFILE_IDS);
 const BRIEF_READINESS_VALUES = new Set<unknown>(BRIEF_READINESS_STATUSES);
+const COPY_PROFILE_VALUES = new Set<unknown>(Object.keys(COPY_PROFILE_REGISTRY));
+const COPY_STATUS_VALUES = new Set<unknown>(COPY_DRAFT_STATUSES);
+
+function nonNegativeRevision(value: unknown): boolean {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value >= 0;
+}
+
+function validCopyPreview(value: Readonly<Record<string, unknown>>): boolean {
+  try {
+    switch (value.kind) {
+      case 'CREATE_MANUAL_SCAFFOLD':
+        return (
+          exactKeys(value, ['briefId', 'kind']) &&
+          dossierIdentifier(value.briefId, COPY_LIMITS.identifierBytes)
+        );
+      case 'SAVE_VERSION':
+        return (
+          exactKeys(value, ['draftId', 'expectedRevision', 'kind', 'payload']) &&
+          dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+          nonNegativeRevision(value.expectedRevision) &&
+          Boolean(assertContentDraftPayload(value.payload))
+        );
+      case 'LOCK_FIELD':
+      case 'UNLOCK_FIELD':
+        return (
+          exactKeys(value, ['draftId', 'expectedRevision', 'fieldPath', 'kind']) &&
+          dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+          dossierIdentifier(value.fieldPath, COPY_LIMITS.identifierBytes) &&
+          nonNegativeRevision(value.expectedRevision)
+        );
+      case 'REORDER_BLOCKS':
+        return (
+          exactKeys(value, ['blockIds', 'draftId', 'expectedRevision', 'kind']) &&
+          dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+          nonNegativeRevision(value.expectedRevision) &&
+          Array.isArray(value.blockIds) &&
+          value.blockIds.length <= COPY_LIMITS.blocks &&
+          value.blockIds.every((id) => dossierIdentifier(id, COPY_LIMITS.identifierBytes))
+        );
+      case 'UNDO':
+        return (
+          exactKeys(value, ['draftId', 'expectedRevision', 'kind', 'targetVersionId']) &&
+          dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+          dossierIdentifier(value.targetVersionId, COPY_LIMITS.identifierBytes) &&
+          nonNegativeRevision(value.expectedRevision)
+        );
+      case 'ARCHIVE':
+      case 'RESTORE':
+      case 'PREVIEW_GENERATION':
+        return (
+          exactKeys(value, ['draftId', 'expectedRevision', 'kind']) &&
+          dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+          nonNegativeRevision(value.expectedRevision)
+        );
+      case 'PREVIEW_REWRITE':
+        return (
+          exactKeys(value, ['draftId', 'expectedRevision', 'instruction', 'kind', 'scope']) &&
+          dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+          nonNegativeRevision(value.expectedRevision) &&
+          typeof value.instruction === 'string' &&
+          value.instruction.trim().length > 0 &&
+          value.instruction.length <= COPY_LIMITS.rewriteInstructionCharacters &&
+          Boolean(assertRewriteScope(value.scope))
+        );
+      case 'CANCEL_MUTATION':
+        return (
+          exactKeys(value, ['kind', 'runId']) &&
+          dossierIdentifier(value.runId, COPY_LIMITS.identifierBytes)
+        );
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
 
 function validBriefPreview(value: Readonly<Record<string, unknown>>): boolean {
   try {
@@ -707,6 +796,108 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         /^[a-f0-9]{64}$/u.test(value.previewHash) &&
         typeof value.token === 'string' &&
         /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'getCopyDrafts': {
+      const value = validateOneObject(args, [
+        'briefId',
+        'limit',
+        'offset',
+        'profileId',
+        'query',
+        'state',
+        'status',
+      ]);
+      return (
+        value !== null &&
+        (value.briefId === null || dossierIdentifier(value.briefId, COPY_LIMITS.identifierBytes)) &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= COPY_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= COPY_LIMITS.maxPageOffset &&
+        (value.profileId === null || COPY_PROFILE_VALUES.has(value.profileId)) &&
+        typeof value.query === 'string' &&
+        Buffer.byteLength(value.query, 'utf8') <= 512 &&
+        !containsControlCharacter(value.query) &&
+        (value.state === null || value.state === 'ACTIVE' || value.state === 'ARCHIVED') &&
+        (value.status === null || COPY_STATUS_VALUES.has(value.status))
+      );
+    }
+    case 'getCopyDraft': {
+      const value = validateOneObject(args, [
+        'draftId',
+        'runLimit',
+        'runOffset',
+        'versionLimit',
+        'versionOffset',
+      ]);
+      return (
+        value !== null &&
+        dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+        Number.isSafeInteger(value.runLimit) &&
+        Number(value.runLimit) >= 1 &&
+        Number(value.runLimit) <= COPY_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.runOffset) &&
+        Number(value.runOffset) >= 0 &&
+        Number(value.runOffset) <= COPY_LIMITS.maxPageOffset &&
+        Number.isSafeInteger(value.versionLimit) &&
+        Number(value.versionLimit) >= 1 &&
+        Number(value.versionLimit) <= COPY_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.versionOffset) &&
+        Number(value.versionOffset) >= 0 &&
+        Number(value.versionOffset) <= COPY_LIMITS.maxPageOffset
+      );
+    }
+    case 'previewCopyAction': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      return value !== null && validCopyPreview(value);
+    }
+    case 'confirmCopyAction': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'executionId',
+        'kind',
+        'previewHash',
+        'token',
+      ]);
+      const modelMutation =
+        value?.kind === 'PREVIEW_GENERATION' || value?.kind === 'PREVIEW_REWRITE';
+      return (
+        value?.confirmation === 'APPLY_COPY_ACTION' &&
+        [
+          'CREATE_MANUAL_SCAFFOLD',
+          'SAVE_VERSION',
+          'LOCK_FIELD',
+          'UNLOCK_FIELD',
+          'REORDER_BLOCKS',
+          'UNDO',
+          'ARCHIVE',
+          'RESTORE',
+          'PREVIEW_GENERATION',
+          'PREVIEW_REWRITE',
+          'CANCEL_MUTATION',
+        ].includes(String(value.kind)) &&
+        (modelMutation
+          ? dossierIdentifier(value.executionId, COPY_LIMITS.identifierBytes)
+          : value.executionId === null) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'diffCopyDraftVersions': {
+      const value = validateOneObject(args, ['draftId', 'fromVersionId', 'toVersionId']);
+      return (
+        value !== null &&
+        dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+        dossierIdentifier(value.fromVersionId, COPY_LIMITS.identifierBytes) &&
+        dossierIdentifier(value.toVersionId, COPY_LIMITS.identifierBytes)
       );
     }
     case 'getExperiment': {
@@ -1432,7 +1623,12 @@ export function validateDesktopIpcRequest(
     return invalid('请求来源未获授权。');
   }
   try {
-    const maximumBytes = operation === 'previewBriefAction' ? MAX_BRIEF_IPC_BYTES : MAX_IPC_BYTES;
+    const maximumBytes =
+      operation === 'previewBriefAction'
+        ? MAX_BRIEF_IPC_BYTES
+        : operation === 'previewCopyAction'
+          ? MAX_COPY_IPC_BYTES
+          : MAX_IPC_BYTES;
     if (
       Buffer.byteLength(JSON.stringify(args), 'utf8') > maximumBytes ||
       !withinDepth(args) ||

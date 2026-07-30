@@ -439,7 +439,7 @@ flowchart TD
 
 ## M3：选题、文案和质量门禁
 
-状态：**进行中**。Issue 022—024 已完成；下一项仅规划 **M3 Issue 025**，未收到明确任务时不得
+状态：**进行中**。Issue 022—025 已完成；下一项仅规划 **M3 Issue 026**，未收到明确任务时不得
 自动开始。
 
 ### Issue 022：实现选题池与首批 30 篇配额
@@ -519,6 +519,8 @@ flowchart TD
 - 保存提示词和模型版本。
 
 依赖：012、014、024。
+
+状态：已完成（Draft Structure/Copy Generation/Copy Rewrite V1、migration v18 与文案工作台）。
 
 ### Issue 026：实现事实映射检查
 

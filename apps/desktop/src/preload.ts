@@ -53,6 +53,11 @@ import {
   type PreviewTopicActionInput,
   type PreviewExperimentActionInput,
   type PreviewBriefActionInput,
+  type ConfirmCopyActionInput,
+  type DiffCopyDraftVersionsInput,
+  type GetCopyDraftInput,
+  type GetCopyDraftsInput,
+  type PreviewCopyActionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type SetCredentialInput,
@@ -98,6 +103,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmExperimentAction, input),
   confirmBriefAction: (input: ConfirmBriefActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmBriefAction, input),
+  confirmCopyAction: (input: ConfirmCopyActionInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmCopyAction, input),
   cancelSourceProcessing: (input: CancelSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelSourceProcessing, input),
   exportDiagnosticReport: (input: ExportDiagnosticReportInput) =>
@@ -128,6 +135,10 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getExperiment, input),
   getBriefs: (input: GetBriefsInput) => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getBriefs, input),
   getBrief: (input: GetBriefInput) => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getBrief, input),
+  getCopyDrafts: (input: GetCopyDraftsInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCopyDrafts, input),
+  getCopyDraft: (input: GetCopyDraftInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getCopyDraft, input),
   getDossier: (input: GetDossierInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getDossier, input),
   getFoundationHealth: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFoundationHealth),
@@ -174,6 +185,10 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewExperimentAction, input),
   previewBriefAction: (input: PreviewBriefActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewBriefAction, input),
+  previewCopyAction: (input: PreviewCopyActionInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewCopyAction, input),
+  diffCopyDraftVersions: (input: DiffCopyDraftVersionsInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.diffCopyDraftVersions, input),
   previewModelCacheClear: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewModelCacheClear),
   diffDossierVersions: (input: DiffDossierVersionsInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.diffDossierVersions, input),

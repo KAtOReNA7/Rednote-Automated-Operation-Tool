@@ -4969,3 +4969,205 @@ fieldset.wizard-step {
     grid-column: auto;
   }
 }
+
+.copy-workbench {
+  display: grid;
+  gap: 1rem;
+  margin: 1rem 0 1.5rem;
+  padding: 1.15rem;
+  border: 1px solid color-mix(in srgb, var(--accent) 32%, var(--border));
+  border-radius: 1.25rem;
+  background:
+    radial-gradient(
+      circle at top right,
+      color-mix(in srgb, var(--accent) 14%, transparent),
+      transparent 34rem
+    ),
+    var(--surface);
+}
+
+.copy-workbench__hero,
+.copy-editor__status,
+.copy-create-row,
+.copy-confirmation,
+.copy-save-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.copy-workbench__hero h2,
+.copy-editor__status h3 {
+  margin: 0.2rem 0 0.45rem;
+}
+
+.copy-workbench__hero p {
+  max-width: 66rem;
+  margin: 0;
+}
+
+.copy-workbench__metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(6.5rem, 1fr));
+  gap: 0.55rem;
+}
+
+.copy-workbench__metrics span {
+  display: grid;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--surface-raised) 88%, transparent);
+  text-align: center;
+}
+
+.copy-workbench__metrics strong {
+  font-size: 1.35rem;
+}
+
+.copy-boundaries {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+  padding: 0.8rem;
+  border-radius: 0.9rem;
+  background: color-mix(in srgb, var(--warning) 8%, var(--surface-raised));
+}
+
+.copy-boundaries span,
+.copy-boundaries strong {
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.copy-create-row label,
+.copy-field,
+.copy-field label,
+.copy-warning-grid label {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+}
+
+.copy-workbench__layout {
+  display: grid;
+  grid-template-columns: minmax(14rem, 0.32fr) minmax(0, 1fr);
+  gap: 1rem;
+}
+
+.copy-list,
+.copy-editor,
+.copy-lineage-card,
+.copy-lock-card,
+.copy-rewrite-card,
+.copy-history-grid > section,
+.copy-confirmation {
+  padding: 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: var(--surface-raised);
+}
+
+.copy-toolbar,
+.copy-rewrite-grid {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.copy-list ol,
+.copy-history-grid ol {
+  display: grid;
+  gap: 0.45rem;
+  padding: 0;
+  list-style: none;
+}
+
+.copy-list li > button,
+.copy-lock-card button {
+  display: grid;
+  width: 100%;
+  gap: 0.25rem;
+  text-align: left;
+}
+
+.copy-list li > button.is-current {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+}
+
+.copy-editor {
+  display: grid;
+  gap: 0.9rem;
+  min-width: 0;
+}
+
+.copy-editor__status > div:last-child,
+.copy-lock-card > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.copy-field textarea {
+  width: 100%;
+  resize: vertical;
+}
+
+.copy-warning-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 0.9rem;
+}
+
+.copy-lineage-card,
+.copy-lock-card,
+.copy-rewrite-card {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.copy-history-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.8rem;
+}
+
+.copy-history-grid li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.copy-confirmation {
+  border-color: var(--accent);
+}
+
+.copy-confirmation > div {
+  display: grid;
+  gap: 0.25rem;
+}
+
+@media (max-width: 980px) {
+  .copy-workbench__layout,
+  .copy-history-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .copy-workbench__hero,
+  .copy-create-row,
+  .copy-confirmation,
+  .copy-save-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .copy-warning-grid {
+    grid-template-columns: 1fr;
+  }
+}
