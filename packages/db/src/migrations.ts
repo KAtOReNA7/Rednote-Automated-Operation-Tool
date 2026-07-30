@@ -4406,7 +4406,8 @@ CREATE TABLE research_dossier_build_runs (
   plan_id TEXT NOT NULL REFERENCES research_dossier_build_plans(id)
     ON UPDATE CASCADE ON DELETE RESTRICT,
   execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 256),
-  job_id TEXT,
+  job_id TEXT REFERENCES jobs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
   input_hash TEXT NOT NULL CHECK (
     length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
   ),
@@ -6213,6 +6214,1463 @@ BEGIN
 END;
 `;
 
+const TOPIC_POOL_AND_FIRST_30_QUOTA = `
+ALTER TABLE topics ADD COLUMN topic_contract_version TEXT CHECK (
+  topic_contract_version IS NULL OR topic_contract_version IN (
+    'legacy-topic-v0', 'topic-candidate-v1'
+  )
+);
+ALTER TABLE topics ADD COLUMN profile_id TEXT
+  REFERENCES account_profiles(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE topics ADD COLUMN semantic_fingerprint TEXT CHECK (
+  semantic_fingerprint IS NULL OR (
+    length(semantic_fingerprint) = 64 AND
+    semantic_fingerprint NOT GLOB '*[^0-9a-f]*'
+  )
+);
+ALTER TABLE topics ADD COLUMN canonical_topic_id TEXT
+  REFERENCES topics(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE topics ADD COLUMN candidate_state TEXT CHECK (
+  candidate_state IS NULL OR candidate_state IN ('PROPOSED', 'LOCKED', 'HELD', 'ARCHIVED')
+);
+ALTER TABLE topics ADD COLUMN current_version_number INTEGER CHECK (
+  current_version_number IS NULL OR (
+    typeof(current_version_number) = 'integer' AND current_version_number > 0
+  )
+);
+ALTER TABLE topics ADD COLUMN topic_revision INTEGER CHECK (
+  topic_revision IS NULL OR (
+    typeof(topic_revision) = 'integer' AND topic_revision > 0
+  )
+);
+ALTER TABLE topics ADD COLUMN created_at TEXT CHECK (
+  created_at IS NULL OR created_at ${UTC_REQUIRED}
+);
+ALTER TABLE topics ADD COLUMN updated_at TEXT CHECK (
+  updated_at IS NULL OR updated_at ${UTC_REQUIRED}
+);
+
+UPDATE topics
+SET
+  topic_contract_version = 'legacy-topic-v0',
+  profile_id = 'primary',
+  candidate_state = CASE WHEN status = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'HELD' END,
+  topic_revision = 1,
+  created_at = ${UTC_NOW},
+  updated_at = ${UTC_NOW}
+WHERE topic_contract_version IS NULL;
+
+CREATE TABLE topic_candidate_versions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  topic_id TEXT NOT NULL REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (
+    typeof(version_number) = 'integer' AND version_number > 0
+  ),
+  previous_version_id TEXT REFERENCES topic_candidate_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  schema_version TEXT NOT NULL CHECK (
+    schema_version IN ('legacy-topic-v0', 'topic-candidate-v1')
+  ),
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'LEGACY_UNCLASSIFIED',
+    'NON_SPOILER_SINGLE_BOOK_VERDICT',
+    'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON',
+    'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  topic_angle TEXT NOT NULL CHECK (
+    (schema_version = 'topic-candidate-v1' AND
+      length(CAST(topic_angle AS BLOB)) BETWEEN 1 AND 1000) OR
+    (schema_version = 'legacy-topic-v0' AND
+      length(CAST(topic_angle AS BLOB)) BETWEEN 1 AND 65536)
+  ),
+  central_question TEXT NOT NULL CHECK (
+    (schema_version = 'topic-candidate-v1' AND
+      length(CAST(central_question AS BLOB)) BETWEEN 1 AND 1000) OR
+    (schema_version = 'legacy-topic-v0' AND
+      length(CAST(central_question AS BLOB)) BETWEEN 1 AND 65536)
+  ),
+  candidate_judgment TEXT CHECK (
+    candidate_judgment IS NULL OR length(CAST(candidate_judgment AS BLOB)) BETWEEN 1 AND 1000
+  ),
+  analysis_mode TEXT NOT NULL CHECK (
+    analysis_mode IN ('PERSONAL', 'PUBLIC_RESEARCH', 'LEGACY_UNCLASSIFIED')
+  ),
+  spoiler_level TEXT NOT NULL CHECK (
+    spoiler_level IN ('NO_SPOILER', 'LIGHT_SPOILER', 'FULL_TRICK_ANALYSIS')
+  ),
+  spoiler_warning_required INTEGER NOT NULL CHECK (spoiler_warning_required IN (0, 1)),
+  spoiler_warning_placement TEXT NOT NULL CHECK (
+    spoiler_warning_placement IN ('NONE', 'BODY_OPENING', 'COVER_TITLE_AND_BODY_OPENING')
+  ),
+  spoiler_user_confirmation_required INTEGER NOT NULL CHECK (
+    spoiler_user_confirmation_required IN (0, 1)
+  ),
+  comparison_dimension TEXT CHECK (
+    comparison_dimension IS NULL OR comparison_dimension IN (
+      'TRICK_STRUCTURE', 'NARRATIVE_PERSPECTIVE', 'FAIR_PLAY',
+      'SOCIAL_CONTEXT', 'PUBLICATION_FORM', 'RECEPTION'
+    )
+  ),
+  required_public_labels_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(required_public_labels_json) AND
+    json_type(required_public_labels_json) = 'array' AND
+    length(CAST(required_public_labels_json AS BLOB)) BETWEEN 2 AND 512
+  ),
+  semantic_fingerprint TEXT CHECK (
+    semantic_fingerprint IS NULL OR (
+      length(semantic_fingerprint) = 64 AND
+      semantic_fingerprint NOT GLOB '*[^0-9a-f]*'
+    )
+  ),
+  fingerprint_policy_version TEXT CHECK (
+    fingerprint_policy_version IS NULL OR
+    fingerprint_policy_version = 'topic-semantic-fingerprint-v1'
+  ),
+  eligibility_state TEXT NOT NULL CHECK (eligibility_state IN (
+    'ELIGIBLE', 'DOSSIER_NOT_READY', 'AUTHENTICITY_BLOCKED', 'FACT_BLOCKED',
+    'STALE', 'INSUFFICIENT_COMPARISON_SET', 'SPOILER_POLICY_INCOMPLETE',
+    'DUPLICATE', 'ARCHIVED'
+  )),
+  eligibility_reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(eligibility_reason_codes_json) AND
+    json_type(eligibility_reason_codes_json) = 'array' AND
+    length(CAST(eligibility_reason_codes_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  eligibility_policy_version TEXT NOT NULL CHECK (
+    eligibility_policy_version IN ('legacy-topic-v0', 'topic-eligibility-policy-v1')
+  ),
+  ranking_policy_version TEXT CHECK (
+    ranking_policy_version IS NULL OR ranking_policy_version = 'topic-ranking-policy-v1'
+  ),
+  total_score_basis_points INTEGER CHECK (
+    total_score_basis_points IS NULL OR (
+      typeof(total_score_basis_points) = 'integer' AND
+      total_score_basis_points BETWEEN 0 AND 10000
+    )
+  ),
+  ranking_complete INTEGER NOT NULL DEFAULT 0 CHECK (ranking_complete IN (0, 1)),
+  tie_break_key TEXT CHECK (
+    tie_break_key IS NULL OR length(tie_break_key) BETWEEN 1 AND 512
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  estimated_external_cost_microusd INTEGER CHECK (
+    estimated_external_cost_microusd IS NULL OR (
+      typeof(estimated_external_cost_microusd) = 'integer' AND
+      estimated_external_cost_microusd BETWEEN 0 AND 9000000000000
+    )
+  ),
+  cost_state TEXT NOT NULL CHECK (cost_state IN ('KNOWN', 'UNKNOWN')),
+  approval_workload_units INTEGER CHECK (
+    approval_workload_units IS NULL OR (
+      typeof(approval_workload_units) = 'integer' AND
+      approval_workload_units BETWEEN 0 AND 10000
+    )
+  ),
+  workload_state TEXT NOT NULL CHECK (workload_state IN ('KNOWN', 'UNKNOWN')),
+  provenance TEXT NOT NULL CHECK (
+    provenance IN ('LOCAL_DETERMINISTIC', 'SCRIPTED_MOCK', 'LEGACY_MIGRATION')
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (topic_id, version_number),
+  UNIQUE (id, topic_id),
+  CHECK (
+    (schema_version = 'legacy-topic-v0' AND
+      content_type = 'LEGACY_UNCLASSIFIED' AND
+      analysis_mode = 'LEGACY_UNCLASSIFIED' AND
+      semantic_fingerprint IS NULL AND fingerprint_policy_version IS NULL AND
+      eligibility_policy_version = 'legacy-topic-v0' AND
+      ranking_policy_version IS NULL AND total_score_basis_points IS NULL AND
+      tie_break_key IS NULL AND provenance = 'LEGACY_MIGRATION') OR
+    (schema_version = 'topic-candidate-v1' AND
+      content_type <> 'LEGACY_UNCLASSIFIED' AND
+      analysis_mode <> 'LEGACY_UNCLASSIFIED' AND
+      semantic_fingerprint IS NOT NULL AND
+      fingerprint_policy_version = 'topic-semantic-fingerprint-v1' AND
+      eligibility_policy_version = 'topic-eligibility-policy-v1' AND
+      ranking_policy_version = 'topic-ranking-policy-v1' AND
+      tie_break_key IS NOT NULL AND provenance <> 'LEGACY_MIGRATION')
+  ),
+  CHECK (
+    (cost_state = 'KNOWN' AND estimated_external_cost_microusd IS NOT NULL) OR
+    (cost_state = 'UNKNOWN' AND estimated_external_cost_microusd IS NULL)
+  ),
+  CHECK (
+    (workload_state = 'KNOWN' AND approval_workload_units IS NOT NULL) OR
+    (workload_state = 'UNKNOWN' AND approval_workload_units IS NULL)
+  ),
+  CHECK (
+    (spoiler_level = 'NO_SPOILER' AND spoiler_warning_required = 0 AND
+      spoiler_warning_placement = 'NONE' AND spoiler_user_confirmation_required = 0) OR
+    (spoiler_level = 'LIGHT_SPOILER' AND spoiler_warning_required = 1 AND
+      spoiler_warning_placement = 'BODY_OPENING' AND spoiler_user_confirmation_required = 0) OR
+    (spoiler_level = 'FULL_TRICK_ANALYSIS' AND spoiler_warning_required = 1 AND
+      spoiler_warning_placement = 'COVER_TITLE_AND_BODY_OPENING' AND
+      spoiler_user_confirmation_required = 1)
+  )
+) STRICT;
+
+CREATE TABLE topic_subject_memberships (
+  version_id TEXT NOT NULL REFERENCES topic_candidate_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  ordinal INTEGER NOT NULL CHECK (
+    typeof(ordinal) = 'integer' AND ordinal BETWEEN 0 AND 5
+  ),
+  subject_type TEXT NOT NULL CHECK (subject_type IN ('WORK', 'EXPRESSION', 'EDITION')),
+  subject_id TEXT NOT NULL CHECK (length(subject_id) BETWEEN 1 AND 256),
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_id TEXT REFERENCES expressions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  edition_id TEXT REFERENCES book_editions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  role TEXT NOT NULL CHECK (role IN ('PRIMARY', 'COMPARISON', 'CONTEXT')),
+  expression_form TEXT CHECK (
+    expression_form IS NULL OR expression_form IN (
+      'WEB_SERIALIZED', 'PUBLISHED_EDITION', 'OTHER_VERIFIED'
+    )
+  ),
+  catalog_revision INTEGER NOT NULL CHECK (
+    typeof(catalog_revision) = 'integer' AND catalog_revision > 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (version_id, ordinal),
+  UNIQUE (version_id, subject_type, subject_id),
+  CHECK (
+    (subject_type = 'WORK' AND subject_id = work_id AND
+      expression_id IS NULL AND edition_id IS NULL AND expression_form IS NULL) OR
+    (subject_type = 'EXPRESSION' AND subject_id = expression_id AND
+      expression_id IS NOT NULL AND edition_id IS NULL AND expression_form IS NOT NULL) OR
+    (subject_type = 'EDITION' AND subject_id = edition_id AND
+      expression_id IS NOT NULL AND edition_id IS NOT NULL AND expression_form IS NOT NULL)
+  )
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_context_claims (
+  version_id TEXT NOT NULL REFERENCES topic_candidate_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_id TEXT NOT NULL REFERENCES claims(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  fact_status TEXT NOT NULL CHECK (fact_status IN (
+    'VERIFIED', 'SUPPORTED_NOT_VERIFIED', 'INSUFFICIENT', 'CONFLICTED',
+    'FACT_BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  context_only INTEGER NOT NULL CHECK (context_only IN (0, 1)),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (version_id, claim_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_ranking_components (
+  version_id TEXT NOT NULL REFERENCES topic_candidate_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  component_type TEXT NOT NULL CHECK (component_type IN (
+    'EVIDENCE_SUFFICIENCY', 'CONTENT_FIT', 'DIFFERENTIATION',
+    'ESTIMATED_COST', 'APPROVAL_WORKLOAD'
+  )),
+  knowledge_state TEXT NOT NULL CHECK (knowledge_state IN ('KNOWN', 'UNKNOWN')),
+  value_basis_points INTEGER CHECK (
+    value_basis_points IS NULL OR (
+      typeof(value_basis_points) = 'integer' AND value_basis_points BETWEEN 0 AND 10000
+    )
+  ),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  input_dependencies_json TEXT NOT NULL CHECK (
+    json_valid(input_dependencies_json) AND json_type(input_dependencies_json) = 'array' AND
+    length(CAST(input_dependencies_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  policy_version TEXT NOT NULL CHECK (policy_version = 'topic-ranking-policy-v1'),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (version_id, component_type),
+  CHECK (
+    (knowledge_state = 'KNOWN' AND value_basis_points IS NOT NULL) OR
+    (knowledge_state = 'UNKNOWN' AND value_basis_points IS NULL)
+  )
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_dependencies (
+  version_id TEXT NOT NULL REFERENCES topic_candidate_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'CATALOG_SUBJECT', 'DOSSIER_VERSION', 'DOSSIER_READINESS',
+    'EXPRESSION_PERMISSION', 'AUTHENTICITY_POLICY', 'SPOILER_POLICY',
+    'FACT_POLICY', 'CONTEXT_CLAIM', 'TOPIC_POOL', 'TOPIC_POLICY'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 256),
+  dependency_key TEXT NOT NULL CHECK (
+    length(dependency_key) = 64 AND dependency_key NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (version_id, dependency_key)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_state_transitions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  topic_id TEXT NOT NULL REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  previous_transition_id TEXT REFERENCES topic_state_transitions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  from_state TEXT CHECK (
+    from_state IS NULL OR from_state IN ('PROPOSED', 'LOCKED', 'HELD', 'ARCHIVED')
+  ),
+  to_state TEXT NOT NULL CHECK (to_state IN ('PROPOSED', 'LOCKED', 'HELD', 'ARCHIVED')),
+  action TEXT NOT NULL CHECK (
+    action IN ('CREATE', 'LOCK', 'HOLD', 'RESUME', 'ARCHIVE', 'RESTORE', 'UNDO', 'LEGACY_MIGRATION')
+  ),
+  expected_revision INTEGER NOT NULL CHECK (
+    typeof(expected_revision) = 'integer' AND expected_revision >= 0
+  ),
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (topic_id, revision)
+) STRICT;
+
+CREATE TABLE topic_generation_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  contract_version TEXT NOT NULL CHECK (contract_version = 'topic-generation-plan-v1'),
+  plan_hash TEXT NOT NULL UNIQUE CHECK (
+    length(plan_hash) = 64 AND plan_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  input_work_count INTEGER NOT NULL CHECK (
+    typeof(input_work_count) = 'integer' AND input_work_count BETWEEN 0 AND 5000
+  ),
+  counts_json TEXT NOT NULL CHECK (
+    json_valid(counts_json) AND json_type(counts_json) = 'object' AND
+    length(CAST(counts_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  expected_policy_versions_json TEXT NOT NULL CHECK (
+    json_valid(expected_policy_versions_json) AND
+    json_type(expected_policy_versions_json) = 'object' AND
+    length(CAST(expected_policy_versions_json AS BLOB)) BETWEEN 2 AND 4096
+  ),
+  local_combination_upper_bound INTEGER NOT NULL CHECK (
+    typeof(local_combination_upper_bound) = 'integer' AND
+    local_combination_upper_bound BETWEEN 0 AND 5000
+  ),
+  deduplication_limit INTEGER NOT NULL CHECK (
+    typeof(deduplication_limit) = 'integer' AND deduplication_limit BETWEEN 1 AND 5000
+  ),
+  estimated_local_writes INTEGER NOT NULL CHECK (
+    typeof(estimated_local_writes) = 'integer' AND estimated_local_writes BETWEEN 0 AND 100000
+  ),
+  estimated_model_requests INTEGER NOT NULL DEFAULT 0 CHECK (estimated_model_requests = 0),
+  budget_conclusion TEXT NOT NULL DEFAULT 'NOT_APPLICABLE'
+    CHECK (budget_conclusion = 'NOT_APPLICABLE'),
+  model_execution_state TEXT NOT NULL DEFAULT 'UNCONFIGURED_DISABLED'
+    CHECK (model_execution_state = 'UNCONFIGURED_DISABLED'),
+  status TEXT NOT NULL CHECK (
+    status IN ('PREVIEWED', 'CONFIRMED', 'CONSUMED', 'CANCELLED', 'EXPIRED')
+  ),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED} AND expires_at > created_at),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE topic_generation_plan_inputs (
+  plan_id TEXT NOT NULL REFERENCES topic_generation_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  catalog_revision INTEGER NOT NULL CHECK (catalog_revision > 0),
+  dossier_version_id TEXT NOT NULL REFERENCES research_dossier_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  permission_snapshot_id TEXT NOT NULL REFERENCES expression_permission_snapshots(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (plan_id, work_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_generation_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  plan_id TEXT NOT NULL REFERENCES topic_generation_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 256),
+  job_id TEXT,
+  status TEXT NOT NULL CHECK (status IN (
+    'CONFIRMED', 'RUNNING', 'SUCCEEDED', 'NO_OP', 'CANCEL_REQUESTED',
+    'CANCELLED', 'FAILED', 'AMBIGUOUS'
+  )),
+  result_candidate_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(result_candidate_count) = 'integer' AND result_candidate_count BETWEEN 0 AND 5000
+  ),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (external_request_count = 0),
+  cost_state TEXT NOT NULL DEFAULT 'NOT_INCURRED' CHECK (cost_state = 'NOT_INCURRED'),
+  error_code TEXT CHECK (error_code IS NULL OR length(error_code) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE topic_quota_profiles (
+  id TEXT PRIMARY KEY CHECK (id = 'FIRST_30_V1'),
+  profile_version TEXT NOT NULL CHECK (profile_version = 'FIRST_30_V1'),
+  solver_version TEXT NOT NULL CHECK (solver_version = 'topic-quota-solver-v1'),
+  total_required INTEGER NOT NULL CHECK (total_required = 30),
+  max_work_exposure INTEGER NOT NULL CHECK (
+    typeof(max_work_exposure) = 'integer' AND max_work_exposure BETWEEN 1 AND 10
+  ),
+  immutable INTEGER NOT NULL CHECK (immutable = 1),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE topic_quota_requirements (
+  quota_profile_id TEXT NOT NULL REFERENCES topic_quota_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'NON_SPOILER_SINGLE_BOOK_VERDICT',
+    'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON',
+    'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  required_count INTEGER NOT NULL CHECK (
+    typeof(required_count) = 'integer' AND required_count BETWEEN 1 AND 30
+  ),
+  position INTEGER NOT NULL CHECK (
+    typeof(position) = 'integer' AND position BETWEEN 0 AND 4
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (quota_profile_id, content_type),
+  UNIQUE (quota_profile_id, position)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_quota_plan_roots (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  quota_profile_id TEXT NOT NULL REFERENCES topic_quota_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  current_plan_version_id TEXT,
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(revision) = 'integer' AND revision >= 0
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  UNIQUE (profile_id, quota_profile_id),
+  UNIQUE (id, profile_id),
+  FOREIGN KEY (current_plan_version_id, id)
+    REFERENCES topic_quota_plan_versions(id, root_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE topic_quota_plan_versions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  root_id TEXT NOT NULL REFERENCES topic_quota_plan_roots(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (
+    typeof(version_number) = 'integer' AND version_number > 0
+  ),
+  previous_version_id TEXT REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  quota_profile_id TEXT NOT NULL REFERENCES topic_quota_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  pool_snapshot_hash TEXT NOT NULL CHECK (
+    length(pool_snapshot_hash) = 64 AND pool_snapshot_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  ranking_policy_version TEXT NOT NULL CHECK (
+    ranking_policy_version = 'topic-ranking-policy-v1'
+  ),
+  solver_version TEXT NOT NULL CHECK (solver_version = 'topic-quota-solver-v1'),
+  status TEXT NOT NULL CHECK (status IN ('COMPLETE', 'INCOMPLETE')),
+  total_selected INTEGER NOT NULL CHECK (
+    typeof(total_selected) = 'integer' AND total_selected BETWEEN 0 AND 100
+  ),
+  total_required INTEGER NOT NULL CHECK (total_required = 30),
+  estimated_cost_state TEXT NOT NULL CHECK (estimated_cost_state IN ('KNOWN', 'UNKNOWN')),
+  estimated_cost_microusd INTEGER CHECK (
+    estimated_cost_microusd IS NULL OR (
+      typeof(estimated_cost_microusd) = 'integer' AND
+      estimated_cost_microusd BETWEEN 0 AND 9000000000000
+    )
+  ),
+  workload_state TEXT NOT NULL CHECK (workload_state IN ('KNOWN', 'UNKNOWN')),
+  workload_units INTEGER CHECK (
+    workload_units IS NULL OR (
+      typeof(workload_units) = 'integer' AND workload_units BETWEEN 0 AND 1000000
+    )
+  ),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (root_id, version_number),
+  UNIQUE (root_id, pool_snapshot_hash),
+  UNIQUE (id, root_id),
+  CHECK (
+    (estimated_cost_state = 'KNOWN' AND estimated_cost_microusd IS NOT NULL) OR
+    (estimated_cost_state = 'UNKNOWN' AND estimated_cost_microusd IS NULL)
+  ),
+  CHECK (
+    (workload_state = 'KNOWN' AND workload_units IS NOT NULL) OR
+    (workload_state = 'UNKNOWN' AND workload_units IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE topic_quota_plan_categories (
+  plan_version_id TEXT NOT NULL REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'NON_SPOILER_SINGLE_BOOK_VERDICT',
+    'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON',
+    'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  selected_count INTEGER NOT NULL CHECK (selected_count BETWEEN 0 AND 100),
+  required_count INTEGER NOT NULL CHECK (required_count BETWEEN 1 AND 30),
+  shortfall_count INTEGER NOT NULL CHECK (
+    shortfall_count >= 0 AND shortfall_count = max(0, required_count - selected_count)
+  ),
+  locked_eligible_count INTEGER NOT NULL CHECK (locked_eligible_count BETWEEN 0 AND 10000),
+  held_count INTEGER NOT NULL CHECK (held_count BETWEEN 0 AND 10000),
+  archived_count INTEGER NOT NULL CHECK (archived_count BETWEEN 0 AND 10000),
+  conflicts_json TEXT NOT NULL CHECK (
+    json_valid(conflicts_json) AND json_type(conflicts_json) = 'array' AND
+    length(CAST(conflicts_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (plan_version_id, content_type)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_quota_plan_members (
+  plan_version_id TEXT NOT NULL REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'NON_SPOILER_SINGLE_BOOK_VERDICT',
+    'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON',
+    'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  position INTEGER NOT NULL CHECK (
+    typeof(position) = 'integer' AND position BETWEEN 1 AND 100
+  ),
+  topic_id TEXT NOT NULL REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  topic_version_id TEXT NOT NULL,
+  semantic_fingerprint TEXT NOT NULL CHECK (
+    length(semantic_fingerprint) = 64 AND
+    semantic_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  eligibility_state TEXT NOT NULL CHECK (eligibility_state = 'ELIGIBLE'),
+  total_score_basis_points INTEGER NOT NULL CHECK (
+    typeof(total_score_basis_points) = 'integer' AND
+    total_score_basis_points BETWEEN 0 AND 10000
+  ),
+  locked INTEGER NOT NULL CHECK (locked IN (0, 1)),
+  selection_reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(selection_reason_codes_json) AND
+    json_type(selection_reason_codes_json) = 'array' AND
+    length(CAST(selection_reason_codes_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (plan_version_id, content_type, position),
+  UNIQUE (plan_version_id, topic_id),
+  UNIQUE (plan_version_id, semantic_fingerprint),
+  FOREIGN KEY (topic_version_id, topic_id)
+    REFERENCES topic_candidate_versions(id, topic_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_quota_plan_member_scores (
+  plan_version_id TEXT NOT NULL,
+  topic_id TEXT NOT NULL,
+  component_type TEXT NOT NULL CHECK (component_type IN (
+    'EVIDENCE_SUFFICIENCY', 'CONTENT_FIT', 'DIFFERENTIATION',
+    'ESTIMATED_COST', 'APPROVAL_WORKLOAD'
+  )),
+  knowledge_state TEXT NOT NULL CHECK (knowledge_state IN ('KNOWN', 'UNKNOWN')),
+  value_basis_points INTEGER CHECK (
+    value_basis_points IS NULL OR (
+      typeof(value_basis_points) = 'integer' AND value_basis_points BETWEEN 0 AND 10000
+    )
+  ),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (plan_version_id, topic_id, component_type),
+  FOREIGN KEY (plan_version_id, topic_id)
+    REFERENCES topic_quota_plan_members(plan_version_id, topic_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (
+    (knowledge_state = 'KNOWN' AND value_basis_points IS NOT NULL) OR
+    (knowledge_state = 'UNKNOWN' AND value_basis_points IS NULL)
+  )
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE topic_quota_plan_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  plan_version_id TEXT NOT NULL REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  event_type TEXT NOT NULL CHECK (event_type IN ('PUBLISHED', 'STALE', 'SUPERSEDED')),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  dependency_type TEXT CHECK (
+    dependency_type IS NULL OR dependency_type IN (
+      'CATALOG_SUBJECT', 'DOSSIER_VERSION', 'DOSSIER_READINESS',
+      'EXPRESSION_PERMISSION', 'AUTHENTICITY_POLICY', 'SPOILER_POLICY',
+      'FACT_POLICY', 'CONTEXT_CLAIM', 'TOPIC_POOL', 'TOPIC_POLICY'
+    )
+  ),
+  dependency_id TEXT CHECK (
+    dependency_id IS NULL OR length(dependency_id) BETWEEN 1 AND 1024
+  ),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 1024),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  CHECK ((dependency_type IS NULL) = (dependency_id IS NULL))
+) STRICT;
+
+CREATE TABLE topic_quota_plan_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  quota_profile_id TEXT NOT NULL REFERENCES topic_quota_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 256),
+  job_id TEXT REFERENCES jobs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  pool_snapshot_hash TEXT NOT NULL CHECK (
+    length(pool_snapshot_hash) = 64 AND pool_snapshot_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  max_work_exposure INTEGER NOT NULL CHECK (
+    typeof(max_work_exposure) = 'integer' AND max_work_exposure BETWEEN 1 AND 10
+  ),
+  total_candidate_count INTEGER NOT NULL CHECK (
+    typeof(total_candidate_count) = 'integer' AND total_candidate_count BETWEEN 0 AND 10000
+  ),
+  status TEXT NOT NULL CHECK (
+    status IN ('CONFIRMED', 'RUNNING', 'SUCCEEDED', 'NO_OP', 'CANCELLED', 'FAILED')
+  ),
+  plan_version_id TEXT REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  error_code TEXT CHECK (error_code IS NULL OR length(error_code) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (
+    (status IN ('SUCCEEDED', 'NO_OP') AND plan_version_id IS NOT NULL) OR
+    (status NOT IN ('SUCCEEDED', 'NO_OP') AND plan_version_id IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE topic_candidate_invalidations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 1024),
+  topic_id TEXT NOT NULL REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL REFERENCES topic_candidate_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'CATALOG_SUBJECT', 'DOSSIER_VERSION', 'DOSSIER_READINESS',
+    'EXPRESSION_PERMISSION', 'AUTHENTICITY_POLICY', 'SPOILER_POLICY',
+    'FACT_POLICY', 'CONTEXT_CLAIM', 'TOPIC_POOL', 'TOPIC_POLICY'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 256),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE topic_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'LEGACY_MIGRATED', 'GENERATION_PREVIEWED', 'GENERATION_CONFIRMED',
+    'CANDIDATE_CREATED', 'DUPLICATE_LINKED', 'STATE_CHANGED', 'STATE_UNDONE',
+    'PLAN_PREVIEWED', 'PLAN_PUBLISHED', 'PLAN_NO_OP', 'PLAN_STALE',
+    'RUN_CANCELLED', 'RUN_FAILED'
+  )),
+  profile_id TEXT NOT NULL REFERENCES account_profiles(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  topic_id TEXT REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  generation_plan_id TEXT REFERENCES topic_generation_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  quota_plan_version_id TEXT REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO topic_candidate_versions (
+  id, topic_id, version_number, previous_version_id, schema_version,
+  content_type, topic_angle, central_question, candidate_judgment,
+  analysis_mode, spoiler_level, spoiler_warning_required, spoiler_warning_placement,
+  spoiler_user_confirmation_required, comparison_dimension,
+  required_public_labels_json, semantic_fingerprint, fingerprint_policy_version,
+  eligibility_state, eligibility_reason_codes_json, eligibility_policy_version,
+  ranking_policy_version, total_score_basis_points, ranking_complete, tie_break_key,
+  dependency_hash, input_hash, estimated_external_cost_microusd, cost_state,
+  approval_workload_units, workload_state, provenance, created_at
+)
+SELECT
+  'legacy-topic-version:' || rowid,
+  id,
+  1,
+  NULL,
+  'legacy-topic-v0',
+  'LEGACY_UNCLASSIFIED',
+  angle,
+  angle,
+  CASE
+    WHEN length(CAST(core_judgment AS BLOB)) <= 1000 THEN core_judgment
+    ELSE NULL
+  END,
+  'LEGACY_UNCLASSIFIED',
+  CASE spoiler_level
+    WHEN 'NONE' THEN 'NO_SPOILER'
+    WHEN 'LIGHT' THEN 'LIGHT_SPOILER'
+    ELSE 'FULL_TRICK_ANALYSIS'
+  END,
+  CASE spoiler_level WHEN 'NONE' THEN 0 ELSE 1 END,
+  CASE spoiler_level
+    WHEN 'NONE' THEN 'NONE'
+    WHEN 'LIGHT' THEN 'BODY_OPENING'
+    ELSE 'COVER_TITLE_AND_BODY_OPENING'
+  END,
+  CASE spoiler_level WHEN 'FULL' THEN 1 ELSE 0 END,
+  NULL,
+  '[]',
+  NULL,
+  NULL,
+  CASE WHEN status = 'ARCHIVED' THEN 'ARCHIVED' ELSE 'STALE' END,
+  '["LEGACY_TOPIC_REQUIRES_REVIEW"]',
+  'legacy-topic-v0',
+  NULL,
+  NULL,
+  0,
+  NULL,
+  lower(hex(randomblob(32))),
+  lower(hex(randomblob(32))),
+  NULL,
+  'UNKNOWN',
+  NULL,
+  'UNKNOWN',
+  'LEGACY_MIGRATION',
+  created_at
+FROM topics
+WHERE topic_contract_version = 'legacy-topic-v0';
+
+INSERT INTO topic_subject_memberships (
+  version_id, ordinal, subject_type, subject_id, work_id,
+  expression_id, edition_id, role, expression_form, catalog_revision, created_at
+)
+SELECT
+  version.id,
+  0,
+  'WORK',
+  topic.book_id,
+  topic.book_id,
+  NULL,
+  NULL,
+  'PRIMARY',
+  NULL,
+  book.catalog_revision,
+  version.created_at
+FROM topics AS topic
+JOIN topic_candidate_versions AS version
+  ON version.topic_id = topic.id AND version.version_number = 1
+JOIN books AS book ON book.id = topic.book_id
+WHERE topic.topic_contract_version = 'legacy-topic-v0'
+  AND topic.book_id IS NOT NULL;
+
+UPDATE topics
+SET current_version_number = 1
+WHERE topic_contract_version = 'legacy-topic-v0';
+
+INSERT INTO topic_state_transitions (
+  id, topic_id, revision, previous_transition_id, from_state, to_state,
+  action, expected_revision, actor, details_json, created_at
+)
+SELECT
+  'legacy-topic-transition:' || rowid,
+  id,
+  1,
+  NULL,
+  NULL,
+  candidate_state,
+  'LEGACY_MIGRATION',
+  0,
+  'MIGRATION',
+  '{"result":"FAIL_CLOSED_HELD_OR_ARCHIVED"}',
+  created_at
+FROM topics
+WHERE topic_contract_version = 'legacy-topic-v0';
+
+INSERT INTO topic_audit_events (
+  id, event_type, profile_id, topic_id, generation_plan_id,
+  quota_plan_version_id, actor, details_json, created_at
+)
+SELECT
+  'legacy-topic-audit:' || rowid,
+  'LEGACY_MIGRATED',
+  profile_id,
+  id,
+  NULL,
+  NULL,
+  'MIGRATION',
+  '{"eligibility":"STALE","requiresReview":true}',
+  created_at
+FROM topics
+WHERE topic_contract_version = 'legacy-topic-v0';
+
+INSERT INTO topic_quota_profiles (
+  id, profile_version, solver_version, total_required,
+  max_work_exposure, immutable, created_at
+) VALUES (
+  'FIRST_30_V1', 'FIRST_30_V1', 'topic-quota-solver-v1',
+  30, 3, 1, ${UTC_NOW}
+);
+
+INSERT INTO topic_quota_requirements (
+  quota_profile_id, content_type, required_count, position, created_at
+) VALUES
+  ('FIRST_30_V1', 'NON_SPOILER_SINGLE_BOOK_VERDICT', 10, 0, ${UTC_NOW}),
+  ('FIRST_30_V1', 'FULL_TRICK_LOGIC_ANALYSIS', 8, 1, ${UTC_NOW}),
+  ('FIRST_30_V1', 'CROSS_WORK_COMPARISON', 6, 2, ${UTC_NOW}),
+  ('FIRST_30_V1', 'WEB_VS_PUBLISHED_MYSTERY', 3, 3, ${UTC_NOW}),
+  ('FIRST_30_V1', 'MYSTERY_AND_CULTURAL_PHENOMENON', 3, 4, ${UTC_NOW});
+
+CREATE UNIQUE INDEX idx_topics_canonical_fingerprint
+  ON topics(profile_id, semantic_fingerprint)
+  WHERE topic_contract_version = 'topic-candidate-v1' AND canonical_topic_id IS NULL;
+CREATE INDEX idx_topics_pool_page
+  ON topics(profile_id, candidate_state, updated_at DESC, id)
+  WHERE topic_contract_version = 'topic-candidate-v1';
+CREATE INDEX idx_topics_pool_type_state
+  ON topics(profile_id, topic_type, candidate_state, updated_at DESC, id)
+  WHERE topic_contract_version = 'topic-candidate-v1';
+CREATE INDEX idx_topics_duplicate_canonical
+  ON topics(canonical_topic_id, updated_at DESC)
+  WHERE canonical_topic_id IS NOT NULL;
+CREATE INDEX idx_topic_versions_current
+  ON topic_candidate_versions(topic_id, version_number DESC, id);
+CREATE INDEX idx_topic_versions_eligible_ranking
+  ON topic_candidate_versions(
+    content_type, eligibility_state, total_score_basis_points DESC, tie_break_key, topic_id
+  )
+  WHERE schema_version = 'topic-candidate-v1';
+CREATE INDEX idx_topic_versions_fingerprint
+  ON topic_candidate_versions(semantic_fingerprint, created_at DESC)
+  WHERE semantic_fingerprint IS NOT NULL;
+CREATE INDEX idx_topic_versions_previous
+  ON topic_candidate_versions(previous_version_id)
+  WHERE previous_version_id IS NOT NULL;
+CREATE INDEX idx_topic_subjects_work
+  ON topic_subject_memberships(work_id, version_id, ordinal);
+CREATE INDEX idx_topic_subjects_expression
+  ON topic_subject_memberships(expression_id, version_id)
+  WHERE expression_id IS NOT NULL;
+CREATE INDEX idx_topic_subjects_edition
+  ON topic_subject_memberships(edition_id, version_id)
+  WHERE edition_id IS NOT NULL;
+CREATE INDEX idx_topic_context_claims_claim
+  ON topic_context_claims(claim_id, version_id);
+CREATE INDEX idx_topic_context_claims_work
+  ON topic_context_claims(work_id, version_id);
+CREATE INDEX idx_topic_ranking_component_page
+  ON topic_ranking_components(component_type, knowledge_state, value_basis_points DESC, version_id);
+CREATE INDEX idx_topic_dependencies_lookup
+  ON topic_dependencies(
+    dependency_type, dependency_id, observed_revision, version_id
+  );
+CREATE INDEX idx_topic_state_history
+  ON topic_state_transitions(topic_id, revision DESC, id);
+CREATE INDEX idx_topic_state_previous
+  ON topic_state_transitions(previous_transition_id)
+  WHERE previous_transition_id IS NOT NULL;
+CREATE INDEX idx_topic_generation_plans_profile
+  ON topic_generation_plans(profile_id, created_at DESC, id);
+CREATE INDEX idx_topic_generation_inputs_work
+  ON topic_generation_plan_inputs(work_id, plan_id);
+CREATE INDEX idx_topic_generation_inputs_dossier
+  ON topic_generation_plan_inputs(dossier_version_id, plan_id);
+CREATE INDEX idx_topic_generation_inputs_permission
+  ON topic_generation_plan_inputs(permission_snapshot_id, plan_id);
+CREATE INDEX idx_topic_generation_runs_plan
+  ON topic_generation_runs(plan_id, created_at DESC, id);
+CREATE INDEX idx_topic_generation_runs_status
+  ON topic_generation_runs(status, updated_at, id);
+CREATE INDEX idx_topic_generation_runs_job
+  ON topic_generation_runs(job_id)
+  WHERE job_id IS NOT NULL;
+CREATE INDEX idx_research_dossier_build_runs_job
+  ON research_dossier_build_runs(job_id)
+  WHERE job_id IS NOT NULL;
+CREATE INDEX idx_topic_quota_roots_profile
+  ON topic_quota_plan_roots(profile_id, quota_profile_id);
+CREATE INDEX idx_topic_quota_roots_quota_profile
+  ON topic_quota_plan_roots(quota_profile_id, profile_id);
+CREATE INDEX idx_topic_quota_roots_current_version
+  ON topic_quota_plan_roots(current_plan_version_id)
+  WHERE current_plan_version_id IS NOT NULL;
+CREATE INDEX idx_topic_quota_versions_history
+  ON topic_quota_plan_versions(root_id, version_number DESC, id);
+CREATE INDEX idx_topic_quota_versions_previous
+  ON topic_quota_plan_versions(previous_version_id)
+  WHERE previous_version_id IS NOT NULL;
+CREATE INDEX idx_topic_quota_versions_pool
+  ON topic_quota_plan_versions(pool_snapshot_hash, created_at DESC, id);
+CREATE INDEX idx_topic_quota_versions_quota_profile
+  ON topic_quota_plan_versions(quota_profile_id, created_at DESC, id);
+CREATE INDEX idx_topic_quota_members_topic
+  ON topic_quota_plan_members(topic_id, plan_version_id);
+CREATE INDEX idx_topic_quota_members_version
+  ON topic_quota_plan_members(topic_version_id, plan_version_id);
+CREATE INDEX idx_topic_quota_members_type_position
+  ON topic_quota_plan_members(plan_version_id, content_type, position);
+CREATE INDEX idx_topic_quota_member_scores_topic
+  ON topic_quota_plan_member_scores(topic_id, plan_version_id);
+CREATE INDEX idx_topic_quota_events_plan
+  ON topic_quota_plan_events(plan_version_id, created_at DESC, id);
+CREATE INDEX idx_topic_quota_runs_profile
+  ON topic_quota_plan_runs(profile_id, created_at DESC, id);
+CREATE INDEX idx_topic_quota_runs_status
+  ON topic_quota_plan_runs(status, updated_at, id);
+CREATE INDEX idx_topic_quota_runs_quota_profile
+  ON topic_quota_plan_runs(quota_profile_id, created_at DESC, id);
+CREATE INDEX idx_topic_quota_runs_plan_version
+  ON topic_quota_plan_runs(plan_version_id)
+  WHERE plan_version_id IS NOT NULL;
+CREATE INDEX idx_topic_quota_runs_job
+  ON topic_quota_plan_runs(job_id)
+  WHERE job_id IS NOT NULL;
+CREATE INDEX idx_topic_invalidations_topic
+  ON topic_candidate_invalidations(topic_id, created_at DESC, id);
+CREATE INDEX idx_topic_invalidations_version
+  ON topic_candidate_invalidations(version_id, created_at DESC, id);
+CREATE INDEX idx_topic_audit_profile
+  ON topic_audit_events(profile_id, created_at DESC, id);
+CREATE INDEX idx_topic_audit_topic
+  ON topic_audit_events(topic_id, created_at DESC, id)
+  WHERE topic_id IS NOT NULL;
+CREATE INDEX idx_topic_audit_generation_plan
+  ON topic_audit_events(generation_plan_id, created_at DESC, id)
+  WHERE generation_plan_id IS NOT NULL;
+CREATE INDEX idx_topic_audit_quota_plan
+  ON topic_audit_events(quota_plan_version_id, created_at DESC, id)
+  WHERE quota_plan_version_id IS NOT NULL;
+
+CREATE TRIGGER topics_issue022_insert_guard
+BEFORE INSERT ON topics
+WHEN NEW.topic_contract_version = 'topic-candidate-v1'
+BEGIN
+  SELECT CASE WHEN
+    NEW.profile_id IS NULL OR
+    NEW.semantic_fingerprint IS NULL OR
+    NEW.candidate_state IS NULL OR
+    NEW.topic_revision <> 1 OR
+    NEW.current_version_number IS NOT NULL OR
+    NEW.created_at IS NULL OR NEW.updated_at IS NULL OR
+    NEW.status <> 'IDEA' OR
+    NEW.trend_score IS NOT NULL OR NEW.fit_score IS NOT NULL OR
+    NEW.evidence_score IS NOT NULL OR NEW.novelty_score IS NOT NULL OR
+    NEW.effort_score IS NOT NULL OR NEW.priority_score IS NOT NULL
+  THEN RAISE(ABORT, 'topic candidate root invariant') END;
+END;
+
+CREATE TRIGGER topics_issue022_identity_guard
+BEFORE UPDATE OF
+  id, topic_contract_version, profile_id, semantic_fingerprint,
+  canonical_topic_id, created_at, topic_type, angle, core_judgment,
+  audience, spoiler_level, trend_score, fit_score, evidence_score,
+  novelty_score, effort_score, priority_score, status
+ON topics
+WHEN OLD.topic_contract_version = 'topic-candidate-v1'
+BEGIN
+  SELECT RAISE(ABORT, 'topic candidate identity is immutable');
+END;
+
+CREATE TRIGGER topics_issue022_current_version_guard
+BEFORE UPDATE OF current_version_number ON topics
+WHEN OLD.topic_contract_version = 'topic-candidate-v1'
+BEGIN
+  SELECT CASE WHEN
+    NEW.current_version_number IS NULL OR
+    NEW.current_version_number <> COALESCE(OLD.current_version_number, 0) + 1 OR
+    NOT EXISTS (
+      SELECT 1
+      FROM topic_candidate_versions AS version
+      WHERE version.topic_id = OLD.id
+        AND version.version_number = NEW.current_version_number
+    )
+  THEN RAISE(ABORT, 'topic current version transition invalid') END;
+END;
+
+CREATE TRIGGER topics_issue022_state_guard
+BEFORE UPDATE OF candidate_state, topic_revision ON topics
+WHEN OLD.topic_contract_version = 'topic-candidate-v1'
+BEGIN
+  SELECT CASE WHEN
+    NEW.topic_revision <> OLD.topic_revision + 1 OR
+    NEW.candidate_state = OLD.candidate_state OR
+    NOT (
+      (OLD.candidate_state = 'PROPOSED' AND NEW.candidate_state IN ('LOCKED', 'HELD', 'ARCHIVED')) OR
+      (OLD.candidate_state = 'LOCKED' AND NEW.candidate_state IN ('PROPOSED', 'HELD', 'ARCHIVED')) OR
+      (OLD.candidate_state = 'HELD' AND NEW.candidate_state IN ('PROPOSED', 'LOCKED', 'ARCHIVED')) OR
+      (OLD.candidate_state = 'ARCHIVED' AND NEW.candidate_state IN ('PROPOSED', 'LOCKED', 'HELD'))
+    )
+  THEN RAISE(ABORT, 'topic state transition invalid') END;
+END;
+
+CREATE TRIGGER topics_issue022_delete_guard
+BEFORE DELETE ON topics
+WHEN OLD.topic_contract_version = 'topic-candidate-v1'
+BEGIN
+  SELECT RAISE(ABORT, 'topic candidates cannot be deleted');
+END;
+
+CREATE TRIGGER topic_subject_expression_guard
+BEFORE INSERT ON topic_subject_memberships
+WHEN NEW.subject_type = 'EXPRESSION'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1 FROM expressions AS expression
+    WHERE expression.id = NEW.expression_id
+      AND expression.work_id = NEW.work_id
+      AND expression.catalog_state = 'ACTIVE'
+      AND expression.revision = NEW.catalog_revision
+  ) THEN RAISE(ABORT, 'topic expression subject mismatch') END;
+END;
+
+CREATE TRIGGER topic_subject_edition_guard
+BEFORE INSERT ON topic_subject_memberships
+WHEN NEW.subject_type = 'EDITION'
+BEGIN
+  SELECT CASE WHEN NOT EXISTS (
+    SELECT 1
+    FROM book_editions AS edition
+    JOIN expressions AS expression ON expression.id = edition.expression_id
+    WHERE edition.id = NEW.edition_id
+      AND edition.expression_id = NEW.expression_id
+      AND expression.work_id = NEW.work_id
+      AND edition.catalog_state = 'ACTIVE'
+      AND edition.catalog_revision = NEW.catalog_revision
+  ) THEN RAISE(ABORT, 'topic edition subject mismatch') END;
+END;
+
+CREATE TRIGGER topic_candidate_labels_guard
+BEFORE INSERT ON topic_candidate_versions
+WHEN NEW.schema_version = 'topic-candidate-v1'
+BEGIN
+  SELECT CASE WHEN EXISTS (
+    SELECT 1
+    FROM json_each(NEW.required_public_labels_json) AS label
+    WHERE label.type <> 'text' OR label.value NOT IN ('公开资料整理', '资料分析评分')
+  ) THEN RAISE(ABORT, 'topic public label invalid') END;
+END;
+
+CREATE TRIGGER topic_candidate_versions_append_only_update
+BEFORE UPDATE ON topic_candidate_versions
+BEGIN
+  SELECT RAISE(ABORT, 'topic candidate versions are append-only');
+END;
+
+CREATE TRIGGER topic_candidate_versions_append_only_delete
+BEFORE DELETE ON topic_candidate_versions
+BEGIN
+  SELECT RAISE(ABORT, 'topic candidate versions are append-only');
+END;
+
+CREATE TRIGGER topic_subject_memberships_append_only_update
+BEFORE UPDATE ON topic_subject_memberships
+BEGIN
+  SELECT RAISE(ABORT, 'topic subjects are append-only');
+END;
+
+CREATE TRIGGER topic_subject_memberships_append_only_delete
+BEFORE DELETE ON topic_subject_memberships
+BEGIN
+  SELECT RAISE(ABORT, 'topic subjects are append-only');
+END;
+
+CREATE TRIGGER topic_context_claims_append_only_update
+BEFORE UPDATE ON topic_context_claims
+BEGIN
+  SELECT RAISE(ABORT, 'topic context claims are append-only');
+END;
+
+CREATE TRIGGER topic_context_claims_append_only_delete
+BEFORE DELETE ON topic_context_claims
+BEGIN
+  SELECT RAISE(ABORT, 'topic context claims are append-only');
+END;
+
+CREATE TRIGGER topic_ranking_components_append_only_update
+BEFORE UPDATE ON topic_ranking_components
+BEGIN
+  SELECT RAISE(ABORT, 'topic ranking components are append-only');
+END;
+
+CREATE TRIGGER topic_ranking_components_append_only_delete
+BEFORE DELETE ON topic_ranking_components
+BEGIN
+  SELECT RAISE(ABORT, 'topic ranking components are append-only');
+END;
+
+CREATE TRIGGER topic_dependencies_append_only_update
+BEFORE UPDATE ON topic_dependencies
+BEGIN
+  SELECT RAISE(ABORT, 'topic dependencies are append-only');
+END;
+
+CREATE TRIGGER topic_dependencies_append_only_delete
+BEFORE DELETE ON topic_dependencies
+BEGIN
+  SELECT RAISE(ABORT, 'topic dependencies are append-only');
+END;
+
+CREATE TRIGGER topic_state_transitions_append_only_update
+BEFORE UPDATE ON topic_state_transitions
+BEGIN
+  SELECT RAISE(ABORT, 'topic state transitions are append-only');
+END;
+
+CREATE TRIGGER topic_state_transitions_append_only_delete
+BEFORE DELETE ON topic_state_transitions
+BEGIN
+  SELECT RAISE(ABORT, 'topic state transitions are append-only');
+END;
+
+CREATE TRIGGER topic_quota_profiles_append_only_update
+BEFORE UPDATE ON topic_quota_profiles
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota profiles are immutable');
+END;
+
+CREATE TRIGGER topic_quota_profiles_append_only_delete
+BEFORE DELETE ON topic_quota_profiles
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota profiles are immutable');
+END;
+
+CREATE TRIGGER topic_quota_requirements_append_only_update
+BEFORE UPDATE ON topic_quota_requirements
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota requirements are immutable');
+END;
+
+CREATE TRIGGER topic_quota_requirements_append_only_delete
+BEFORE DELETE ON topic_quota_requirements
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota requirements are immutable');
+END;
+
+CREATE TRIGGER topic_quota_plan_versions_append_only_update
+BEFORE UPDATE ON topic_quota_plan_versions
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota plan versions are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_versions_append_only_delete
+BEFORE DELETE ON topic_quota_plan_versions
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota plan versions are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_categories_append_only_update
+BEFORE UPDATE ON topic_quota_plan_categories
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota categories are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_categories_append_only_delete
+BEFORE DELETE ON topic_quota_plan_categories
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota categories are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_members_append_only_update
+BEFORE UPDATE ON topic_quota_plan_members
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota members are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_members_append_only_delete
+BEFORE DELETE ON topic_quota_plan_members
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota members are append-only');
+END;
+
+CREATE TRIGGER topic_quota_member_scores_append_only_update
+BEFORE UPDATE ON topic_quota_plan_member_scores
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota score snapshots are append-only');
+END;
+
+CREATE TRIGGER topic_quota_member_scores_append_only_delete
+BEFORE DELETE ON topic_quota_plan_member_scores
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota score snapshots are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_events_append_only_update
+BEFORE UPDATE ON topic_quota_plan_events
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota plan events are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_events_append_only_delete
+BEFORE DELETE ON topic_quota_plan_events
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota plan events are append-only');
+END;
+
+CREATE TRIGGER topic_quota_plan_runs_delete_guard
+BEFORE DELETE ON topic_quota_plan_runs
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota plan runs cannot be deleted');
+END;
+
+CREATE TRIGGER topic_candidate_invalidations_append_only_update
+BEFORE UPDATE ON topic_candidate_invalidations
+BEGIN
+  SELECT RAISE(ABORT, 'topic invalidations are append-only');
+END;
+
+CREATE TRIGGER topic_candidate_invalidations_append_only_delete
+BEFORE DELETE ON topic_candidate_invalidations
+BEGIN
+  SELECT RAISE(ABORT, 'topic invalidations are append-only');
+END;
+
+CREATE TRIGGER topic_audit_events_append_only_update
+BEFORE UPDATE ON topic_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'topic audit is append-only');
+END;
+
+CREATE TRIGGER topic_audit_events_append_only_delete
+BEFORE DELETE ON topic_audit_events
+BEGIN
+  SELECT RAISE(ABORT, 'topic audit is append-only');
+END;
+
+CREATE TRIGGER topic_quota_root_current_guard
+BEFORE UPDATE OF current_plan_version_id, revision ON topic_quota_plan_roots
+BEGIN
+  SELECT CASE WHEN
+    NEW.current_plan_version_id IS NULL OR
+    NEW.revision <> OLD.revision + 1 OR
+    NOT EXISTS (
+      SELECT 1 FROM topic_quota_plan_versions AS version
+      WHERE version.id = NEW.current_plan_version_id AND version.root_id = OLD.id
+    )
+  THEN RAISE(ABORT, 'topic quota current transition invalid') END;
+END;
+
+CREATE TRIGGER topic_generation_plan_state_guard
+BEFORE UPDATE OF status, revision ON topic_generation_plans
+BEGIN
+  SELECT CASE WHEN
+    NEW.revision <> OLD.revision + 1 OR
+    NOT (
+      (OLD.status = 'PREVIEWED' AND NEW.status IN ('CONFIRMED', 'CANCELLED', 'EXPIRED')) OR
+      (OLD.status = 'CONFIRMED' AND NEW.status IN ('CONSUMED', 'CANCELLED'))
+    )
+  THEN RAISE(ABORT, 'topic generation plan transition invalid') END;
+END;
+
+CREATE TRIGGER topic_generation_plans_delete_guard
+BEFORE DELETE ON topic_generation_plans
+BEGIN
+  SELECT RAISE(ABORT, 'topic generation plans cannot be deleted');
+END;
+
+CREATE TRIGGER topic_generation_runs_delete_guard
+BEFORE DELETE ON topic_generation_runs
+BEGIN
+  SELECT RAISE(ABORT, 'topic generation runs cannot be deleted');
+END;
+
+CREATE TRIGGER topic_generation_run_state_guard
+BEFORE UPDATE ON topic_generation_runs
+BEGIN
+  SELECT CASE WHEN
+    NEW.revision <> OLD.revision + 1 OR
+    NOT (
+      (OLD.status = 'CONFIRMED' AND NEW.status = 'CONFIRMED' AND
+        OLD.job_id IS NULL AND NEW.job_id IS NOT NULL) OR
+      (OLD.status = 'CONFIRMED' AND NEW.status IN ('RUNNING', 'CANCELLED', 'FAILED')) OR
+      (OLD.status = 'RUNNING' AND NEW.status IN ('SUCCEEDED', 'NO_OP', 'CANCELLED', 'FAILED')) OR
+      (OLD.status = 'CANCEL_REQUESTED' AND NEW.status IN ('CANCELLED', 'FAILED'))
+    )
+  THEN RAISE(ABORT, 'topic generation run transition invalid') END;
+END;
+
+CREATE TRIGGER topic_quota_plan_run_state_guard
+BEFORE UPDATE ON topic_quota_plan_runs
+BEGIN
+  SELECT CASE WHEN
+    NEW.revision <> OLD.revision + 1 OR
+    NOT (
+      (OLD.status = 'CONFIRMED' AND NEW.status = 'CONFIRMED' AND
+        OLD.job_id IS NULL AND NEW.job_id IS NOT NULL) OR
+      (OLD.status = 'CONFIRMED' AND NEW.status IN ('RUNNING', 'CANCELLED', 'FAILED')) OR
+      (OLD.status = 'RUNNING' AND NEW.status IN ('SUCCEEDED', 'NO_OP', 'CANCELLED', 'FAILED'))
+    )
+  THEN RAISE(ABORT, 'topic quota plan run transition invalid') END;
+END;
+
+CREATE TRIGGER topic_quota_plan_roots_delete_guard
+BEFORE DELETE ON topic_quota_plan_roots
+BEGIN
+  SELECT RAISE(ABORT, 'topic quota roots cannot be deleted');
+END;
+
+CREATE TRIGGER invalidate_topic_on_dossier_invalidation
+AFTER INSERT ON research_dossier_invalidations
+BEGIN
+  INSERT OR IGNORE INTO topic_candidate_invalidations (
+    id, event_identity, topic_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'DOSSIER_INVALIDATED:' || NEW.id || ':' || dependency.version_id,
+    version.topic_id,
+    dependency.version_id,
+    'DOSSIER_VERSION',
+    NEW.current_version_id,
+    NEW.observed_revision,
+    'DOSSIER_CHANGED',
+    NEW.created_at
+  FROM topic_dependencies AS dependency
+  JOIN topic_candidate_versions AS version ON version.id = dependency.version_id
+  JOIN topics AS topic
+    ON topic.id = version.topic_id AND topic.current_version_number = version.version_number
+  WHERE dependency.dependency_type = 'DOSSIER_VERSION'
+    AND dependency.dependency_id = NEW.current_version_id;
+END;
+
+CREATE TRIGGER invalidate_topic_on_permission_invalidation
+AFTER INSERT ON expression_permission_invalidations
+BEGIN
+  INSERT OR IGNORE INTO topic_candidate_invalidations (
+    id, event_identity, topic_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'PERMISSION_INVALIDATED:' || NEW.id || ':' || dependency.version_id,
+    version.topic_id,
+    dependency.version_id,
+    'EXPRESSION_PERMISSION',
+    NEW.snapshot_id,
+    NEW.observed_revision,
+    'AUTHENTICITY_CHANGED',
+    NEW.created_at
+  FROM topic_dependencies AS dependency
+  JOIN topic_candidate_versions AS version ON version.id = dependency.version_id
+  JOIN topics AS topic
+    ON topic.id = version.topic_id AND topic.current_version_number = version.version_number
+  WHERE dependency.dependency_type = 'EXPRESSION_PERMISSION'
+    AND dependency.dependency_id = NEW.snapshot_id;
+END;
+
+CREATE TRIGGER invalidate_current_quota_on_topic_state
+AFTER UPDATE OF candidate_state, topic_revision ON topics
+WHEN OLD.topic_contract_version = 'topic-candidate-v1'
+  AND NEW.candidate_state <> OLD.candidate_state
+BEGIN
+  INSERT OR IGNORE INTO topic_quota_plan_events (
+    id, plan_version_id, event_type, reason_code,
+    dependency_type, dependency_id, event_identity, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    root.current_plan_version_id,
+    'STALE',
+    'TOPIC_STATE_CHANGED',
+    'TOPIC_POOL',
+    NEW.id,
+    'TOPIC_STATE_CHANGED:' || NEW.id || ':' || NEW.topic_revision || ':' ||
+      root.current_plan_version_id,
+    NEW.updated_at
+  FROM topic_quota_plan_roots AS root
+  WHERE root.profile_id = NEW.profile_id
+    AND root.current_plan_version_id IS NOT NULL;
+END;
+
+CREATE TRIGGER invalidate_current_quota_on_topic_version
+AFTER INSERT ON topic_candidate_versions
+WHEN NEW.schema_version = 'topic-candidate-v1'
+BEGIN
+  INSERT OR IGNORE INTO topic_quota_plan_events (
+    id, plan_version_id, event_type, reason_code,
+    dependency_type, dependency_id, event_identity, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    root.current_plan_version_id,
+    'STALE',
+    'TOPIC_POOL_CHANGED',
+    'TOPIC_POOL',
+    NEW.topic_id,
+    'TOPIC_POOL_CHANGED:' || NEW.id || ':' || root.current_plan_version_id,
+    NEW.created_at
+  FROM topic_quota_plan_roots AS root
+  JOIN topics AS topic ON topic.id = NEW.topic_id AND topic.profile_id = root.profile_id
+  WHERE root.current_plan_version_id IS NOT NULL;
+END;
+
+CREATE TRIGGER invalidate_quota_on_candidate_invalidation
+AFTER INSERT ON topic_candidate_invalidations
+BEGIN
+  INSERT OR IGNORE INTO topic_quota_plan_events (
+    id, plan_version_id, event_type, reason_code,
+    dependency_type, dependency_id, event_identity, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    root.current_plan_version_id,
+    'STALE',
+    NEW.reason_code,
+    NEW.dependency_type,
+    NEW.dependency_id,
+    'TOPIC_DEPENDENCY_CHANGED:' || NEW.id || ':' || root.current_plan_version_id,
+    NEW.created_at
+  FROM topics AS topic
+  JOIN topic_quota_plan_roots AS root ON root.profile_id = topic.profile_id
+  WHERE topic.id = NEW.topic_id
+    AND root.current_plan_version_id IS NOT NULL;
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -6289,5 +7747,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'reading_authenticity_policy',
     sql: READING_AUTHENTICITY_POLICY,
     version: 14,
+  }),
+  Object.freeze({
+    name: 'topic_pool_and_first_30_quota',
+    sql: TOPIC_POOL_AND_FIRST_30_QUOTA,
+    version: 15,
   }),
 ]);

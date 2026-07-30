@@ -1,0 +1,556 @@
+# M3 Issue 022：选题池、可解释排序与首批 30 篇配额——增量开发指令
+
+本文件是 Issue 022 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`。本文件只定义本 Issue 增量范围，不重复动态基线、可迁移路径、Windows、安全、费用、硬约束、测试、Git 和文档治理公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；配额求解、排序稳定性、状态机、迁移和并发使用 XHigh
+目标提交信息：feat(strategy): add topic pool and first-30 quota planning
+
+## 一、合法起点、文件治理与停止点
+
+以当前本地 `main` 动态 HEAD 为起点。本地合法领先 `origin/main` 的 Issues 018—021 提交不得被回退、改写或误判为异常。
+
+开工时按语义确认：
+
+* 工作树干净，当前分支为 `main`；
+* M2 Issues 012—021 和 `docs/m2-closeout.md` 完整；
+* Issue 020 Dossier readiness 和 Issue 021 Expression Permission 可供只读调用；
+* README、AGENTS、Roadmap 和索引一致指向 M3 Issue 022；
+* migration 尾部、Git 基线和仓库位置动态发现。
+
+不得把报告中的提交 ID、盘符、绝对路径、migration 版本或 checksum 写成门禁。
+
+本 TXT 可临时放在仓库根目录启动。完整读取后、在 baseline gate 或业务修改前，唯一归档到：
+
+`docs/instructions/m3/M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt`
+
+如 `docs/instructions/m3/` 尚不存在，可创建并纳入历史指令索引。根目录和原位置不留副本。
+
+只实施 Issue 022。完成后停止，不进入 Issue 023。
+
+## 二、授权目标
+
+实现 Topic Pool V1 和首批 30 篇配额规划：
+
+* 从现有 Catalog、Dossier 和真实性权限中生成有来源的选题候选；
+* 建立五类内容类型和冻结的首批 `10/8/6/3/3` 配额；
+* 计算可解释、确定性的候选资格和排序；
+* 展示证据充分度、内容适配、差异性、预计成本和审批工作量；
+* 支持用户锁定、搁置、恢复和归档；
+* 在素材不足时如实给出缺口，不为凑满30篇放宽事实或真实性规则；
+* 支持选题生成/规划 preview、显式确认、幂等执行和历史版本；
+* 激活“选题池”页面；
+* 追加下一条连续 migration、专项测试、合同、ADR、计划和验收映射；
+* 全部门禁通过后只创建一个本地提交。
+
+## 三、本 Issue 明确不做
+
+* 不实现 Issue 023 的实验假设、变量、指标或实验分组；
+* 不实现 Issue 024 的结构化 Content Brief；
+* 不生成标题、正文、标签、置顶评论、封面或图片；
+* 不创建质量检查、审批、排期、发布包或发布登记；
+* 不自动触发 Search、Fetch、Clip、Catalog、Evidence 或 Dossier rebuild；
+* 不用模型常识补足事实、阅读体验或选题资格；
+* 不把选题候选写回 Claim、Evidence、Dossier 或 ReadingState；
+* 不读取真实密钥，不调用真实模型、搜索、网页、图片或业务 API，不产生费用；
+* 不进入 Issue 023 或任何后续 Issue。
+
+## 四、五类内容与首批配额
+
+建立有限 `TopicContentTypeV1`：
+
+1. `NON_SPOILER_SINGLE_BOOK_VERDICT`
+
+   * 不剧透单书判卷；
+   * 首批配额 10。
+
+2. `FULL_TRICK_LOGIC_ANALYSIS`
+
+   * 完整诡计与逻辑拆解；
+   * 首批配额 8。
+
+3. `CROSS_WORK_COMPARISON`
+
+   * 两部或多部作品横向比较；
+   * 首批配额 6。
+
+4. `WEB_VS_PUBLISHED_MYSTERY`
+
+   * 网络悬疑与出版推理比较；
+   * 首批配额 3。
+
+5. `MYSTERY_AND_CULTURAL_PHENOMENON`
+
+   * 推理小说与文化现象；
+   * 首批配额 3。
+
+定义不可变的 `FIRST_30_V1` QuotaProfile，总数精确为 30。
+
+配额 profile 必须版本化。未来可新增 profile，但不得原地改写 `FIRST_30_V1` 的类别、数量或语义。
+
+如果合格候选不足：
+
+* 返回每类 selected/required/shortfall；
+* 明确列出阻塞原因；
+* 不使用未就绪档案、冲突事实或不允许的真实性模式补位；
+* 不从其他类别静默挪用配额；
+* 不重复同一 semantic topic 来伪造满额；
+* 计划可以是 `INCOMPLETE`，不能谎报已完成 30 篇。
+
+## 五、Topic Candidate V1
+
+定义严格、版本化 TopicCandidate：
+
+* topic identity/version；
+* content type；
+* 一个或多个 Work/Expression/Edition 引用；
+* 有界 topic angle；
+* 有界 central question 或 candidate judgment；
+* analysis mode；
+* spoiler level；
+* required public labels；
+* Dossier 与 ExpressionPermission 依赖；
+* evidence/readiness 摘要；
+* semantic fingerprint；
+* eligibility；
+* score breakdown；
+* state、revision、provenance 和 timestamps。
+
+候选只表示“可进一步开发的选题”，不等于 Content Brief、Draft 或已批准内容。
+
+`topic angle` 与 `candidate judgment`：
+
+* 只能是研究方向或待验证判断；
+* 不能作为公开事实；
+* 不能声称用户亲自读过；
+* 不能包含无 Evidence 支撑的新事实；
+* 不能复制整段 Evidence 或 Dossier 正文；
+* 后续 Issue 024 仍需独立建立 Brief 和事实映射。
+
+候选引用数量必须有界：
+
+* 单书类型精确引用 1 个主要 Work；
+* 横向比较至少 2 个、至多有限数量的 Work；
+* 网络/出版比较至少包含两种表达或出版形态；
+* 文化现象类型必须绑定可追溯的 Work 和研究主题，不接受纯泛热点空题。
+
+## 六、资格规则
+
+实现纯确定性 `TopicEligibilityPolicyV1`。
+
+通用合格条件：
+
+* 所有主要 subject 当前存在；
+* 所需 Dossier current 且非 stale；
+* 所需事实满足 Dossier/FactPolicy；
+* ExpressionPermissionSnapshot current；
+* 选定 analysis mode 获得权限；
+* spoiler policy 完整；
+* 不存在会否定该选题核心判断的 `FACT_BLOCKED`；
+* dependency/policy versions current。
+
+类型附加规则：
+
+1. 不剧透单书判卷
+
+   * Work 的 Dossier 必须 `READY_FOR_CONTENT_BRIEF`；
+   * spoiler level 必须 `NO_SPOILER`；
+   * 允许 PERSONAL 或 PUBLIC_RESEARCH 模式，但必须遵守各自标签和权限。
+
+2. 完整诡计与逻辑拆解
+
+   * Work Dossier 必须 ready；
+   * spoiler level 必须 `FULL_TRICK_ANALYSIS`；
+   * Issue 021 要求的 warning placement/confirmation 必须进入候选元数据；
+   * 完整剧透本身不构成阻止理由。
+
+3. 横向比较
+
+   * 所有主要 Work 均需满足各自研究就绪；
+   * 比较维度必须存在于有限 registry；
+   * 不允许只因书名相似而建立比较；
+   * 各 Work 的真实性模式可不同，但公开标签必须可同时满足。
+
+4. 网络悬疑与出版推理比较
+
+   * 必须有可核验的形态分类；
+   * 至少一个网络表达与一个出版表达；
+   * 不得用 publication relationship 参与产品门禁、评分或优先级；
+   * 关系只作为选题内容的受控事实输入。
+
+5. 推理小说与文化现象
+
+   * 必须绑定至少一个 ready Dossier；
+   * 文化现象或社会背景只能来自可追溯 Source/Claim 或 context；
+   * context-only 可以启发 angle，但不能被写成已验证关键事实；
+   * 纯热点、粉圈争议或无书目主体的候选不合格。
+
+资格状态至少包括：
+
+* `ELIGIBLE`
+* `DOSSIER_NOT_READY`
+* `AUTHENTICITY_BLOCKED`
+* `FACT_BLOCKED`
+* `STALE`
+* `INSUFFICIENT_COMPARISON_SET`
+* `SPOILER_POLICY_INCOMPLETE`
+* `DUPLICATE`
+* `ARCHIVED`
+
+AI 参与度、AI 标识、版权信息不得进入资格规则。
+
+## 七、可解释排序 V1
+
+排序只在 `ELIGIBLE` 候选中进行，使用精确整数和版本化规则，不使用 SQLite REAL。
+
+至少输出五个独立分量：
+
+* `EVIDENCE_SUFFICIENCY`
+* `CONTENT_FIT`
+* `DIFFERENTIATION`
+* `ESTIMATED_COST`
+* `APPROVAL_WORKLOAD`
+
+每个分量必须有：
+
+* 0—10000 或等价整数值；
+* reason codes；
+* 输入依赖；
+* policy version；
+* unknown/known 状态。
+
+冻结规则：
+
+* Evidence 由 Dossier coverage、gap、stale、conflict 等确定性数据计算；
+* Content fit 由内容类型、主体数量、可用表达模式和栏目要求计算；
+* Differentiation 只和当前 TopicPool/历史 topic semantic fingerprint 比较；
+* 不把模型生成措辞新颖度当成事实差异；
+* Cost 显示预计本地/模型请求和预算状态，无法定价时保持 UNKNOWN；
+* Approval workload 使用版本化工作量单位或分钟估计，不能伪造精确人工耗时；
+* UNKNOWN 不能自动当作最佳或零成本；
+* 排序总分、权重和 tie-break 完全确定；
+* 相同输入乱序后结果一致；
+* 锁定状态影响配额选择，不改写原始 ranking score；
+* 搁置或归档不通过惩罚分实现，而通过状态过滤；
+* AI 标识、版权、出版归属和普通负面观点不参与排序。
+
+不得使用尚未存在的真实运营指标、虚构热度或平台推荐算法信号。
+
+## 八、去重与差异性
+
+定义确定性的 `TopicSemanticFingerprintV1`，至少包含：
+
+* content type；
+* canonical subject set；
+* comparison dimension；
+* spoiler level；
+* analysis mode；
+* normalized angle intent；
+* policy version。
+
+要求：
+
+* 同主体、同类型、同角度的轻微措辞变化不能形成多个独立候选；
+* 同一 Work 可以拥有不同且真实可解释的内容角度；
+* 横向比较 subject 顺序变化不产生新候选；
+* fingerprint 冲突时保留 provenance，并选择 canonical candidate；
+* 用户锁定候选不会被自动合并或覆盖；
+* archive 后重新发现应关联历史，不静默新建重复项；
+* 去重不扫描全表 O(n²)，使用索引或候选集；
+* 近似差异只能作为解释或人工判断，不以单一阈值自动删除。
+
+## 九、候选生成边界
+
+候选生成必须有纯本地确定性路径：
+
+* 基于当前 ready Dossier、有限 section/entry、真实性权限和内容类型模板；
+* 输出结构化候选，不生成完整文案；
+* 不配置模型时仍可产生基本候选和首批配额计划。
+
+可选增加 provider-neutral `TopicProposalV1`：
+
+* 只通过 ModelExecutionService；
+* 只发送用户明确选择的有界 Dossier 摘要或 Claim 引用；
+* structured capability 必须 current、SUPPORTED；
+* 输出 strict schema；
+* 每个 angle 必须引用输入 subject/entry；
+* 模型输出仍是 candidate，必须经过 runtime eligibility、去重和用户确认；
+* prompt injection 不得修改 quota、policy、事实或权限；
+* 不允许模型决定用户读过、评分来源或事实状态；
+* 不允许输出标题、正文、标签或 Brief；
+* 测试只使用 Scripted Mock，真实调用和费用为 0。
+
+不要为了调用模型而扩大 Issue 022；若可选路径不能安全完成，可冻结合同和真实 UI 状态，但纯本地路径必须完整。
+
+## 十、状态机与人工控制
+
+TopicCandidate 状态至少包括：
+
+* `PROPOSED`
+* `LOCKED`
+* `HELD`
+* `ARCHIVED`
+
+如计划成员需要独立状态，可使用 `SELECTED_IN_PLAN`，但不得混淆为候选本体已批准。
+
+支持：
+
+* lock；
+* hold；
+* resume；
+* archive；
+* restore；
+* 批量操作。
+
+所有变更必须：
+
+* 使用 expected revision；
+* preview before/after；
+* 明确用户确认；
+* sender/window 绑定、短期、单次 token；
+* 事务和 append-only audit；
+* 支持 undo/restore；
+* 并发 stale fail closed；
+* 不触发 Content Brief、Draft 或模型任务。
+
+锁定语义：
+
+* 锁定候选在满足资格时优先进入对应类别配额；
+* 锁定不绕过资格；
+* 同一 quota slot 存在过量锁定时，计划返回冲突，由用户处理；
+* 系统不得静默解锁、丢弃或跨类别迁移。
+
+## 十一、First-30 Plan V1
+
+定义版本化、不可静默改写的 `TopicQuotaPlanV1`：
+
+* quota profile/version；
+* pool snapshot hash；
+* ranking policy version；
+* selected topic IDs；
+* per-category selected/required/shortfall；
+* locked/held/archived counts；
+* score/eligibility snapshot；
+* total estimated cost/workload；
+* status、revision、previous version、createdAt；
+* plan reason/warnings。
+
+状态至少包括：
+
+* `PREVIEW`
+* `COMPLETE`
+* `INCOMPLETE`
+* `STALE`
+* `SUPERSEDED`
+
+求解顺序必须确定：
+
+1. 验证 current eligibility；
+2. 每类先放入合格 LOCKED 候选；
+3. 对剩余候选按该类 ranking 和稳定 tie-break 选择；
+4. 不跨类补位；
+5. 输出 shortfall；
+6. 保存精确选择理由。
+
+要求：
+
+* 完整计划精确 30 项且分配为 10/8/6/3/3；
+* 同一 candidate 不能占多个 slot；
+* 同一 semantic fingerprint 不能重复入选；
+* 可配置每个 Work 在计划中的最大曝光次数，规则版本化；
+* 计划输入变化后标记 stale，不自动重排；
+* 用户明确重建后创建新版本，旧版本保留；
+* 相同输入为 deterministic no-op；
+* 失败或取消不替换 current plan；
+* Issue 022 不把计划转成日历、发布排期或实验。
+
+## 十二、计划、队列和恢复
+
+定义有界 `TopicGenerationPlanV1`，preview 至少显示：
+
+* 输入 Dossier/Work 数；
+* 五类候选预计数量；
+* 本地组合上限；
+* 去重上限；
+* 可选模型请求数和预算结论；
+* 预计写入量；
+* plan hash、expiry 和 expected policy revisions。
+
+新增有限 handler，例如：
+
+* `TOPIC_GENERATE_V1`
+* `TOPIC_QUOTA_PLAN_V1`
+
+可合并实现，但语义必须保持：
+
+* 只有桌面显式确认的 producer；
+* payload 仅含 ID、版本、hash 和有限计数；
+* executionId 幂等；
+* 不在 DB 长事务中调用模型；
+* pause、cancel、shutdown 和 recovery 沿用 JobQueue；
+* after-send ambiguous 不自动重试模型；
+* 生成或规划发布前重验依赖；
+* 不自动启动后续 Issue 任务；
+* job result 不含 Evidence 正文、Dossier 内容、路径、secret 或 raw response。
+
+## 十三、Migration 与仓储
+
+追加运行时发现的下一条连续 migration；不预置版本号或 checksum，不修改历史 migration。
+
+优先规范并扩展现有 `topics`，避免建立第二套 Topic 真相。至少覆盖：
+
+* topic identity/version/current；
+* subject membership；
+* semantic fingerprint；
+* eligibility snapshot/reasons；
+* ranking component snapshot；
+* candidate state transition/audit；
+* quota profiles；
+* quota plan/version/member；
+* generation plan/run；
+* dependency/invalidation。
+
+要求：
+
+* 真实 FK、STRICT、CHECK、unique、delete policy 和索引完整；
+* 历史 topic version、score snapshot 和 quota plan append-only；
+* current 切换事务化；
+* 旧 `topics` 兼容数据保守迁移；
+* Issues 018—021 的 Catalog、Evidence、Dossier、Authenticity 数据完整保留；
+* type/state/fingerprint、eligible ranking、quota member、dependency stale 查询有索引；
+* 大池分页、bounded top-N，不全表载入；
+* 新库、升级、迁移前备份、失败回滚、quick_check、foreign_key_check 全部测试；
+* DB/WAL/SHM 不保存 Evidence 正文、完整 Dossier、secret、raw model response 或绝对路径。
+
+## 十四、桌面 UI 与 IPC
+
+激活“选题池”页面，至少提供：
+
+* 五类选题及当前数量；
+* 候选列表、筛选、分页和详情；
+* eligibility 与阻塞原因；
+* 五项 ranking breakdown；
+* subject、Dossier、真实性模式和 spoiler 要求；
+* duplicate/differentiation 解释；
+* lock、hold、resume、archive、restore；
+* 有界批量操作；
+* First-30 配额面板；
+* 每类 selected/required/shortfall；
+* plan preview、确认、历史、stale 和重建；
+* generation preview、进度、取消和历史；
+* loading/empty/error/unconfigured/insufficient/stale/complete 状态。
+
+UI 必须明确：
+
+* “候选选题不是内容简报或已批准文章”；
+* 排序不是平台爆款预测；
+* 资料不足时不会为了凑满 30 篇绕过门禁；
+* FULL 类型允许完整剧透，但未来内容必须带警告；
+* PUBLIC_RESEARCH 和 PERSONAL 模式及评分来源不能混淆。
+
+preload 只增加固定、有限、分页 DTO 和方法。
+
+IPC 校验 exact-object、sender/origin/window、revision、大小、plan hash 和 confirmation token。
+
+renderer 不接收 Node、SQLite、内部路径、完整 Dossier/Evidence、credential、raw response、lease 或内部预测分。
+
+## 十五、专项测试与金标
+
+新增独立 `test:topics`，纳入 full test 与 Windows CI。
+
+金标应有足够合成 Catalog、Dossier、Authenticity 数据，至少产生：
+
+* 五类均有候选；
+* 一个精确 `10/8/6/3/3` 的 COMPLETE 计划；
+* 一个因资料不足产生 shortfall 的 INCOMPLETE 计划；
+* eligible、fact-blocked、authenticity-blocked、stale、duplicate、held、archived 候选；
+* locked 候选和过量锁定冲突；
+* PERSONAL、PUBLIC_RESEARCH 与三档 spoiler 组合。
+
+必须验证：
+
+1. 五类 registry 和 FIRST_30_V1 不可变；
+2. 完整计划精确 30 且 10/8/6/3/3；
+3. 不足时保留 shortfall，不跨类或重复补位；
+4. 各类型附加资格规则；
+5. Dossier、Authenticity、Spoiler 正交组合；
+6. FULL 剧透允许且 warning requirement 保留；
+7. 五项 score 的精确整数与 reason；
+8. UNKNOWN cost/workload 不伪造 0；
+9. 输入乱序时 ranking 和 tie-break 稳定；
+10. AI、版权、出版归属不影响资格或排序；
+11. semantic fingerprint 去重和横向比较 subject 无序；
+12. 不同真实角度可保留；
+13. lock 优先但不绕过资格；
+14. 过量锁定返回冲突；
+15. hold/archive 从计划过滤但不篡改 score；
+16. 状态 preview、confirm、undo 和并发 stale；
+17. pool 变化只使相关 plan stale，不自动重排；
+18. 相同输入 no-op；
+19. 失败、取消、重启不替换 current plan；
+20. executionId 重放和跨进程竞争；
+21. 纯本地、无模型配置路径可完成；
+22. 可选模型路径只用 Scripted Mock 且输出仍需验证；
+23. prompt injection 或 citation mismatch 被拒绝；
+24. migration 新库、升级、备份、回滚、FK、quick check；
+25. 大池分页、top-N 和关键 query plan；
+26. UI、IPC、egress 状态矩阵；
+27. experiments、content_briefs、drafts、quality_checks、approvals、post_packages、publications 不被写入；
+28. 真实密钥、外部网络、模型调用和费用均为 0；
+29. Issue 023、024、025 功能不存在。
+
+## 十六、文档与完成定义
+
+至少交付：
+
+* `docs/contracts/topic-pool-v1.md`
+* `docs/contracts/topic-ranking-quota-v1.md`
+* `docs/adr/` 下下一号 ADR；
+* `docs/m3-issue022-implementation-plan.md`
+* `docs/m3-issue022-acceptance-map.md`
+* 必要的脱敏证据放入 `docs/evidence/`；
+* 归档后的本指令和更新后的历史指令索引；
+* README、AGENTS、Roadmap、文档中心从 M2 completed 更新为 M3 in progress；
+* 下一步明确为 Issue 023，不得写成 Issue 024 或内容生成已完成。
+
+完成前：
+
+1. 从最新 `npm ci` 开始按当前 CI 顺序运行全部适用门禁；
+2. 所有专项、全量测试、构建、桌面及 Clipper 打包、Electron smoke 和依赖审计通过；
+3. 非 CI 交互式浏览器 smoke 如仍受 Windows 前台限制，单独如实报告，不得把它伪装成 Issue 022 失败，也不得削弱已有断言；
+4. 创建恰好一个 Issue 022 本地提交；
+5. 核验 parent 为动态开工基线、工作树干净、远端未改变；
+6. 停止，不进入 Issue 023。
+
+最终报告必须明确：
+
+* 五类候选和各状态金标数量；
+* COMPLETE 计划的 10/8/6/3/3 精确结果；
+* INCOMPLETE 计划的 shortfall 及未绕过门禁证据；
+* 五项 ranking 分量、稳定 tie-break 与去重结果；
+* lock、hold、archive、restore、stale、no-op、失败、取消和恢复结果；
+* migration 和 M2 数据保留；
+* experiments、Brief、Draft 和质量流程仍未实现；
+* 真实网络、模型、密钥读取和费用均为 0；
+* 指令只归档于 `docs/instructions/m3/`；
+* 只创建一个本地提交、未 push、未进入 Issue 023。
+
+只有全部成立才可报告 PASS。
+
+## 十七、给 Codex 的启动指令
+
+继续当前本地 `main`，允许其合法领先 `origin/main`；不要 pull、rebase、reset 或 push。
+
+完整读取仓库 `AGENTS.md` 和本 TXT，随后立即把本 TXT 唯一归档到：
+
+`docs/instructions/m3/M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt`
+
+只实施 M3 Issue 022：完成五类 Topic Pool、确定性 eligibility、五项可解释排序、semantic 去重、lock/hold/archive、FIRST_30_V1 的 10/8/6/3/3 配额计划、选题池 UI、migration 和全部增量验收。
+
+不得生成 Experiment、Content Brief、标题、正文、图片或质量流程。
+
+测试只使用合成 fixture、临时 SQLite、Scripted Mock 和本机 loopback；真实密钥、业务网络、模型调用和费用保持为 0。
+
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 023。

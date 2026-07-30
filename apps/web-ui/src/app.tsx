@@ -7,6 +7,7 @@ import { BrowserClipLibrary } from './browser-clip-library.js';
 import { LibraryPage } from './library-page.js';
 import { ResearchPage } from './research-page.js';
 import { SettingsPage } from './settings-page.js';
+import { TopicPoolPage } from './topic-pool-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
 
@@ -85,8 +86,8 @@ export function App(): React.JSX.Element {
             谜
           </span>
           <div>
-            <p className="brand-name">红笺</p>
-            <p className="brand-subtitle">本地运营台</p>
+            <p className="brand-name">小红书</p>
+            <p className="brand-subtitle">推理内容工作台</p>
           </div>
         </div>
 
@@ -159,14 +160,16 @@ export function App(): React.JSX.Element {
             <LibraryPage />
           ) : route.path === '/research' ? (
             <ResearchPage />
+          ) : route.path === '/topics' ? (
+            <TopicPoolPage />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">
-                <p className="section-kicker">当前进度 · M1 本地基础已完成</p>
-                <h2>本地安全底座已就绪</h2>
+                <p className="section-kicker">当前进度 · M3 Issue 022</p>
+                <h2>选题池与首批 30 条组合已就绪</h2>
                 <p>
-                  桌面壳、SQLite、任务队列、文件仓库、本地设置与回环 API
-                  已接通。模型、研究、内容生产与发布业务尚未开始。
+                  五类 Topic Pool、确定性资格、可解释排序、语义去重与 FIRST_30_V1
+                  配额计划已接通。内容简报、标题、正文、图片和质量流程仍未开始。
                 </p>
               </article>
               <article className="metric-card">

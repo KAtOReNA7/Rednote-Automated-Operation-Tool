@@ -64,7 +64,7 @@ describe('Issue 020 dossier architecture and governance', () => {
     );
   });
 
-  it('tracks required contracts, ADR, plan, acceptance map and next-issue indexes', () => {
+  it('tracks required contracts, ADR, plan, acceptance map and current issue indexes', () => {
     for (const path of [
       'docs/contracts/research-dossier-v1.md',
       'docs/contracts/dossier-coverage-readiness-v1.md',
@@ -80,7 +80,8 @@ describe('Issue 020 dossier architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/M3 Issue 022/u);
+      expect(source(path), path).toMatch(/Issue 022/u);
+      expect(source(path), path).toMatch(/Issue 023/u);
     }
   });
 });

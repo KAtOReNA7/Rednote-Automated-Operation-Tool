@@ -37,7 +37,7 @@ const providerProductionSource = [
 describe('Issue 012 provider architecture and scope', () => {
   it('keeps migration v1-v5 hashes frozen while Issues 013-014 append v6-v7', () => {
     expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ]);
     expect(MIGRATIONS.slice(0, 5).map(migrationChecksum)).toEqual([
       '8964b8727dfb4f244a8c63a47368da3ceb23de945078b37efe161af91acac907',

@@ -182,6 +182,18 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   getSearchState: [],
   getSettings: [],
   getSetupState: [],
+  getTopic: [{ historyLimit: 25, topicId: 'topic-fixture-000001' }],
+  getTopicPool: [
+    {
+      contentType: null,
+      eligibility: null,
+      limit: 25,
+      offset: 0,
+      profileId: 'primary',
+      query: '',
+      state: null,
+    },
+  ],
   getWindowState: [],
   listLocalApiClients: [],
   listDossiers: [{ limit: 25, offset: 0 }],
@@ -264,6 +276,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       sourceRevisionIds: ['source-fixture:1'],
     },
   ],
+  previewTopicAction: [{ kind: 'GENERATE', profileId: 'primary' }],
   previewDossierBuild: [{ subjectId: 'work-fixture', subjectType: 'WORK' }],
   previewModelCacheClear: [],
   diffDossierVersions: [
@@ -287,6 +300,15 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       planHash: 'a'.repeat(64),
       settingsRevision: 0,
       startToken: 'a'.repeat(43),
+    },
+  ],
+  confirmTopicAction: [
+    {
+      confirmation: 'APPLY_TOPIC_ACTION',
+      executionId: 'topic-execution-fixture',
+      kind: 'GENERATE',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
     },
   ],
   updateLocalApiSettings: [{ enabled: true, expectedRevision: 0, port: 43_119 }],

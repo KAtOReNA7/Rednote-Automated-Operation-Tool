@@ -18,6 +18,7 @@ import type {
   ProbeSource,
   ProbeState,
 } from '@mystery-operations/providers';
+import type { TopicErrorCode } from '@mystery-operations/topics';
 import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
@@ -81,6 +82,16 @@ import type {
   GetAuthenticityWorkInput,
   PreviewAuthenticityActionInput,
 } from './authenticity-contracts.js';
+import type {
+  ConfirmTopicActionInput,
+  GetTopicInput,
+  GetTopicPoolInput,
+  PreviewTopicActionInput,
+  TopicActionPreview,
+  TopicActionResult,
+  TopicDetailView,
+  TopicPoolWorkspaceView,
+} from './topic-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -101,6 +112,10 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getAuthenticityWork: 'authenticity:get-work',
   previewAuthenticityAction: 'authenticity:preview-action',
   confirmAuthenticityAction: 'authenticity:confirm-action',
+  getTopicPool: 'topics:get-pool',
+  getTopic: 'topics:get-topic',
+  previewTopicAction: 'topics:preview-action',
+  confirmTopicAction: 'topics:confirm-action',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -188,6 +203,7 @@ export interface DesktopError {
     | 'CATALOG_RUN_NOT_FOUND'
     | 'CATALOG_STALE_REVISION'
     | AuthenticityErrorCode
+    | TopicErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -666,6 +682,10 @@ export interface DesktopBridge {
   confirmAuthenticityAction?(
     input: ConfirmAuthenticityActionInput,
   ): Promise<DesktopResult<AuthenticityActionResult>>;
+  getTopicPool?(input: GetTopicPoolInput): Promise<DesktopResult<TopicPoolWorkspaceView>>;
+  getTopic?(input: GetTopicInput): Promise<DesktopResult<TopicDetailView>>;
+  previewTopicAction?(input: PreviewTopicActionInput): Promise<DesktopResult<TopicActionPreview>>;
+  confirmTopicAction?(input: ConfirmTopicActionInput): Promise<DesktopResult<TopicActionResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

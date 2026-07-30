@@ -40,6 +40,12 @@ export {
   createSearchExecutionJobHandler,
   registerSearchExecutionJob,
 } from './search-execution-handler.js';
+export {
+  TopicPlanningService,
+  createTopicGenerationJobHandler,
+  createTopicQuotaPlanJobHandler,
+  registerTopicPlanningJobs,
+} from './topic-planning-handler.js';
 
 export type { BackoffPolicy, ExponentialBackoffOptions } from './queue/backoff.js';
 export type { QueueClock, QueueScheduler } from './queue/clock.js';
@@ -64,6 +70,11 @@ export type {
 } from './queue/types.js';
 export type { JobWorkerOptions } from './queue/worker.js';
 export type { FetchPlanReaderV1 } from './fetch-execution-handler.js';
+export type {
+  TopicPlanningJobResultV1,
+  TopicPlanningPersistence,
+  TopicPlanningServiceOptions,
+} from './topic-planning-handler.js';
 export type {
   EvidenceModelSlotV1,
   EvidenceProcessingCountsV1,

@@ -12,5 +12,7 @@
 Issue 的实施计划、验收映射和外发矩阵暂时保留既有文件名与路径，避免破坏历史审计链接。
 新增文档应优先进入上述分类目录，除非它必须沿用既有验收命名约定。
 
-M2（Issue 012—021）已完成，收口说明见 [`m2-closeout.md`](./m2-closeout.md)。下一项仅规划
-M3 Issue 022；未收到明确任务时不自动开始。
+M2（Issue 012—021）已完成，收口说明见 [`m2-closeout.md`](./m2-closeout.md)。M3 已完成
+Issue 022 的 Topic Pool 与 First-30 配额，本地证据见
+[`evidence/m3-issue022-local-evidence.md`](./evidence/m3-issue022-local-evidence.md)；下一项仅规划
+Issue 023，未收到明确任务时不自动开始。

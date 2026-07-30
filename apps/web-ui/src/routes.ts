@@ -25,7 +25,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = Object.freeze([
     shortLabel: '研',
   },
   {
-    description: '选题记录与排序尚未在当前里程碑实现。',
+    description: '管理五类候选、确定性资格与排序、语义去重及 FIRST_30_V1 配额计划。',
     label: '选题池',
     path: '/topics',
     shortLabel: '题',

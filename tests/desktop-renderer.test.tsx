@@ -317,7 +317,7 @@ describe('React desktop shell', () => {
   it('renders all destinations and the ready overview', async () => {
     render(<App />);
     expect(screen.getAllByRole('link')).toHaveLength(10);
-    expect(await screen.findByText('本地安全底座已就绪')).toBeInTheDocument();
+    expect(await screen.findByText('选题池与首批 30 条组合已就绪')).toBeInTheDocument();
     expect(screen.getByText('本机基础设施正常')).toBeInTheDocument();
     expect(screen.getByText('Electron')).toBeInTheDocument();
     expect(screen.getByText('43.2.0')).toBeInTheDocument();
@@ -326,7 +326,7 @@ describe('React desktop shell', () => {
   it('navigates to the real research page without presenting a placeholder as ready', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText('本地安全底座已就绪');
+    await screen.findByText('选题池与首批 30 条组合已就绪');
     await user.click(screen.getByRole('link', { name: /资料研究/u }));
 
     expect(await screen.findByRole('heading', { name: '资料研究', level: 1 })).toBeInTheDocument();
@@ -371,7 +371,7 @@ describe('React desktop shell', () => {
   it('supports keyboard navigation with a visible focus target', async () => {
     const user = userEvent.setup();
     render(<App />);
-    await screen.findByText('本地安全底座已就绪');
+    await screen.findByText('选题池与首批 30 条组合已就绪');
     await user.tab();
     expect(screen.getByRole('link', { name: /总览/u })).toHaveFocus();
   });

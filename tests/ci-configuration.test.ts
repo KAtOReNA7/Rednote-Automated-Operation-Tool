@@ -57,6 +57,7 @@ describe('Windows CI configuration', () => {
       'npm run test:portability',
       'npm run test:providers',
       'npm run test:capabilities',
+      'npm run test:topics',
       'npm run test:electron-smoke',
       'npm run test',
       'npm run build',

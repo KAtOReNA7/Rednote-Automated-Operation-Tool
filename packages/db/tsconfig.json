@@ -40,6 +40,9 @@
     },
     {
       "path": "../shared"
+    },
+    {
+      "path": "../topics"
     }
   ],
   "include": ["src/**/*.ts"]

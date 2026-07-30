@@ -90,7 +90,7 @@ describe('Issue 021 authenticity architecture and governance', () => {
     expect(packageJson.scripts.test).toBe('node scripts/run-portable-vitest.mjs run');
   });
 
-  it('tracks contracts, ADR, plan, acceptance map and M2 closeout indexes', () => {
+  it('tracks contracts, ADR, plan, acceptance map, M2 closeout and current indexes', () => {
     for (const path of [
       'docs/contracts/reading-authenticity-policy-v1.md',
       'docs/contracts/expression-permission-v1.md',
@@ -108,8 +108,9 @@ describe('Issue 021 authenticity architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/M2.*完成|M2.*已完成/iu);
-      expect(source(path), path).toMatch(/M3 Issue 022/u);
+      expect(source(path), path).toMatch(/M2[\s\S]{0,120}(?:完成|已完成)/iu);
+      expect(source(path), path).toMatch(/Issue 022/u);
+      expect(source(path), path).toMatch(/Issue 023/u);
     }
   });
 });

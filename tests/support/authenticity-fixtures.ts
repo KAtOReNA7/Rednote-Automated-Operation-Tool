@@ -48,6 +48,7 @@ export function insertAuthenticityDossier(
   database: DatabaseSync,
   workId: string,
   readiness: 'FACT_BLOCKED' | 'INSUFFICIENT_COVERAGE' | 'READY_FOR_CONTENT_BRIEF',
+  coveragePolicyVersion = 'coverage-policy-v1',
 ): { readonly dossierId: string; readonly versionId: string } {
   const dossierId = `dossier-${workId}`;
   const versionId = `dossier-version-${workId}`;
@@ -73,11 +74,19 @@ export function insertAuthenticityDossier(
          build_run_id, readiness, reason_codes_json, warnings_json,
          legacy_payload_json, revision, created_at, published_at
        ) VALUES (
-         ?, ?, 1, NULL, 'research-dossier-v1', 'coverage-policy-v1',
+         ?, ?, 1, NULL, 'research-dossier-v1', ?,
          'fact-policy-v1', ?, 'INITIAL', NULL, ?, '[]', '[]', NULL, 1, ?, ?
        )`,
     )
-    .run(versionId, dossierId, 'a'.repeat(64), readiness, AUTHENTICITY_NOW, AUTHENTICITY_NOW);
+    .run(
+      versionId,
+      dossierId,
+      coveragePolicyVersion,
+      'a'.repeat(64),
+      readiness,
+      AUTHENTICITY_NOW,
+      AUTHENTICITY_NOW,
+    );
   database
     .prepare(
       `UPDATE research_dossiers

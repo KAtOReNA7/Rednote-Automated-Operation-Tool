@@ -439,7 +439,8 @@ flowchart TD
 
 ## M3：选题、文案和质量门禁
 
-下一项：**M3 Issue 022**；未收到明确任务时不得自动开始。
+状态：**进行中**。Issue 022 已完成；下一项仅规划 **M3 Issue 023**，未收到明确任务时不得
+自动开始。
 
 ### Issue 022：实现选题池与首批 30 篇配额
 
@@ -447,16 +448,21 @@ flowchart TD
 
 目标：
 
-- 自动生成并排序选题，满足五类内容配额。
+- 从 current Catalog、Dossier、FactPolicy 与 Expression Permission 纯本地生成结构化候选，
+  以确定性资格、语义去重和可解释整数排序形成五类 Topic Pool。
 
 验收：
 
 - 首批配额为 10/8/6/3/3；
 - 显示证据充分度、内容适配、差异性、成本和审批工作量；
 - 用户可锁定、搁置和归档；
-- 不因 AI 标识或版权改变排序。
+- 不因 AI 标识或版权改变资格或排序；
+- 资料不足时保留逐类 shortfall，不跨类补位或放宽门禁；
+- 候选与计划不创建 Experiment、Content Brief、标题、正文、图片或质量流程。
 
 依赖：020、021。
+
+状态：已完成（Topic Pool V1、Topic Ranking 与 First-30 Quota V1、migration v15 与选题池 UI）。
 
 ### Issue 023：实现实验管理
 

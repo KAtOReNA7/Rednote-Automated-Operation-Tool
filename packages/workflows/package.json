@@ -23,6 +23,7 @@
     "@mystery-operations/fetch": "0.0.0",
     "@mystery-operations/providers": "0.0.0",
     "@mystery-operations/search": "0.0.0",
-    "@mystery-operations/storage": "0.0.0"
+    "@mystery-operations/storage": "0.0.0",
+    "@mystery-operations/topics": "0.0.0"
   }
 }

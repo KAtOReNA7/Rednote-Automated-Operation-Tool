@@ -18,6 +18,7 @@ export { assertSqliteRuntimeCapabilities } from './runtime-capabilities.js';
 export { SqliteSettingsRepository } from './settings-repository.js';
 export { SqliteProviderCapabilityRepository } from './provider-capability-repository.js';
 export { SqliteSearchRepository } from './search-repository.js';
+export { SqliteTopicRepository } from './topic-repository.js';
 export { runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
@@ -105,3 +106,19 @@ export type {
   SearchRunSummaryV1,
   StoredSearchProviderConfigV1,
 } from './search-repository.js';
+export type {
+  TopicBatchApplyResult,
+  TopicBatchStatePreview,
+  TopicDetailView,
+  TopicGenerationExecutionResult,
+  TopicGenerationCancelPreview,
+  TopicGenerationRepositoryPreview,
+  TopicGenerationRunView,
+  TopicPoolItem,
+  TopicPoolView,
+  TopicQuotaPlanView,
+  TopicQuotaRepositoryPreview,
+  TopicRankingComponentView,
+  TopicStateActionPreview,
+  TopicStateUndoPreview,
+} from './topic-repository.js';

@@ -50,6 +50,9 @@
       "path": "../../packages/storage"
     },
     {
+      "path": "../../packages/topics"
+    },
+    {
       "path": "../../packages/workflows"
     }
   ]

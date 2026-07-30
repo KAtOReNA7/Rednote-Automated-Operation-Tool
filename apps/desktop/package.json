@@ -22,6 +22,7 @@
     "@mystery-operations/shared": "0.0.0",
     "@mystery-operations/settings": "0.0.0",
     "@mystery-operations/storage": "0.0.0",
+    "@mystery-operations/topics": "0.0.0",
     "@mystery-operations/workflows": "0.0.0"
   }
 }

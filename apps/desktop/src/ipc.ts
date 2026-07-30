@@ -6,6 +6,7 @@ import { AuthenticityError } from '@mystery-operations/authenticity';
 import { DossierError } from '@mystery-operations/dossier';
 import { EvidenceError } from '@mystery-operations/evidence';
 import { LocalApiError } from '@mystery-operations/local-api';
+import { TopicError } from '@mystery-operations/topics';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -19,6 +20,7 @@ import {
   type ConfirmDossierBuildInput,
   type ConfirmEvidenceConflictInput,
   type ConfirmSourceProcessingInput,
+  type ConfirmTopicActionInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -37,6 +39,8 @@ import {
   type GetAuthenticityWorkInput,
   type GetDossierInput,
   type GetEvidenceStateInput,
+  type GetTopicInput,
+  type GetTopicPoolInput,
   type ListDossiersInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
@@ -48,6 +52,7 @@ import {
   type PreviewDossierBuildInput,
   type PreviewEvidenceConflictInput,
   type PreviewSourceProcessingInput,
+  type PreviewTopicActionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -91,6 +96,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof TopicError) {
+    return failure(error.code, error.message, error.retryable, error.safeDetails);
+  }
   if (error instanceof AuthenticityError) {
     return failure(error.code, error.message, error.retryable, error.safeDetails);
   }
@@ -245,6 +253,34 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       );
     },
   );
+  register('getTopicPool', DESKTOP_IPC_CHANNELS.getTopicPool, (_event, args) =>
+    options.settingsRuntime.getTopicPool(args[0] as GetTopicPoolInput),
+  );
+  register('getTopic', DESKTOP_IPC_CHANNELS.getTopic, (_event, args) =>
+    options.settingsRuntime.getTopic(args[0] as GetTopicInput),
+  );
+  register('previewTopicAction', DESKTOP_IPC_CHANNELS.previewTopicAction, (event, args) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window === null) {
+      throw new TopicError('TOPIC_INVALID_REQUEST');
+    }
+    return options.settingsRuntime.previewTopicAction(
+      args[0] as PreviewTopicActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmTopicAction', DESKTOP_IPC_CHANNELS.confirmTopicAction, (event, args) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window === null) {
+      throw new TopicError('TOPIC_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.confirmTopicAction(
+      args[0] as ConfirmTopicActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),
   );

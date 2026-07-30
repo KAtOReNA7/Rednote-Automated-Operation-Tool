@@ -83,6 +83,14 @@ import type {
   StartProviderCapabilityProbeInput,
   UpdateSearchProviderConfigInput,
   UpdateFetchPolicyInput,
+  ConfirmTopicActionInput,
+  GetTopicInput,
+  GetTopicPoolInput,
+  PreviewTopicActionInput,
+  TopicActionPreview,
+  TopicActionResult,
+  TopicDetailView,
+  TopicPoolWorkspaceView,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -117,6 +125,7 @@ import { DesktopCatalogRuntime } from './catalog-runtime.js';
 import { DesktopEvidenceRuntime } from './evidence-runtime.js';
 import { DesktopDossierRuntime } from './dossier-runtime.js';
 import { DesktopAuthenticityRuntime } from './authenticity-runtime.js';
+import { DesktopTopicRuntime } from './topic-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -164,6 +173,7 @@ interface ActiveProject {
   readonly root: ProjectDataRoot;
   readonly search: DesktopSearchRuntime;
   readonly service: SettingsService;
+  readonly topics: DesktopTopicRuntime;
 }
 
 export class DesktopSettingsRuntime {
@@ -454,11 +464,13 @@ export class DesktopSettingsRuntime {
       await previous?.capabilities.close();
       await previous?.catalog.close();
       await previous?.dossier.close();
+      await previous?.topics.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
       await prepared.catalog.close();
       await prepared.dossier.close();
+      await prepared.topics.close();
       prepared.database.close();
       throw error;
     }
@@ -537,6 +549,30 @@ export class DesktopSettingsRuntime {
     windowId: number,
   ): AuthenticityActionResult {
     return this.#requireActive().authenticity.confirm(input, senderId, windowId);
+  }
+
+  public getTopicPool(input: GetTopicPoolInput): TopicPoolWorkspaceView {
+    return this.#requireActive().topics.list(input);
+  }
+
+  public getTopic(input: GetTopicInput): TopicDetailView {
+    return this.#requireActive().topics.get(input);
+  }
+
+  public previewTopicAction(
+    input: PreviewTopicActionInput,
+    senderId: number,
+    windowId: number,
+  ): TopicActionPreview {
+    return this.#requireActive().topics.preview(input, senderId, windowId);
+  }
+
+  public confirmTopicAction(
+    input: ConfirmTopicActionInput,
+    senderId: number,
+    windowId: number,
+  ): TopicActionResult {
+    return this.#requireActive().topics.confirm(input, senderId, windowId);
   }
 
   public getEvidenceState(input: GetEvidenceStateInput): EvidenceStateView {
@@ -738,6 +774,7 @@ export class DesktopSettingsRuntime {
     this.#active?.capabilities.clearWindow(windowId);
     this.#active?.accounting.clearWindow(windowId);
     this.#active?.authenticity.clearWindow(windowId);
+    this.#active?.topics.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -780,6 +817,7 @@ export class DesktopSettingsRuntime {
     await this.#active?.capabilities.close();
     await this.#active?.catalog.close();
     await this.#active?.dossier.close();
+    await this.#active?.topics.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -842,8 +880,10 @@ export class DesktopSettingsRuntime {
     const authenticity = new DesktopAuthenticityRuntime(database);
     const evidence = new DesktopEvidenceRuntime(database);
     const dossier = new DesktopDossierRuntime(database);
+    const topics = new DesktopTopicRuntime(database);
     catalog.start();
     dossier.start();
+    topics.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
     return {
       accounting,
@@ -858,6 +898,7 @@ export class DesktopSettingsRuntime {
       root,
       search,
       service,
+      topics,
     };
   }
 

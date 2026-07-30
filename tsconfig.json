@@ -51,6 +51,9 @@
     },
     {
       "path": "./packages/storage"
+    },
+    {
+      "path": "./packages/topics"
     }
   ]
 }

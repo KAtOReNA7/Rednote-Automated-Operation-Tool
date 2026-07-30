@@ -26,5 +26,11 @@
 - [Issue 020：版本化研究档案、覆盖度与增量重建](./m2/M2-Issue020-versioned-research-dossier-Codex-instruction.txt)
 - [Issue 021：阅读真实性、表达权限与 M2 收口](./m2/M2-Issue021-reading-authenticity-policy-Codex-instruction.txt)
 
-M2（Issue 012—021）已完成。下一项仅规划 M3 Issue 022；未收到明确任务时不得创建、
-归档或实施 Issue 022 指令。
+M2（Issue 012—021）已完成。
+
+## M3
+
+- [Issue 022：Topic Pool、可解释排序与首批 30 篇配额](./m3/M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt)
+
+M3 Issue 022 已完成。下一项仅规划 Issue 023；未收到明确任务时不得创建、归档或实施
+Issue 023 指令。

@@ -6,6 +6,14 @@ import {
   assertScoreRecordDraft,
   assertSpoilerPreferenceDraft,
 } from '@mystery-operations/authenticity';
+import {
+  assertTopicBatchStateChangeDraft,
+  assertTopicStateChangeDraft,
+  TOPIC_CANDIDATE_STATES,
+  TOPIC_CONTENT_TYPES,
+  TOPIC_ELIGIBILITY_STATES,
+  TOPIC_LIMITS,
+} from '@mystery-operations/topics';
 
 import { isTrustedRendererUrl } from './security-policy.js';
 
@@ -26,6 +34,7 @@ export type DesktopIpcOperation =
   | 'confirmDossierBuild'
   | 'confirmSourceProcessing'
   | 'confirmDataRootSelection'
+  | 'confirmTopicAction'
   | 'createModelPriceSchedule'
   | 'createModelUnitPolicy'
   | 'exportDiagnosticReport'
@@ -48,6 +57,8 @@ export type DesktopIpcOperation =
   | 'getSearchState'
   | 'getSettings'
   | 'getSetupState'
+  | 'getTopic'
+  | 'getTopicPool'
   | 'getWindowState'
   | 'listLocalApiClients'
   | 'listBrowserClips'
@@ -65,6 +76,7 @@ export type DesktopIpcOperation =
   | 'previewEvidenceConflict'
   | 'previewDossierBuild'
   | 'previewSourceProcessing'
+  | 'previewTopicAction'
   | 'diffDossierVersions'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
@@ -182,6 +194,18 @@ const AUTHENTICITY_ACTION_KINDS = new Set([
   'STATE_UNDO',
 ]);
 
+const TOPIC_ACTION_KINDS = new Set([
+  'BATCH_STATE_CHANGE',
+  'CANCEL_GENERATION',
+  'GENERATE',
+  'QUOTA_PLAN',
+  'STATE_CHANGE',
+  'STATE_UNDO',
+]);
+const TOPIC_CONTENT_TYPE_VALUES = new Set<unknown>(TOPIC_CONTENT_TYPES);
+const TOPIC_ELIGIBILITY_VALUES = new Set<unknown>(TOPIC_ELIGIBILITY_STATES);
+const TOPIC_STATE_VALUES = new Set<unknown>(TOPIC_CANDIDATE_STATES);
+
 function validAuthenticityDraft(value: Readonly<Record<string, unknown>>): boolean {
   try {
     switch (value.kind) {
@@ -242,6 +266,49 @@ function validAuthenticityDraft(value: Readonly<Record<string, unknown>>): boole
         const draft = assertBatchReadingStateDraft(value.draft);
         return catalogId(draft.profileId) && draft.items.every((item) => catalogId(item.workId));
       }
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function validTopicPreview(value: Readonly<Record<string, unknown>>): boolean {
+  try {
+    switch (value.kind) {
+      case 'GENERATE':
+        return exactKeys(value, ['kind', 'profileId']) && catalogId(value.profileId);
+      case 'STATE_CHANGE': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertTopicStateChangeDraft(value.draft);
+        return draft.action !== 'UNDO' && catalogId(draft.topicId);
+      }
+      case 'STATE_UNDO':
+        return (
+          exactKeys(value, ['expectedRevision', 'kind', 'topicId']) &&
+          catalogId(value.topicId) &&
+          catalogRevision(value.expectedRevision)
+        );
+      case 'BATCH_STATE_CHANGE': {
+        if (!exactKeys(value, ['draft', 'kind'])) return false;
+        const draft = assertTopicBatchStateChangeDraft(value.draft);
+        return draft.items.every((item) => catalogId(item.topicId));
+      }
+      case 'QUOTA_PLAN':
+        return (
+          exactKeys(value, ['kind', 'maxWorkExposure', 'profileId']) &&
+          catalogId(value.profileId) &&
+          Number.isSafeInteger(value.maxWorkExposure) &&
+          Number(value.maxWorkExposure) >= 1 &&
+          Number(value.maxWorkExposure) <= TOPIC_LIMITS.maxWorkExposure
+        );
+      case 'CANCEL_GENERATION':
+        return (
+          exactKeys(value, ['expectedRevision', 'kind', 'runId']) &&
+          catalogId(value.runId) &&
+          catalogRevision(value.expectedRevision)
+        );
       default:
         return false;
     }
@@ -361,6 +428,71 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
       return (
         value?.confirmation === 'APPLY_AUTHENTICITY_ACTION' &&
         AUTHENTICITY_ACTION_KINDS.has(String(value.kind)) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'getTopicPool': {
+      const value = validateOneObject(args, [
+        'contentType',
+        'eligibility',
+        'limit',
+        'offset',
+        'profileId',
+        'query',
+        'state',
+      ]);
+      return (
+        value !== null &&
+        (value.contentType === null || TOPIC_CONTENT_TYPE_VALUES.has(value.contentType)) &&
+        (value.eligibility === null || TOPIC_ELIGIBILITY_VALUES.has(value.eligibility)) &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= TOPIC_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= TOPIC_LIMITS.maxPageOffset &&
+        catalogId(value.profileId) &&
+        typeof value.query === 'string' &&
+        Buffer.byteLength(value.query, 'utf8') <= 200 &&
+        !containsControlCharacter(value.query) &&
+        (value.state === null || TOPIC_STATE_VALUES.has(value.state))
+      );
+    }
+    case 'getTopic': {
+      const value = validateOneObject(args, ['historyLimit', 'topicId']);
+      return (
+        value !== null &&
+        catalogId(value.topicId) &&
+        Number.isSafeInteger(value.historyLimit) &&
+        Number(value.historyLimit) >= 1 &&
+        Number(value.historyLimit) <= TOPIC_LIMITS.maxHistoryPageSize
+      );
+    }
+    case 'previewTopicAction': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      return value !== null && validTopicPreview(value);
+    }
+    case 'confirmTopicAction': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'executionId',
+        'kind',
+        'previewHash',
+        'token',
+      ]);
+      const kind = value?.kind;
+      return (
+        value?.confirmation === 'APPLY_TOPIC_ACTION' &&
+        TOPIC_ACTION_KINDS.has(String(kind)) &&
+        (kind === 'GENERATE' || kind === 'QUOTA_PLAN'
+          ? catalogId(value.executionId)
+          : value.executionId === null) &&
         typeof value.previewHash === 'string' &&
         /^[a-f0-9]{64}$/u.test(value.previewHash) &&
         typeof value.token === 'string' &&
