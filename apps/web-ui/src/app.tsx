@@ -8,6 +8,7 @@ import { LibraryPage } from './library-page.js';
 import { ResearchPage } from './research-page.js';
 import { SettingsPage } from './settings-page.js';
 import { TopicPoolPage } from './topic-pool-page.js';
+import { ExperimentManagementPage } from './experiment-management-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
 
@@ -162,14 +163,16 @@ export function App(): React.JSX.Element {
             <ResearchPage />
           ) : route.path === '/topics' ? (
             <TopicPoolPage />
+          ) : route.path === '/experiments' ? (
+            <ExperimentManagementPage />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">
-                <p className="section-kicker">当前进度 · M3 Issue 022</p>
-                <h2>选题池与首批 30 条组合已就绪</h2>
+                <p className="section-kicker">当前进度 · M3 Issue 023</p>
+                <h2>版本化单变量实验设计已就绪</h2>
                 <p>
-                  五类 Topic Pool、确定性资格、可解释排序、语义去重与 FIRST_30_V1
-                  配额计划已接通。内容简报、标题、正文、图片和质量流程仍未开始。
+                  可检验假设、control / treatment、唯一 primary metric、guardrails、跨作品复现和
+                  确定性分配已接通。实验尚未执行，也没有效果、显著性或 winner 结论。
                 </p>
               </article>
               <article className="metric-card">

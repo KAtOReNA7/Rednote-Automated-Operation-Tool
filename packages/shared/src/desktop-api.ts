@@ -19,6 +19,7 @@ import type {
   ProbeState,
 } from '@mystery-operations/providers';
 import type { TopicErrorCode } from '@mystery-operations/topics';
+import type { ExperimentErrorCode } from '@mystery-operations/experiments';
 import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
@@ -92,6 +93,16 @@ import type {
   TopicDetailView,
   TopicPoolWorkspaceView,
 } from './topic-contracts.js';
+import type {
+  ConfirmExperimentActionInput,
+  ExperimentActionPreview,
+  ExperimentActionResult,
+  ExperimentDetailView,
+  ExperimentListView,
+  GetExperimentInput,
+  GetExperimentsInput,
+  PreviewExperimentActionInput,
+} from './experiment-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -116,6 +127,10 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getTopic: 'topics:get-topic',
   previewTopicAction: 'topics:preview-action',
   confirmTopicAction: 'topics:confirm-action',
+  getExperiments: 'experiments:list',
+  getExperiment: 'experiments:get',
+  previewExperimentAction: 'experiments:preview-action',
+  confirmExperimentAction: 'experiments:confirm-action',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -204,6 +219,7 @@ export interface DesktopError {
     | 'CATALOG_STALE_REVISION'
     | AuthenticityErrorCode
     | TopicErrorCode
+    | ExperimentErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -686,6 +702,14 @@ export interface DesktopBridge {
   getTopic?(input: GetTopicInput): Promise<DesktopResult<TopicDetailView>>;
   previewTopicAction?(input: PreviewTopicActionInput): Promise<DesktopResult<TopicActionPreview>>;
   confirmTopicAction?(input: ConfirmTopicActionInput): Promise<DesktopResult<TopicActionResult>>;
+  getExperiments?(input: GetExperimentsInput): Promise<DesktopResult<ExperimentListView>>;
+  getExperiment?(input: GetExperimentInput): Promise<DesktopResult<ExperimentDetailView>>;
+  previewExperimentAction?(
+    input: PreviewExperimentActionInput,
+  ): Promise<DesktopResult<ExperimentActionPreview>>;
+  confirmExperimentAction?(
+    input: ConfirmExperimentActionInput,
+  ): Promise<DesktopResult<ExperimentActionResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

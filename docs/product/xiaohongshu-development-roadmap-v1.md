@@ -439,7 +439,7 @@ flowchart TD
 
 ## M3：选题、文案和质量门禁
 
-状态：**进行中**。Issue 022 已完成；下一项仅规划 **M3 Issue 023**，未收到明确任务时不得
+状态：**进行中**。Issue 022—023 已完成；下一项仅规划 **M3 Issue 024**，未收到明确任务时不得
 自动开始。
 
 ### Issue 022：实现选题池与首批 30 篇配额
@@ -480,6 +480,8 @@ flowchart TD
 - 实验配置可版本化。
 
 依赖：022。
+
+状态：已完成（Experiment Design/Assignment/Metrics V1、migration v16 与实验管理 UI）。
 
 ### Issue 024：实现内容简报生成器
 

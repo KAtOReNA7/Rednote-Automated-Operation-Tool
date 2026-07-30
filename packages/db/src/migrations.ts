@@ -7671,6 +7671,1141 @@ BEGIN
 END;
 `;
 
+const VERSIONED_EXPERIMENT_MANAGEMENT = `
+ALTER TABLE experiments ADD COLUMN experiment_contract_version TEXT CHECK (
+  experiment_contract_version IS NULL OR
+  experiment_contract_version IN ('legacy-experiment-v0', 'experiment-design-v1')
+);
+ALTER TABLE experiments ADD COLUMN profile_id TEXT
+  REFERENCES account_profiles(id) ON UPDATE CASCADE ON DELETE RESTRICT;
+ALTER TABLE experiments ADD COLUMN experiment_state TEXT CHECK (
+  experiment_state IS NULL OR experiment_state IN (
+    'DRAFT', 'VALIDATED', 'ASSIGNMENT_READY', 'LOCKED',
+    'HELD', 'ARCHIVED', 'SUPERSEDED', 'STALE'
+  )
+);
+ALTER TABLE experiments ADD COLUMN experiment_revision INTEGER CHECK (
+  experiment_revision IS NULL OR (
+    typeof(experiment_revision) = 'integer' AND experiment_revision > 0
+  )
+);
+ALTER TABLE experiments ADD COLUMN created_at TEXT CHECK (
+  created_at IS NULL OR created_at ${UTC_REQUIRED}
+);
+ALTER TABLE experiments ADD COLUMN updated_at TEXT CHECK (
+  updated_at IS NULL OR updated_at ${UTC_REQUIRED}
+);
+
+UPDATE experiments
+SET
+  experiment_contract_version = 'legacy-experiment-v0',
+  profile_id = 'primary',
+  experiment_state = 'DRAFT',
+  experiment_revision = 1,
+  created_at = start_at,
+  updated_at = start_at
+WHERE experiment_contract_version IS NULL;
+
+CREATE TABLE experiment_design_versions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 1024),
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (
+    typeof(version_number) = 'integer' AND version_number > 0
+  ),
+  previous_version_id TEXT REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  schema_version TEXT NOT NULL CHECK (
+    schema_version IN ('legacy-experiment-v0', 'experiment-design-v1')
+  ),
+  design_state TEXT NOT NULL CHECK (design_state IN (
+    'DRAFT', 'VALIDATED', 'ASSIGNMENT_READY', 'LOCKED',
+    'HELD', 'ARCHIVED', 'SUPERSEDED', 'STALE'
+  )),
+  design_payload_json TEXT NOT NULL CHECK (
+    json_valid(design_payload_json) AND json_type(design_payload_json) = 'object' AND
+    length(CAST(design_payload_json AS BLOB)) BETWEEN 2 AND 262144
+  ),
+  hypothesis_json TEXT NOT NULL CHECK (
+    json_valid(hypothesis_json) AND json_type(hypothesis_json) = 'object' AND
+    length(CAST(hypothesis_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  primary_variable_kind TEXT CHECK (
+    primary_variable_kind IS NULL OR primary_variable_kind IN (
+      'CONTENT_STRUCTURE', 'TITLE_PATTERN', 'COVER_INFORMATION_DENSITY',
+      'SPOILER_MODE', 'COMPARISON_FORMAT', 'PUBLICATION_TIME_WINDOW'
+    )
+  ),
+  primary_metric_id TEXT CHECK (
+    primary_metric_id IS NULL OR primary_metric_id IN (
+      'SAVE_RATE', 'COMMENT_RATE', 'FOLLOW_CONVERSION_RATE',
+      'ENGAGEMENT_RATE', 'PROFILE_VISIT_RATE',
+      'APPROVAL_WORK_UNITS', 'FACT_BLOCK_RATE'
+    )
+  ),
+  sample_plan_json TEXT NOT NULL CHECK (
+    json_valid(sample_plan_json) AND json_type(sample_plan_json) = 'object' AND
+    length(CAST(sample_plan_json AS BLOB)) BETWEEN 2 AND 65536
+  ),
+  stratification_plan_json TEXT NOT NULL CHECK (
+    json_valid(stratification_plan_json) AND
+    json_type(stratification_plan_json) = 'object' AND
+    length(CAST(stratification_plan_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  quota_plan_version_id TEXT REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  structure_fingerprint TEXT CHECK (
+    structure_fingerprint IS NULL OR (
+      length(structure_fingerprint) = 64 AND
+      structure_fingerprint NOT GLOB '*[^0-9a-f]*'
+    )
+  ),
+  variable_registry_version TEXT NOT NULL CHECK (
+    length(variable_registry_version) BETWEEN 1 AND 128
+  ),
+  metric_registry_version TEXT NOT NULL CHECK (
+    length(metric_registry_version) BETWEEN 1 AND 128
+  ),
+  assignment_policy_version TEXT NOT NULL CHECK (
+    length(assignment_policy_version) BETWEEN 1 AND 128
+  ),
+  popularity_policy_version TEXT NOT NULL CHECK (
+    length(popularity_policy_version) BETWEEN 1 AND 128
+  ),
+  replication_policy_version TEXT NOT NULL CHECK (
+    length(replication_policy_version) BETWEEN 1 AND 128
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  design_hash TEXT NOT NULL CHECK (
+    length(design_hash) = 64 AND design_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  reasons_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(reasons_json) AND json_type(reasons_json) = 'array' AND
+    length(CAST(reasons_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  locked_at TEXT CHECK (locked_at ${UTC_OPTIONAL} locked_at ${UTC_REQUIRED}),
+  archived_at TEXT CHECK (archived_at ${UTC_OPTIONAL} archived_at ${UTC_REQUIRED}),
+  UNIQUE (experiment_id, version_number),
+  UNIQUE (id, experiment_id),
+  CHECK (
+    (schema_version = 'legacy-experiment-v0' AND
+      primary_variable_kind IS NULL AND primary_metric_id IS NULL AND
+      structure_fingerprint IS NULL) OR
+    (schema_version = 'experiment-design-v1' AND
+      primary_variable_kind IS NOT NULL AND primary_metric_id IS NOT NULL AND
+      structure_fingerprint IS NOT NULL)
+  )
+) STRICT;
+
+CREATE TABLE experiment_primary_variables (
+  design_version_id TEXT PRIMARY KEY REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  variable_kind TEXT NOT NULL CHECK (variable_kind IN (
+    'CONTENT_STRUCTURE', 'TITLE_PATTERN', 'COVER_INFORMATION_DENSITY',
+    'SPOILER_MODE', 'COMPARISON_FORMAT', 'PUBLICATION_TIME_WINDOW'
+  )),
+  registry_version TEXT NOT NULL CHECK (length(registry_version) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE experiment_arms (
+  design_version_id TEXT NOT NULL REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  arm_id TEXT NOT NULL CHECK (length(arm_id) BETWEEN 1 AND 256),
+  role TEXT NOT NULL CHECK (role IN ('CONTROL', 'TREATMENT')),
+  value_identity TEXT NOT NULL CHECK (length(value_identity) BETWEEN 1 AND 256),
+  label TEXT NOT NULL CHECK (length(CAST(label AS BLOB)) BETWEEN 1 AND 1024),
+  changed_dimensions_json TEXT NOT NULL CHECK (
+    json_valid(changed_dimensions_json) AND
+    json_type(changed_dimensions_json) = 'array' AND
+    json_array_length(changed_dimensions_json) = 1 AND
+    length(CAST(changed_dimensions_json AS BLOB)) BETWEEN 3 AND 512
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (design_version_id, arm_id),
+  UNIQUE (design_version_id, value_identity)
+) STRICT, WITHOUT ROWID;
+
+CREATE UNIQUE INDEX idx_experiment_arms_one_control
+  ON experiment_arms(design_version_id)
+  WHERE role = 'CONTROL';
+
+CREATE TABLE experiment_controlled_conditions (
+  design_version_id TEXT NOT NULL REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  condition_kind TEXT NOT NULL CHECK (condition_kind IN (
+    'CONTENT_STRUCTURE', 'TITLE_PATTERN', 'COVER_INFORMATION_DENSITY',
+    'SPOILER_MODE', 'COMPARISON_FORMAT', 'PUBLICATION_TIME_WINDOW',
+    'TOPIC_CONTENT_TYPE', 'ANALYSIS_MODE', 'WORK_POPULARITY_STRATUM'
+  )),
+  value_identity TEXT NOT NULL CHECK (length(value_identity) BETWEEN 1 AND 256),
+  availability TEXT NOT NULL CHECK (
+    availability IN ('FIXED', 'FUTURE_NOT_IMPLEMENTED')
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (design_version_id, condition_kind)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE experiment_primary_metrics (
+  design_version_id TEXT PRIMARY KEY REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  metric_id TEXT NOT NULL CHECK (metric_id IN (
+    'SAVE_RATE', 'COMMENT_RATE', 'FOLLOW_CONVERSION_RATE',
+    'ENGAGEMENT_RATE', 'PROFILE_VISIT_RATE',
+    'APPROVAL_WORK_UNITS', 'FACT_BLOCK_RATE'
+  )),
+  metric_spec_json TEXT NOT NULL CHECK (
+    json_valid(metric_spec_json) AND json_type(metric_spec_json) = 'object' AND
+    length(CAST(metric_spec_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  availability TEXT NOT NULL CHECK (
+    availability IN (
+      'DEFINED_NOT_AVAILABLE', 'AVAILABLE_FOR_FUTURE_COLLECTION', 'UNSUPPORTED'
+    )
+  ),
+  registry_version TEXT NOT NULL CHECK (length(registry_version) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE experiment_guardrails (
+  design_version_id TEXT NOT NULL REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  metric_id TEXT NOT NULL CHECK (metric_id IN (
+    'SAVE_RATE', 'COMMENT_RATE', 'FOLLOW_CONVERSION_RATE',
+    'ENGAGEMENT_RATE', 'PROFILE_VISIT_RATE',
+    'APPROVAL_WORK_UNITS', 'FACT_BLOCK_RATE'
+  )),
+  metric_spec_json TEXT NOT NULL CHECK (
+    json_valid(metric_spec_json) AND json_type(metric_spec_json) = 'object' AND
+    length(CAST(metric_spec_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  guardrail_direction TEXT NOT NULL CHECK (
+    guardrail_direction IN ('NOT_INCREASE', 'NOT_DECREASE', 'LIMIT')
+  ),
+  violation_condition TEXT NOT NULL CHECK (
+    length(CAST(violation_condition AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (design_version_id, metric_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE experiment_replication_structures (
+  design_version_id TEXT PRIMARY KEY REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  structure_identity TEXT NOT NULL CHECK (length(structure_identity) BETWEEN 1 AND 256),
+  structure_version TEXT NOT NULL CHECK (length(structure_version) BETWEEN 1 AND 128),
+  content_type TEXT NOT NULL CHECK (content_type IN (
+    'NON_SPOILER_SINGLE_BOOK_VERDICT', 'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON', 'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  analysis_mode TEXT NOT NULL CHECK (analysis_mode IN ('PERSONAL', 'PUBLIC_RESEARCH')),
+  spoiler_level TEXT NOT NULL CHECK (
+    spoiler_level IN ('NO_SPOILER', 'LIGHT_SPOILER', 'FULL_TRICK_ANALYSIS')
+  ),
+  comparison_dimension TEXT CHECK (
+    comparison_dimension IS NULL OR length(comparison_dimension) BETWEEN 1 AND 128
+  ),
+  structural_slots_json TEXT NOT NULL CHECK (
+    json_valid(structural_slots_json) AND json_type(structural_slots_json) = 'array' AND
+    json_array_length(structural_slots_json) BETWEEN 1 AND 16
+  ),
+  required_labels_json TEXT NOT NULL CHECK (
+    json_valid(required_labels_json) AND json_type(required_labels_json) = 'array' AND
+    json_array_length(required_labels_json) BETWEEN 0 AND 16
+  ),
+  semantic_fingerprint TEXT NOT NULL CHECK (
+    length(semantic_fingerprint) = 64 AND
+    semantic_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE experiment_sample_plans (
+  design_version_id TEXT PRIMARY KEY REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  assignment_unit TEXT NOT NULL CHECK (assignment_unit = 'TOPIC_CANDIDATE'),
+  target_topic_ids_json TEXT NOT NULL CHECK (
+    json_valid(target_topic_ids_json) AND json_type(target_topic_ids_json) = 'array' AND
+    json_array_length(target_topic_ids_json) BETWEEN 0 AND 500
+  ),
+  inclusion_rules_json TEXT NOT NULL CHECK (
+    json_valid(inclusion_rules_json) AND json_type(inclusion_rules_json) = 'array'
+  ),
+  exclusion_rules_json TEXT NOT NULL CHECK (
+    json_valid(exclusion_rules_json) AND json_type(exclusion_rules_json) = 'array'
+  ),
+  arm_target_counts_json TEXT NOT NULL CHECK (
+    json_valid(arm_target_counts_json) AND json_type(arm_target_counts_json) = 'object'
+  ),
+  minimum_distinct_work_count INTEGER NOT NULL CHECK (
+    typeof(minimum_distinct_work_count) = 'integer' AND
+    minimum_distinct_work_count BETWEEN 3 AND 100
+  ),
+  max_topics_per_work INTEGER NOT NULL CHECK (
+    typeof(max_topics_per_work) = 'integer' AND max_topics_per_work BETWEEN 1 AND 10
+  ),
+  deterministic_seed TEXT NOT NULL CHECK (length(deterministic_seed) BETWEEN 1 AND 256),
+  blocking_keys_json TEXT NOT NULL CHECK (
+    json_valid(blocking_keys_json) AND json_type(blocking_keys_json) = 'array'
+  ),
+  quota_plan_version_id TEXT REFERENCES topic_quota_plan_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE experiment_popularity_snapshots (
+  id TEXT NOT NULL CHECK (length(id) BETWEEN 1 AND 256),
+  design_version_id TEXT NOT NULL REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  stratum TEXT NOT NULL CHECK (stratum IN ('HOT', 'WARM', 'COLD', 'UNKNOWN')),
+  source_kind TEXT NOT NULL CHECK (
+    source_kind IN (
+      'NOT_AVAILABLE', 'USER_CONFIRMED_SYNTHETIC', 'USER_CONFIRMED_OBSERVATION'
+    )
+  ),
+  availability TEXT NOT NULL CHECK (
+    availability IN ('AVAILABLE', 'UNAVAILABLE', 'STALE_REVIEW_REQUIRED')
+  ),
+  confidence TEXT NOT NULL CHECK (confidence IN ('CONFIRMED', 'UNAVAILABLE')),
+  observed_at TEXT CHECK (observed_at ${UTC_OPTIONAL} observed_at ${UTC_REQUIRED}),
+  window_start TEXT CHECK (window_start ${UTC_OPTIONAL} window_start ${UTC_REQUIRED}),
+  window_end TEXT CHECK (window_end ${UTC_OPTIONAL} window_end ${UTC_REQUIRED}),
+  metric_reference TEXT CHECK (
+    metric_reference IS NULL OR length(CAST(metric_reference AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  provenance_json TEXT NOT NULL CHECK (
+    json_valid(provenance_json) AND json_type(provenance_json) = 'array' AND
+    length(CAST(provenance_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  policy_version TEXT NOT NULL CHECK (length(policy_version) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (id, design_version_id),
+  UNIQUE (id, design_version_id, work_id),
+  UNIQUE (design_version_id, work_id),
+  CHECK (
+    (stratum = 'UNKNOWN' AND source_kind = 'NOT_AVAILABLE' AND
+      availability = 'UNAVAILABLE' AND confidence = 'UNAVAILABLE' AND
+      observed_at IS NULL AND window_start IS NULL AND window_end IS NULL AND
+      metric_reference IS NULL) OR
+    (stratum <> 'UNKNOWN' AND source_kind <> 'NOT_AVAILABLE' AND
+      availability = 'AVAILABLE' AND confidence = 'CONFIRMED' AND
+      observed_at IS NOT NULL AND window_start IS NOT NULL AND
+      window_end IS NOT NULL AND metric_reference IS NOT NULL)
+  ),
+  CHECK (window_end IS NULL OR window_start IS NULL OR window_end >= window_start)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE experiment_assignment_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  version_number INTEGER NOT NULL CHECK (
+    typeof(version_number) = 'integer' AND version_number > 0
+  ),
+  previous_version_id TEXT REFERENCES experiment_assignment_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  assignment_hash TEXT NOT NULL CHECK (
+    length(assignment_hash) = 64 AND assignment_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  policy_version TEXT NOT NULL CHECK (length(policy_version) BETWEEN 1 AND 128),
+  status TEXT NOT NULL CHECK (status IN (
+    'DRAFT', 'INSUFFICIENT_SAMPLE', 'INSUFFICIENT_REPLICATION',
+    'UNBALANCED', 'READY_TO_LOCK', 'STALE'
+  )),
+  arm_counts_json TEXT NOT NULL CHECK (
+    json_valid(arm_counts_json) AND json_type(arm_counts_json) = 'object'
+  ),
+  imbalance_json TEXT NOT NULL CHECK (
+    json_valid(imbalance_json) AND json_type(imbalance_json) = 'object'
+  ),
+  shortfall_json TEXT NOT NULL CHECK (
+    json_valid(shortfall_json) AND json_type(shortfall_json) = 'object'
+  ),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  distinct_work_count INTEGER NOT NULL CHECK (
+    typeof(distinct_work_count) = 'integer' AND distinct_work_count BETWEEN 0 AND 500
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  locked_at TEXT CHECK (locked_at ${UTC_OPTIONAL} locked_at ${UTC_REQUIRED}),
+  UNIQUE (experiment_id, version_number),
+  UNIQUE (design_version_id, input_hash),
+  UNIQUE (id, design_version_id),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_assignment_units (
+  assignment_plan_id TEXT NOT NULL REFERENCES experiment_assignment_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  assignment_order INTEGER NOT NULL CHECK (
+    typeof(assignment_order) = 'integer' AND assignment_order BETWEEN 1 AND 500
+  ),
+  topic_id TEXT NOT NULL REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  topic_version_id TEXT NOT NULL,
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  arm_id TEXT NOT NULL,
+  popularity_snapshot_id TEXT NOT NULL,
+  popularity_stratum TEXT NOT NULL CHECK (
+    popularity_stratum IN ('HOT', 'WARM', 'COLD', 'UNKNOWN')
+  ),
+  structure_fingerprint TEXT NOT NULL CHECK (
+    length(structure_fingerprint) = 64 AND
+    structure_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  blocking_key TEXT NOT NULL CHECK (
+    length(CAST(blocking_key AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  dependency_versions_json TEXT NOT NULL CHECK (
+    json_valid(dependency_versions_json) AND
+    json_type(dependency_versions_json) = 'object' AND
+    length(CAST(dependency_versions_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (assignment_plan_id, assignment_order),
+  UNIQUE (assignment_plan_id, topic_id),
+  FOREIGN KEY (assignment_plan_id, design_version_id)
+    REFERENCES experiment_assignment_plans(id, design_version_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (topic_version_id, topic_id)
+    REFERENCES topic_candidate_versions(id, topic_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (design_version_id, arm_id)
+    REFERENCES experiment_arms(design_version_id, arm_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (popularity_snapshot_id, design_version_id, work_id)
+    REFERENCES experiment_popularity_snapshots(id, design_version_id, work_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE experiment_current_designs (
+  experiment_id TEXT PRIMARY KEY REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL UNIQUE,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_current_assignments (
+  design_version_id TEXT PRIMARY KEY REFERENCES experiment_design_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  assignment_plan_id TEXT NOT NULL UNIQUE,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  FOREIGN KEY (assignment_plan_id, design_version_id)
+    REFERENCES experiment_assignment_plans(id, design_version_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_dependencies (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  assignment_plan_id TEXT REFERENCES experiment_assignment_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'TOPIC_VERSION', 'TOPIC_STATE', 'TOPIC_ELIGIBILITY', 'TOPIC_QUOTA_PLAN',
+    'WORK_IDENTITY', 'DOSSIER_VERSION', 'EXPRESSION_PERMISSION', 'REPLICATION_STRUCTURE',
+    'VARIABLE_POLICY', 'METRIC_POLICY', 'ASSIGNMENT_POLICY',
+    'POPULARITY_POLICY', 'POPULARITY_SNAPSHOT', 'EXPERIMENT_DESIGN'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 256),
+  dependency_key TEXT NOT NULL CHECK (
+    length(dependency_key) = 64 AND dependency_key NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (design_version_id, dependency_key),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_invalidations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 2048),
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  assignment_plan_id TEXT REFERENCES experiment_assignment_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'TOPIC_VERSION', 'TOPIC_STATE', 'TOPIC_ELIGIBILITY', 'TOPIC_QUOTA_PLAN',
+    'WORK_IDENTITY', 'DOSSIER_VERSION', 'EXPRESSION_PERMISSION', 'REPLICATION_STRUCTURE',
+    'VARIABLE_POLICY', 'METRIC_POLICY', 'ASSIGNMENT_POLICY',
+    'POPULARITY_POLICY', 'POPULARITY_SNAPSHOT', 'EXPERIMENT_DESIGN'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 256),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_state_transitions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  previous_transition_id TEXT REFERENCES experiment_state_transitions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  from_state TEXT CHECK (
+    from_state IS NULL OR from_state IN (
+      'DRAFT', 'VALIDATED', 'ASSIGNMENT_READY', 'LOCKED',
+      'HELD', 'ARCHIVED', 'SUPERSEDED', 'STALE'
+    )
+  ),
+  to_state TEXT NOT NULL CHECK (to_state IN (
+    'DRAFT', 'VALIDATED', 'ASSIGNMENT_READY', 'LOCKED',
+    'HELD', 'ARCHIVED', 'SUPERSEDED', 'STALE'
+  )),
+  action TEXT NOT NULL CHECK (action IN (
+    'CREATE', 'VALIDATE', 'ASSIGNMENT_READY', 'LOCK', 'HOLD',
+    'RESUME', 'CLONE', 'ARCHIVE', 'RESTORE', 'INVALIDATE', 'LEGACY_MIGRATION'
+  )),
+  expected_revision INTEGER NOT NULL CHECK (
+    typeof(expected_revision) = 'integer' AND expected_revision >= 0
+  ),
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (experiment_id, revision),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 2048),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'LEGACY_MIGRATED', 'DRAFT_CREATED', 'DESIGN_VALIDATED',
+    'ASSIGNMENT_PREVIEWED', 'ASSIGNMENT_SAVED', 'DESIGN_LOCKED',
+    'STATE_CHANGED', 'VERSION_CLONED', 'DEPENDENCY_INVALIDATED'
+  )),
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  assignment_plan_id TEXT REFERENCES experiment_assignment_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE experiment_policy_registry (
+  policy_kind TEXT PRIMARY KEY CHECK (policy_kind IN (
+    'REPLICATION_STRUCTURE', 'VARIABLE_POLICY', 'METRIC_POLICY',
+    'ASSIGNMENT_POLICY', 'POPULARITY_POLICY'
+  )),
+  current_version TEXT NOT NULL CHECK (length(current_version) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE experiment_policy_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 256),
+  policy_kind TEXT NOT NULL CHECK (policy_kind IN (
+    'REPLICATION_STRUCTURE', 'VARIABLE_POLICY', 'METRIC_POLICY',
+    'ASSIGNMENT_POLICY', 'POPULARITY_POLICY'
+  )),
+  from_version TEXT NOT NULL CHECK (length(from_version) BETWEEN 1 AND 128),
+  to_version TEXT NOT NULL CHECK (length(to_version) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL CHECK (
+    typeof(revision) = 'integer' AND revision > 1
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (policy_kind, revision)
+) STRICT;
+
+INSERT INTO experiment_policy_registry (
+  policy_kind, current_version, revision, updated_at
+) VALUES
+  ('REPLICATION_STRUCTURE', 'experiment-replication-policy-v1', 1, ${UTC_NOW}),
+  ('VARIABLE_POLICY', 'experiment-variable-registry-v1', 1, ${UTC_NOW}),
+  ('METRIC_POLICY', 'experiment-metric-registry-v1', 1, ${UTC_NOW}),
+  ('ASSIGNMENT_POLICY', 'experiment-assignment-policy-v1', 1, ${UTC_NOW}),
+  ('POPULARITY_POLICY', 'work-popularity-stratum-v1', 1, ${UTC_NOW});
+
+INSERT INTO experiment_design_versions (
+  id, experiment_id, version_number, schema_version, design_state,
+  design_payload_json, hypothesis_json, sample_plan_json, stratification_plan_json,
+  variable_registry_version, metric_registry_version, assignment_policy_version,
+  popularity_policy_version, replication_policy_version,
+  dependency_hash, design_hash, warnings_json, reasons_json, created_at
+)
+SELECT
+  lower(hex(randomblob(16))),
+  id,
+  1,
+  'legacy-experiment-v0',
+  'DRAFT',
+  json_object(
+    'name', name,
+    'hypothesis', hypothesis,
+    'primaryMetric', primary_metric,
+    'guardrailMetrics', json(guardrail_metrics_json),
+    'variableName', variable_name,
+    'variants', json(variants_json),
+    'startAt', start_at,
+    'endAt', end_at,
+    'legacyStatus', status
+  ),
+  json_object('legacyText', hypothesis),
+  json_object('legacyUnvalidated', 1),
+  json_object('legacyUnvalidated', 1),
+  'legacy-unvalidated',
+  'legacy-unvalidated',
+  'legacy-unvalidated',
+  'legacy-unvalidated',
+  'legacy-unvalidated',
+  lower(hex(randomblob(32))),
+  lower(hex(randomblob(32))),
+  json_array('LEGACY_REVIEW_REQUIRED'),
+  json_array('NOT_VALIDATED'),
+  start_at
+FROM experiments
+WHERE experiment_contract_version = 'legacy-experiment-v0';
+
+INSERT INTO experiment_current_designs (
+  experiment_id, design_version_id, revision, updated_at
+)
+SELECT experiment_id, id, 1, created_at
+FROM experiment_design_versions
+WHERE schema_version = 'legacy-experiment-v0';
+
+INSERT INTO experiment_state_transitions (
+  id, experiment_id, design_version_id, revision, from_state, to_state,
+  action, expected_revision, actor, reason_code, created_at
+)
+SELECT
+  lower(hex(randomblob(16))),
+  experiment_id,
+  id,
+  1,
+  NULL,
+  'DRAFT',
+  'LEGACY_MIGRATION',
+  0,
+  'MIGRATION',
+  'LEGACY_REVIEW_REQUIRED',
+  created_at
+FROM experiment_design_versions
+WHERE schema_version = 'legacy-experiment-v0';
+
+INSERT INTO experiment_audit_events (
+  id, event_identity, event_type, experiment_id, design_version_id,
+  actor, details_json, created_at
+)
+SELECT
+  lower(hex(randomblob(16))),
+  'LEGACY_MIGRATED:' || experiment_id || ':' || id,
+  'LEGACY_MIGRATED',
+  experiment_id,
+  id,
+  'MIGRATION',
+  json_object('state', 'DRAFT', 'requiresReview', 1),
+  created_at
+FROM experiment_design_versions
+WHERE schema_version = 'legacy-experiment-v0';
+
+CREATE TRIGGER experiments_v1_required_insert
+BEFORE INSERT ON experiments
+WHEN NEW.experiment_contract_version = 'experiment-design-v1' AND (
+  NEW.profile_id IS NULL OR NEW.experiment_state IS NULL OR
+  NEW.experiment_revision IS NULL OR NEW.created_at IS NULL OR NEW.updated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'experiment v1 root fields required');
+END;
+
+CREATE TRIGGER experiments_v1_required_update
+BEFORE UPDATE ON experiments
+WHEN NEW.experiment_contract_version = 'experiment-design-v1' AND (
+  NEW.profile_id IS NULL OR NEW.experiment_state IS NULL OR
+  NEW.experiment_revision IS NULL OR NEW.created_at IS NULL OR NEW.updated_at IS NULL
+)
+BEGIN
+  SELECT RAISE(ABORT, 'experiment v1 root fields required');
+END;
+
+CREATE TRIGGER experiment_current_design_complete_insert
+BEFORE INSERT ON experiment_current_designs
+WHEN (
+  SELECT schema_version FROM experiment_design_versions
+  WHERE id = NEW.design_version_id
+) = 'experiment-design-v1' AND (
+  (SELECT count(*) FROM experiment_primary_variables
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_primary_metrics
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_replication_structures
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_sample_plans
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_arms
+   WHERE design_version_id = NEW.design_version_id) NOT BETWEEN 2 AND 6 OR
+  (SELECT count(*) FROM experiment_arms
+   WHERE design_version_id = NEW.design_version_id AND role = 'CONTROL') <> 1 OR
+  EXISTS (
+    SELECT 1
+    FROM experiment_primary_variables AS variable
+    JOIN experiment_design_versions AS design
+      ON design.id = variable.design_version_id
+    WHERE variable.design_version_id = NEW.design_version_id
+      AND variable.variable_kind <> design.primary_variable_kind
+  ) OR
+  EXISTS (
+    SELECT 1
+    FROM experiment_primary_metrics AS metric
+    JOIN experiment_design_versions AS design
+      ON design.id = metric.design_version_id
+    WHERE metric.design_version_id = NEW.design_version_id
+      AND metric.metric_id <> design.primary_metric_id
+  ) OR
+  EXISTS (
+    SELECT 1
+    FROM experiment_arms AS arm
+    JOIN experiment_primary_variables AS variable
+      ON variable.design_version_id = arm.design_version_id
+    WHERE arm.design_version_id = NEW.design_version_id
+      AND json_extract(arm.changed_dimensions_json, '$[0]') <> variable.variable_kind
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'experiment design incomplete');
+END;
+
+CREATE TRIGGER experiment_current_design_complete_update
+BEFORE UPDATE OF design_version_id ON experiment_current_designs
+WHEN (
+  SELECT schema_version FROM experiment_design_versions
+  WHERE id = NEW.design_version_id
+) = 'experiment-design-v1' AND (
+  (SELECT count(*) FROM experiment_primary_variables
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_primary_metrics
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_replication_structures
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_sample_plans
+   WHERE design_version_id = NEW.design_version_id) <> 1 OR
+  (SELECT count(*) FROM experiment_arms
+   WHERE design_version_id = NEW.design_version_id) NOT BETWEEN 2 AND 6 OR
+  (SELECT count(*) FROM experiment_arms
+   WHERE design_version_id = NEW.design_version_id AND role = 'CONTROL') <> 1 OR
+  EXISTS (
+    SELECT 1
+    FROM experiment_primary_variables AS variable
+    JOIN experiment_design_versions AS design
+      ON design.id = variable.design_version_id
+    WHERE variable.design_version_id = NEW.design_version_id
+      AND variable.variable_kind <> design.primary_variable_kind
+  ) OR
+  EXISTS (
+    SELECT 1
+    FROM experiment_primary_metrics AS metric
+    JOIN experiment_design_versions AS design
+      ON design.id = metric.design_version_id
+    WHERE metric.design_version_id = NEW.design_version_id
+      AND metric.metric_id <> design.primary_metric_id
+  ) OR
+  EXISTS (
+    SELECT 1
+    FROM experiment_arms AS arm
+    JOIN experiment_primary_variables AS variable
+      ON variable.design_version_id = arm.design_version_id
+    WHERE arm.design_version_id = NEW.design_version_id
+      AND json_extract(arm.changed_dimensions_json, '$[0]') <> variable.variable_kind
+  )
+)
+BEGIN
+  SELECT RAISE(ABORT, 'experiment design incomplete');
+END;
+
+CREATE TRIGGER experiment_guardrail_not_primary_insert
+BEFORE INSERT ON experiment_guardrails
+WHEN EXISTS (
+  SELECT 1 FROM experiment_primary_metrics AS metric
+  WHERE metric.design_version_id = NEW.design_version_id
+    AND metric.metric_id = NEW.metric_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'guardrail cannot duplicate primary metric');
+END;
+
+CREATE TRIGGER experiment_primary_not_guardrail_insert
+BEFORE INSERT ON experiment_primary_metrics
+WHEN EXISTS (
+  SELECT 1 FROM experiment_guardrails AS guardrail
+  WHERE guardrail.design_version_id = NEW.design_version_id
+    AND guardrail.metric_id = NEW.metric_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'primary metric cannot duplicate guardrail');
+END;
+
+CREATE TRIGGER experiment_arm_matches_primary_insert
+BEFORE INSERT ON experiment_arms
+WHEN json_extract(NEW.changed_dimensions_json, '$[0]') <> (
+  SELECT variable_kind FROM experiment_primary_variables
+  WHERE design_version_id = NEW.design_version_id
+)
+BEGIN
+  SELECT RAISE(ABORT, 'arm changes more than the primary variable');
+END;
+
+CREATE TRIGGER experiment_invalidate_on_topic_change
+AFTER UPDATE OF current_version_number, candidate_state, topic_revision ON topics
+WHEN
+  NEW.current_version_number <> OLD.current_version_number OR
+  NEW.candidate_state <> OLD.candidate_state OR
+  NEW.topic_revision <> OLD.topic_revision
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'TOPIC_CHANGED:' || NEW.id || ':' || NEW.topic_revision || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    dependency.dependency_type,
+    NEW.id,
+    CAST(NEW.topic_revision AS TEXT),
+    'TOPIC_CHANGED',
+    NEW.updated_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type IN (
+      'TOPIC_VERSION', 'TOPIC_STATE', 'TOPIC_ELIGIBILITY'
+    )
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER experiment_invalidate_on_topic_dependency
+AFTER INSERT ON topic_candidate_invalidations
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'TOPIC_DEPENDENCY_CHANGED:' || NEW.id || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    dependency.dependency_type,
+    NEW.topic_id,
+    NEW.observed_revision,
+    'TOPIC_DEPENDENCY_CHANGED',
+    NEW.created_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type IN (
+      'TOPIC_VERSION', 'TOPIC_STATE', 'TOPIC_ELIGIBILITY'
+    )
+    AND dependency.dependency_id = NEW.topic_id;
+END;
+
+CREATE TRIGGER experiment_invalidate_on_quota_change
+AFTER UPDATE OF current_plan_version_id, revision ON topic_quota_plan_roots
+WHEN
+  NEW.revision <> OLD.revision OR
+  NEW.current_plan_version_id IS NOT OLD.current_plan_version_id
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'QUOTA_CHANGED:' || NEW.id || ':' || NEW.revision || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    'TOPIC_QUOTA_PLAN',
+    dependency.dependency_id,
+    CAST(NEW.revision AS TEXT),
+    'QUOTA_PLAN_CHANGED',
+    NEW.updated_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type = 'TOPIC_QUOTA_PLAN'
+    AND dependency.dependency_id = OLD.current_plan_version_id;
+END;
+
+CREATE TRIGGER experiment_invalidate_on_work_change
+AFTER UPDATE OF catalog_revision, catalog_state ON books
+WHEN NEW.catalog_revision <> OLD.catalog_revision OR NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'WORK_CHANGED:' || NEW.id || ':' || NEW.catalog_revision || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    'WORK_IDENTITY',
+    NEW.id,
+    CAST(NEW.catalog_revision AS TEXT),
+    'WORK_IDENTITY_CHANGED',
+    NEW.updated_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type = 'WORK_IDENTITY'
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER experiment_invalidate_on_dossier
+AFTER INSERT ON research_dossier_invalidations
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'DOSSIER_CHANGED:' || NEW.id || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    'DOSSIER_VERSION',
+    dependency.dependency_id,
+    NEW.observed_revision,
+    'DOSSIER_CHANGED',
+    NEW.created_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type = 'DOSSIER_VERSION'
+    AND dependency.dependency_id = NEW.current_version_id;
+END;
+
+CREATE TRIGGER experiment_invalidate_on_permission
+AFTER INSERT ON expression_permission_invalidations
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'PERMISSION_CHANGED:' || NEW.id || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    'EXPRESSION_PERMISSION',
+    dependency.dependency_id,
+    NEW.observed_revision,
+    'EXPRESSION_PERMISSION_CHANGED',
+    NEW.created_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type = 'EXPRESSION_PERMISSION'
+    AND dependency.dependency_id = NEW.snapshot_id;
+END;
+
+CREATE TRIGGER experiment_invalidate_on_popularity
+AFTER INSERT ON experiment_popularity_snapshots
+BEGIN
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'POPULARITY_CHANGED:' || NEW.id || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    'POPULARITY_SNAPSHOT',
+    dependency.dependency_id,
+    NEW.id,
+    'POPULARITY_STRATUM_CHANGED',
+    NEW.created_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_popularity_snapshots AS previous
+    ON previous.id = dependency.dependency_id
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type = 'POPULARITY_SNAPSHOT'
+    AND previous.work_id = NEW.work_id
+    AND previous.id <> NEW.id;
+END;
+
+CREATE TRIGGER experiment_policy_registry_audit
+AFTER UPDATE OF current_version, revision ON experiment_policy_registry
+WHEN NEW.current_version <> OLD.current_version AND NEW.revision = OLD.revision + 1
+BEGIN
+  INSERT INTO experiment_policy_events (
+    id, policy_kind, from_version, to_version, revision, created_at
+  ) VALUES (
+    lower(hex(randomblob(16))),
+    NEW.policy_kind,
+    OLD.current_version,
+    NEW.current_version,
+    NEW.revision,
+    NEW.updated_at
+  );
+
+  INSERT OR IGNORE INTO experiment_invalidations (
+    id, event_identity, experiment_id, design_version_id, assignment_plan_id,
+    dependency_type, dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'POLICY_CHANGED:' || NEW.policy_kind || ':' || NEW.revision || ':' || dependency.id,
+    dependency.experiment_id,
+    dependency.design_version_id,
+    dependency.assignment_plan_id,
+    dependency.dependency_type,
+    dependency.dependency_id,
+    NEW.current_version,
+    'POLICY_VERSION_CHANGED',
+    NEW.updated_at
+  FROM experiment_dependencies AS dependency
+  JOIN experiment_current_designs AS current
+    ON current.design_version_id = dependency.design_version_id
+  WHERE dependency.dependency_type = NEW.policy_kind
+    AND dependency.dependency_id = OLD.current_version;
+END;
+
+CREATE TRIGGER experiment_policy_registry_revision_guard
+BEFORE UPDATE ON experiment_policy_registry
+WHEN
+  NEW.current_version = OLD.current_version OR
+  NEW.revision <> OLD.revision + 1 OR
+  NEW.policy_kind <> OLD.policy_kind
+BEGIN
+  SELECT RAISE(ABORT, 'invalid experiment policy revision');
+END;
+
+CREATE INDEX idx_experiments_profile_state_updated
+  ON experiments(profile_id, experiment_state, updated_at DESC, id);
+CREATE INDEX idx_experiment_design_history
+  ON experiment_design_versions(experiment_id, version_number DESC);
+CREATE INDEX idx_experiment_design_status
+  ON experiment_design_versions(design_state, created_at DESC);
+CREATE INDEX idx_experiment_assignment_status
+  ON experiment_assignment_plans(experiment_id, status, created_at DESC);
+CREATE INDEX idx_experiment_assignment_topic
+  ON experiment_assignment_units(topic_id, topic_version_id, assignment_plan_id);
+CREATE INDEX idx_experiment_assignment_work_stratum
+  ON experiment_assignment_units(work_id, popularity_stratum, assignment_plan_id);
+CREATE INDEX idx_experiment_dependency_lookup
+  ON experiment_dependencies(dependency_type, dependency_id, design_version_id);
+CREATE INDEX idx_experiment_dependency_assignment
+  ON experiment_dependencies(assignment_plan_id, dependency_type);
+CREATE INDEX idx_experiment_invalidation_design
+  ON experiment_invalidations(design_version_id, created_at DESC);
+CREATE INDEX idx_experiment_invalidation_dependency
+  ON experiment_invalidations(dependency_type, dependency_id, created_at DESC);
+CREATE INDEX idx_experiment_transition_history
+  ON experiment_state_transitions(experiment_id, revision DESC);
+CREATE INDEX idx_experiment_popularity_work
+  ON experiment_popularity_snapshots(work_id, stratum, created_at DESC);
+
+CREATE TRIGGER experiment_design_versions_immutable_update
+BEFORE UPDATE ON experiment_design_versions
+BEGIN SELECT RAISE(ABORT, 'experiment design history is immutable'); END;
+CREATE TRIGGER experiment_design_versions_immutable_delete
+BEFORE DELETE ON experiment_design_versions
+BEGIN SELECT RAISE(ABORT, 'experiment design history is immutable'); END;
+CREATE TRIGGER experiment_assignment_plans_immutable_update
+BEFORE UPDATE ON experiment_assignment_plans
+BEGIN SELECT RAISE(ABORT, 'experiment assignment history is immutable'); END;
+CREATE TRIGGER experiment_assignment_plans_immutable_delete
+BEFORE DELETE ON experiment_assignment_plans
+BEGIN SELECT RAISE(ABORT, 'experiment assignment history is immutable'); END;
+CREATE TRIGGER experiment_assignment_units_immutable_update
+BEFORE UPDATE ON experiment_assignment_units
+BEGIN SELECT RAISE(ABORT, 'experiment assignment units are immutable'); END;
+CREATE TRIGGER experiment_assignment_units_immutable_delete
+BEFORE DELETE ON experiment_assignment_units
+BEGIN SELECT RAISE(ABORT, 'experiment assignment units are immutable'); END;
+CREATE TRIGGER experiment_state_transitions_immutable_update
+BEFORE UPDATE ON experiment_state_transitions
+BEGIN SELECT RAISE(ABORT, 'experiment transitions are immutable'); END;
+CREATE TRIGGER experiment_state_transitions_immutable_delete
+BEFORE DELETE ON experiment_state_transitions
+BEGIN SELECT RAISE(ABORT, 'experiment transitions are immutable'); END;
+CREATE TRIGGER experiment_audit_events_immutable_update
+BEFORE UPDATE ON experiment_audit_events
+BEGIN SELECT RAISE(ABORT, 'experiment audit is immutable'); END;
+CREATE TRIGGER experiment_audit_events_immutable_delete
+BEFORE DELETE ON experiment_audit_events
+BEGIN SELECT RAISE(ABORT, 'experiment audit is immutable'); END;
+CREATE TRIGGER experiment_dependencies_immutable_update
+BEFORE UPDATE ON experiment_dependencies
+BEGIN SELECT RAISE(ABORT, 'experiment dependencies are immutable'); END;
+CREATE TRIGGER experiment_dependencies_immutable_delete
+BEFORE DELETE ON experiment_dependencies
+BEGIN SELECT RAISE(ABORT, 'experiment dependencies are immutable'); END;
+CREATE TRIGGER experiment_invalidations_immutable_update
+BEFORE UPDATE ON experiment_invalidations
+BEGIN SELECT RAISE(ABORT, 'experiment invalidations are immutable'); END;
+CREATE TRIGGER experiment_invalidations_immutable_delete
+BEFORE DELETE ON experiment_invalidations
+BEGIN SELECT RAISE(ABORT, 'experiment invalidations are immutable'); END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -7752,5 +8887,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'topic_pool_and_first_30_quota',
     sql: TOPIC_POOL_AND_FIRST_30_QUOTA,
     version: 15,
+  }),
+  Object.freeze({
+    name: 'versioned_experiment_management',
+    sql: VERSIONED_EXPERIMENT_MANAGEMENT,
+    version: 16,
   }),
 ]);

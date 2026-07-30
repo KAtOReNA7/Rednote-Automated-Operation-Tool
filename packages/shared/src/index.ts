@@ -3,6 +3,7 @@ export * from './browser-clip-contracts.js';
 export * from './catalog-contracts.js';
 export * from './authenticity-contracts.js';
 export * from './evidence-contracts.js';
+export * from './experiment-contracts.js';
 export * from './dossier-contracts.js';
 export * from './topic-contracts.js';
 

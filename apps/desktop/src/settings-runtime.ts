@@ -91,6 +91,14 @@ import type {
   TopicActionResult,
   TopicDetailView,
   TopicPoolWorkspaceView,
+  ConfirmExperimentActionInput,
+  ExperimentActionPreview,
+  ExperimentActionResult,
+  ExperimentDetailView,
+  ExperimentListView,
+  GetExperimentInput,
+  GetExperimentsInput,
+  PreviewExperimentActionInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -126,6 +134,7 @@ import { DesktopEvidenceRuntime } from './evidence-runtime.js';
 import { DesktopDossierRuntime } from './dossier-runtime.js';
 import { DesktopAuthenticityRuntime } from './authenticity-runtime.js';
 import { DesktopTopicRuntime } from './topic-runtime.js';
+import { DesktopExperimentRuntime } from './experiment-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -165,6 +174,7 @@ interface ActiveProject {
   readonly authenticity: DesktopAuthenticityRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
+  readonly experiments: DesktopExperimentRuntime;
   readonly dossier: DesktopDossierRuntime;
   readonly capabilities: ProviderCapabilityRuntime;
   readonly clipper: DesktopBrowserClipRuntime;
@@ -575,6 +585,30 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().topics.confirm(input, senderId, windowId);
   }
 
+  public getExperiments(input: GetExperimentsInput): ExperimentListView {
+    return this.#requireActive().experiments.list(input);
+  }
+
+  public getExperiment(input: GetExperimentInput): ExperimentDetailView {
+    return this.#requireActive().experiments.get(input);
+  }
+
+  public previewExperimentAction(
+    input: PreviewExperimentActionInput,
+    senderId: number,
+    windowId: number,
+  ): ExperimentActionPreview {
+    return this.#requireActive().experiments.preview(input, senderId, windowId);
+  }
+
+  public confirmExperimentAction(
+    input: ConfirmExperimentActionInput,
+    senderId: number,
+    windowId: number,
+  ): ExperimentActionResult {
+    return this.#requireActive().experiments.confirm(input, senderId, windowId);
+  }
+
   public getEvidenceState(input: GetEvidenceStateInput): EvidenceStateView {
     return this.#requireActive().evidence.getState(input);
   }
@@ -775,6 +809,7 @@ export class DesktopSettingsRuntime {
     this.#active?.accounting.clearWindow(windowId);
     this.#active?.authenticity.clearWindow(windowId);
     this.#active?.topics.clearWindow(windowId);
+    this.#active?.experiments.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -881,6 +916,7 @@ export class DesktopSettingsRuntime {
     const evidence = new DesktopEvidenceRuntime(database);
     const dossier = new DesktopDossierRuntime(database);
     const topics = new DesktopTopicRuntime(database);
+    const experiments = new DesktopExperimentRuntime(database);
     catalog.start();
     dossier.start();
     topics.start();
@@ -894,6 +930,7 @@ export class DesktopSettingsRuntime {
       clipper,
       database,
       evidence,
+      experiments,
       fetch,
       root,
       search,

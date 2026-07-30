@@ -26,6 +26,9 @@
       "path": "./packages/evidence"
     },
     {
+      "path": "./packages/experiments"
+    },
+    {
       "path": "./packages/db"
     },
     {

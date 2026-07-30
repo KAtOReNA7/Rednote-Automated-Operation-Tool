@@ -3,6 +3,7 @@ export { SqliteAuthenticityRepository } from './authenticity-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
+export { SqliteExperimentRepository } from './experiment-repository.js';
 export { SqliteDossierRepository } from './dossier-repository.js';
 export { SqliteBrowserClipRepository } from './browser-clip-repository.js';
 export type {
@@ -65,6 +66,13 @@ export type {
   RegisterSourceInputV1,
   SourceClassificationInputV1,
 } from './evidence-repository.js';
+export type {
+  ExperimentActionPreview,
+  ExperimentAssignmentPreview,
+  ExperimentDetailView,
+  ExperimentListItem,
+  ExperimentListView,
+} from './experiment-repository.js';
 export type {
   ConfirmDossierBuildResult,
   DossierBuildExecutionResult,

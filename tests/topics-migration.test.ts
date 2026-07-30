@@ -18,7 +18,7 @@ afterEach(cleanTemporaryDatabases);
 
 describe('M3 Issue 022 Topic Pool migration', () => {
   it('appends only v15 after the frozen v1-v14 history', () => {
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([
+    expect(MIGRATIONS.slice(0, 15).map(({ version }) => version)).toEqual([
       1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
     ]);
     expect(MIGRATIONS.slice(0, 14).map(({ name }) => name)).toEqual([
@@ -78,7 +78,10 @@ describe('M3 Issue 022 Topic Pool migration', () => {
     );
     database.close();
 
-    const result = await initializeDatabase({ databasePath });
+    const result = await initializeDatabase({
+      databasePath,
+      migrations: MIGRATIONS.slice(0, 15),
+    });
     expect(result).toMatchObject({ appliedVersions: [15], schemaVersion: 15 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);

@@ -14,6 +14,12 @@ import {
   TOPIC_ELIGIBILITY_STATES,
   TOPIC_LIMITS,
 } from '@mystery-operations/topics';
+import {
+  EXPERIMENT_ACTIONS,
+  EXPERIMENT_DESIGN_STATES,
+  EXPERIMENT_LIMITS,
+  validateExperimentDesign,
+} from '@mystery-operations/experiments';
 
 import { isTrustedRendererUrl } from './security-policy.js';
 
@@ -35,6 +41,7 @@ export type DesktopIpcOperation =
   | 'confirmSourceProcessing'
   | 'confirmDataRootSelection'
   | 'confirmTopicAction'
+  | 'confirmExperimentAction'
   | 'createModelPriceSchedule'
   | 'createModelUnitPolicy'
   | 'exportDiagnosticReport'
@@ -59,6 +66,8 @@ export type DesktopIpcOperation =
   | 'getSetupState'
   | 'getTopic'
   | 'getTopicPool'
+  | 'getExperiment'
+  | 'getExperiments'
   | 'getWindowState'
   | 'listLocalApiClients'
   | 'listBrowserClips'
@@ -77,6 +86,7 @@ export type DesktopIpcOperation =
   | 'previewDossierBuild'
   | 'previewSourceProcessing'
   | 'previewTopicAction'
+  | 'previewExperimentAction'
   | 'diffDossierVersions'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
@@ -87,7 +97,7 @@ export type DesktopIpcOperation =
   | 'updateSearchProviderConfig';
 
 const MAX_IPC_BYTES = 32 * 1024;
-const MAX_IPC_DEPTH = 6;
+const MAX_IPC_DEPTH = 8;
 const SECRET_LIKE_KEY = /api.?key|authorization|ciphertext|credential|password|secret|token/iu;
 const CAPABILITIES = new Set([
   'batch',
@@ -205,6 +215,10 @@ const TOPIC_ACTION_KINDS = new Set([
 const TOPIC_CONTENT_TYPE_VALUES = new Set<unknown>(TOPIC_CONTENT_TYPES);
 const TOPIC_ELIGIBILITY_VALUES = new Set<unknown>(TOPIC_ELIGIBILITY_STATES);
 const TOPIC_STATE_VALUES = new Set<unknown>(TOPIC_CANDIDATE_STATES);
+const EXPERIMENT_STATE_VALUES = new Set<unknown>(EXPERIMENT_DESIGN_STATES);
+const EXPERIMENT_ACTION_VALUES = new Set<unknown>(
+  EXPERIMENT_ACTIONS.filter((action) => action !== 'CLONE_VERSION'),
+);
 
 function validAuthenticityDraft(value: Readonly<Record<string, unknown>>): boolean {
   try {
@@ -308,6 +322,39 @@ function validTopicPreview(value: Readonly<Record<string, unknown>>): boolean {
           exactKeys(value, ['expectedRevision', 'kind', 'runId']) &&
           catalogId(value.runId) &&
           catalogRevision(value.expectedRevision)
+        );
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
+
+function validExperimentPreview(value: Readonly<Record<string, unknown>>): boolean {
+  try {
+    switch (value.kind) {
+      case 'CREATE_DRAFT':
+        return (
+          exactKeys(value, ['design', 'kind', 'profileId']) &&
+          catalogId(value.profileId) &&
+          validateExperimentDesign(value.design).valid
+        );
+      case 'SAVE_ASSIGNMENT':
+        return exactKeys(value, ['experimentId', 'kind']) && catalogId(value.experimentId);
+      case 'STATE_ACTION':
+        return (
+          exactKeys(value, ['action', 'expectedRevision', 'experimentId', 'kind']) &&
+          EXPERIMENT_ACTION_VALUES.has(value.action) &&
+          catalogRevision(value.expectedRevision) &&
+          catalogId(value.experimentId)
+        );
+      case 'CLONE_VERSION':
+        return (
+          exactKeys(value, ['design', 'expectedRevision', 'experimentId', 'kind']) &&
+          catalogRevision(value.expectedRevision) &&
+          catalogId(value.experimentId) &&
+          validateExperimentDesign(value.design).valid
         );
       default:
         return false;
@@ -469,6 +516,68 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         Number.isSafeInteger(value.historyLimit) &&
         Number(value.historyLimit) >= 1 &&
         Number(value.historyLimit) <= TOPIC_LIMITS.maxHistoryPageSize
+      );
+    }
+    case 'getExperiments': {
+      const value = validateOneObject(args, ['limit', 'offset', 'profileId', 'query', 'state']);
+      return (
+        value !== null &&
+        catalogId(value.profileId) &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= EXPERIMENT_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= EXPERIMENT_LIMITS.maxPageOffset &&
+        typeof value.query === 'string' &&
+        Buffer.byteLength(value.query, 'utf8') <= 512 &&
+        !containsControlCharacter(value.query) &&
+        (value.state === null || EXPERIMENT_STATE_VALUES.has(value.state))
+      );
+    }
+    case 'getExperiment': {
+      const value = validateOneObject(args, [
+        'experimentId',
+        'historyLimit',
+        'historyOffset',
+        'versionLimit',
+        'versionOffset',
+      ]);
+      return (
+        value !== null &&
+        catalogId(value.experimentId) &&
+        Number.isSafeInteger(value.historyLimit) &&
+        Number(value.historyLimit) >= 1 &&
+        Number(value.historyLimit) <= EXPERIMENT_LIMITS.maxHistoryPageSize &&
+        Number.isSafeInteger(value.historyOffset) &&
+        Number(value.historyOffset) >= 0 &&
+        Number(value.historyOffset) <= EXPERIMENT_LIMITS.maxPageOffset &&
+        Number.isSafeInteger(value.versionLimit) &&
+        Number(value.versionLimit) >= 1 &&
+        Number(value.versionLimit) <= EXPERIMENT_LIMITS.maxHistoryPageSize &&
+        Number.isSafeInteger(value.versionOffset) &&
+        Number(value.versionOffset) >= 0 &&
+        Number(value.versionOffset) <= EXPERIMENT_LIMITS.maxPageOffset
+      );
+    }
+    case 'previewExperimentAction': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      return value !== null && validExperimentPreview(value);
+    }
+    case 'confirmExperimentAction': {
+      const value = validateOneObject(args, ['confirmation', 'kind', 'previewHash', 'token']);
+      return (
+        value?.confirmation === 'APPLY_EXPERIMENT_ACTION' &&
+        ['CREATE_DRAFT', 'SAVE_ASSIGNMENT', 'STATE_ACTION', 'CLONE_VERSION'].includes(
+          String(value.kind),
+        ) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
       );
     }
     case 'previewTopicAction': {

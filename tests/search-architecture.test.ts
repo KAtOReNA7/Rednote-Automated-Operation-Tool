@@ -11,7 +11,7 @@ function source(path: string): string {
 describe('Issue 015 architecture boundaries', () => {
   it('keeps migration v8 unchanged when later migrations are appended', () => {
     expect(MIGRATIONS.map((migration) => migration.version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
     ]);
     expect(MIGRATIONS[7]?.name).toBe('search_provider_runs_and_rate_limits');
   });

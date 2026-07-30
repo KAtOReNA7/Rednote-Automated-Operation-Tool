@@ -4,6 +4,7 @@ import {
   type DesktopIpcOperation,
   validateDesktopIpcRequest,
 } from '../apps/desktop/src/ipc-policy.js';
+import { experimentDraft } from './support/experiment-fixtures.js';
 
 const RENDERER = 'rednote://app/index.html';
 
@@ -194,6 +195,16 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       state: null,
     },
   ],
+  getExperiments: [{ limit: 25, offset: 0, profileId: 'primary', query: '', state: null }],
+  getExperiment: [
+    {
+      experimentId: 'experiment-fixture-000001',
+      historyLimit: 25,
+      historyOffset: 0,
+      versionLimit: 25,
+      versionOffset: 0,
+    },
+  ],
   getWindowState: [],
   listLocalApiClients: [],
   listDossiers: [{ limit: 25, offset: 0 }],
@@ -277,6 +288,9 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     },
   ],
   previewTopicAction: [{ kind: 'GENERATE', profileId: 'primary' }],
+  previewExperimentAction: [
+    { design: experimentDraft(3), kind: 'CREATE_DRAFT', profileId: 'primary' },
+  ],
   previewDossierBuild: [{ subjectId: 'work-fixture', subjectType: 'WORK' }],
   previewModelCacheClear: [],
   diffDossierVersions: [
@@ -307,6 +321,14 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       confirmation: 'APPLY_TOPIC_ACTION',
       executionId: 'topic-execution-fixture',
       kind: 'GENERATE',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmExperimentAction: [
+    {
+      confirmation: 'APPLY_EXPERIMENT_ACTION',
+      kind: 'CREATE_DRAFT',
       previewHash: 'a'.repeat(64),
       token: 'a'.repeat(43),
     },

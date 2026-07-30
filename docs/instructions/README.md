@@ -31,6 +31,7 @@ M2（Issue 012—021）已完成。
 ## M3
 
 - [Issue 022：Topic Pool、可解释排序与首批 30 篇配额](./m3/M3-Issue022-topic-pool-first-30-quota-Codex-instruction.txt)
+- [Issue 023：版本化实验设计与确定性分配](./m3/M3-Issue023-versioned-experiment-management-Codex-instruction.txt)
 
-M3 Issue 022 已完成。下一项仅规划 Issue 023；未收到明确任务时不得创建、归档或实施
-Issue 023 指令。
+M3 Issue 022—023 已完成；Issue 023 指令只归档于本目录。下一项仅规划 Issue 024，未收到明确
+授权时不得自动开始。

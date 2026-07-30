@@ -31,6 +31,12 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = Object.freeze([
     shortLabel: '题',
   },
   {
+    description: '管理可检验的单变量实验、跨作品复现、分层 assignment 与版本状态。',
+    label: '实验管理',
+    path: '/experiments',
+    shortLabel: '验',
+  },
+  {
     description: '内容生成与编辑尚未在当前里程碑实现。',
     label: '内容生产',
     path: '/production',

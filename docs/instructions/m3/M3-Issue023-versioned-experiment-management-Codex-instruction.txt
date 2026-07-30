@@ -1,0 +1,591 @@
+# M3 Issue 023：版本化实验设计、单变量与跨作品复现——增量开发指令
+
+本文件是 Issue 023 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`。本文件只定义 Issue 023 增量范围，不重复动态基线、可迁移路径、Windows、安全、费用、硬约束、测试、Git 和文档治理公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；实验状态机、单变量验证、分层分配、版本化和并发使用 XHigh
+目标提交信息：feat(experiments): add versioned experiment designs
+
+## 一、合法起点、归档与停止点
+
+以当前本地 `main` 动态 HEAD 为起点。本地合法领先 `origin/main` 的 Issues 018—022 提交不得被回退、改写或误判为异常。
+
+开工时按语义确认：
+
+* 工作树干净，当前分支为 `main`；
+* Issue 022 Topic Pool、FIRST_30_V1、ranking、状态和 quota plan 完整；
+* M2 的 Dossier 与真实性权限仍可只读追溯；
+* README、AGENTS、Roadmap 和索引一致指向 Issue 023；
+* migration 尾部、Git 基线和仓库位置动态发现。
+
+不得把报告中的提交 ID、盘符、绝对路径、migration 版本或 checksum 写成门禁。
+
+本 TXT 可临时放在仓库根目录。完整读取后、在 baseline gate 或业务修改前，唯一归档到：
+
+`docs/instructions/m3/M3-Issue023-versioned-experiment-management-Codex-instruction.txt`
+
+根目录和原位置不留副本；更新历史指令索引。
+
+只实施 Issue 023。完成后停止，不进入 Issue 024。
+
+## 二、授权目标
+
+实现 Experiment Design V1：
+
+* 保存可检验假设；
+* 每个实验严格只有一个主要变量；
+* 定义 control/treatment arms 与保持不变的控制条件；
+* 定义唯一 primary metric 和有限 guardrail metrics；
+* 保存样本单位、计划样本量、纳入/排除规则；
+* 将作品热度作为可空、可追溯的分层字段；
+* 让同一内容结构至少跨三本不同作品复现；
+* 从 Issue 022 的 TopicCandidate/QuotaPlan 中显式选择样本；
+* 提供确定性、可复现、可解释的分层分配；
+* 支持 preview、确认、锁定、复制新版本、搁置和归档；
+* 激活实验管理 UI；
+* 追加下一条连续 migration、专项测试、合同、ADR、计划和验收映射；
+* 全部门禁通过后只创建一个本地提交。
+
+## 三、本 Issue 明确不做
+
+* 不生成 Issue 024 Content Brief；
+* 不生成标题、正文、标签、置顶评论、图片或封面；
+* 不实现质量检查、审批、排期、发布包或平台发布；
+* 不录入或导入真实发布指标；
+* 不计算实验效果、显著性、置信区间、p 值、uplift 或胜者；
+* 不自动扩大、缩减、停止或改写策略；
+* 不把一次实验设计当作已经执行或已经验证的结论；
+* 不自动改变 TopicCandidate、FIRST_30 计划或 ReadingState；
+* 不读取真实密钥，不调用真实模型、API、搜索、网页或图片，不产生费用；
+* 不进入 Issue 024、042、043 或后续范围。
+
+## 四、Experiment Design V1
+
+定义严格、版本化的合同：
+
+* `Experiment`
+* `ExperimentDesignVersion`
+* `ExperimentHypothesis`
+* `PrimaryVariable`
+* `ExperimentArm`
+* `ControlledCondition`
+* `MetricSpec`
+* `GuardrailSpec`
+* `SamplePlan`
+* `StratificationPlan`
+* `AssignmentPlan`
+* `AssignmentUnit`
+* `ExperimentDependency`
+
+Experiment 是稳定 identity；所有可执行设计存在 immutable version。
+
+同一 Experiment 只能有一个 current design version，但必须保留完整历史。current 切换使用 expected revision、事务和 append-only audit。
+
+设计版本至少保存：
+
+* experiment/design identity；
+* hypothesis；
+* primary variable；
+* arms；
+* controlled conditions；
+* primary metric；
+* guardrails；
+* sample/stratification/assignment plan；
+* dependency hash；
+* schema/policy versions；
+* design status、revision、previous version；
+* createdAt、lockedAt、archivedAt；
+* bounded warnings/reasons。
+
+历史设计不得原地覆盖或物理删除。
+
+## 五、可检验假设
+
+`ExperimentHypothesisV1` 至少包含：
+
+* target audience/context；
+* intervention；
+* comparator；
+* expected direction；
+* primary outcome；
+* rationale；
+* falsification condition；
+* scope；
+* bounded assumptions。
+
+要求：
+
+* 假设必须能被未来明确指标反驳；
+* 不接受“效果更好”“更容易爆”但没有指标和方向的空假设；
+* 不声称实验一定成功；
+* rationale 可以引用 Topic/Dossier，但不是事实证据的替代物；
+* 不把模型置信度当作假设强度；
+* 不把当前没有的运营数据伪造成 baseline；
+* UI 明确显示“实验尚未执行，无效果结论”。
+
+## 六、一次实验只允许一个主要变量
+
+定义有限、版本化 `ExperimentVariableRegistryV1`，至少可描述：
+
+* `CONTENT_STRUCTURE`
+* `TITLE_PATTERN`
+* `COVER_INFORMATION_DENSITY`
+* `SPOILER_MODE`
+* `COMPARISON_FORMAT`
+* `PUBLICATION_TIME_WINDOW`
+
+Issue 023 只建立设计合同，不实现未来标题、图片、排期等具体生产能力。未实现能力对应的变量可以保存为 future-bound design intent，但不得显示为已经生成。
+
+PrimaryVariable 必须：
+
+* 精确一个 variable kind；
+* 至少两个、至多有限数量的 arms；
+* 每个 arm 有唯一有限 value identity；
+* 明确 control arm；
+* 只改变一个主要维度。
+
+ControlledCondition 必须记录其他关键维度保持方式，例如：
+
+* Topic content type；
+* analysis mode；
+* spoiler requirement；
+* 内容结构（若不是 primary variable）；
+* 作品热度分层；
+* 发布窗口（若不是 primary variable）；
+* 未来视觉或标题策略的固定或未实现状态。
+
+验证器必须拒绝：
+
+* 同时改变标题模式和封面密度；
+* control/treatment 在多个主要字段上不同；
+* 没有 control；
+* 重复 arm；
+* arm value 不属于对应 registry；
+* 把 Work identity 当作 primary variable；
+* 把 AI 标识、版权或出版归属当作实验变量。
+
+若用户确需多变量测试，必须拆成多个 Experiment，不在 V1 中实现 factorial design。
+
+## 七、Replication Structure 与跨三本书复现
+
+定义 `ReplicationStructureV1`，只描述实验结构意图，不是 Content Brief：
+
+* structure identity/version；
+* Topic content type；
+* analysis mode；
+* spoiler level；
+* structural slots/sequence 的有限标识；
+* comparison dimension，可空；
+* required labels；
+* semantic fingerprint。
+
+规则：
+
+* 同一 structure fingerprint 必须应用于至少 3 个不同 Work，才能标记 `REPLICATION_READY`；
+* 三本书必须是 canonical Work identity 不同；
+* 同一 Work 的不同 Edition 不能冒充三本书；
+* 每个 Work 的 Topic 必须 current、eligible 且未 archived/held；
+* Topic 的内容类型、模式、剧透和结构必须与实验设计兼容；
+* 对同一结构只换书名或事实输入是允许的复现；
+* 不要求三本书热度相同，但必须记录热度 strata；
+* 少于三本时设计保持 `INSUFFICIENT_REPLICATION`；
+* 不为凑数复制 Topic 或 semantic fingerprint。
+
+Issue 023 只验证结构可复现和样本计划；实际 Brief 要到 Issue 024。
+
+## 八、作品热度分层
+
+定义有限 `WorkPopularityStratumV1`：
+
+* `HOT`
+* `WARM`
+* `COLD`
+* `UNKNOWN`
+
+热度只是实验分层字段，不是事实门禁、Topic eligibility 或 ranking 的替代物。
+
+每个非 UNKNOWN 分层必须带：
+
+* observation/source kind；
+* observedAt/window；
+* bounded metric or category reference；
+* provenance；
+* confidence/availability；
+* policy version。
+
+冻结规则：
+
+* 当前没有真实运营数据时默认 `UNKNOWN`；
+* 不根据模型记忆、书名知名度或出版社身份自动推断；
+* UNKNOWN 不等于 COLD；
+* 测试使用明确 synthetic fixture；
+* 用户可手工确认有限分层，但必须显示依据和时间窗口；
+* 分层变化使相关 AssignmentPlan stale，不自动重排；
+* 热度不参与 AI 标识、版权、真实性或事实政策；
+* 不在 Issue 023 建立真实平台热度抓取或数据导入。
+
+## 九、指标与护栏合同
+
+定义版本化 `MetricRegistryV1` 和严格 MetricSpec。
+
+Primary metric 精确一个，至少可描述：
+
+* metric identity/version；
+* numerator；
+* denominator，可空；
+* unit；
+* observation window；
+* missing-value policy；
+* zero-denominator policy；
+* direction；
+* availability state。
+
+有限 availability：
+
+* `DEFINED_NOT_AVAILABLE`
+* `AVAILABLE_FOR_FUTURE_COLLECTION`
+* `UNSUPPORTED`
+
+当前尚未实现 M5 数据回收，因此 Issue 023 的真实指标默认不能显示为已有数据。
+
+可在 registry 中定义未来候选，例如：
+
+* `SAVE_RATE`
+* `COMMENT_RATE`
+* `FOLLOW_CONVERSION_RATE`
+* `ENGAGEMENT_RATE`
+* `PROFILE_VISIT_RATE`
+* `APPROVAL_WORK_UNITS`
+* `FACT_BLOCK_RATE`
+
+但必须：
+
+* 明确哪些依赖未来平台数据；
+* 不伪造 numerator、denominator、baseline 或 effect size；
+* 缺失与 0 严格区分；
+* 不为无效分母计算 rate；
+* 不计算当前结果。
+
+Guardrail：
+
+* 可以有 0—有限数量；
+* 不能与 primary metric 重复；
+* 必须定义方向和违反条件；
+* 只记录未来判断规则；
+* 不自动阻止 Topic、Brief 或发布，因为执行链尚不存在；
+* 不包含 AI 标识或版权风险。
+
+## 十、样本计划
+
+定义 `SamplePlanV1`：
+
+* assignment unit；
+* target Topic/Work set；
+* inclusion/exclusion rules；
+* arm target counts；
+* minimum distinct Work count；
+* replication requirement；
+* popularity strata；
+* deterministic seed；
+* blocking keys；
+* sample warnings；
+* plan status。
+
+V1 assignment unit 必须基于 Issue 022 TopicCandidate，并保留 canonical Work identity。
+
+计划状态至少包括：
+
+* `DRAFT`
+* `INSUFFICIENT_SAMPLE`
+* `INSUFFICIENT_REPLICATION`
+* `UNBALANCED`
+* `READY_TO_LOCK`
+* `STALE`
+
+冻结规则：
+
+* 至少 3 个不同 Work 复现同一 structure；
+* Topic 必须 current、eligible，且不处于 HELD/ARCHIVED；
+* 同一 Topic 只能进入一个 arm；
+* 同一 Work 在同一实验中的重复使用受版本化上限约束；
+* FIRST_30 plan membership 可作为纳入条件，但不能被实验自动修改；
+* 数量不足时返回 shortfall，不复制样本；
+* 当前 30 篇样本较小时必须显示有限性，不得声称统计功效充足；
+* 未有历史 effect size 时不得伪造 power 或 minimum detectable effect；
+* 样本计划不等于发布排期。
+
+## 十一、分层和确定性分配
+
+实现 `AssignmentPolicyV1`：
+
+1. 校验所有 Topic eligibility/current dependencies；
+2. 按 content type、popularity stratum 和必要 blocking key 分层；
+3. 使用保存的 deterministic seed 和稳定 tie-break 分配 arms；
+4. 尽可能平衡每个 arm 的 Work 数和 strata；
+5. 输出 imbalance、shortfall 和 reason；
+6. 不静默放宽 inclusion/exclusion；
+7. 不自动改变用户 LOCKED Topic 状态。
+
+每个 AssignmentUnit 至少保存：
+
+* Topic/version；
+* Work identity；
+* structure fingerprint；
+* assigned arm；
+* popularity stratum snapshot；
+* blocking key；
+* assignment order/reason；
+* dependency versions。
+
+要求：
+
+* 相同输入、seed 和 policy 得到完全相同分配；
+* 输入乱序不改变结果；
+* seed 不是密钥，但必须稳定保存；
+* 分层不足时 fail visibly，不把 UNKNOWN 静默并入 HOT/COLD；
+* 不把 ranking score 当作实验结果；
+* 不使用随机试到“平衡”为止的不可复现算法；
+* 分配算法复杂度有界，不做 O(n²) 全库比较。
+
+## 十二、Experiment 状态机
+
+Experiment/Design 状态至少包括：
+
+* `DRAFT`
+* `VALIDATED`
+* `ASSIGNMENT_READY`
+* `LOCKED`
+* `HELD`
+* `ARCHIVED`
+* `SUPERSEDED`
+* `STALE`
+
+本 Issue 不使用 `RUNNING`、`COMPLETED`、`WINNER` 等暗示真实执行或结果的状态。
+
+支持：
+
+* create draft；
+* validate；
+* preview assignment；
+* confirm/lock；
+* hold/resume；
+* clone as new version；
+* archive/restore。
+
+规则：
+
+* LOCKED 只表示设计与分配冻结，不表示已发布或开始实验；
+* 锁定后内容变更必须 clone 新版本，不能原地改写；
+* expected revision、preview hash、显式确认；
+* sender/window 绑定、短期、单次 token；
+* append-only transition/audit；
+* 并发 stale fail closed；
+* 旧版本保留；
+* 不自动触发 Brief、Draft、排期或模型任务。
+
+## 十三、依赖与失效
+
+保存精确 dependency，至少包括：
+
+* TopicCandidate version/state/eligibility；
+* TopicQuotaPlan version，可空；
+* Work identity；
+* Dossier/ExpressionPermission snapshot identity；
+* structure fingerprint/version；
+* variable/metric/assignment policy versions；
+* popularity stratum snapshot；
+* experiment design version。
+
+以下事件只使相关设计或分配 stale：
+
+* Topic eligibility、version、hold/archive 变化；
+* TopicQuotaPlan current version 变化；
+* Work merge/split/undo；
+* Dossier 或真实性权限失效；
+* structure/variable/metric/assignment policy version 变化；
+* popularity stratum 变化。
+
+要求：
+
+* 失效幂等；
+* 不自动重新分配；
+* 不自动解锁；
+* 显式重建生成新 assignment/design version；
+* 相同输入为 deterministic no-op；
+* 无关 Topic/Work 变化不触发全库 stale；
+* stale design 不能标记 READY/LOCKED；
+* 关键依赖查询使用索引。
+
+## 十四、Migration 与仓储
+
+追加运行时发现的下一条连续 migration；不预置版本号或 checksum，不修改历史 migration。
+
+优先规范并扩展现有 `experiments` 表，避免第二套 Experiment 真相。至少覆盖：
+
+* experiment identity/current design；
+* immutable design versions；
+* hypothesis；
+* primary variable/arms；
+* controlled conditions；
+* primary metric/guardrails；
+* replication structure；
+* sample/stratification plan；
+* assignment plan/version/unit；
+* popularity snapshots；
+* dependency/invalidation；
+* transition/audit。
+
+要求：
+
+* 真实 FK、STRICT、CHECK、unique、delete policy 和索引完整；
+* 一个 design 精确一个 primary variable 和 primary metric；
+* historical design/assignment/transition append-only；
+* current 切换事务化；
+* 旧 `experiments` 数据保守迁移，不伪装为 VALIDATED；
+* Issues 018—022 数据完整保留；
+* experiment/status、topic assignment、Work/stratum、dependency stale 查询使用索引；
+* 分页读取，不载入整个 TopicPool；
+* 新库、升级、迁移前备份、失败回滚、quick_check、foreign_key_check 全部测试；
+* DB/WAL/SHM 不保存 Evidence 正文、完整 Dossier、secret、raw response 或绝对路径。
+
+## 十五、桌面 UI 与 IPC
+
+在现有导航中增加“实验管理”页面或“选题池”内独立实验工作区；遵循当前 UI 架构选择最小、清晰方案。
+
+至少提供：
+
+* Experiment 列表、筛选和分页；
+* hypothesis builder；
+* 单一 primary variable 与 arm editor；
+* controlled-condition diff，醒目标出是否只改变一个变量；
+* primary metric 与 guardrail 配置；
+* 指标 availability 提示；
+* Topic/Work 样本选择；
+* structure replication 跨作品视图；
+* popularity strata 和 UNKNOWN 提示；
+* assignment preview、arm/strata balance、shortfall；
+* validate、lock、hold、clone version、archive；
+* version history 和有限 diff；
+* stale reason；
+* loading/empty/error/draft/invalid/insufficient/unbalanced/ready/locked/stale 状态。
+
+UI 必须明确：
+
+* “锁定实验设计不等于实验已执行”；
+* “当前没有发布指标，不能生成效果结论”；
+* “每个实验只测试一个主要变量”；
+* “同一结构至少跨三本不同作品复现”；
+* “作品热度仅作分层，UNKNOWN 不等于冷门”。
+
+preload 只增加固定、有限、分页 DTO 和方法。
+
+IPC 校验 exact-object、sender/origin/window、revision、大小、preview hash 和 confirmation token。
+
+renderer 不接收 Node、SQLite、内部路径、完整 Dossier/Evidence、credential、raw response、未来指标原始数据或内部预测分。
+
+## 十六、专项测试与金标
+
+新增独立 `test:experiments`，纳入 full test 与 Windows CI。
+
+金标至少包括：
+
+* 一个合法单变量实验，2 个 arms；
+* 同一 structure 跨至少 3 个不同 Work；
+* HOT/WARM/COLD/UNKNOWN 分层；
+* 一个 READY_TO_LOCK/LOCKED assignment；
+* 一个少于 3 Work 的 INSUFFICIENT_REPLICATION；
+* 一个样本 shortfall；
+* 一个多变量非法实验；
+* 一个 Topic stale 引发的 experiment stale；
+* 至少两个 immutable design versions。
+
+必须验证：
+
+1. hypothesis 必须包含 comparator、方向、指标和 falsification；
+2. 空泛“更爆”假设被拒绝；
+3. 精确一个 primary variable；
+4. 多变量、无 control、重复 arm 被拒绝；
+5. AI 标识、版权、出版归属不能成为变量；
+6. controlled conditions 可证明只改变一个主要维度；
+7. 同一 structure 至少跨 3 个 canonical Work；
+8. 不同 Edition 不能冒充三本书；
+9. Topic 必须 current、eligible 且非 held/archived；
+10. 热度默认 UNKNOWN，不自动推断；
+11. UNKNOWN 与 COLD 严格区分；
+12. primary metric 精确一个；
+13. metric/guardrail 缺失、0、无效分母语义正确；
+14. 当前无真实数据时 availability 不伪装为已有；
+15. 不计算 effect、p 值、power 或 winner；
+16. 样本不足返回 shortfall，不复制 Topic；
+17. 同输入、seed 和乱序输入分配一致；
+18. arm 与 strata balance/reason 可解释；
+19. replication 不足与 unbalanced 状态区分；
+20. LOCKED 只冻结设计，不产生执行状态；
+21. locked 后修改必须新版本；
+22. preview、confirm、hold、resume、archive、clone 与并发 stale；
+23. Topic、Quota、Dossier、权限、stratum、policy 变化精确失效；
+24. 无关 Topic/Work 不失效；
+25. 相同输入 no-op；
+26. migration 新库、升级、备份、回滚、FK、quick check；
+27. 关键分页和 dependency query 使用索引；
+28. UI、IPC、egress 状态矩阵；
+29. content_briefs、drafts、quality_checks、approvals、post_packages、publications 不被写入；
+30. 真实指标、真实密钥、外部网络、模型调用和费用均为 0；
+31. Issue 024、042、043 功能不存在。
+
+## 十七、文档与完成定义
+
+至少交付：
+
+* `docs/contracts/experiment-design-v1.md`
+* `docs/contracts/experiment-assignment-v1.md`
+* `docs/contracts/experiment-metrics-v1.md`
+* `docs/adr/` 下下一号 ADR；
+* `docs/m3-issue023-implementation-plan.md`
+* `docs/m3-issue023-acceptance-map.md`
+* 必要的脱敏证据放入 `docs/evidence/`；
+* 归档后的本指令和更新后的历史指令索引；
+* README、AGENTS、Roadmap 和文档中心同步，下一步明确为 Issue 024。
+
+完成前：
+
+1. 从最新 `npm ci` 开始按当前 CI 顺序运行全部适用门禁；
+2. 所有专项、全量测试、构建、桌面及 Clipper 打包、Electron smoke 和依赖审计通过；
+3. 非 CI 交互式浏览器 smoke 如受 Windows 前台限制，单独如实报告，不削弱既有断言；
+4. 创建恰好一个 Issue 023 本地提交；
+5. 核验 parent 为动态开工基线、工作树干净、远端未改变；
+6. 停止，不进入 Issue 024。
+
+最终报告必须明确：
+
+* Experiment、DesignVersion、Arm、Metric、Guardrail、Structure、Assignment 数量；
+* 合法单变量与非法多变量金标结果；
+* 同一结构跨至少三本书的复现结果；
+* HOT/WARM/COLD/UNKNOWN 分层和确定性分配结果；
+* shortfall、imbalance、stale、no-op、锁定和新版本结果；
+* 当前没有真实指标，未计算效果、显著性或 winner；
+* migration 和 Issues 018—022 数据保留；
+* Brief、Draft、质量和发布流程仍未实现；
+* 真实网络、模型、密钥读取和费用均为 0；
+* 指令只归档于 `docs/instructions/m3/`；
+* 只创建一个本地提交、未 push、未进入 Issue 024。
+
+只有全部成立才可报告 PASS。
+
+## 十八、给 Codex 的启动指令
+
+继续当前本地 `main`，允许其合法领先 `origin/main`；不要 pull、rebase、reset 或 push。
+
+完整读取仓库 `AGENTS.md` 和本 TXT，随后立即把本 TXT 唯一归档到：
+
+`docs/instructions/m3/M3-Issue023-versioned-experiment-management-Codex-instruction.txt`
+
+只实施 M3 Issue 023：完成可检验假设、严格单一 primary variable、control/treatment arms、唯一 primary metric、guardrails、作品热度分层、同一结构至少跨三本书复现、确定性 assignment、版本化状态和实验管理 UI。
+
+不得生成 Content Brief、标题、正文、图片，不得录入真实指标或计算效果、显著性和 winner。
+
+测试只使用合成 fixture、临时 SQLite 和本机 loopback；真实密钥、业务网络、模型调用和费用保持为 0。
+
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 024。

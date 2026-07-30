@@ -17,6 +17,7 @@ import {
   type ConfirmDossierBuildInput,
   type ConfirmSourceProcessingInput,
   type ConfirmTopicActionInput,
+  type ConfirmExperimentActionInput,
   type ConfirmModelCacheClearInput,
   type CreateModelPriceScheduleInput,
   type CreateModelUnitPolicyInput,
@@ -30,6 +31,8 @@ import {
   type GetEvidenceStateInput,
   type GetTopicInput,
   type GetTopicPoolInput,
+  type GetExperimentInput,
+  type GetExperimentsInput,
   type GetDossierInput,
   type ListDossiersInput,
   type GetBrowserClipInput,
@@ -45,6 +48,7 @@ import {
   type PreviewDossierBuildInput,
   type PreviewSourceProcessingInput,
   type PreviewTopicActionInput,
+  type PreviewExperimentActionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type SetCredentialInput,
@@ -86,6 +90,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmSourceProcessing, input),
   confirmTopicAction: (input: ConfirmTopicActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmTopicAction, input),
+  confirmExperimentAction: (input: ConfirmExperimentActionInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmExperimentAction, input),
   cancelSourceProcessing: (input: CancelSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelSourceProcessing, input),
   exportDiagnosticReport: (input: ExportDiagnosticReportInput) =>
@@ -110,6 +116,10 @@ const desktopBridge: DesktopBridge = Object.freeze({
   getTopicPool: (input: GetTopicPoolInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getTopicPool, input),
   getTopic: (input: GetTopicInput) => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getTopic, input),
+  getExperiments: (input: GetExperimentsInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getExperiments, input),
+  getExperiment: (input: GetExperimentInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getExperiment, input),
   getDossier: (input: GetDossierInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getDossier, input),
   getFoundationHealth: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.getFoundationHealth),
@@ -152,6 +162,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewSourceProcessing, input),
   previewTopicAction: (input: PreviewTopicActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewTopicAction, input),
+  previewExperimentAction: (input: PreviewExperimentActionInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewExperimentAction, input),
   previewModelCacheClear: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewModelCacheClear),
   diffDossierVersions: (input: DiffDossierVersionsInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.diffDossierVersions, input),

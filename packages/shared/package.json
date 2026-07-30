@@ -21,6 +21,7 @@
   "dependencies": {
     "@mystery-operations/authenticity": "0.0.0",
     "@mystery-operations/dossier": "0.0.0",
+    "@mystery-operations/experiments": "0.0.0",
     "@mystery-operations/providers": "0.0.0",
     "@mystery-operations/settings": "0.0.0",
     "@mystery-operations/topics": "0.0.0"

@@ -289,7 +289,7 @@ async function startApplication(): Promise<void> {
             renderer.appInfo &&
             renderer.foundation &&
             renderer.localApiBridge &&
-            renderer.navigationCount === 10 &&
+            renderer.navigationCount === 11 &&
             renderer.preload &&
             renderer.renderer &&
             renderer.runtimeCapabilities &&

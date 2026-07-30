@@ -7,6 +7,7 @@ import { DossierError } from '@mystery-operations/dossier';
 import { EvidenceError } from '@mystery-operations/evidence';
 import { LocalApiError } from '@mystery-operations/local-api';
 import { TopicError } from '@mystery-operations/topics';
+import { ExperimentError } from '@mystery-operations/experiments';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -21,6 +22,7 @@ import {
   type ConfirmEvidenceConflictInput,
   type ConfirmSourceProcessingInput,
   type ConfirmTopicActionInput,
+  type ConfirmExperimentActionInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -41,6 +43,8 @@ import {
   type GetEvidenceStateInput,
   type GetTopicInput,
   type GetTopicPoolInput,
+  type GetExperimentInput,
+  type GetExperimentsInput,
   type ListDossiersInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
@@ -53,6 +57,7 @@ import {
   type PreviewEvidenceConflictInput,
   type PreviewSourceProcessingInput,
   type PreviewTopicActionInput,
+  type PreviewExperimentActionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -96,6 +101,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof ExperimentError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof TopicError) {
     return failure(error.code, error.message, error.retryable, error.safeDetails);
   }
@@ -281,6 +289,42 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       window.id,
     );
   });
+  register('getExperiments', DESKTOP_IPC_CHANNELS.getExperiments, (_event, args) =>
+    options.settingsRuntime.getExperiments(args[0] as GetExperimentsInput),
+  );
+  register('getExperiment', DESKTOP_IPC_CHANNELS.getExperiment, (_event, args) =>
+    options.settingsRuntime.getExperiment(args[0] as GetExperimentInput),
+  );
+  register(
+    'previewExperimentAction',
+    DESKTOP_IPC_CHANNELS.previewExperimentAction,
+    (event, args) => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window === null) {
+        throw new ExperimentError('EXPERIMENT_INVALID_CONTRACT');
+      }
+      return options.settingsRuntime.previewExperimentAction(
+        args[0] as PreviewExperimentActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmExperimentAction',
+    DESKTOP_IPC_CHANNELS.confirmExperimentAction,
+    (event, args) => {
+      const window = BrowserWindow.fromWebContents(event.sender);
+      if (window === null) {
+        throw new ExperimentError('EXPERIMENT_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmExperimentAction(
+        args[0] as ConfirmExperimentActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),
   );
