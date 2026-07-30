@@ -5,9 +5,9 @@
 ## 1. 项目定位与当前状态
 
 - 这是面向 Windows 10/11 的本地优先、单用户推理小说内容运营工作台。
-- M0（Issue 001—005）、M1（Issue 006—011）、M2（Issue 012—021）、M3 Issue 022 与
-  Issue 023 已经完成。
-- 下一项规划是 M3 Issue 024；不得在未收到明确任务时自动开始。
+- M0（Issue 001—005）、M1（Issue 006—011）、M2（Issue 012—021）、M3 Issue 022、
+  Issue 023 与 Issue 024 已经完成。
+- 下一项规划是 M3 Issue 025；不得在未收到明确任务时自动开始。
 - 当前版本是开发中的本地基础设施，不是生产可用的内容运营成品。
 
 事实来源按优先级为：
@@ -75,9 +75,9 @@
 ## 6. SQLite 与数据规则
 
 - migration 只能按连续版本追加，已发布 migration 不得修改、重排、合并或删除。
-- 当前 migration v1—v16 已发布；历史 SHA-256 与 v8 搜索、v9 Fetch、v10 Browser Clip、
+- 当前 migration v1—v17 已发布；历史 SHA-256 与 v8 搜索、v9 Fetch、v10 Browser Clip、
   v11 书目目录、v12 来源证据、v13 版本化研究档案、v14 阅读真实性、v15 Topic Pool 与
-  v16 版本化实验 schema 均由测试冻结。
+  v16 版本化实验、v17 结构化 Content Brief schema 均由测试冻结。
   任何不匹配都应视为阻塞，而不是更新预期值。
 - 迁移前备份、事务回滚、外键、STRICT 表和 Windows 路径行为必须保持。
 - 数据库只保存受控路径或相对路径；不得把任意外部绝对路径当作托管文件。

@@ -17,7 +17,7 @@ afterEach(cleanTemporaryDatabases);
 describe('Issue 021 reading authenticity migration', () => {
   it('appends one migration without changing v1-v13 identities', () => {
     expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
+      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17,
     ]);
     expect(MIGRATIONS[13]).toMatchObject({
       foreignKeysDisabled: true,
@@ -52,7 +52,7 @@ describe('Issue 021 reading authenticity migration', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [14, 15, 16], schemaVersion: 16 });
+    expect(result).toMatchObject({ appliedVersions: [14, 15, 16, 17], schemaVersion: 17 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

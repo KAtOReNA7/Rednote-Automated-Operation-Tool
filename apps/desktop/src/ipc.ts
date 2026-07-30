@@ -8,6 +8,7 @@ import { EvidenceError } from '@mystery-operations/evidence';
 import { LocalApiError } from '@mystery-operations/local-api';
 import { TopicError } from '@mystery-operations/topics';
 import { ExperimentError } from '@mystery-operations/experiments';
+import { BriefError } from '@mystery-operations/briefs';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -23,6 +24,7 @@ import {
   type ConfirmSourceProcessingInput,
   type ConfirmTopicActionInput,
   type ConfirmExperimentActionInput,
+  type ConfirmBriefActionInput,
   DESKTOP_IPC_CHANNELS,
   type AppInfo,
   type ClearCredentialInput,
@@ -45,6 +47,8 @@ import {
   type GetTopicPoolInput,
   type GetExperimentInput,
   type GetExperimentsInput,
+  type GetBriefInput,
+  type GetBriefsInput,
   type ListDossiersInput,
   type GetProviderCapabilityProbeProgressInput,
   type PreviewProviderCapabilityProbeInput,
@@ -58,6 +62,7 @@ import {
   type PreviewSourceProcessingInput,
   type PreviewTopicActionInput,
   type PreviewExperimentActionInput,
+  type PreviewBriefActionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -101,6 +106,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof BriefError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof ExperimentError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -325,6 +333,30 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       );
     },
   );
+  register('getBriefs', DESKTOP_IPC_CHANNELS.getBriefs, (_event, args) =>
+    options.settingsRuntime.getBriefs(args[0] as GetBriefsInput),
+  );
+  register('getBrief', DESKTOP_IPC_CHANNELS.getBrief, (_event, args) =>
+    options.settingsRuntime.getBrief(args[0] as GetBriefInput),
+  );
+  register('previewBriefAction', DESKTOP_IPC_CHANNELS.previewBriefAction, (event, args) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window === null) throw new BriefError('BRIEF_INVALID_CONTRACT');
+    return options.settingsRuntime.previewBriefAction(
+      args[0] as PreviewBriefActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmBriefAction', DESKTOP_IPC_CHANNELS.confirmBriefAction, (event, args) => {
+    const window = BrowserWindow.fromWebContents(event.sender);
+    if (window === null) throw new BriefError('BRIEF_CONFIRMATION_INVALID');
+    return options.settingsRuntime.confirmBriefAction(
+      args[0] as ConfirmBriefActionInput,
+      event.sender.id,
+      window.id,
+    );
+  });
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),
   );

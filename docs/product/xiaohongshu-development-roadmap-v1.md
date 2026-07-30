@@ -439,7 +439,7 @@ flowchart TD
 
 ## M3：选题、文案和质量门禁
 
-状态：**进行中**。Issue 022—023 已完成；下一项仅规划 **M3 Issue 024**，未收到明确任务时不得
+状态：**进行中**。Issue 022—024 已完成；下一项仅规划 **M3 Issue 025**，未收到明确任务时不得
 自动开始。
 
 ### Issue 022：实现选题池与首批 30 篇配额
@@ -499,6 +499,8 @@ flowchart TD
 - 用户可编辑和锁定字段。
 
 依赖：019、022、023。
+
+状态：已完成（Content Brief V1、Readiness/Structured Generation V1、migration v17 与内容生产 UI）。
 
 ### Issue 025：实现文案生成器
 

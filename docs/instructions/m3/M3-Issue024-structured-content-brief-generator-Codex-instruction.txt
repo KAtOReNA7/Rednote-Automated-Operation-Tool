@@ -1,0 +1,718 @@
+# M3 Issue 024：结构化内容简报生成器、字段锁定与证据映射——增量开发指令
+
+本文件是 Issue 024 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`。本文件只定义 Issue 024 增量范围，不重复动态基线、可迁移路径、Windows、安全、费用、硬约束、测试、Git 和文档治理公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；Schema、证据映射、字段锁、版本化、模型恢复和并发使用 XHigh
+目标提交信息：feat(content): add structured content brief generator
+
+## 一、合法起点、归档与停止点
+
+以当前本地 `main` 动态 HEAD 为起点。本地合法领先 `origin/main` 的 Issues 018—023 提交不得被回退、改写或误判为异常。
+
+开工时按语义确认：
+
+* 工作树干净，当前分支为 `main`；
+* Issue 022 TopicCandidate/QuotaPlan 与 Issue 023 Experiment Design/Assignment 完整；
+* Issue 019 Evidence、Issue 020 Dossier、Issue 021 Authenticity 权限仍可只读追溯；
+* README、AGENTS、Roadmap 和索引一致指向 Issue 024；
+* migration 尾部、Git 基线和仓库位置动态发现。
+
+不得把报告中的提交 ID、盘符、绝对路径、migration 版本或 checksum 写成门禁。
+
+本 TXT 可临时放在仓库根目录。完整读取后、在 baseline gate 或业务修改前，唯一归档到：
+
+`docs/instructions/m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt`
+
+根目录和原位置不留副本；更新历史指令索引。
+
+只实施 Issue 024。完成后停止，不进入 Issue 025。
+
+## 二、授权目标
+
+实现 Content Brief V1：
+
+* 将一个 current、eligible TopicCandidate 转换为版本化结构化简报；
+* 可选绑定一个 current、有效的 Experiment Assignment；
+* 包含目标读者、内容目标、核心判断、反方观点、证据、剧透、评分类型和禁用表达；
+* 为五类 Topic 提供类型特定的 Brief 要求；
+* 每个事实性支撑点逐条映射到 Dossier/Claim/Evidence；
+* 依据 Issue 021 冻结第一人称、资料分析和评分来源；
+* 使用严格 JSON Schema 与 runtime validation；
+* 提供纯本地 scaffold 和受控 provider-neutral 结构化生成路径；
+* 用户可编辑字段并逐字段锁定；
+* 保存不可变版本、字段来源、有限 diff、依赖和失效原因；
+* 只有满足事实覆盖度、真实性和剧透策略的 Brief 才可进入未来 Draft 生成；
+* 激活“内容生产”中的简报工作区；
+* 追加下一条连续 migration、专项测试、合同、ADR、计划和验收映射；
+* 全部门禁通过后只创建一个本地提交。
+
+## 三、本 Issue 明确不做
+
+* 不实现 Issue 025 的标题、正文、标签或置顶评论生成；
+* 不生成成品剧透警告文案，只保存警告要求与位置；
+* 不生成图片、封面或多页信息卡；
+* 不运行 Issue 026—030 的正文质量检查；
+* 不实现审批、排期、导出、发布或运营数据回收；
+* 不把 Brief 当作 Draft、已批准内容或发布包；
+* 不自动修改 Topic、Experiment、Dossier、Claim、ReadingState 或 ExpressionPermission；
+* 不声称实验已执行、有效或存在 winner；
+* 不读取真实密钥，不执行真实模型、API、搜索、网页或图片调用，不产生费用；
+* 不进入 Issue 025 或后续范围。
+
+## 四、Content Brief V1 聚合根
+
+定义严格、版本化合同：
+
+* `ContentBrief`
+* `ContentBriefVersion`
+* `BriefAudience`
+* `BriefObjective`
+* `BriefJudgment`
+* `BriefArgument`
+* `BriefCounterargument`
+* `BriefEvidenceRef`
+* `BriefStructurePlan`
+* `BriefSpoilerPlan`
+* `BriefScorePlan`
+* `BriefExpressionPolicy`
+* `BriefForbiddenExpression`
+* `BriefFieldLock`
+* `BriefDependency`
+* `BriefReadinessSnapshot`
+* `BriefGenerationPlan`
+* `BriefGenerationRun`
+
+ContentBrief 是稳定 identity，绑定：
+
+* 一个 TopicCandidate identity；
+* 创建时的 Topic version；
+* 可选 Experiment/Design/Assignment identity；
+* 主要 Work/Expression/Edition 集合；
+* current version pointer。
+
+每个 Brief version immutable，至少保存：
+
+* schema、policy、prompt versions；
+* 完整结构化 payload；
+* 字段 provenance；
+* 字段 lock snapshot；
+* Topic、Experiment、Dossier、Authenticity、Evidence dependencies；
+* input hash、readiness 和 reason codes；
+* status、revision、previous version；
+* createdAt、confirmedAt、lockedAt；
+* bounded warnings。
+
+同一 Brief 只能有一个 current version。历史版本不可原地覆盖或物理删除。
+
+## 五、简报必需字段
+
+每个 Brief 必须包含：
+
+1. `targetAudience`
+
+   * 目标读者；
+   * 已有知识水平；
+   * 选择或阅读需求；
+   * 不得使用未经来源支持的敏感画像。
+
+2. `contentObjective`
+
+   * 希望读者理解、判断或比较什么；
+   * 不是“制造爆款”等不可验证承诺。
+
+3. `coreJudgment`
+
+   * 一个明确中心判断；
+   * 标注 `OPINION / FACTUAL_SYNTHESIS / MIXED`；
+   * 包含可证伪或可限定条件；
+   * 不得冒充已经发布的结论。
+
+4. `supportingArguments`
+
+   * 有限数量；
+   * 每项包含 argument kind、claim、evidence refs 和 limitation；
+   * 事实与观点分开。
+
+5. `strongestCounterargument`
+
+   * 真实、最强的反方或限定条件；
+   * 不得构造稻草人；
+   * 事实部分同样需要 Evidence；
+   * 包含 response/qualification，但不要求强行反驳。
+
+6. `evidenceMap`
+
+   * 每个事实性 argument 对应受控引用；
+   * 不保存完整网页、整份 Dossier 或大段原文。
+
+7. `structurePlan`
+
+   * 段落功能、顺序和内容槽位；
+   * 不是成品标题或成品正文。
+
+8. `spoilerPlan`
+
+   * NO、LIGHT、FULL；
+   * warning required/placement；
+   * core trick/ending flags；
+   * 用户确认要求。
+
+9. `scorePlan`
+
+   * NONE、PERSONAL_SCORE、RESEARCH_ANALYSIS_SCORE；
+   * scale、value source、public label requirement；
+   * INTERNAL_PREDICTION 永远禁止进入 Brief。
+
+10. `expressionPolicy`
+
+    * PERSONAL_EXPERIENCE 或 PUBLIC_RESEARCH_ANALYSIS；
+    * 第一人称权限；
+    * R2 assertion allowlist；
+    * required public labels。
+
+11. `forbiddenExpressions`
+
+    * 全局、类型、真实性、证据和用户自定义禁用表达；
+    * reason 和 policy source。
+
+12. `openQuestionsAndLimitations`
+
+    * 尚未解决的资料缺口；
+    * 不得把 gap 补写成确定结论。
+
+## 六、五类 Brief Profile
+
+建立与 Issue 022 五类 Topic 一一对应的有限 `BriefProfileRegistryV1`。
+
+1. `NON_SPOILER_SINGLE_BOOK_VERDICT`
+
+   * 精确一个主要 Work；
+   * spoiler 必须 NO；
+   * 包含适合或不适合读者、主要优点、主要缺点和购买或阅读判断；
+   * 禁止泄露核心诡计、真凶、结局或答案。
+
+2. `FULL_TRICK_LOGIC_ANALYSIS`
+
+   * spoiler 必须 FULL；
+   * 保存封面、标题和正文开头警告要求；
+   * 结构至少区分诡计复盘、伏线公平性、逻辑成立性、误导与漏洞；
+   * 完整剧透本身不阻止 Brief ready。
+
+3. `CROSS_WORK_COMPARISON`
+
+   * 至少两个主要 Work；
+   * 使用 Issue 022 已验证 comparison dimension；
+   * 每个 Work 使用同一比较维度和对称 evidence slots；
+   * 不允许以一个作品的资料替代另一个作品。
+
+4. `WEB_VS_PUBLISHED_MYSTERY`
+
+   * 包含已验证的网络或出版形态；
+   * 比较创作、结构或阅读体验，不自动推断商业优劣；
+   * publication relationship 只作为事实输入，不参与产品门禁或评分。
+
+5. `MYSTERY_AND_CULTURAL_PHENOMENON`
+
+   * 绑定至少一个 Work 和可追溯文化主题；
+   * context-only 可作为讨论背景，但不能冒充已验证关键事实；
+   * 禁止退化为无书目主体的泛热点文案。
+
+Profile 必须验证必需槽位、主体数量、比较对称性和 spoiler 兼容性。
+
+## 七、证据映射
+
+每个 `BriefEvidenceRefV1` 必须引用现有且 current 的：
+
+* DossierVersion/DossierEntry；
+* AtomicClaim；
+* FactEvaluation；
+* EvidenceLocator；
+* SourceRevision。
+
+可按实际仓储保存最小引用集合，但必须能完整追溯上述链路。
+
+每个 evidence ref 至少包含：
+
+* ref identity；
+* brief field/argument identity；
+* fact-or-context role；
+* claim/evaluation/evidence/source revision IDs；
+* bounded display summary；
+* source language；
+* current/stale status；
+* dependency hash。
+
+冻结规则：
+
+* 只有 current `VERIFIED` FactEvaluation 可支持关键事实；
+* supporting-only/context-only 必须保留角色，不得升级；
+* `FACT_BLOCKED`、stale 或 invalid locator 不能支撑生成就绪 Brief；
+* opinion 可以没有 Claim，但其事实前提必须有映射；
+* counterargument 的事实部分同样需要证据；
+* 不允许模型编造 ID、URL、excerpt 或引用；
+* runtime 必须验证每个模型输出引用确实在输入 allowlist 中；
+* Brief JSON 不复制整页正文、完整 Evidence excerpt 或完整 Dossier；
+* Evidence 更新后精确失效相关 Brief。
+
+Issue 026 未来仍会检查 Draft 中的正文事实映射；Issue 024 的 Brief evidence map 不替代 Issue 026。
+
+## 八、真实性、第一人称与评分
+
+Brief 必须消费 current `ExpressionPermissionSnapshotV1`。
+
+PERSONAL_EXPERIENCE：
+
+* R1 可使用第一人称和 PERSONAL_SCORE；
+* R2 只能引用当前、逐条确认的 ExperienceAssertion ID；
+* R3、S1、S2、UNCLASSIFIED 不得使用具体第一人称体验；
+* Personal 权限不绕过 Dossier/FactPolicy。
+
+PUBLIC_RESEARCH_ANALYSIS：
+
+* 必须有 current READY Dossier；
+* 必须保存“公开资料整理”标签要求；
+* 如使用评分，只能是 RESEARCH_ANALYSIS_SCORE；
+* 必须保存“资料分析评分”标签要求；
+* 不得使用“我读完”“我看到这里”“我的阅读体验”等表达。
+
+Score：
+
+* PERSONAL_SCORE 只使用 Issue 021 允许的个人分；
+* RESEARCH_ANALYSIS_SCORE 只使用资料分析分；
+* INTERNAL_PREDICTION 不得进入 schema、DTO、renderer、模型输入或输出；
+* UNKNOWN 不伪造 0；
+* Brief 可保存评分使用计划和值引用，但不让模型擅自创建用户个人评分。
+
+R2 assertion 撤销、ReadingState 或 permission revision 变化时，只精确失效相关 Brief。
+
+## 九、禁用表达与风格约束
+
+定义版本化 `ForbiddenExpressionRegistryV1`，至少区分：
+
+* `GLOBAL_ACCOUNT`
+* `AUTHENTICITY`
+* `FACT_POLICY`
+* `SPOILER`
+* `CONTENT_TYPE`
+* `USER_CUSTOM`
+
+系统级规则至少包括：
+
+* 不得伪造第一人称亲历；
+* 不得把资料分析评分写成个人评分；
+* 不得把模型记忆写成事实来源；
+* 不得把 gap 或 UNKNOWN 写成确定事实；
+* 非剧透类型不得出现答案性表达；
+* 不讨论账号是 AI 运营实验；
+* 不使用粉圈引战或攻击作者、读者、群体的表达；
+* 不将“神作”“封神”“后劲太大”等空泛词作为未解释的核心判断。
+
+账号风格目标作为 Brief 约束保存：
+
+* 观点鲜明；
+* 短句直接；
+* 少量冷幽默；
+* 批评作品，不攻击作者或读者；
+* 不为互动刻意制造对立。
+
+规则：
+
+* 用户可新增自定义禁用表达；
+* 用户不能删除系统冻结规则；
+* 禁用表达是未来写作约束，不在 Issue 024 扫描不存在的正文；
+* AI 标识和版权不得成为禁用表达、readiness 或锁定因素。
+
+## 十、字段编辑、来源与锁定
+
+每个可编辑字段保存 provenance：
+
+* `SYSTEM_DERIVED`
+* `MODEL_CANDIDATE`
+* `USER_EDITED`
+* `USER_CONFIRMED`
+
+字段锁状态：
+
+* `EDITABLE`
+* `USER_LOCKED`
+* `SYSTEM_LOCKED`
+
+SYSTEM_LOCKED 至少包括：
+
+* Topic identity/version；
+* Experiment assignment identity，可空；
+* evidence dependency IDs；
+* policy versions；
+* authenticity、score、spoiler permission；
+* system forbidden rules。
+
+用户可以锁定：
+
+* target audience；
+* objective；
+* core judgment；
+* argument/counterargument；
+* structure slots；
+* user custom forbidden expressions；
+* 有限 style choices。
+
+规则：
+
+* 用户编辑或锁定创建新 BriefVersion，不原地覆盖；
+* expected revision、preview diff、显式确认；
+* sender/window 绑定、短期、单次 token；
+* 锁定字段在 regenerate 时保持逐字或逐值不变；
+* regenerate 只改未锁定字段；
+* 模型不得解锁或覆盖 USER_LOCKED；
+* 依赖失效不能静默修改锁定字段，只将 Brief 标记 stale；
+* 解锁需要独立确认和 audit；
+* 支持 undo、clone、archive、restore；
+* 所有历史和 transition append-only。
+
+## 十一、Brief Readiness
+
+定义纯确定性 `BriefReadinessPolicyV1`，状态至少包括：
+
+* `DRAFT_INCOMPLETE`
+* `DOSSIER_NOT_READY`
+* `FACT_BLOCKED`
+* `AUTHENTICITY_BLOCKED`
+* `SPOILER_POLICY_INCOMPLETE`
+* `EXPERIMENT_MISMATCH`
+* `EVIDENCE_MAPPING_INCOMPLETE`
+* `STALE`
+* `READY_FOR_DRAFT_GENERATION`
+
+`READY_FOR_DRAFT_GENERATION` 必须同时满足：
+
+* Topic current、eligible、非 HELD/ARCHIVED；
+* 所有主要 Dossier current 且 ready；
+* ExpressionPermission current 并允许选择的 analysis mode；
+* score origin 合法；
+* spoiler plan 完整；
+* 五类 Profile 必需槽位完整；
+* 每个事实性 argument 有 current evidence mapping；
+* 无会阻止核心判断的 FACT_BLOCKED；
+* 如绑定 Experiment，design/assignment current 且 Brief 与 arm/controlled conditions 一致；
+* 所有 SYSTEM_LOCKED 依赖 current；
+* JSON Schema/runtime validator 全部通过。
+
+低覆盖度、冲突或 stale 时：
+
+* 可以保存 `DRAFT_INCOMPLETE` 或对应阻止状态的编辑草稿；
+* 不能标记为 `READY_FOR_DRAFT_GENERATION`；
+* 不能入队 Issue 025；
+* 不自动触发 Dossier rebuild 或事实处理。
+
+AI 参与度、AI 标识、版权、出版归属和普通负面观点不参与 readiness。
+
+## 十二、Experiment 绑定
+
+Brief 可以不绑定 Experiment。
+
+如绑定 Issue 023 Assignment：
+
+* Topic/Work 必须与 AssignmentUnit 一致；
+* replication structure fingerprint 必须一致；
+* primary variable arm value 必须进入 Brief 的实验字段；
+* controlled conditions 必须保持；
+* popularity stratum 只作为实验快照，不影响 Brief 事实或表达权限；
+* Experiment 必须 LOCKED、current、非 stale；
+* 不得将 Experiment 的 hypothesis 写成已验证结果；
+* Brief 不保存 effect、winner、p value 或真实 metric value。
+
+用户编辑若违反 arm 或 controlled condition：
+
+* Brief readiness 返回 `EXPERIMENT_MISMATCH`；
+* 不自动修改 Experiment；
+* 不自动把 Topic 移到另一个 arm；
+* 用户只能恢复兼容值、解除 Brief 的实验绑定，或在 Issue 023 创建新的实验版本；
+* 所有操作显式确认并审计。
+
+## 十三、纯本地 Scaffold 与结构化生成
+
+必须提供不配置模型也可用的纯本地 scaffold：
+
+* 从 Topic、Profile、Dossier/Permission snapshot 创建字段骨架；
+* 填入受控主体、evidence refs、标签、spoiler、score、forbidden rules；
+* 未能确定的 judgment 或 argument 保持空缺或 open question；
+* 不使用模板伪造内容判断；
+* 用户可手工完成并锁定。
+
+同时实现 provider-neutral `ContentBriefGenerationV1`：
+
+* 只经 ModelExecutionService；
+* structured JSON capability 必须 current、SUPPORTED；
+* 明确 preview、预算、用户确认；
+* 复用缓存、usage、model_runs、reservation 和 cost ledger；
+* credential 只在 main transport 最终阶段解析；
+* after-send ambiguous 不自动重试、repair、fallback 或换模型。
+
+模型输入只包含：
+
+* 选定 Topic 的有界结构化字段；
+* 选定 Dossier entries、Claim summaries 和允许的 evidence refs；
+* 当前 Experiment arm/controlled conditions，可空；
+* ExpressionPermission、score、spoiler 标签要求；
+* Profile Schema；
+* forbidden-expression rules；
+* 已锁定字段。
+
+模型输出：
+
+* 只能是 strict ContentBrief candidate；
+* 不包含标题、正文、标签、置顶评论或图片 prompt；
+* 每个事实性字段引用输入 allowlist；
+* 不能新增 Work、Claim、Evidence 或 assertion；
+* 不能修改系统策略或 locked fields；
+* 不能声称实验结果；
+* 经过 runtime Schema、引用、权限、readiness 和 lock-preservation 验证后才可保存为 `MODEL_CANDIDATE` version。
+
+页面或 Dossier 文本视为不可信数据，prompt injection 不能改变 schema、政策或任务。
+
+测试只使用 Scripted Mock；本轮真实请求和费用为 0。
+
+## 十四、Generation Plan、队列与恢复
+
+定义有界 `BriefGenerationPlanV1`，preview 至少显示：
+
+* Topic、Experiment、subject IDs；
+* Profile；
+* 输入 DossierEntry、Claim、EvidenceRef 数；
+* locked/editable field 数；
+* 最大输入字符和输出字节；
+* 精确最大模型请求数；
+* capability 和预算结论；
+* 预计本地写入；
+* dependency、input、preview hash；
+* expiry、expected revisions。
+
+新增有限 `CONTENT_BRIEF_GENERATE_V1` handler：
+
+* 只有桌面显式确认的 producer；
+* payload 只含 ID、版本、hash 和有限计数，不含正文或 evidence excerpt；
+* executionId 幂等；
+* 同 Brief 同时最多一个 active generation；
+* 模型调用期间不持有 DB 长事务；
+* pause、cancel、shutdown 和 recovery 沿用 JobQueue；
+* pre-send 可以安全恢复；
+* after-send ambiguous 不自动重发；
+* 发布 candidate version 前重验依赖、input hash 和 lock snapshot；
+* stale、失败或取消不替换 current ready version；
+* result 不含 Brief payload、正文、路径、secret 或 raw response；
+* 不自动创建 Draft 或启动 Issue 025。
+
+## 十五、依赖与精确失效
+
+保存至少以下 dependency：
+
+* TopicCandidate version/state/eligibility；
+* TopicQuotaPlan version，可空；
+* Experiment/Design/Assignment version，可空；
+* Work/Expression/Edition identities；
+* DossierVersion/Entry；
+* Claim/FactEvaluation/Evidence/SourceRevision；
+* ExpressionPermission/ReadingState/R2 assertion；
+* score、spoiler、authenticity、profile、forbidden policy versions；
+* prompt、schema、profile versions；
+* lock snapshot。
+
+以下变化只失效相关 Brief：
+
+* Topic 版本、资格、hold/archive；
+* Dossier current/readiness 或 Evidence、Claim、Source 变化；
+* ReadingState、assertion、permission、score、spoiler policy 变化；
+* Experiment design、assignment、stratum 变化；
+* Work merge、split、undo；
+* Profile、Schema、Prompt、Forbidden registry 版本变化。
+
+要求：
+
+* 失效幂等；
+* 不自动 regenerate；
+* 不自动解锁字段；
+* 不自动创建 Draft；
+* 无关 Topic、Work、Source 不触发全库 stale；
+* 显式 regenerate 创建新版本；
+* 相同 input 与 locks 为 deterministic no-op；
+* 关键依赖查询使用索引，不做 O(n²) 扫描。
+
+## 十六、Migration 与仓储
+
+追加运行时发现的下一条连续 migration；不预置版本号或 checksum，不修改历史 migration。
+
+优先规范并扩展现有 `content_briefs`，避免第二套 Brief 真相。至少覆盖：
+
+* brief identity/current version；
+* immutable brief versions；
+* audience、objective、judgment、arguments、counterargument；
+* structure、spoiler、score、expression plan；
+* evidence refs；
+* forbidden expressions；
+* field provenance/locks；
+* readiness snapshot；
+* Topic、Experiment、Research dependencies；
+* generation plan/run；
+* invalidation、transition、audit。
+
+要求：
+
+* 真实 FK、STRICT、CHECK、unique、delete policy 和索引完整；
+* current 切换事务化；
+* historical versions、locks、transitions append-only；
+* 旧 `content_briefs` 数据保守迁移为 incomplete，不伪装 ready；
+* Issues 018—023 数据完整保留；
+* topic/current brief、readiness、evidence dependency、stale、generation 查询使用索引；
+* 列表、详情、历史、diff 有界分页；
+* 新库、升级、迁移前备份、失败回滚、quick_check、foreign_key_check 全部测试；
+* DB、WAL、SHM 不保存完整 Source/Dossier、raw model response、secret 或绝对路径。
+
+## 十七、内容生产 UI 与 IPC
+
+激活“内容生产”中的简报工作区，至少提供：
+
+* Brief 列表、筛选和分页；
+* 从 eligible Topic 创建 scaffold；
+* 可选 Experiment Assignment 绑定；
+* 五类 Profile 和必需槽位；
+* audience、objective、core judgment；
+* argument、counterargument editor；
+* evidence map 和逐级追溯；
+* facts、opinions、context 的醒目标识；
+* expression mode、R2 assertion、score origin、public labels；
+* spoiler level、warning requirements；
+* forbidden-expression 列表；
+* 字段 provenance 和 lock/unlock；
+* version history 和有限 diff；
+* readiness 与阻塞原因；
+* generation preview、confirm、progress、cancel、history；
+* loading、empty、error、incomplete、blocked、stale、ready、generating 状态。
+
+UI 必须明确：
+
+* “内容简报不是标题、正文或已批准文章”；
+* “模型候选必须经过 Schema、证据和权限验证”；
+* “公开资料整理或资料分析评分不代表个人阅读体验”；
+* “实验绑定不代表实验已经执行或有效”；
+* “低覆盖度或事实冲突的简报不能进入正文生成”；
+* “锁定字段不会被重新生成覆盖”。
+
+preload 只增加固定、有限、分页 DTO 和方法。
+
+IPC 校验 exact-object、sender/origin/window、revision、大小、input/preview hash 和 token。
+
+renderer 不接收 Node、SQLite、内部路径、完整 Source/Dossier/Evidence、credential、raw response、模型内部推理或 INTERNAL_PREDICTION。
+
+## 十八、专项测试与金标
+
+新增独立 `test:briefs`，纳入 full test 与 Windows CI。
+
+金标至少包含：
+
+* 五类 Topic 各一个 Brief；
+* PERSONAL R1；
+* R2 current assertion 与 revoked/stale assertion；
+* S1 PUBLIC_RESEARCH + RESEARCH_ANALYSIS_SCORE；
+* FULL spoiler；
+* FACT_BLOCKED、DOSSIER_NOT_READY、AUTHENTICITY_BLOCKED、STALE；
+* 一个合法 Experiment-bound Brief；
+* 一个 EXPERIMENT_MISMATCH；
+* 至少两个 BriefVersion 和 locked fields；
+* local scaffold 与 Scripted Mock candidate。
+
+必须验证：
+
+1. ContentBrief 与 Draft、标题、正文严格分离；
+2. 五类 Profile 的主体、槽位和 spoiler 规则；
+3. target audience、objective、judgment、counterargument 必填语义；
+4. 空泛、无反方或 strawman 输入被拒绝或保持 incomplete；
+5. 每个事实性 argument 有 current Evidence mapping；
+6. context/supporting-only 不升级为关键事实；
+7. FACT_BLOCKED、stale、invalid locator 阻止 ready；
+8. opinion 与事实前提分开；
+9. R1 personal mode；
+10. R2 只允许 current assertion；
+11. R3/S1 不能使用具体第一人称；
+12. PUBLIC_RESEARCH 强制公开资料整理标签；
+13. 两类公开评分严格隔离，INTERNAL_PREDICTION 完全拒绝；
+14. FULL 允许且警告位置完整；
+15. NONE 类型不泄露答案性结构字段；
+16. 系统禁用表达不可删除；
+17. AI 标识和版权不进入禁用表达或 readiness；
+18. USER_LOCKED regenerate 后逐值不变；
+19. SYSTEM_LOCKED 不可编辑；
+20. unlock、编辑、undo、version diff 和并发 stale；
+21. 低 coverage 可保存 incomplete，但不能 ready；
+22. 合法 Brief 得到 READY_FOR_DRAFT_GENERATION；
+23. Experiment arm、controlled conditions 匹配；
+24. Experiment mismatch 不自动修改实验；
+25. local scaffold 在无模型配置时可用；
+26. structured capability unknown、unsupported、stale 和 budget blocked；
+27. Scripted Mock strict schema、reference、lock validation；
+28. prompt injection、编造引用、越界字段被拒绝；
+29. executionId 重放、no-op、失败、取消、重启和 after-send ambiguous；
+30. 依赖变化精确失效，无关实体不失效；
+31. migration 新库、升级、备份、回滚、FK、quick check；
+32. 分页、索引和容量；
+33. UI、IPC、egress 状态矩阵；
+34. drafts、assets、quality_checks、approvals、post_packages、publications 保持不被写入；
+35. 真实密钥、业务网络、模型调用和费用均为 0；
+36. Issue 025—030 功能不存在。
+
+## 十九、文档与完成定义
+
+至少交付：
+
+* `docs/contracts/content-brief-v1.md`
+* `docs/contracts/content-brief-generation-v1.md`
+* `docs/contracts/content-brief-readiness-v1.md`
+* `docs/adr/` 下下一号 ADR；
+* `docs/m3-issue024-implementation-plan.md`
+* `docs/m3-issue024-acceptance-map.md`
+* 必要的脱敏 egress 或本地证据放入 `docs/evidence/`；
+* 归档后的本指令和更新后的历史指令索引；
+* README、AGENTS、Roadmap 和文档中心同步，下一步明确为 Issue 025。
+
+完成前：
+
+1. 从最新 `npm ci` 开始按当前 CI 顺序运行全部适用门禁；
+2. 所有专项、全量测试、构建、桌面及 Clipper 打包、Electron smoke 和依赖审计通过；
+3. 非 CI 人工浏览器工具如因本机 kernel assets 或前台限制失败，单独如实报告，不将其伪装为仓库功能失败或 PASS，也不削弱自动化断言；
+4. 创建恰好一个 Issue 024 本地提交；
+5. 核验 parent 为动态开工基线、工作树干净、远端未改变；
+6. 停止，不进入 Issue 025。
+
+最终报告必须明确：
+
+* 五类 Brief 及各 readiness 状态数量；
+* BriefVersion、EvidenceRef、FieldLock、Dependency 数量；
+* R1、R2、S1、两类评分和 spoiler 金标；
+* local scaffold 与 Scripted Mock 结果；
+* evidence mapping、locked-field preservation 和 Experiment match/mismatch；
+* stale、no-op、失败、取消、recovery、ambiguous 结果；
+* migration 和 Issues 018—023 数据保留；
+* Draft、正文、图片和质量流程仍未实现；
+* 真实网络、模型、密钥读取和费用均为 0；
+* 指令只归档于 `docs/instructions/m3/`；
+* 只创建一个本地提交、未 push、未进入 Issue 025。
+
+只有全部成立才可报告 PASS。
+
+## 二十、给 Codex 的启动指令
+
+继续当前本地 `main`，允许其合法领先 `origin/main`；不要 pull、rebase、reset 或 push。
+
+完整读取仓库 `AGENTS.md` 和本 TXT，随后立即把本 TXT 唯一归档到：
+
+`docs/instructions/m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt`
+
+只实施 M3 Issue 024：完成五类结构化 Content Brief、目标读者、核心判断、反方、Evidence 映射、真实性、评分、剧透计划、禁用表达、字段 provenance/lock、Experiment 绑定、local scaffold、受控 structured generation、readiness、内容生产 UI、migration 和全部增量验收。
+
+不得生成标题、正文、标签、图片或质量流程。
+
+测试只使用合成 fixture、临时 SQLite、Scripted Mock 和本机 loopback；真实密钥、业务网络、模型调用和费用保持为 0。
+
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 025。

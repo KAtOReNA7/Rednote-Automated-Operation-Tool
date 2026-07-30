@@ -15,6 +15,7 @@
     "dist"
   ],
   "dependencies": {
+    "@mystery-operations/briefs": "0.0.0",
     "@mystery-operations/catalog": "0.0.0",
     "@mystery-operations/core": "0.0.0",
     "@mystery-operations/db": "0.0.0",

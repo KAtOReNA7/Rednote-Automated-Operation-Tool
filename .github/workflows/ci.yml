@@ -107,6 +107,9 @@ jobs:
       - name: Run versioned single-variable experiment suites
         run: npm run test:experiments
 
+      - name: Run structured Content Brief suites
+        run: npm run test:briefs
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

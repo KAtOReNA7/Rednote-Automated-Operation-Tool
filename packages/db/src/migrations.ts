@@ -8806,6 +8806,1193 @@ BEFORE DELETE ON experiment_invalidations
 BEGIN SELECT RAISE(ABORT, 'experiment invalidations are immutable'); END;
 `;
 
+const STRUCTURED_CONTENT_BRIEF_GENERATOR = `
+DROP INDEX idx_content_briefs_experiment_id;
+DROP INDEX idx_content_briefs_status;
+
+PRAGMA legacy_alter_table = ON;
+ALTER TABLE content_briefs RENAME TO content_briefs_issue024_legacy;
+PRAGMA legacy_alter_table = OFF;
+
+CREATE TABLE content_briefs (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(id) BETWEEN 1 AND 512),
+  topic_id TEXT NOT NULL UNIQUE REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  experiment_id TEXT REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  profile_id TEXT NOT NULL DEFAULT 'LEGACY_UNCLASSIFIED' CHECK (profile_id IN (
+    'LEGACY_UNCLASSIFIED',
+    'NON_SPOILER_SINGLE_BOOK_VERDICT',
+    'FULL_TRICK_LOGIC_ANALYSIS',
+    'CROSS_WORK_COMPARISON',
+    'WEB_VS_PUBLISHED_MYSTERY',
+    'MYSTERY_AND_CULTURAL_PHENOMENON'
+  )),
+  topic_version_id TEXT,
+  current_version_id TEXT,
+  brief_state TEXT NOT NULL DEFAULT 'ACTIVE' CHECK (brief_state IN ('ACTIVE', 'ARCHIVED')),
+  brief_revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(brief_revision) = 'integer' AND brief_revision > 0
+  ),
+  content_type TEXT NOT NULL CHECK (length(trim(content_type)) > 0),
+  target_reader TEXT NOT NULL CHECK (length(trim(target_reader)) > 0),
+  core_judgment TEXT NOT NULL CHECK (length(trim(core_judgment)) > 0),
+  counterpoints_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(counterpoints_json) AND json_type(counterpoints_json) = 'array'
+  ),
+  spoiler_level TEXT NOT NULL CHECK (spoiler_level IN ('NONE', 'LIGHT', 'FULL')),
+  required_claim_ids_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(required_claim_ids_json) AND json_type(required_claim_ids_json) = 'array'
+  ),
+  score_type TEXT NOT NULL CHECK (
+    score_type IN ('NONE', 'PERSONAL', 'RESEARCH_ANALYSIS')
+  ),
+  desired_action TEXT,
+  forbidden_phrases_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(forbidden_phrases_json) AND json_type(forbidden_phrases_json) = 'array'
+  ),
+  status TEXT NOT NULL ${CONTENT_STATUS_CHECK},
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  FOREIGN KEY (topic_version_id, topic_id)
+    REFERENCES topic_candidate_versions(id, topic_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (current_version_id, id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (
+    (profile_id = 'LEGACY_UNCLASSIFIED') OR
+    (topic_version_id IS NOT NULL AND current_version_id IS NOT NULL AND
+      content_type = profile_id)
+  )
+) STRICT;
+
+CREATE TABLE content_brief_versions (
+  id TEXT NOT NULL CHECK (length(id) BETWEEN 1 AND 512),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (
+    typeof(version_number) = 'integer' AND version_number > 0
+  ),
+  previous_version_id TEXT REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  schema_version TEXT NOT NULL CHECK (
+    schema_version IN ('legacy-content-brief-v0', 'content-brief-schema-v1')
+  ),
+  profile_version TEXT NOT NULL CHECK (length(profile_version) BETWEEN 1 AND 128),
+  readiness_policy_version TEXT NOT NULL CHECK (
+    length(readiness_policy_version) BETWEEN 1 AND 128
+  ),
+  prompt_version TEXT NOT NULL CHECK (length(prompt_version) BETWEEN 1 AND 128),
+  payload_json TEXT NOT NULL CHECK (
+    json_valid(payload_json) AND json_type(payload_json) = 'object' AND
+    length(CAST(payload_json AS BLOB)) BETWEEN 2 AND 1048576
+  ),
+  status TEXT NOT NULL CHECK (
+    status IN ('DRAFT', 'MODEL_CANDIDATE', 'USER_CONFIRMED', 'ARCHIVED')
+  ),
+  readiness_status TEXT NOT NULL CHECK (readiness_status IN (
+    'DRAFT_INCOMPLETE', 'DOSSIER_NOT_READY', 'FACT_BLOCKED',
+    'AUTHENTICITY_BLOCKED', 'SPOILER_POLICY_INCOMPLETE',
+    'EXPERIMENT_MISMATCH', 'EVIDENCE_MAPPING_INCOMPLETE',
+    'STALE', 'READY_FOR_DRAFT_GENERATION'
+  )),
+  readiness_reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(readiness_reason_codes_json) AND
+    json_type(readiness_reason_codes_json) = 'array' AND
+    length(CAST(readiness_reason_codes_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  lock_snapshot_hash TEXT NOT NULL CHECK (
+    length(lock_snapshot_hash) = 64 AND lock_snapshot_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND
+    length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  confirmed_at TEXT CHECK (confirmed_at ${UTC_OPTIONAL} confirmed_at ${UTC_REQUIRED}),
+  locked_at TEXT CHECK (locked_at ${UTC_OPTIONAL} locked_at ${UTC_REQUIRED}),
+  PRIMARY KEY (id),
+  UNIQUE (id, brief_id),
+  UNIQUE (brief_id, version_number),
+  CHECK (
+    (schema_version = 'legacy-content-brief-v0' AND
+      readiness_status = 'DRAFT_INCOMPLETE') OR
+    schema_version = 'content-brief-schema-v1'
+  )
+) STRICT;
+
+CREATE TABLE content_brief_subjects (
+  version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  ordinal INTEGER NOT NULL CHECK (
+    typeof(ordinal) = 'integer' AND ordinal BETWEEN 0 AND 5
+  ),
+  subject_type TEXT NOT NULL CHECK (subject_type IN ('WORK', 'EXPRESSION', 'EDITION')),
+  subject_id TEXT NOT NULL CHECK (length(subject_id) BETWEEN 1 AND 512),
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_id TEXT REFERENCES expressions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  edition_id TEXT REFERENCES book_editions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_form TEXT CHECK (
+    expression_form IS NULL OR expression_form IN (
+      'WEB_SERIALIZED', 'PUBLISHED_EDITION', 'OTHER_VERIFIED'
+    )
+  ),
+  role TEXT NOT NULL CHECK (role IN ('PRIMARY', 'COMPARISON', 'CONTEXT')),
+  PRIMARY KEY (version_id, ordinal),
+  UNIQUE (version_id, subject_type, subject_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE content_brief_audiences (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reader_description TEXT CHECK (
+    reader_description IS NULL OR length(CAST(reader_description AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  knowledge_level TEXT CHECK (
+    knowledge_level IS NULL OR knowledge_level IN (
+      'NEW_TO_WORK', 'FAMILIAR_WITH_WORK', 'MIXED'
+    )
+  ),
+  selection_need TEXT CHECK (
+    selection_need IS NULL OR length(CAST(selection_need AS BLOB)) BETWEEN 1 AND 4096
+  )
+) STRICT;
+
+CREATE TABLE content_brief_objectives (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  reader_outcome TEXT CHECK (
+    reader_outcome IS NULL OR length(CAST(reader_outcome AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  scope_boundary TEXT CHECK (
+    scope_boundary IS NULL OR length(CAST(scope_boundary AS BLOB)) BETWEEN 1 AND 4096
+  )
+) STRICT;
+
+CREATE TABLE content_brief_judgments (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  judgment_kind TEXT NOT NULL CHECK (
+    judgment_kind IN ('OPINION', 'FACTUAL_SYNTHESIS', 'MIXED')
+  ),
+  statement TEXT CHECK (
+    statement IS NULL OR length(CAST(statement AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  qualification TEXT CHECK (
+    qualification IS NULL OR length(CAST(qualification AS BLOB)) BETWEEN 1 AND 4096
+  )
+) STRICT;
+
+CREATE TABLE content_brief_arguments (
+  version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  argument_id TEXT NOT NULL CHECK (length(argument_id) BETWEEN 1 AND 512),
+  argument_role TEXT NOT NULL CHECK (
+    argument_role IN ('SUPPORTING', 'COUNTERARGUMENT')
+  ),
+  argument_kind TEXT NOT NULL CHECK (argument_kind IN ('OPINION', 'FACT', 'MIXED')),
+  statement TEXT CHECK (
+    statement IS NULL OR length(CAST(statement AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  limitation TEXT CHECK (
+    limitation IS NULL OR length(CAST(limitation AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  response_or_qualification TEXT CHECK (
+    response_or_qualification IS NULL OR
+    length(CAST(response_or_qualification AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  subject_ids_json TEXT NOT NULL CHECK (
+    json_valid(subject_ids_json) AND json_type(subject_ids_json) = 'array' AND
+    length(CAST(subject_ids_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  evidence_ref_ids_json TEXT NOT NULL CHECK (
+    json_valid(evidence_ref_ids_json) AND json_type(evidence_ref_ids_json) = 'array' AND
+    length(CAST(evidence_ref_ids_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  ordinal INTEGER NOT NULL CHECK (
+    typeof(ordinal) = 'integer' AND ordinal BETWEEN 0 AND 12
+  ),
+  PRIMARY KEY (version_id, argument_id),
+  UNIQUE (version_id, argument_role, ordinal),
+  CHECK (
+    (argument_role = 'COUNTERARGUMENT' AND ordinal = 0) OR
+    argument_role = 'SUPPORTING'
+  )
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE content_brief_evidence_refs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  field_path TEXT NOT NULL CHECK (length(field_path) BETWEEN 1 AND 512),
+  evidence_role TEXT NOT NULL CHECK (
+    evidence_role IN ('FACT', 'CONTEXT', 'SUPPORTING_ONLY')
+  ),
+  dossier_id TEXT NOT NULL REFERENCES research_dossiers(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  dossier_version_id TEXT NOT NULL,
+  dossier_entry_id TEXT NOT NULL,
+  claim_id TEXT NOT NULL REFERENCES claims(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  fact_evaluation_id TEXT NOT NULL REFERENCES fact_evaluations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  evidence_locator_id TEXT NOT NULL REFERENCES claim_evidence(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  source_revision_id TEXT NOT NULL CHECK (length(source_revision_id) BETWEEN 1 AND 512),
+  source_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL CHECK (
+    typeof(source_revision) = 'integer' AND source_revision > 0
+  ),
+  fact_status TEXT NOT NULL CHECK (fact_status IN (
+    'VERIFIED', 'SUPPORTED_NOT_VERIFIED', 'INSUFFICIENT', 'CONFLICTED',
+    'FACT_BLOCKED', 'STALE_REVIEW_REQUIRED'
+  )),
+  display_summary TEXT NOT NULL CHECK (
+    length(CAST(display_summary AS BLOB)) BETWEEN 1 AND 1024
+  ),
+  source_language TEXT NOT NULL CHECK (length(source_language) BETWEEN 1 AND 64),
+  is_current INTEGER NOT NULL CHECK (is_current IN (0, 1)),
+  locator_valid INTEGER NOT NULL CHECK (locator_valid IN (0, 1)),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  UNIQUE (version_id, id),
+  FOREIGN KEY (dossier_version_id, dossier_id)
+    REFERENCES research_dossier_versions(id, dossier_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (dossier_entry_id, dossier_version_id)
+    REFERENCES research_dossier_entries(id, version_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (source_id, source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_structure_slots (
+  version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  slot_id TEXT NOT NULL CHECK (length(slot_id) BETWEEN 1 AND 512),
+  ordinal INTEGER NOT NULL CHECK (
+    typeof(ordinal) = 'integer' AND ordinal BETWEEN 0 AND 15
+  ),
+  slot_function TEXT NOT NULL CHECK (
+    length(CAST(slot_function AS BLOB)) BETWEEN 1 AND 4096
+  ),
+  required INTEGER NOT NULL CHECK (required IN (0, 1)),
+  subject_ids_json TEXT NOT NULL CHECK (
+    json_valid(subject_ids_json) AND json_type(subject_ids_json) = 'array' AND
+    length(CAST(subject_ids_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  comparison_dimension TEXT CHECK (
+    comparison_dimension IS NULL OR length(comparison_dimension) BETWEEN 1 AND 128
+  ),
+  PRIMARY KEY (version_id, slot_id),
+  UNIQUE (version_id, ordinal)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE content_brief_spoiler_plans (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  spoiler_level TEXT NOT NULL CHECK (
+    spoiler_level IN ('NO_SPOILER', 'LIGHT_SPOILER', 'FULL_TRICK_ANALYSIS')
+  ),
+  warning_required INTEGER NOT NULL CHECK (warning_required IN (0, 1)),
+  warning_placement TEXT NOT NULL CHECK (
+    warning_placement IN ('NONE', 'BODY_OPENING', 'COVER_TITLE_AND_BODY_OPENING')
+  ),
+  reveal_core_trick INTEGER NOT NULL CHECK (reveal_core_trick IN (0, 1)),
+  reveal_ending INTEGER NOT NULL CHECK (reveal_ending IN (0, 1)),
+  user_confirmation_required INTEGER NOT NULL CHECK (
+    user_confirmation_required IN (0, 1)
+  ),
+  user_confirmed INTEGER NOT NULL CHECK (user_confirmed IN (0, 1))
+) STRICT;
+
+CREATE TABLE content_brief_score_plans (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  score_kind TEXT NOT NULL CHECK (
+    score_kind IN ('NONE', 'PERSONAL_SCORE', 'RESEARCH_ANALYSIS_SCORE')
+  ),
+  scale TEXT CHECK (scale IS NULL OR length(scale) BETWEEN 1 AND 128),
+  value_source_id TEXT CHECK (
+    value_source_id IS NULL OR length(value_source_id) BETWEEN 1 AND 512
+  ),
+  public_label_required INTEGER NOT NULL CHECK (public_label_required IN (0, 1)),
+  public_label TEXT CHECK (public_label IS NULL OR public_label = '资料分析评分')
+) STRICT;
+
+CREATE TABLE content_brief_expression_policies (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_mode TEXT NOT NULL CHECK (
+    expression_mode IN ('PERSONAL_EXPERIENCE', 'PUBLIC_RESEARCH_ANALYSIS')
+  ),
+  reading_state TEXT NOT NULL CHECK (
+    reading_state IN ('R1', 'R2', 'R3', 'S1', 'S2', 'UNCLASSIFIED')
+  ),
+  permission_snapshot_id TEXT NOT NULL REFERENCES expression_permission_snapshots(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  permission_revision INTEGER NOT NULL CHECK (
+    typeof(permission_revision) = 'integer' AND permission_revision > 0
+  ),
+  permission_current INTEGER NOT NULL CHECK (permission_current IN (0, 1)),
+  first_person_allowed INTEGER NOT NULL CHECK (first_person_allowed IN (0, 1)),
+  r2_assertion_ids_json TEXT NOT NULL CHECK (
+    json_valid(r2_assertion_ids_json) AND json_type(r2_assertion_ids_json) = 'array' AND
+    length(CAST(r2_assertion_ids_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  allowed_assertion_ids_json TEXT NOT NULL CHECK (
+    json_valid(allowed_assertion_ids_json) AND
+    json_type(allowed_assertion_ids_json) = 'array' AND
+    length(CAST(allowed_assertion_ids_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  required_public_labels_json TEXT NOT NULL CHECK (
+    json_valid(required_public_labels_json) AND
+    json_type(required_public_labels_json) = 'array' AND
+    length(CAST(required_public_labels_json AS BLOB)) BETWEEN 2 AND 4096
+  )
+) STRICT;
+
+CREATE TABLE content_brief_experiment_bindings (
+  version_id TEXT PRIMARY KEY REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  experiment_id TEXT NOT NULL REFERENCES experiments(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  design_version_id TEXT NOT NULL,
+  assignment_plan_id TEXT NOT NULL REFERENCES experiment_assignment_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  topic_id TEXT NOT NULL REFERENCES topics(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  topic_version_id TEXT NOT NULL,
+  work_id TEXT NOT NULL REFERENCES books(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  arm_id TEXT NOT NULL CHECK (length(arm_id) BETWEEN 1 AND 256),
+  arm_value_identity TEXT NOT NULL CHECK (
+    length(arm_value_identity) BETWEEN 1 AND 256
+  ),
+  structure_fingerprint TEXT NOT NULL CHECK (
+    length(structure_fingerprint) = 64 AND
+    structure_fingerprint NOT GLOB '*[^0-9a-f]*'
+  ),
+  controlled_conditions_json TEXT NOT NULL CHECK (
+    json_valid(controlled_conditions_json) AND
+    json_type(controlled_conditions_json) = 'array' AND
+    length(CAST(controlled_conditions_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  popularity_stratum TEXT NOT NULL CHECK (
+    popularity_stratum IN ('HOT', 'WARM', 'COLD', 'UNKNOWN')
+  ),
+  design_current INTEGER NOT NULL CHECK (design_current IN (0, 1)),
+  assignment_current INTEGER NOT NULL CHECK (assignment_current IN (0, 1)),
+  experiment_locked INTEGER NOT NULL CHECK (experiment_locked IN (0, 1)),
+  experiment_stale INTEGER NOT NULL CHECK (experiment_stale IN (0, 1)),
+  FOREIGN KEY (design_version_id, experiment_id)
+    REFERENCES experiment_design_versions(id, experiment_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (assignment_plan_id, design_version_id)
+    REFERENCES experiment_assignment_plans(id, design_version_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (topic_version_id, topic_id)
+    REFERENCES topic_candidate_versions(id, topic_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (design_version_id, arm_id)
+    REFERENCES experiment_arms(design_version_id, arm_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_forbidden_expressions (
+  version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expression_id TEXT NOT NULL CHECK (length(expression_id) BETWEEN 1 AND 512),
+  category TEXT NOT NULL CHECK (category IN (
+    'GLOBAL_ACCOUNT', 'AUTHENTICITY', 'FACT_POLICY',
+    'SPOILER', 'CONTENT_TYPE', 'USER_CUSTOM'
+  )),
+  phrase TEXT NOT NULL CHECK (length(CAST(phrase AS BLOB)) BETWEEN 1 AND 1024),
+  reason TEXT NOT NULL CHECK (length(CAST(reason AS BLOB)) BETWEEN 1 AND 1024),
+  policy_version TEXT NOT NULL CHECK (length(policy_version) BETWEEN 1 AND 128),
+  system_rule INTEGER NOT NULL CHECK (system_rule IN (0, 1)),
+  PRIMARY KEY (version_id, expression_id),
+  CHECK ((category = 'USER_CUSTOM') <> (system_rule = 1))
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE content_brief_field_states (
+  version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  field_path TEXT NOT NULL CHECK (length(field_path) BETWEEN 1 AND 512),
+  provenance TEXT NOT NULL CHECK (
+    provenance IN ('SYSTEM_DERIVED', 'MODEL_CANDIDATE', 'USER_EDITED', 'USER_CONFIRMED')
+  ),
+  lock_state TEXT NOT NULL CHECK (
+    lock_state IN ('EDITABLE', 'USER_LOCKED', 'SYSTEM_LOCKED')
+  ),
+  value_hash TEXT NOT NULL CHECK (
+    length(value_hash) = 64 AND value_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  PRIMARY KEY (version_id, field_path)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE content_brief_dependencies (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'TOPIC_VERSION', 'TOPIC_STATE', 'TOPIC_ELIGIBILITY', 'TOPIC_QUOTA_PLAN',
+    'EXPERIMENT_DESIGN', 'EXPERIMENT_ASSIGNMENT',
+    'WORK_IDENTITY', 'EXPRESSION_IDENTITY', 'EDITION_IDENTITY',
+    'DOSSIER_VERSION', 'DOSSIER_ENTRY', 'CLAIM', 'FACT_EVALUATION',
+    'EVIDENCE_LOCATOR', 'SOURCE_REVISION', 'EXPRESSION_PERMISSION',
+    'READING_STATE', 'R2_ASSERTION', 'SCORE_POLICY', 'SPOILER_POLICY',
+    'AUTHENTICITY_POLICY', 'PROFILE_POLICY', 'READINESS_POLICY', 'FORBIDDEN_POLICY',
+    'SCHEMA_POLICY', 'PROMPT_POLICY', 'LOCK_SNAPSHOT'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 512),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (version_id, dependency_type, dependency_id),
+  FOREIGN KEY (version_id, brief_id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_readiness_snapshots (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL,
+  readiness_status TEXT NOT NULL CHECK (readiness_status IN (
+    'DRAFT_INCOMPLETE', 'DOSSIER_NOT_READY', 'FACT_BLOCKED',
+    'AUTHENTICITY_BLOCKED', 'SPOILER_POLICY_INCOMPLETE',
+    'EXPERIMENT_MISMATCH', 'EVIDENCE_MAPPING_INCOMPLETE',
+    'STALE', 'READY_FOR_DRAFT_GENERATION'
+  )),
+  reason_codes_json TEXT NOT NULL CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 16384
+  ),
+  policy_version TEXT NOT NULL CHECK (policy_version = 'brief-readiness-policy-v1'),
+  evaluated_at TEXT NOT NULL CHECK (evaluated_at ${UTC_REQUIRED}),
+  UNIQUE (version_id, policy_version),
+  FOREIGN KEY (version_id, brief_id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_generation_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL,
+  expected_brief_revision INTEGER NOT NULL CHECK (
+    typeof(expected_brief_revision) = 'integer' AND expected_brief_revision > 0
+  ),
+  capability_state TEXT NOT NULL CHECK (
+    capability_state IN ('SUPPORTED', 'UNKNOWN', 'UNSUPPORTED', 'STALE')
+  ),
+  budget_state TEXT NOT NULL CHECK (
+    budget_state IN ('AVAILABLE', 'BLOCKED', 'UNKNOWN')
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  lock_snapshot_hash TEXT NOT NULL CHECK (
+    length(lock_snapshot_hash) = 64 AND lock_snapshot_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  preview_hash TEXT NOT NULL UNIQUE CHECK (
+    length(preview_hash) = 64 AND preview_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  input_character_count INTEGER NOT NULL CHECK (
+    typeof(input_character_count) = 'integer' AND
+    input_character_count BETWEEN 0 AND 120000
+  ),
+  maximum_output_bytes INTEGER NOT NULL CHECK (
+    typeof(maximum_output_bytes) = 'integer' AND
+    maximum_output_bytes BETWEEN 1 AND 128000
+  ),
+  maximum_model_requests INTEGER NOT NULL CHECK (maximum_model_requests = 1),
+  evidence_ref_count INTEGER NOT NULL CHECK (
+    typeof(evidence_ref_count) = 'integer' AND evidence_ref_count BETWEEN 0 AND 128
+  ),
+  locked_field_count INTEGER NOT NULL CHECK (
+    typeof(locked_field_count) = 'integer' AND locked_field_count BETWEEN 0 AND 256
+  ),
+  editable_field_count INTEGER NOT NULL CHECK (
+    typeof(editable_field_count) = 'integer' AND editable_field_count BETWEEN 0 AND 256
+  ),
+  subject_ids_json TEXT NOT NULL CHECK (
+    json_valid(subject_ids_json) AND json_type(subject_ids_json) = 'array'
+  ),
+  write_set_json TEXT NOT NULL CHECK (
+    json_valid(write_set_json) AND json_type(write_set_json) = 'array'
+  ),
+  status TEXT NOT NULL CHECK (
+    status IN ('PREVIEWED', 'CONFIRMED', 'EXPIRED', 'CANCELLED', 'CONSUMED')
+  ),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED}),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (version_id, brief_id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_generation_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  plan_id TEXT NOT NULL REFERENCES content_brief_generation_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  job_id TEXT REFERENCES jobs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 512),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  lock_snapshot_hash TEXT NOT NULL CHECK (
+    length(lock_snapshot_hash) = 64 AND lock_snapshot_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  status TEXT NOT NULL CHECK (status IN (
+    'CONFIRMED', 'RUNNING', 'SUCCEEDED', 'NO_OP', 'PAUSED',
+    'CANCELLED', 'FAILED', 'AMBIGUOUS'
+  )),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    typeof(external_request_count) = 'integer' AND external_request_count BETWEEN 0 AND 1
+  ),
+  cost_state TEXT NOT NULL CHECK (
+    cost_state IN ('NOT_INCURRED', 'UNKNOWN_POSSIBLY_INCURRED', 'UNPRICED_USAGE')
+  ),
+  result_version_id TEXT REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 128
+  ),
+  revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  CHECK (
+    (status IN ('SUCCEEDED', 'NO_OP') AND result_version_id IS NOT NULL) OR
+    (status NOT IN ('SUCCEEDED', 'NO_OP') AND result_version_id IS NULL)
+  )
+) STRICT;
+
+CREATE TABLE content_brief_invalidations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 2048),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL,
+  dependency_type TEXT NOT NULL CHECK (dependency_type IN (
+    'TOPIC_VERSION', 'TOPIC_STATE', 'TOPIC_ELIGIBILITY', 'TOPIC_QUOTA_PLAN',
+    'EXPERIMENT_DESIGN', 'EXPERIMENT_ASSIGNMENT',
+    'WORK_IDENTITY', 'EXPRESSION_IDENTITY', 'EDITION_IDENTITY',
+    'DOSSIER_VERSION', 'DOSSIER_ENTRY', 'CLAIM', 'FACT_EVALUATION',
+    'EVIDENCE_LOCATOR', 'SOURCE_REVISION', 'EXPRESSION_PERMISSION',
+    'READING_STATE', 'R2_ASSERTION', 'SCORE_POLICY', 'SPOILER_POLICY',
+    'AUTHENTICITY_POLICY', 'PROFILE_POLICY', 'READINESS_POLICY', 'FORBIDDEN_POLICY',
+    'SCHEMA_POLICY', 'PROMPT_POLICY', 'LOCK_SNAPSHOT'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 1024),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 512),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (version_id, brief_id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_transitions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+  previous_transition_id TEXT REFERENCES content_brief_transitions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  action TEXT NOT NULL CHECK (action IN (
+    'CREATE_SCAFFOLD', 'SAVE_EDIT', 'LOCK_FIELD', 'UNLOCK_FIELD',
+    'UNDO', 'CLONE', 'ARCHIVE', 'RESTORE',
+    'PREVIEW_GENERATION', 'CONFIRM_GENERATION', 'CANCEL_GENERATION',
+    'MODEL_CANDIDATE_PUBLISHED', 'INVALIDATE', 'LEGACY_MIGRATION'
+  )),
+  from_state TEXT CHECK (from_state IS NULL OR from_state IN ('ACTIVE', 'ARCHIVED')),
+  to_state TEXT NOT NULL CHECK (to_state IN ('ACTIVE', 'ARCHIVED')),
+  expected_revision INTEGER NOT NULL CHECK (
+    typeof(expected_revision) = 'integer' AND expected_revision >= 0
+  ),
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (brief_id, revision),
+  FOREIGN KEY (version_id, brief_id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_audit_events (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 512),
+  event_identity TEXT NOT NULL UNIQUE CHECK (length(event_identity) BETWEEN 1 AND 2048),
+  event_type TEXT NOT NULL CHECK (event_type IN (
+    'LEGACY_MIGRATED', 'SCAFFOLD_CREATED', 'EDIT_SAVED', 'FIELD_LOCKED',
+    'FIELD_UNLOCKED', 'VERSION_UNDONE', 'VERSION_CLONED',
+    'STATE_CHANGED', 'GENERATION_PREVIEWED', 'GENERATION_CONFIRMED',
+    'GENERATION_CANCELLED', 'MODEL_CANDIDATE_PUBLISHED',
+    'GENERATION_NO_OP', 'GENERATION_FAILED', 'DEPENDENCY_INVALIDATED'
+  )),
+  brief_id TEXT NOT NULL REFERENCES content_briefs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_id TEXT NOT NULL,
+  generation_run_id TEXT REFERENCES content_brief_generation_runs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  actor TEXT NOT NULL CHECK (actor IN ('USER', 'LOCAL_SYSTEM', 'MIGRATION')),
+  details_json TEXT NOT NULL CHECK (
+    json_valid(details_json) AND json_type(details_json) = 'object' AND
+    length(CAST(details_json AS BLOB)) BETWEEN 2 AND 32768
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  FOREIGN KEY (version_id, brief_id)
+    REFERENCES content_brief_versions(id, brief_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT;
+
+CREATE TABLE content_brief_policy_registry (
+  policy_kind TEXT PRIMARY KEY CHECK (policy_kind IN (
+    'PROFILE_POLICY', 'READINESS_POLICY', 'FORBIDDEN_POLICY',
+    'SCHEMA_POLICY', 'PROMPT_POLICY'
+  )),
+  current_version TEXT NOT NULL CHECK (length(current_version) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (
+    typeof(revision) = 'integer' AND revision > 0
+  ),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO content_briefs (
+  id, topic_id, experiment_id, profile_id, topic_version_id, current_version_id,
+  brief_state, brief_revision, content_type, target_reader, core_judgment,
+  counterpoints_json, spoiler_level, required_claim_ids_json, score_type,
+  desired_action, forbidden_phrases_json, status, created_at, updated_at
+)
+SELECT
+  id, topic_id, experiment_id, 'LEGACY_UNCLASSIFIED', NULL,
+  'legacy-brief-version:' || id,
+  CASE status WHEN 'ARCHIVED' THEN 'ARCHIVED' ELSE 'ACTIVE' END,
+  1, content_type, target_reader, core_judgment, counterpoints_json,
+  spoiler_level, required_claim_ids_json,
+  CASE score_type WHEN 'PERSONAL' THEN 'PERSONAL' ELSE 'RESEARCH_ANALYSIS' END,
+  desired_action, forbidden_phrases_json, status, ${UTC_NOW}, ${UTC_NOW}
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_versions (
+  id, brief_id, version_number, previous_version_id, schema_version,
+  profile_version, readiness_policy_version, prompt_version, payload_json,
+  status, readiness_status, readiness_reason_codes_json,
+  dependency_hash, input_hash, lock_snapshot_hash, warnings_json,
+  created_at, confirmed_at, locked_at
+)
+SELECT
+  'legacy-brief-version:' || id, id, 1, NULL, 'legacy-content-brief-v0',
+  'legacy-content-brief-v0', 'brief-readiness-policy-v1', 'legacy-no-model',
+  json_object(
+    'legacy', 1,
+    'targetAudience', target_reader,
+    'coreJudgment', core_judgment,
+    'contentType', content_type,
+    'spoilerLevel', spoiler_level,
+    'scoreKind', CASE score_type
+      WHEN 'PERSONAL' THEN 'PERSONAL_SCORE'
+      ELSE 'RESEARCH_ANALYSIS_SCORE'
+    END
+  ),
+  'DRAFT', 'DRAFT_INCOMPLETE', json_array('LEGACY_BRIEF_REQUIRES_REVIEW'),
+  lower(hex(zeroblob(32))), lower(hex(zeroblob(32))), lower(hex(zeroblob(32))),
+  json_array('LEGACY_FIELDS_NOT_ASSUMED_CURRENT'), ${UTC_NOW}, NULL, NULL
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_audiences(version_id, reader_description, knowledge_level, selection_need)
+SELECT 'legacy-brief-version:' || id, target_reader, NULL, NULL
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_objectives(version_id, reader_outcome, scope_boundary)
+SELECT
+  'legacy-brief-version:' || id,
+  CASE
+    WHEN desired_action IS NULL OR trim(desired_action) = '' THEN NULL
+    ELSE desired_action
+  END,
+  NULL
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_judgments(version_id, judgment_kind, statement, qualification)
+SELECT 'legacy-brief-version:' || id, 'MIXED', core_judgment, NULL
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_spoiler_plans (
+  version_id, spoiler_level, warning_required, warning_placement,
+  reveal_core_trick, reveal_ending, user_confirmation_required, user_confirmed
+)
+SELECT
+  'legacy-brief-version:' || id,
+  CASE spoiler_level
+    WHEN 'NONE' THEN 'NO_SPOILER'
+    WHEN 'LIGHT' THEN 'LIGHT_SPOILER'
+    ELSE 'FULL_TRICK_ANALYSIS'
+  END,
+  CASE spoiler_level WHEN 'NONE' THEN 0 ELSE 1 END,
+  CASE spoiler_level
+    WHEN 'NONE' THEN 'NONE'
+    WHEN 'LIGHT' THEN 'BODY_OPENING'
+    ELSE 'COVER_TITLE_AND_BODY_OPENING'
+  END,
+  CASE spoiler_level WHEN 'FULL' THEN 1 ELSE 0 END,
+  CASE spoiler_level WHEN 'FULL' THEN 1 ELSE 0 END,
+  CASE spoiler_level WHEN 'FULL' THEN 1 ELSE 0 END,
+  0
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_score_plans (
+  version_id, score_kind, scale, value_source_id,
+  public_label_required, public_label
+)
+SELECT
+  'legacy-brief-version:' || id,
+  CASE score_type
+    WHEN 'PERSONAL' THEN 'PERSONAL_SCORE'
+    ELSE 'RESEARCH_ANALYSIS_SCORE'
+  END,
+  NULL, NULL,
+  CASE score_type WHEN 'PERSONAL' THEN 0 ELSE 1 END,
+  CASE score_type WHEN 'PERSONAL' THEN NULL ELSE '资料分析评分' END
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_readiness_snapshots (
+  id, brief_id, version_id, readiness_status, reason_codes_json,
+  policy_version, evaluated_at
+)
+SELECT
+  'legacy-brief-readiness:' || id, id, 'legacy-brief-version:' || id,
+  'DRAFT_INCOMPLETE', json_array('LEGACY_BRIEF_REQUIRES_REVIEW'),
+  'brief-readiness-policy-v1', ${UTC_NOW}
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_transitions (
+  id, brief_id, version_id, revision, previous_transition_id,
+  action, from_state, to_state, expected_revision, actor, reason_code, created_at
+)
+SELECT
+  'legacy-brief-transition:' || id, id, 'legacy-brief-version:' || id,
+  1, NULL, 'LEGACY_MIGRATION', NULL,
+  CASE status WHEN 'ARCHIVED' THEN 'ARCHIVED' ELSE 'ACTIVE' END,
+  0, 'MIGRATION', 'LEGACY_BRIEF_INCOMPLETE', ${UTC_NOW}
+FROM content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_audit_events (
+  id, event_identity, event_type, brief_id, version_id,
+  generation_run_id, actor, details_json, created_at
+)
+SELECT
+  'legacy-brief-audit:' || id, 'LEGACY_BRIEF_MIGRATED:' || id,
+  'LEGACY_MIGRATED', id, 'legacy-brief-version:' || id,
+  NULL, 'MIGRATION', json_object('readiness', 'DRAFT_INCOMPLETE'), ${UTC_NOW}
+FROM content_briefs_issue024_legacy;
+
+DROP TABLE content_briefs_issue024_legacy;
+
+INSERT INTO content_brief_policy_registry (
+  policy_kind, current_version, revision, updated_at
+) VALUES
+  ('PROFILE_POLICY', 'brief-profile-registry-v1', 1, ${UTC_NOW}),
+  ('READINESS_POLICY', 'brief-readiness-policy-v1', 1, ${UTC_NOW}),
+  ('FORBIDDEN_POLICY', 'forbidden-expression-registry-v1', 1, ${UTC_NOW}),
+  ('SCHEMA_POLICY', 'content-brief-schema-v1', 1, ${UTC_NOW}),
+  ('PROMPT_POLICY', 'content-brief-structured-prompt-v1', 1, ${UTC_NOW});
+
+CREATE INDEX idx_content_briefs_topic_current
+  ON content_briefs(topic_id, current_version_id, updated_at DESC);
+CREATE INDEX idx_content_briefs_topic_version
+  ON content_briefs(topic_version_id, topic_id);
+CREATE INDEX idx_content_briefs_current_version
+  ON content_briefs(current_version_id, id);
+CREATE INDEX idx_content_briefs_experiment_id
+  ON content_briefs(experiment_id, brief_state, updated_at DESC);
+CREATE INDEX idx_content_briefs_status
+  ON content_briefs(status, brief_state, updated_at DESC);
+CREATE INDEX idx_content_brief_versions_history
+  ON content_brief_versions(brief_id, version_number DESC);
+CREATE INDEX idx_content_brief_versions_previous
+  ON content_brief_versions(previous_version_id);
+CREATE INDEX idx_content_brief_versions_readiness
+  ON content_brief_versions(readiness_status, created_at DESC);
+CREATE INDEX idx_content_brief_evidence_dependency
+  ON content_brief_evidence_refs(claim_id, fact_evaluation_id, source_id, source_revision, version_id);
+CREATE INDEX idx_content_brief_subject_work
+  ON content_brief_subjects(work_id, version_id);
+CREATE INDEX idx_content_brief_subject_expression
+  ON content_brief_subjects(expression_id, version_id);
+CREATE INDEX idx_content_brief_subject_edition
+  ON content_brief_subjects(edition_id, version_id);
+CREATE INDEX idx_content_brief_evidence_evaluation
+  ON content_brief_evidence_refs(fact_evaluation_id, version_id);
+CREATE INDEX idx_content_brief_evidence_locator
+  ON content_brief_evidence_refs(evidence_locator_id, version_id);
+CREATE INDEX idx_content_brief_evidence_source_revision
+  ON content_brief_evidence_refs(source_id, source_revision, version_id);
+CREATE INDEX idx_content_brief_evidence_dossier
+  ON content_brief_evidence_refs(dossier_id, dossier_version_id, dossier_entry_id);
+CREATE INDEX idx_content_brief_evidence_dossier_version
+  ON content_brief_evidence_refs(dossier_version_id, dossier_id, version_id);
+CREATE INDEX idx_content_brief_evidence_dossier_entry
+  ON content_brief_evidence_refs(dossier_entry_id, dossier_version_id, version_id);
+CREATE INDEX idx_content_brief_expression_permission
+  ON content_brief_expression_policies(permission_snapshot_id, version_id);
+CREATE INDEX idx_content_brief_experiment_binding_experiment
+  ON content_brief_experiment_bindings(experiment_id, design_version_id);
+CREATE INDEX idx_content_brief_experiment_binding_design
+  ON content_brief_experiment_bindings(design_version_id, experiment_id);
+CREATE INDEX idx_content_brief_experiment_binding_assignment
+  ON content_brief_experiment_bindings(assignment_plan_id, design_version_id);
+CREATE INDEX idx_content_brief_experiment_binding_topic
+  ON content_brief_experiment_bindings(topic_id, topic_version_id);
+CREATE INDEX idx_content_brief_experiment_binding_topic_version
+  ON content_brief_experiment_bindings(topic_version_id, topic_id);
+CREATE INDEX idx_content_brief_experiment_binding_work
+  ON content_brief_experiment_bindings(work_id, version_id);
+CREATE INDEX idx_content_brief_dependency_lookup
+  ON content_brief_dependencies(dependency_type, dependency_id, brief_id, version_id);
+CREATE INDEX idx_content_brief_dependency_brief
+  ON content_brief_dependencies(brief_id, version_id);
+CREATE INDEX idx_content_brief_dependency_version
+  ON content_brief_dependencies(version_id, dependency_type);
+CREATE INDEX idx_content_brief_readiness_current
+  ON content_brief_readiness_snapshots(brief_id, evaluated_at DESC);
+CREATE INDEX idx_content_brief_readiness_version
+  ON content_brief_readiness_snapshots(version_id, brief_id);
+CREATE INDEX idx_content_brief_invalidation_version
+  ON content_brief_invalidations(version_id, created_at DESC);
+CREATE INDEX idx_content_brief_invalidation_brief
+  ON content_brief_invalidations(brief_id, version_id);
+CREATE INDEX idx_content_brief_invalidation_dependency
+  ON content_brief_invalidations(dependency_type, dependency_id, created_at DESC);
+CREATE INDEX idx_content_brief_generation_active
+  ON content_brief_generation_runs(brief_id, status, updated_at DESC);
+CREATE INDEX idx_content_brief_generation_plan_version
+  ON content_brief_generation_plans(version_id, brief_id);
+CREATE INDEX idx_content_brief_generation_plan_brief
+  ON content_brief_generation_plans(brief_id, version_id);
+CREATE INDEX idx_content_brief_generation_run_plan
+  ON content_brief_generation_runs(plan_id, brief_id);
+CREATE INDEX idx_content_brief_generation_run_job
+  ON content_brief_generation_runs(job_id, brief_id);
+CREATE INDEX idx_content_brief_generation_result_version
+  ON content_brief_generation_runs(result_version_id, brief_id);
+CREATE UNIQUE INDEX idx_content_brief_one_active_generation
+  ON content_brief_generation_runs(brief_id)
+  WHERE status IN ('CONFIRMED', 'RUNNING', 'PAUSED');
+CREATE INDEX idx_content_brief_generation_execution
+  ON content_brief_generation_runs(execution_id, status);
+CREATE INDEX idx_content_brief_transition_history
+  ON content_brief_transitions(brief_id, revision DESC);
+CREATE INDEX idx_content_brief_transition_version
+  ON content_brief_transitions(version_id, brief_id);
+CREATE INDEX idx_content_brief_transition_previous
+  ON content_brief_transitions(previous_transition_id);
+CREATE INDEX idx_content_brief_audit_brief
+  ON content_brief_audit_events(brief_id, created_at DESC);
+CREATE INDEX idx_content_brief_audit_version
+  ON content_brief_audit_events(version_id, brief_id);
+CREATE INDEX idx_content_brief_audit_generation
+  ON content_brief_audit_events(generation_run_id, brief_id);
+
+CREATE TRIGGER content_brief_versions_immutable_update
+BEFORE UPDATE ON content_brief_versions
+BEGIN SELECT RAISE(ABORT, 'content brief versions are immutable'); END;
+CREATE TRIGGER content_brief_versions_immutable_delete
+BEFORE DELETE ON content_brief_versions
+BEGIN SELECT RAISE(ABORT, 'content brief versions are immutable'); END;
+CREATE TRIGGER content_brief_field_states_immutable_update
+BEFORE UPDATE ON content_brief_field_states
+BEGIN SELECT RAISE(ABORT, 'content brief field history is immutable'); END;
+CREATE TRIGGER content_brief_field_states_immutable_delete
+BEFORE DELETE ON content_brief_field_states
+BEGIN SELECT RAISE(ABORT, 'content brief field history is immutable'); END;
+CREATE TRIGGER content_brief_dependencies_immutable_update
+BEFORE UPDATE ON content_brief_dependencies
+BEGIN SELECT RAISE(ABORT, 'content brief dependencies are immutable'); END;
+CREATE TRIGGER content_brief_dependencies_immutable_delete
+BEFORE DELETE ON content_brief_dependencies
+BEGIN SELECT RAISE(ABORT, 'content brief dependencies are immutable'); END;
+CREATE TRIGGER content_brief_invalidations_immutable_update
+BEFORE UPDATE ON content_brief_invalidations
+BEGIN SELECT RAISE(ABORT, 'content brief invalidations are immutable'); END;
+CREATE TRIGGER content_brief_invalidations_immutable_delete
+BEFORE DELETE ON content_brief_invalidations
+BEGIN SELECT RAISE(ABORT, 'content brief invalidations are immutable'); END;
+CREATE TRIGGER content_brief_transitions_immutable_update
+BEFORE UPDATE ON content_brief_transitions
+BEGIN SELECT RAISE(ABORT, 'content brief transitions are immutable'); END;
+CREATE TRIGGER content_brief_transitions_immutable_delete
+BEFORE DELETE ON content_brief_transitions
+BEGIN SELECT RAISE(ABORT, 'content brief transitions are immutable'); END;
+CREATE TRIGGER content_brief_audit_events_immutable_update
+BEFORE UPDATE ON content_brief_audit_events
+BEGIN SELECT RAISE(ABORT, 'content brief audit is immutable'); END;
+CREATE TRIGGER content_brief_audit_events_immutable_delete
+BEFORE DELETE ON content_brief_audit_events
+BEGIN SELECT RAISE(ABORT, 'content brief audit is immutable'); END;
+
+CREATE TRIGGER invalidate_current_brief_on_topic_change
+AFTER UPDATE OF current_version_number, candidate_state, topic_revision ON topics
+WHEN NEW.topic_revision <> OLD.topic_revision
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'TOPIC_CHANGED:' || NEW.id || ':' || NEW.topic_revision || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, CAST(NEW.topic_revision AS TEXT),
+    'TOPIC_CHANGED', NEW.updated_at
+  FROM content_brief_dependencies AS dependency
+  WHERE (
+    dependency.dependency_type IN ('TOPIC_STATE', 'TOPIC_ELIGIBILITY')
+    AND dependency.dependency_id = NEW.id
+  ) OR (
+    dependency.dependency_type = 'TOPIC_VERSION'
+    AND dependency.dependency_id IN (
+      SELECT version.id
+      FROM topic_candidate_versions AS version
+      WHERE version.topic_id = NEW.id
+    )
+  );
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_work_identity_change
+AFTER UPDATE OF catalog_revision, catalog_state ON books
+WHEN NEW.catalog_revision <> OLD.catalog_revision OR NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'WORK_IDENTITY_CHANGED:' || NEW.id || ':' || NEW.catalog_revision || ':' ||
+      dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, CAST(NEW.catalog_revision AS TEXT),
+    'WORK_IDENTITY_CHANGED', NEW.updated_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'WORK_IDENTITY'
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_expression_identity_change
+AFTER UPDATE OF work_id, revision, catalog_state ON expressions
+WHEN NEW.work_id <> OLD.work_id OR NEW.revision <> OLD.revision OR
+     NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'EXPRESSION_IDENTITY_CHANGED:' || NEW.id || ':' || NEW.revision || ':' ||
+      dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, CAST(NEW.revision AS TEXT),
+    'EXPRESSION_IDENTITY_CHANGED', NEW.updated_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'EXPRESSION_IDENTITY'
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_edition_identity_change
+AFTER UPDATE OF expression_id, catalog_revision, catalog_state ON book_editions
+WHEN NEW.expression_id <> OLD.expression_id OR
+     NEW.catalog_revision <> OLD.catalog_revision OR
+     NEW.catalog_state <> OLD.catalog_state
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'EDITION_IDENTITY_CHANGED:' || NEW.id || ':' || NEW.catalog_revision || ':' ||
+      dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, CAST(NEW.catalog_revision AS TEXT),
+    'EDITION_IDENTITY_CHANGED', ${UTC_NOW}
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'EDITION_IDENTITY'
+    AND dependency.dependency_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_dossier_change
+AFTER UPDATE OF current_version_id, revision ON research_dossiers
+WHEN NEW.revision <> OLD.revision
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'DOSSIER_CHANGED:' || NEW.id || ':' || NEW.revision || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, CAST(NEW.revision AS TEXT),
+    'DOSSIER_CHANGED', NEW.updated_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'DOSSIER_VERSION'
+    AND dependency.dependency_id = OLD.current_version_id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_dossier_invalidation
+AFTER INSERT ON research_dossier_invalidations
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'DOSSIER_INVALIDATED:' || NEW.id || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, NEW.observed_revision,
+    'DOSSIER_INVALIDATED', NEW.created_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'DOSSIER_VERSION'
+    AND dependency.dependency_id = NEW.current_version_id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_topic_invalidation
+AFTER INSERT ON topic_candidate_invalidations
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'TOPIC_INVALIDATED:' || NEW.id || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, NEW.observed_revision,
+    'TOPIC_INVALIDATED', NEW.created_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'TOPIC_VERSION'
+    AND dependency.dependency_id = NEW.version_id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_quota_plan_event
+AFTER INSERT ON topic_quota_plan_events
+WHEN NEW.event_type IN ('STALE', 'SUPERSEDED')
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'TOPIC_QUOTA_CHANGED:' || NEW.id || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, NEW.event_type,
+    'TOPIC_QUOTA_CHANGED', NEW.created_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'TOPIC_QUOTA_PLAN'
+    AND dependency.dependency_id = NEW.plan_version_id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_permission_invalidation
+AFTER INSERT ON expression_permission_invalidations
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'PERMISSION_CHANGED:' || NEW.snapshot_id || ':' || NEW.id || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, NEW.observed_revision,
+    'PERMISSION_CHANGED', NEW.created_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = 'EXPRESSION_PERMISSION'
+    AND dependency.dependency_id = NEW.snapshot_id;
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_experiment_invalidation
+AFTER INSERT ON experiment_invalidations
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'EXPERIMENT_CHANGED:' || NEW.experiment_id || ':' || NEW.id || ':' || dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, NEW.observed_revision,
+    'EXPERIMENT_CHANGED', NEW.created_at
+  FROM content_brief_dependencies AS dependency
+  WHERE (
+    dependency.dependency_type = 'EXPERIMENT_DESIGN'
+    AND dependency.dependency_id = NEW.design_version_id
+  ) OR (
+    dependency.dependency_type = 'EXPERIMENT_ASSIGNMENT'
+    AND dependency.dependency_id = NEW.assignment_plan_id
+  );
+END;
+
+CREATE TRIGGER invalidate_current_brief_on_policy_change
+AFTER UPDATE ON content_brief_policy_registry
+WHEN NEW.current_version <> OLD.current_version
+BEGIN
+  INSERT OR IGNORE INTO content_brief_invalidations (
+    id, event_identity, brief_id, version_id, dependency_type,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'BRIEF_POLICY_CHANGED:' || NEW.policy_kind || ':' || NEW.revision || ':' ||
+      dependency.version_id,
+    dependency.brief_id, dependency.version_id, dependency.dependency_type,
+    dependency.dependency_id, CAST(NEW.revision AS TEXT),
+    'POLICY_CHANGED', NEW.updated_at
+  FROM content_brief_dependencies AS dependency
+  WHERE dependency.dependency_type = NEW.policy_kind
+    AND dependency.dependency_id = OLD.current_version;
+END;
+
+CREATE TRIGGER content_brief_policy_revision_guard
+BEFORE UPDATE ON content_brief_policy_registry
+WHEN
+  NEW.current_version = OLD.current_version OR
+  NEW.revision <> OLD.revision + 1 OR
+  NEW.policy_kind <> OLD.policy_kind
+BEGIN
+  SELECT RAISE(ABORT, 'invalid content brief policy revision');
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -8892,5 +10079,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'versioned_experiment_management',
     sql: VERSIONED_EXPERIMENT_MANAGEMENT,
     version: 16,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'structured_content_brief_generator',
+    sql: STRUCTURED_CONTENT_BRIEF_GENERATOR,
+    version: 17,
   }),
 ]);

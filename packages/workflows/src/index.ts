@@ -1,5 +1,11 @@
 export { ExponentialBackoffPolicy } from './queue/backoff.js';
 export {
+  CONTENT_BRIEF_MODEL_BOUNDARY,
+  ContentBriefGenerationService,
+  createContentBriefGenerationJobHandler,
+  registerContentBriefGenerationJob,
+} from './content-brief-generation-handler.js';
+export {
   createBibliographyDiscoveryJobHandler,
   registerBibliographyDiscoveryJob,
 } from './bibliography-discovery-handler.js';
@@ -51,6 +57,12 @@ export type { BackoffPolicy, ExponentialBackoffOptions } from './queue/backoff.j
 export type { QueueClock, QueueScheduler } from './queue/clock.js';
 export type { SafeJobError } from './queue/error-sanitizer.js';
 export type { JobHandler, JobHandlerContext } from './queue/handler-registry.js';
+export type {
+  ContentBriefGenerationExecutionV1,
+  ContentBriefGenerationPersistenceV1,
+  ContentBriefGenerationServiceOptions,
+  ContentBriefModelSlotV1,
+} from './content-brief-generation-handler.js';
 export type {
   JobPayloadValidatorOptions,
   PayloadValidationErrorCode,

@@ -120,12 +120,15 @@ describe('Issue 006 architecture boundaries', () => {
     expect(production).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/u);
   });
 
-  it('activates the library, research, Topic, and experiment pages while retaining five placeholders', () => {
+  it('activates the library, research, Topic, experiment, and Brief pages with four placeholders', () => {
     const routes = read('apps/web-ui/src/routes.ts');
-    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(5);
+    expect(routes.match(/尚未在当前里程碑实现。/gu)).toHaveLength(4);
     expect(routes).toContain('管理本地书目实体、来源观察、发现覆盖与待确认消歧。');
     expect(routes).toContain('管理版本化来源、精确证据、原子事实、事实评估与可逆冲突决定。');
     expect(routes).toContain('管理五类候选、确定性资格与排序、语义去重及 FIRST_30_V1 配额计划。');
     expect(routes).toContain('管理可检验的单变量实验、跨作品复现、分层 assignment 与版本状态。');
+    expect(routes).toContain(
+      '管理五类结构化 Brief、字段证据、真实性、剧透、实验绑定与受控结构候选。',
+    );
   });
 });

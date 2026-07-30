@@ -8,6 +8,7 @@ import { LibraryPage } from './library-page.js';
 import { ResearchPage } from './research-page.js';
 import { SettingsPage } from './settings-page.js';
 import { TopicPoolPage } from './topic-pool-page.js';
+import { ContentProductionPage } from './content-production-page.js';
 import { ExperimentManagementPage } from './experiment-management-page.js';
 import { useDesktopStatus } from './use-desktop-status.js';
 import { useHashRoute } from './use-hash-route.js';
@@ -165,14 +166,16 @@ export function App(): React.JSX.Element {
             <TopicPoolPage />
           ) : route.path === '/experiments' ? (
             <ExperimentManagementPage />
+          ) : route.path === '/production' ? (
+            <ContentProductionPage />
           ) : route.path === '/overview' ? (
             <div className="overview-grid">
               <article className="overview-lead">
-                <p className="section-kicker">当前进度 · M3 Issue 023</p>
-                <h2>版本化单变量实验设计已就绪</h2>
+                <p className="section-kicker">当前进度 · M3 Issue 024</p>
+                <h2>结构化 Content Brief 工作台已就绪</h2>
                 <p>
-                  可检验假设、control / treatment、唯一 primary metric、guardrails、跨作品复现和
-                  确定性分配已接通。实验尚未执行，也没有效果、显著性或 winner 结论。
+                  五类结构、证据映射、真实性与评分隔离、剧透计划、字段锁和 Experiment
+                  约束已接通。当前仍不会生成标题、正文、标签、图片或质量结论。
                 </p>
               </article>
               <article className="metric-card">

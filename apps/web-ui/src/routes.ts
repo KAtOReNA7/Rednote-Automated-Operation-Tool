@@ -37,7 +37,7 @@ export const NAVIGATION_ITEMS: readonly NavigationItem[] = Object.freeze([
     shortLabel: '验',
   },
   {
-    description: '内容生成与编辑尚未在当前里程碑实现。',
+    description: '管理五类结构化 Brief、字段证据、真实性、剧透、实验绑定与受控结构候选。',
     label: '内容生产',
     path: '/production',
     shortLabel: '产',

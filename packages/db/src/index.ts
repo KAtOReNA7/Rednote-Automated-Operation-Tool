@@ -1,11 +1,19 @@
 export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { SqliteAuthenticityRepository } from './authenticity-repository.js';
+export { SqliteBriefRepository } from './brief-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
 export { SqliteExperimentRepository } from './experiment-repository.js';
 export { SqliteDossierRepository } from './dossier-repository.js';
 export { SqliteBrowserClipRepository } from './browser-clip-repository.js';
+export type {
+  BriefDetailView,
+  BriefGenerationExecution,
+  BriefListItem,
+  BriefListView,
+  BriefVersionDiff,
+} from './brief-repository.js';
 export type {
   BrowserClipScreenshotRecordV1,
   BrowserClipViewV1,

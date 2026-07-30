@@ -361,11 +361,12 @@ describe('database enum alignment with Core', () => {
     }
   });
 
-  it('accepts exactly the Core approval tiers and score types', async () => {
+  it('accepts Core approval tiers but only public Core score types in Content Briefs', async () => {
     const { database } = await createInitializedDatabase();
 
     try {
-      for (const [index, scoreType] of Object.values(ScoreType).entries()) {
+      const publicScoreTypes = [ScoreType.PERSONAL, ScoreType.RESEARCH_ANALYSIS];
+      for (const [index, scoreType] of publicScoreTypes.entries()) {
         const topicId = `topic-score-${index}`;
         database
           .prepare(
@@ -385,6 +386,24 @@ describe('database enum alignment with Core', () => {
             .run(`brief-score-${index}`, topicId, scoreType),
         ).not.toThrow();
       }
+      const internalTopicId = 'topic-score-internal';
+      database
+        .prepare(
+          `INSERT INTO topics(
+             id, topic_type, angle, core_judgment, audience, spoiler_level, status
+           ) VALUES (?, 'BOOK_NOTE', 'angle', 'judgment', 'reader', 'NONE', 'IDEA')`,
+        )
+        .run(internalTopicId);
+      expect(() =>
+        database
+          .prepare(
+            `INSERT INTO content_briefs(
+               id, topic_id, content_type, target_reader, core_judgment,
+               spoiler_level, score_type, status
+             ) VALUES (?, ?, 'ANALYSIS', 'reader', 'judgment', 'NONE', ?, 'IDEA')`,
+          )
+          .run('brief-score-internal', internalTopicId, ScoreType.INTERNAL_PREDICTION),
+      ).toThrow(/CHECK constraint failed/iu);
 
       const draftId = insertMinimalDraft(database, 'approval');
       for (const [index, approvalTier] of Object.values(ApprovalTier).entries()) {

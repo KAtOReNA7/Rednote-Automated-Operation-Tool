@@ -180,7 +180,7 @@ describe('managed local path migration', () => {
     expect(Object.isFrozen(MIGRATIONS[2])).toBe(true);
   });
 
-  it('enumerates exactly the ten real Schema path columns', async () => {
+  it('distinguishes ten managed file paths from two Brief field-path identifiers', async () => {
     const databasePath = createTemporaryDatabasePath();
     await initializeDatabase({ databasePath });
     const database = connectDatabase(databasePath);
@@ -198,6 +198,8 @@ describe('managed local path migration', () => {
         { column_name: 'original_path', table_name: 'assets' },
         { column_name: 'processed_path', table_name: 'assets' },
         { column_name: 'screenshot_path', table_name: 'clips' },
+        { column_name: 'field_path', table_name: 'content_brief_evidence_refs' },
+        { column_name: 'field_path', table_name: 'content_brief_field_states' },
         { column_name: 'sanitized_html_path', table_name: 'fetched_documents' },
         { column_name: 'extracted_text_path', table_name: 'fetched_documents' },
         { column_name: 'import_file_path', table_name: 'metric_snapshots' },

@@ -20,6 +20,7 @@ import type {
 } from '@mystery-operations/providers';
 import type { TopicErrorCode } from '@mystery-operations/topics';
 import type { ExperimentErrorCode } from '@mystery-operations/experiments';
+import type { BriefErrorCode } from '@mystery-operations/briefs';
 import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
@@ -103,6 +104,16 @@ import type {
   GetExperimentsInput,
   PreviewExperimentActionInput,
 } from './experiment-contracts.js';
+import type {
+  BriefActionPreview,
+  BriefActionResult,
+  BriefDetailView,
+  BriefListView,
+  ConfirmBriefActionInput,
+  GetBriefInput,
+  GetBriefsInput,
+  PreviewBriefActionInput,
+} from './brief-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -131,6 +142,10 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   getExperiment: 'experiments:get',
   previewExperimentAction: 'experiments:preview-action',
   confirmExperimentAction: 'experiments:confirm-action',
+  getBriefs: 'briefs:list',
+  getBrief: 'briefs:get',
+  previewBriefAction: 'briefs:preview-action',
+  confirmBriefAction: 'briefs:confirm-action',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -220,6 +235,7 @@ export interface DesktopError {
     | AuthenticityErrorCode
     | TopicErrorCode
     | ExperimentErrorCode
+    | BriefErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -710,6 +726,10 @@ export interface DesktopBridge {
   confirmExperimentAction?(
     input: ConfirmExperimentActionInput,
   ): Promise<DesktopResult<ExperimentActionResult>>;
+  getBriefs?(input: GetBriefsInput): Promise<DesktopResult<BriefListView>>;
+  getBrief?(input: GetBriefInput): Promise<DesktopResult<BriefDetailView>>;
+  previewBriefAction?(input: PreviewBriefActionInput): Promise<DesktopResult<BriefActionPreview>>;
+  confirmBriefAction?(input: ConfirmBriefActionInput): Promise<DesktopResult<BriefActionResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

@@ -99,6 +99,14 @@ import type {
   GetExperimentInput,
   GetExperimentsInput,
   PreviewExperimentActionInput,
+  BriefActionPreview,
+  BriefActionResult,
+  BriefDetailView,
+  BriefListView,
+  ConfirmBriefActionInput,
+  GetBriefInput,
+  GetBriefsInput,
+  PreviewBriefActionInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -135,6 +143,7 @@ import { DesktopDossierRuntime } from './dossier-runtime.js';
 import { DesktopAuthenticityRuntime } from './authenticity-runtime.js';
 import { DesktopTopicRuntime } from './topic-runtime.js';
 import { DesktopExperimentRuntime } from './experiment-runtime.js';
+import { DesktopBriefRuntime } from './brief-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -172,6 +181,7 @@ interface RuntimeVersions {
 interface ActiveProject {
   readonly accounting: DesktopModelAccountingRuntime;
   readonly authenticity: DesktopAuthenticityRuntime;
+  readonly briefs: DesktopBriefRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
   readonly experiments: DesktopExperimentRuntime;
@@ -475,12 +485,14 @@ export class DesktopSettingsRuntime {
       await previous?.catalog.close();
       await previous?.dossier.close();
       await previous?.topics.close();
+      await previous?.briefs.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
       await prepared.catalog.close();
       await prepared.dossier.close();
       await prepared.topics.close();
+      await prepared.briefs.close();
       prepared.database.close();
       throw error;
     }
@@ -607,6 +619,30 @@ export class DesktopSettingsRuntime {
     windowId: number,
   ): ExperimentActionResult {
     return this.#requireActive().experiments.confirm(input, senderId, windowId);
+  }
+
+  public getBriefs(input: GetBriefsInput): BriefListView {
+    return this.#requireActive().briefs.list(input);
+  }
+
+  public getBrief(input: GetBriefInput): BriefDetailView {
+    return this.#requireActive().briefs.get(input);
+  }
+
+  public previewBriefAction(
+    input: PreviewBriefActionInput,
+    senderId: number,
+    windowId: number,
+  ): BriefActionPreview {
+    return this.#requireActive().briefs.preview(input, senderId, windowId);
+  }
+
+  public confirmBriefAction(
+    input: ConfirmBriefActionInput,
+    senderId: number,
+    windowId: number,
+  ): BriefActionResult {
+    return this.#requireActive().briefs.confirm(input, senderId, windowId);
   }
 
   public getEvidenceState(input: GetEvidenceStateInput): EvidenceStateView {
@@ -810,6 +846,7 @@ export class DesktopSettingsRuntime {
     this.#active?.authenticity.clearWindow(windowId);
     this.#active?.topics.clearWindow(windowId);
     this.#active?.experiments.clearWindow(windowId);
+    this.#active?.briefs.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -853,6 +890,7 @@ export class DesktopSettingsRuntime {
     await this.#active?.catalog.close();
     await this.#active?.dossier.close();
     await this.#active?.topics.close();
+    await this.#active?.briefs.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -917,13 +955,16 @@ export class DesktopSettingsRuntime {
     const dossier = new DesktopDossierRuntime(database);
     const topics = new DesktopTopicRuntime(database);
     const experiments = new DesktopExperimentRuntime(database);
+    const briefs = new DesktopBriefRuntime(database);
     catalog.start();
     dossier.start();
     topics.start();
+    briefs.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
     return {
       accounting,
       authenticity,
+      briefs,
       capabilities,
       catalog,
       dossier,

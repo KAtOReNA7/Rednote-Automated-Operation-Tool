@@ -20,6 +20,12 @@ import {
   EXPERIMENT_LIMITS,
   validateExperimentDesign,
 } from '@mystery-operations/experiments';
+import {
+  BRIEF_PROFILE_IDS,
+  BRIEF_READINESS_STATUSES,
+  BRIEF_LIMITS,
+  assertContentBriefDraft,
+} from '@mystery-operations/briefs';
 
 import { isTrustedRendererUrl } from './security-policy.js';
 
@@ -42,6 +48,7 @@ export type DesktopIpcOperation =
   | 'confirmDataRootSelection'
   | 'confirmTopicAction'
   | 'confirmExperimentAction'
+  | 'confirmBriefAction'
   | 'createModelPriceSchedule'
   | 'createModelUnitPolicy'
   | 'exportDiagnosticReport'
@@ -68,6 +75,8 @@ export type DesktopIpcOperation =
   | 'getTopicPool'
   | 'getExperiment'
   | 'getExperiments'
+  | 'getBrief'
+  | 'getBriefs'
   | 'getWindowState'
   | 'listLocalApiClients'
   | 'listBrowserClips'
@@ -87,6 +96,7 @@ export type DesktopIpcOperation =
   | 'previewSourceProcessing'
   | 'previewTopicAction'
   | 'previewExperimentAction'
+  | 'previewBriefAction'
   | 'diffDossierVersions'
   | 'previewModelCacheClear'
   | 'startProviderCapabilityProbe'
@@ -97,6 +107,7 @@ export type DesktopIpcOperation =
   | 'updateSearchProviderConfig';
 
 const MAX_IPC_BYTES = 32 * 1024;
+const MAX_BRIEF_IPC_BYTES = 2 * 1024 * 1024;
 const MAX_IPC_DEPTH = 8;
 const SECRET_LIKE_KEY = /api.?key|authorization|ciphertext|credential|password|secret|token/iu;
 const CAPABILITIES = new Set([
@@ -219,6 +230,64 @@ const EXPERIMENT_STATE_VALUES = new Set<unknown>(EXPERIMENT_DESIGN_STATES);
 const EXPERIMENT_ACTION_VALUES = new Set<unknown>(
   EXPERIMENT_ACTIONS.filter((action) => action !== 'CLONE_VERSION'),
 );
+const BRIEF_PROFILE_VALUES = new Set<unknown>(BRIEF_PROFILE_IDS);
+const BRIEF_READINESS_VALUES = new Set<unknown>(BRIEF_READINESS_STATUSES);
+
+function validBriefPreview(value: Readonly<Record<string, unknown>>): boolean {
+  try {
+    switch (value.kind) {
+      case 'CREATE_SCAFFOLD': {
+        return (
+          exactKeys(value, ['assignmentPlanId', 'kind', 'topicId']) &&
+          dossierIdentifier(value.topicId, BRIEF_LIMITS.identifierBytes) &&
+          (value.assignmentPlanId === null ||
+            dossierIdentifier(value.assignmentPlanId, BRIEF_LIMITS.identifierBytes))
+        );
+      }
+      case 'SAVE_EDIT':
+        return (
+          exactKeys(value, ['briefId', 'draft', 'expectedRevision', 'kind']) &&
+          dossierIdentifier(value.briefId, BRIEF_LIMITS.identifierBytes) &&
+          catalogRevision(value.expectedRevision) &&
+          Boolean(assertContentBriefDraft(value.draft))
+        );
+      case 'LOCK_FIELD':
+      case 'UNLOCK_FIELD':
+        return (
+          exactKeys(value, ['briefId', 'expectedRevision', 'fieldPath', 'kind']) &&
+          dossierIdentifier(value.briefId, BRIEF_LIMITS.identifierBytes) &&
+          catalogRevision(value.expectedRevision) &&
+          dossierIdentifier(value.fieldPath, BRIEF_LIMITS.identifierBytes)
+        );
+      case 'CLONE':
+      case 'UNDO':
+        return (
+          exactKeys(value, ['briefId', 'expectedRevision', 'kind', 'targetVersionId']) &&
+          dossierIdentifier(value.briefId, BRIEF_LIMITS.identifierBytes) &&
+          dossierIdentifier(value.targetVersionId, BRIEF_LIMITS.identifierBytes) &&
+          catalogRevision(value.expectedRevision)
+        );
+      case 'ARCHIVE':
+      case 'RESTORE':
+      case 'PREVIEW_GENERATION':
+        return (
+          exactKeys(value, ['briefId', 'expectedRevision', 'kind']) &&
+          dossierIdentifier(value.briefId, BRIEF_LIMITS.identifierBytes) &&
+          catalogRevision(value.expectedRevision)
+        );
+      case 'CANCEL_GENERATION':
+        return (
+          exactKeys(value, ['expectedRevision', 'kind', 'runId']) &&
+          dossierIdentifier(value.runId, BRIEF_LIMITS.identifierBytes) &&
+          catalogRevision(value.expectedRevision)
+        );
+      default:
+        return false;
+    }
+  } catch {
+    return false;
+  }
+}
 
 function validAuthenticityDraft(value: Readonly<Record<string, unknown>>): boolean {
   try {
@@ -533,6 +602,111 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         Buffer.byteLength(value.query, 'utf8') <= 512 &&
         !containsControlCharacter(value.query) &&
         (value.state === null || EXPERIMENT_STATE_VALUES.has(value.state))
+      );
+    }
+    case 'getBriefs': {
+      const value = validateOneObject(args, [
+        'limit',
+        'offset',
+        'profileId',
+        'query',
+        'readiness',
+        'state',
+      ]);
+      return (
+        value !== null &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= BRIEF_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= BRIEF_LIMITS.maxPageOffset &&
+        (value.profileId === null || BRIEF_PROFILE_VALUES.has(value.profileId)) &&
+        typeof value.query === 'string' &&
+        Buffer.byteLength(value.query, 'utf8') <= 512 &&
+        !containsControlCharacter(value.query) &&
+        (value.readiness === null || BRIEF_READINESS_VALUES.has(value.readiness)) &&
+        (value.state === null || value.state === 'ACTIVE' || value.state === 'ARCHIVED')
+      );
+    }
+    case 'getBrief': {
+      const value = validateOneObject(args, [
+        'briefId',
+        'evidenceLimit',
+        'evidenceOffset',
+        'generationLimit',
+        'generationOffset',
+        'historyLimit',
+        'historyOffset',
+        'versionLimit',
+        'versionOffset',
+      ]);
+      return (
+        value !== null &&
+        dossierIdentifier(value.briefId, BRIEF_LIMITS.identifierBytes) &&
+        Number.isSafeInteger(value.evidenceLimit) &&
+        Number(value.evidenceLimit) >= 1 &&
+        Number(value.evidenceLimit) <= 100 &&
+        Number.isSafeInteger(value.evidenceOffset) &&
+        Number(value.evidenceOffset) >= 0 &&
+        Number(value.evidenceOffset) <= BRIEF_LIMITS.maxPageOffset &&
+        Number.isSafeInteger(value.generationLimit) &&
+        Number(value.generationLimit) >= 1 &&
+        Number(value.generationLimit) <= 100 &&
+        Number.isSafeInteger(value.generationOffset) &&
+        Number(value.generationOffset) >= 0 &&
+        Number(value.generationOffset) <= BRIEF_LIMITS.maxPageOffset &&
+        Number.isSafeInteger(value.historyLimit) &&
+        Number(value.historyLimit) >= 1 &&
+        Number(value.historyLimit) <= 100 &&
+        Number.isSafeInteger(value.historyOffset) &&
+        Number(value.historyOffset) >= 0 &&
+        Number(value.historyOffset) <= BRIEF_LIMITS.maxPageOffset &&
+        Number.isSafeInteger(value.versionLimit) &&
+        Number(value.versionLimit) >= 1 &&
+        Number(value.versionLimit) <= 100 &&
+        Number.isSafeInteger(value.versionOffset) &&
+        Number(value.versionOffset) >= 0 &&
+        Number(value.versionOffset) <= BRIEF_LIMITS.maxPageOffset
+      );
+    }
+    case 'previewBriefAction': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      return value !== null && validBriefPreview(value);
+    }
+    case 'confirmBriefAction': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'executionId',
+        'kind',
+        'previewHash',
+        'token',
+      ]);
+      const generation = value?.kind === 'PREVIEW_GENERATION';
+      return (
+        value?.confirmation === 'APPLY_CONTENT_BRIEF_ACTION' &&
+        [
+          'CREATE_SCAFFOLD',
+          'SAVE_EDIT',
+          'LOCK_FIELD',
+          'UNLOCK_FIELD',
+          'CLONE',
+          'UNDO',
+          'ARCHIVE',
+          'RESTORE',
+          'PREVIEW_GENERATION',
+          'CANCEL_GENERATION',
+        ].includes(String(value.kind)) &&
+        (generation
+          ? dossierIdentifier(value.executionId, BRIEF_LIMITS.identifierBytes)
+          : value.executionId === null) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
       );
     }
     case 'getExperiment': {
@@ -1258,8 +1432,9 @@ export function validateDesktopIpcRequest(
     return invalid('请求来源未获授权。');
   }
   try {
+    const maximumBytes = operation === 'previewBriefAction' ? MAX_BRIEF_IPC_BYTES : MAX_IPC_BYTES;
     if (
-      Buffer.byteLength(JSON.stringify(args), 'utf8') > MAX_IPC_BYTES ||
+      Buffer.byteLength(JSON.stringify(args), 'utf8') > maximumBytes ||
       !withinDepth(args) ||
       !validArguments(operation, args)
     ) {

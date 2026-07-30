@@ -73,7 +73,10 @@ describe('M3 Issue 023 experiment architecture and governance', () => {
 
   it('stores definitions and future availability, never real outcomes or statistical conclusions', () => {
     const migration = source('packages/db/src/migrations.ts');
-    const issue023 = migration.slice(migration.indexOf('const VERSIONED_EXPERIMENT_MANAGEMENT'));
+    const issue023 = migration.slice(
+      migration.indexOf('const VERSIONED_EXPERIMENT_MANAGEMENT'),
+      migration.indexOf('const STRUCTURED_CONTENT_BRIEF_GENERATOR'),
+    );
     expect(issue023).toContain('experiment_design_versions');
     expect(issue023).toContain('experiment_assignment_plans');
     expect(issue023).not.toMatch(

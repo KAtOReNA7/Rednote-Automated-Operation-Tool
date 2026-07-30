@@ -205,6 +205,29 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       versionOffset: 0,
     },
   ],
+  getBriefs: [
+    {
+      limit: 25,
+      offset: 0,
+      profileId: null,
+      query: '',
+      readiness: null,
+      state: null,
+    },
+  ],
+  getBrief: [
+    {
+      briefId: 'brief-fixture-000001',
+      evidenceLimit: 25,
+      evidenceOffset: 0,
+      generationLimit: 25,
+      generationOffset: 0,
+      historyLimit: 25,
+      historyOffset: 0,
+      versionLimit: 25,
+      versionOffset: 0,
+    },
+  ],
   getWindowState: [],
   listLocalApiClients: [],
   listDossiers: [{ limit: 25, offset: 0 }],
@@ -291,6 +314,7 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
   previewExperimentAction: [
     { design: experimentDraft(3), kind: 'CREATE_DRAFT', profileId: 'primary' },
   ],
+  previewBriefAction: [{ briefId: 'brief-fixture-000001', expectedRevision: 1, kind: 'ARCHIVE' }],
   previewDossierBuild: [{ subjectId: 'work-fixture', subjectType: 'WORK' }],
   previewModelCacheClear: [],
   diffDossierVersions: [
@@ -329,6 +353,15 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     {
       confirmation: 'APPLY_EXPERIMENT_ACTION',
       kind: 'CREATE_DRAFT',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  confirmBriefAction: [
+    {
+      confirmation: 'APPLY_CONTENT_BRIEF_ACTION',
+      executionId: null,
+      kind: 'ARCHIVE',
       previewHash: 'a'.repeat(64),
       token: 'a'.repeat(43),
     },

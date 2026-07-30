@@ -8,6 +8,7 @@
     "noEmit": true,
     "paths": {
       "@mystery-operations/authenticity": ["./packages/authenticity/src/index.ts"],
+      "@mystery-operations/briefs": ["./packages/briefs/src/index.ts"],
       "@mystery-operations/catalog": ["./packages/catalog/src/index.ts"],
       "@mystery-operations/core": ["./packages/core/src/index.ts"],
       "@mystery-operations/clipper": ["./apps/clipper/src/index.ts"],
