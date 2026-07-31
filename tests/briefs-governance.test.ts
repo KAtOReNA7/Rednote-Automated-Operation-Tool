@@ -107,7 +107,9 @@ describe('M3 Issue 024 Content Brief architecture and governance', () => {
       expect(command).toContain(file);
     }
     expect(packageJson.scripts.test).toBe('node scripts/run-portable-vitest.mjs run');
-    expect(source('.github/workflows/ci.yml').match(/npm run test:briefs/gu)).toHaveLength(1);
+    const ci = source('.github/workflows/ci.yml');
+    expect(ci).not.toContain('npm run test:briefs');
+    expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
     expect(source('vite.main.config.ts')).toContain("'@mystery-operations/briefs'");
   });
 
@@ -130,8 +132,11 @@ describe('M3 Issue 024 Content Brief architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/Issue 024.*(?:已完成|完成)|已完成.*Issue 024/isu);
-      expect(source(path), path).toMatch(/Issue 025/iu);
+      const progress = source(path);
+      expect(progress, path).toMatch(
+        /Issue 024.*(?:已完成|完成)|已完成.*Issue 024|Issue 022—026 已完成/isu,
+      );
+      expect(progress, path).toMatch(/Issue 025|Issue 022—026/iu);
     }
   });
 });

@@ -47,80 +47,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Run immutable-constraint and architecture suites
-        run: npm run test:constraints
-
-      - name: Run SQLite migration and persistence suites
-        run: npm run test:db
-
-      - name: Run persistent local job queue suites
-        run: npm run test:queue
-
-      - name: Run local file repository suites
-        run: npm run test:storage
-
-      - name: Run desktop shell suites
-        run: npm run test:desktop
-
-      - name: Run local settings and credential-reference suites
-        run: npm run test:settings
-
-      - name: Run local loopback API and plugin-authentication suites
-        run: npm run test:local-api
-
-      - name: Run provider-neutral model interface suites
-        run: npm run test:providers
-
-      - name: Run repository-volume portability suites
-        run: npm run test:portability
-
-      - name: Run explicit provider capability probing suites
-        run: npm run test:capabilities
-
-      - name: Run model execution cache and accounting suites
-        run: npm run test:model-accounting
-
-      - name: Run unified search provider suites
-        run: npm run test:search
-
-      - name: Run controlled public page fetch suites
-        run: npm run test:fetch
-
-      - name: Run Chrome and Edge browser clipper suites
-        run: npm run test:clipper
-
-      - name: Run bibliographic discovery and entity resolution suites
-        run: npm run test:bibliography
-
-      - name: Run source evidence and fact conflict suites
-        run: npm run test:evidence
-
-      - name: Run versioned research dossier suites
-        run: npm run test:dossier
-
-      - name: Run reading authenticity and expression permission suites
-        run: npm run test:authenticity
-
-      - name: Run Topic Pool and First-30 quota suites
-        run: npm run test:topics
-
-      - name: Run versioned single-variable experiment suites
-        run: npm run test:experiments
-
-      - name: Run structured Content Brief suites
-        run: npm run test:briefs
-
-      - name: Run versioned Copy generation suites
-        run: npm run test:copy
-
-      - name: Run factual claim mapping and evidence trace suites
-        run: npm run test:fact-mapping
+      - name: Run complete Vitest suite once
+        run: npm run test
 
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
-
-      - name: Run complete test suite
-        run: npm run test
 
       - name: Build all workspaces
         run: npm run build

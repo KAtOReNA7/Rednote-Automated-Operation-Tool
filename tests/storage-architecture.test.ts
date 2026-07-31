@@ -110,7 +110,7 @@ describe('Issue 008 package and process boundaries', () => {
     expect(changedScope).not.toMatch(/issue010|settings-wizard|key-reference/iu);
   });
 
-  it('registers an independent Windows storage gate without removing prior CI gates', async () => {
+  it('keeps the storage script and non-Vitest Windows release signals', async () => {
     const packageJson = JSON.parse(await readFile(join(projectRoot, 'package.json'), 'utf8')) as {
       readonly scripts: Readonly<Record<string, string>>;
     };
@@ -120,23 +120,21 @@ describe('Issue 008 package and process boundaries', () => {
       'npm run format-check',
       'npm run lint',
       'npm run typecheck',
-      'npm run test:constraints',
-      'npm run test:db',
-      'npm run test:queue',
-      'npm run test:desktop',
-      'npm run test:storage',
-      'npm run test:electron-smoke',
       'npm run test',
+      'npm run test:electron-smoke',
       'npm run build',
       'npm run package:desktop',
+      'npm run package:clipper',
       'npm run test:packaged-smoke',
       'npm run audit:dependencies',
     ];
 
     expect(packageJson.scripts['test:storage']).toBeDefined();
+    expect(packageJson.scripts['test:storage']).toContain('tests/storage-architecture.test.ts');
     for (const command of required) {
       expect(ci).toContain(command);
     }
+    expect(ci).not.toContain('npm run test:storage');
     expect(ci).toContain('runs-on: windows-latest');
   });
 });

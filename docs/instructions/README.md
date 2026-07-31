@@ -38,3 +38,10 @@ M2（Issue 012—021）已完成。
 
 M3 Issue 022—026 已完成；Issue 026 指令只归档于本目录。下一项仅规划 Issue 027，未收到明确
 授权时不得自动开始。
+
+## Governance
+
+- [Issue 026 后只读项目健康审计](./governance/Project-health-audit-after-Issue026-Codex-instruction.txt)
+- [M3 项目控制恢复 Phase 1](./governance/M3-project-control-recovery-phase1-Codex-instruction.txt)
+
+这些文件授权的是审计或治理任务，不是产品 Issue。Phase 1 完成后仍不得自动进入 Issue 027。

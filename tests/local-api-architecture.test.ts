@@ -104,29 +104,28 @@ describe('Issue 011 architecture and forbidden scope', () => {
     expect(windowFactory).toMatch(/sandbox:\s*true/u);
   });
 
-  it('adds a dedicated Windows CI gate without removing any prior required gate', () => {
+  it('keeps the dedicated script and non-Vitest Windows release signals', () => {
     const workflow = source('.github/workflows/ci.yml');
+    const packageJson = JSON.parse(source('package.json')) as {
+      readonly scripts: Readonly<Record<string, string>>;
+    };
     for (const command of [
       'npm ci',
       'npm run format-check',
       'npm run lint',
       'npm run typecheck',
-      'npm run test:constraints',
-      'npm run test:db',
-      'npm run test:queue',
-      'npm run test:desktop',
-      'npm run test:storage',
-      'npm run test:settings',
-      'npm run test:local-api',
-      'npm run test:electron-smoke',
       'npm run test',
+      'npm run test:electron-smoke',
       'npm run build',
       'npm run package:desktop',
+      'npm run package:clipper',
       'npm run test:packaged-smoke',
       'npm run audit:dependencies',
     ]) {
       expect(workflow).toContain(command);
     }
+    expect(packageJson.scripts['test:local-api']).toContain('tests/local-api-binding.test.ts');
+    expect(workflow).not.toContain('npm run test:local-api');
     expect(workflow).toContain('runs-on: windows-latest');
   });
 

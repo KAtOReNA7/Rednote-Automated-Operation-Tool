@@ -100,7 +100,9 @@ describe('M3 Issue 023 experiment architecture and governance', () => {
       expect(command).toContain(file);
     }
     expect(packageJson.scripts.test).toBe('node scripts/run-portable-vitest.mjs run');
-    expect(source('.github/workflows/ci.yml').match(/npm run test:experiments/gu)).toHaveLength(1);
+    const ci = source('.github/workflows/ci.yml');
+    expect(ci).not.toContain('npm run test:experiments');
+    expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
   });
 
   it('tracks all contracts, ADR, plan, acceptance, evidence, and factual progress', () => {
@@ -122,8 +124,11 @@ describe('M3 Issue 023 experiment architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/Issue 023.*(?:已完成|完成)|已完成.*Issue 023/isu);
-      expect(source(path), path).toMatch(/Issue 024/iu);
+      const progress = source(path);
+      expect(progress, path).toMatch(
+        /Issue 023.*(?:已完成|完成)|已完成.*Issue 023|Issue 022—026 已完成/isu,
+      );
+      expect(progress, path).toMatch(/Issue 024|Issue 022—026/iu);
     }
   });
 });

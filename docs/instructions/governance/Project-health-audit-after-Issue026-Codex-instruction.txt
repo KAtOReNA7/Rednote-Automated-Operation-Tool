@@ -1,0 +1,857 @@
+Rednote 项目完整健康审计：Issue 026 后的失控风险、方向偏差与开发治理评估
+============================================================================
+
+本轮是只读审计任务，不是新 Issue，不实施 Issue 027，不修复代码，不重构，不新增业务能力。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`，但本指令明确覆盖其中“开发任务必须修改和提交”的默认
+假设：本轮只读取仓库、Git、已有测试结果和文档，在受控且被 Git 忽略的临时目录中输出审计报告；
+不修改 tracked 文件，不创建提交，不 push，不创建或合并 PR。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：XHigh
+
+
+一、审计目的
+------------
+
+为外部评审者生成一套完整、可复核的项目健康报告，使其能够判断：
+
+1. Issue 001—026 连续开发后，项目是否仍处于可控状态；
+2. Issue 026 新增约 14,000 行是否具有合理结构，还是范围、架构或测试膨胀；
+3. 哪些历史指令导致重复建设、过度设计、过量测试或验证调度低效；
+4. 当前架构是否存在第二套真相、职责重叠、状态爆炸、迁移膨胀或 UI/IPC 过度扩张；
+5. 已完成的 26 个 Issue 中，有多少能力只是合同、Schema、Mock 或测试，有多少已经形成真实可用
+   的端到端产品能力；
+6. 当前实现与 PRD、Roadmap、用户真实目标之间是否出现方向偏差；
+7. Issue 027—030 是否应继续按原计划实施，还是应先收缩、重构、做垂直切片或调整治理规则；
+8. 后续 Issue 指令、`AGENTS.md`、测试策略和验收方式应如何修改；
+9. 项目是“正常复杂”“偏重但可控”“明显失衡”还是“已经失控”；
+10. 在不破坏已验证行为和硬约束的前提下，最小恢复路径是什么。
+
+报告必须允许外部评审者在不访问 Codex 会话历史的情况下独立理解项目。
+
+
+二、开工与只读边界
+------------------
+
+开工时动态记录：
+
+- 仓库根；
+- 当前分支、HEAD、parent；
+- `origin/main`；
+- 工作树；
+- remotes；
+- 最近 40 个提交；
+- Issue 026 提交与其动态 parent；
+- tracked/untracked/ignored 状态。
+
+只允许只读 Git 操作，例如：
+
+- `git status`
+- `git log`
+- `git show`
+- `git diff`
+- `git diff-tree`
+- `git ls-files`
+- `git rev-parse`
+- `git branch`
+- `git remote -v`
+- `git ls-remote`
+- `git check-ignore`
+
+如果读取远端需要网络，可以执行一次只读 `git ls-remote`；不得 fetch、pull、push、merge、rebase、
+reset、checkout、switch、stash、amend、squash、配置远端或修改 branch ref。
+
+如果开工工作树不干净：
+
+- 不覆盖、删除、stash 或提交；
+- 记录已有修改；
+- 只要能保证所有审计输出进入被忽略的受控目录，可以继续只读分析；
+- 无法隔离时停止并报告。
+
+不得修改 Issue 026 提交或重新运行开发。
+
+
+三、禁止行为
+------------
+
+本轮禁止：
+
+- 修改任何 tracked 源码、测试、migration、文档、配置或 lockfile；
+- 修改 `AGENTS.md`、PRD、Roadmap、README、Issue 指令或验收映射；
+- 创建 migration；
+- 创建 commit、tag、branch、PR 或远端写入；
+- 运行 `npm ci`；
+- 运行全量 `npm test`；
+- 运行所有专项测试；
+- 运行 build、desktop/clipper package、Electron smoke、真实浏览器 smoke 或依赖安装；
+- 读取真实密钥、正式 ProjectDataRoot、用户业务数据或外部服务；
+- 调用真实模型、搜索、网页、图片或业务 API；
+- 根据测试数量推断质量；
+- 因发现问题直接修复；
+- 为了让结论好看而删除、忽略或重新分类范围外文件；
+- 把历史报告中的 PASS 当作“项目可控”的充分证据。
+
+可以：
+
+- 读取现有代码、测试、文档、package manifests、CI 工作流和 Git 对象；
+- 使用仓库已有 Node.js、PowerShell、Git 和 `rg` 做只读统计；
+- 在受控临时目录创建审计脚本和输出；
+- 读取已有验收证据中的测试数量、耗时和命令；
+- 对不存在的证据明确记录 `UNKNOWN`，不得重新跑全量补齐。
+
+
+四、输出目录与文件
+------------------
+
+先动态确认仓库现有受控临时目录规则。优先使用：
+
+`.rednote-temp/project-health-audit-after-issue026/`
+
+必须确认该目录被 Git 忽略并位于当前仓库根下；若未被忽略，使用仓库已有的、被 Git 忽略的等价
+受控临时根。不得添加 `.gitignore` 规则。
+
+生成以下四个文件：
+
+1. `project-health-audit-after-issue026.md`
+   - 中文完整主报告；
+   - 外部评审者主要阅读对象。
+
+2. `project-health-audit-after-issue026.json`
+   - 与主报告结论一致的机器可读结果；
+   - exact object，字段和枚举有限。
+
+3. `project-size-churn-inventory-after-issue026.csv`
+   - 文件级和提交级规模清单；
+   - UTF-8；
+   - 路径全部为仓库相对路径。
+
+4. `project-audit-evidence-index-after-issue026.md`
+   - 每个结论对应的 repo-relative 文件、Git 命令和已有证据；
+   - 不复制大量源码或测试输出。
+
+完成后：
+
+- 不删除该受控审计目录；
+- 不提交这些文件；
+- 最终回复给出四个仓库相对路径；
+- 同时输出不超过 1,500 字的执行摘要；
+- 提醒用户将四个文件上传给外部评审者。
+
+
+五、审计方法原则
+----------------
+
+所有结论必须遵守：
+
+- 事实、推断和建议分开；
+- 每项重要结论附证据和置信度；
+- 未证明的信息写 `UNKNOWN`；
+- 不能用“测试通过”替代架构和产品判断；
+- 不能用“代码很多”单独判定失控；
+- 不能用“验收项很多”证明范围合理；
+- 区分必要复杂度、偶然复杂度和指令诱导复杂度；
+- 区分生产源码、测试、fixture、migration、文档、配置、生成产物和二进制；
+- 区分当前真实能力与未来预留；
+- 区分本地 Mock 验证、loopback 验证、真实浏览器验证、真实 Provider 验证和生产可用；
+- 结论允许否定此前 Codex 的设计和实现；
+- 不为自身历史工作辩护。
+
+严重度：
+
+- `BLOCKER`
+- `HIGH`
+- `MEDIUM`
+- `LOW`
+- `INFO`
+
+置信度：
+
+- `HIGH`
+- `MEDIUM`
+- `LOW`
+
+每个 finding 至少包含：
+
+- finding ID；
+- 标题；
+- 严重度；
+- 置信度；
+- 事实证据；
+- 为什么构成问题或为什么不是问题；
+- 影响范围；
+- 是否在 Issue 027 前必须处理；
+- 建议动作；
+- 预计动作规模；
+- 不采取动作的后果。
+
+
+六、Git 历史与 Issue 演化
+------------------------
+
+重建 Issue 001—026 的开发时间线。
+
+对每个 Issue 尽可能记录：
+
+- Issue 编号和里程碑；
+- 提交 SHA 和 parent；
+- 提交日期；
+- 提交信息；
+- 新增/删除/净行数；
+- 变更文件数；
+- 生产源码、测试、文档、migration、配置、图片/二进制的分项行数；
+- 新增 package/app/table/test script；
+- 指令文件行数；
+- 验收项数量；
+- 报告中的专项测试数和全量测试数；
+- 是否新增 UI、IPC、队列 handler、migration；
+- 是否真实调用外部能力；
+- 是否 push/PR/CI；
+- 可确定的执行耗时；
+- 证据来源和置信度。
+
+无法准确映射提交与 Issue 时：
+
+- 使用提交信息、历史指令、验收映射和 README 交叉验证；
+- 标记 `MAPPING_CONFIDENCE`；
+- 不得猜测。
+
+特别分析：
+
+- 每个 Issue 的净增长趋势；
+- 测试数量增长趋势；
+- migration/table/package 增长趋势；
+- 指令长度和验收项增长趋势；
+- Issue 012、018、019、020、021、022、024、025、026 是否出现明显规模跃迁；
+- 一次 Issue 的平均和中位变更量；
+- Issue 026 相对历史中位数、P75 和最大值的位置；
+- 是否从“小步 Issue”演变为单 Issue 大型子系统。
+
+
+七、当前仓库规模清单
+--------------------
+
+统计当前 tracked 仓库，至少按以下类别分组：
+
+- `apps/desktop`
+- `apps/web-ui`
+- `apps/clipper`
+- 各 `packages/*`
+- `tests`
+- `docs`
+- migration；
+- fixture/snapshot；
+- scripts/tooling；
+- CI/config；
+- lockfile；
+- 图片、压缩包、构建或二进制。
+
+每组至少记录：
+
+- 文件数；
+- 文本行数；
+- TypeScript/JavaScript/CSS/HTML/SQL/Markdown/JSON 等语言分布；
+- 空行和注释如能可靠计算则单列；
+- 最大文件；
+- 超过 400、800、1,200 行的文件数；
+- 生产源码与测试代码比例；
+- 文档与生产源码比例；
+- 测试与生产源码比例。
+
+不得把以下项目计入“手写生产源码”：
+
+- package-lock；
+- 生成包；
+- 构建产物；
+- 图片或二进制；
+- 自动生成 snapshot；
+- 大段 fixture；
+- 历史指令和验收文档。
+
+在 CSV 中为每个文件输出：
+
+- path；
+- category；
+- language；
+- current lines；
+- Issue 026 additions；
+- Issue 026 deletions；
+- binary/generated suspicion；
+- owner package；
+- concern flag。
+
+
+八、Issue 026 专项规模审计
+--------------------------
+
+以 Issue 026 提交的动态 parent 为基线，精确统计该提交。
+
+必须回答：
+
+1. 报告中提到的“约 14,000 行”实际是多少；
+2. 其中生产源码、测试、fixture、migration、UI/IPC、文档、配置各占多少；
+3. 新增、删除、净增长分别是多少；
+4. 新增文件和修改文件分别多少；
+5. 新增行最多的 30 个文件是什么；
+6. 超过 400 行的新生产源码文件有哪些；
+7. 超过 800 行的新测试文件有哪些；
+8. 是否存在生成产物或构建包误入 Git；
+9. 是否存在大段复制 fixture、snapshot 或重复 JSON；
+10. 是否提前实现 Issue 027—030；
+11. 是否存在与 FACT_MAPPING 无关的重构；
+12. 是否创建第二套 Draft、Claim、Evidence、FactEvaluation 或 Quality 真相；
+13. `packages/quality` 是否只实现 FACT_MAPPING，还是已隐含未来质量编排；
+14. v19 新增多少表、列、索引、trigger、FK、枚举和状态；
+15. 60 项验收是否确实需要对应实现，还是存在测试和抽象膨胀；
+16. 253 项专项测试中，多少是独立行为、参数化变体、边界组合或重复断言；
+17. 14,000 行的主要驱动力属于：
+    -必要领域复杂度；
+    -现有架构兼容成本；
+    -指令过度具体；
+    -测试样板；
+    -UI/IPC 重复；
+    -migration 重建；
+    -范围扩张；
+    -其他。
+
+给出 Issue 026 规模判定：
+
+- `JUSTIFIED`
+- `LARGE_BUT_CONTROLLED`
+- `OVERBUILT`
+- `SCOPE_EXPANDED`
+- `ARCHITECTURALLY_UNSAFE`
+
+并说明置信度。
+
+
+九、架构健康度
+--------------
+
+绘制并分析当前实际依赖关系：
+
+- apps；
+- packages；
+- shared DTO；
+- Electron main/preload/renderer；
+- DB/repository；
+- workflows/queue；
+- Provider/model accounting；
+- Search/Fetch/Clipper；
+- Catalog/Evidence/Dossier/Authenticity；
+- Topics/Experiments/Briefs/Copy/Quality。
+
+至少检查：
+
+- workspace package 数量和新增趋势；
+- 包职责是否单一；
+- 是否存在循环依赖；
+- 跨层 import；
+- renderer 是否越权；
+- preload/IPC 方法数量与增长；
+- shared DTO 是否过大；
+- main runtime 是否成为 god object；
+- repository 是否重复；
+- validator 是否重复；
+- 状态机和 enum 是否重复；
+- 同一业务 identity 是否在多处表达；
+- 业务规则是否在 Domain、DB、UI、tests 多份手工同步；
+- 未来 Issue 预留是否已经形成事实上的实现；
+- 新 package 是否带来价值，还是只把同一逻辑分散。
+
+对每个 package 给出：
+
+- 职责；
+- 成熟度；
+- 消费者；
+- 生产 LOC；
+- 测试 LOC；
+- 对外 exports；
+- 主要依赖；
+- 风险；
+- 是否应保留、合并、冻结或延后扩展。
+
+不要实施合并，只提出建议。
+
+
+十、数据模型与 migration 健康度
+-------------------------------
+
+审计 v1 至当前 migration：
+
+- migration 数；
+- 每版新增/重建表；
+- 当前表、列、索引、trigger、FK 数量；
+- STRICT 覆盖；
+- JSON 字段数量和用途；
+- append-only 表数量；
+- current pointer 模式数量；
+- 稳定 identity + immutable version 模式数量；
+- dependency/invalidation 表数量；
+- transition/audit 表数量；
+- plan/run 表数量；
+- 相似 schema 的重复程度；
+- 质量、Draft、Brief、Dossier、Evidence 的真相边界。
+
+重点判断：
+
+- 是否为单用户本地工具建立了超出必要程度的企业级事件模型；
+- 不可变版本和审计是否在所有领域都真正需要；
+- 是否存在过多 current pointer、transition、run、dependency 表；
+- JSON 与规范化表的边界是否一致；
+- migration 重建复杂度是否快速上升；
+- 未来修改是否会因历史 migration 和兼容测试变得极慢；
+- v19 是否破坏或复制 v12/v17/v18 的事实；
+- `quality_checks` 汇总桥接是否清晰；
+- 是否存在难以维护的跨表失效传播。
+
+给出未来 schema 增长预测：
+
+- 按当前方式完成 Issue 027—030 预计新增多少表、状态和 migration；
+- 该预测必须基于历史趋势，明确标记为推断；
+- 提出阻止 schema 继续指数式增长的设计原则。
+
+
+十一、测试体系与验证成本
+------------------------
+
+不要重跑测试。读取：
+
+- `package.json` scripts；
+- workspace scripts；
+- CI workflow；
+- 历史验收证据；
+- 现有测试文件；
+- 可用的本地日志或 evidence。
+
+统计：
+
+- 专项测试命令数量；
+- 测试文件数量；
+- 测试用例数量；
+- 各领域测试数量；
+- Issue 026 前后增量；
+- full test 与专项测试是否重复执行同一文件；
+- CI 中同一测试是否被多次运行；
+- 构建、打包和 smoke 的重复关系；
+- Chrome/Edge 真实 smoke 是否被无关 Issue 反复执行；
+- `npm ci`、全量测试、打包、smoke 的可证明耗时；
+- 无法证明的耗时标记 UNKNOWN。
+
+重点检查：
+
+- 测试是否围绕行为，还是围绕实现细节；
+- 是否存在大量源码字符串/文件名治理测试；
+- 是否存在复制粘贴测试；
+- 是否可参数化却逐例展开；
+- 是否有低价值排列组合；
+- 同一 invariant 是否在过多套件重复；
+- 测试是否对重构过度敏感；
+- fixture 是否过重；
+- 是否存在“测试数量增长被误当质量增长”；
+- 是否缺少真正端到端用户流程，反而拥有大量单元测试；
+- 托管 CI 未运行时，本地全部门禁的收益与成本；
+- 每个 Issue 都运行 release-level gate 是否合理。
+
+提出三级验证方案：
+
+- 开发期专项验证；
+- Issue 级集成门禁；
+- 里程碑/发布级全量门禁。
+
+明确哪些命令应：
+
+- 每次修改运行；
+- 每个 Issue 最终运行一次；
+- 只在相关模块变化时运行；
+- 只在 M3 收口运行；
+- 交由 GitHub 托管 CI。
+
+
+十二、指令与治理体系审计
+------------------------
+
+读取根 `AGENTS.md`、Codex master instruction、Issue 001—026 历史指令和验收映射。
+
+统计：
+
+- 每份 Issue 指令行数；
+- 每份验收映射项目数；
+- 公共规则进入 AGENTS 前后的指令变化；
+- Issue 025 和 026 指令长度；
+- 指令行数与代码净增长、测试增长的关系；
+- 重复规则数量；
+- 相互冲突或过度严格规则；
+- 导致反复全量门禁的具体措辞；
+- 导致每个领域都版本化、审计、队列化、迁移化的具体措辞；
+- 导致 Codex 不敢复用或简化的验收方式；
+- 文件 hash、固定路径、动态基线规则是否已正确治理。
+
+必须评价：
+
+- 1143 行 Issue 026 指令是否明显过长；
+- 60 项验收是否造成设计向验收表而不是用户价值优化；
+- “每项独立证据”是否诱发大量重复测试；
+- “每个操作都版本化、token、queue、history、audit”是否超出真实风险；
+- “所有门禁从 npm ci 重跑”是否应只用于里程碑；
+- 当前 `AGENTS.md` 是否包含互相重复的两套规则；
+- 未来指令应保留和删除哪些内容。
+
+输出一份建议的“未来 Issue 精简模板”，但不要修改仓库。模板必须包含：
+
+- 一页目标和范围；
+- 现有能力复用；
+- 最多 10—20 个核心验收；
+- 预期生产源码/测试/schema 预算；
+- 超过预算时的停止审计门；
+- 专项测试策略；
+- Issue 级与里程碑级门禁分离；
+- 明确不做；
+- 单一提交和停止点。
+
+
+十三、产品完成度与真实用户价值
+------------------------------
+
+不能只按 Issue “完成”数量评估。为每项主要能力标记成熟度：
+
+- `CONTRACT_ONLY`
+- `PERSISTED`
+- `MOCK_VERIFIED`
+- `UI_EXPOSED`
+- `LOCAL_E2E_VERIFIED`
+- `REAL_INTEGRATION_VERIFIED`
+- `PRODUCTION_READY`
+
+至少覆盖：
+
+- 设置与本地数据根；
+- 本地凭据；
+- Provider；
+- 能力探测；
+- 成本账本；
+- SearchProvider；
+- 公开页面 Fetch；
+- Browser Clipper；
+- 书目发现；
+- Source/Evidence/Claim；
+- Dossier；
+- 阅读真实性；
+- Topic Pool；
+- Experiment；
+- Content Brief；
+- Copy；
+- Fact Mapping；
+- 质量检查；
+- 图片；
+- 审批；
+- 导出；
+- 数据回收；
+- 复盘。
+
+必须回答：
+
+- 用户今天启动应用后能完成哪些真实任务；
+- 哪些页面只有状态展示、fixture 或 scaffold；
+- 哪些路径必须手工提供测试数据才能运行；
+- 哪些 Provider 仍没有真实 codec/配置验证；
+- 是否存在从空书库到一篇可审阅 Draft 的真实端到端路径；
+- 是否存在从真实公开页面到 Source/Claim/Dossier/Brief/Copy/Fact Mapping 的真实路径；
+- 是否可以不依赖开发 fixture 演示；
+- 当前代码量与可用能力是否匹配；
+- 当前项目是基础设施优先还是用户价值优先；
+- 是否应在 Issue 027 前做一个最小真实垂直切片。
+
+不要调用真实服务来回答；只根据实现和已有证据分类。
+
+
+十四、PRD、Roadmap 与开发方向偏差
+--------------------------------
+
+逐项对照：
+
+- 用户真实目标；
+- 冻结 PRD；
+- 当前 Roadmap；
+- 实际提交和 UI；
+- 已有测试和证据。
+
+检查以下潜在偏差：
+
+- 过度基础设施化；
+- 过度版本化和审计；
+- Mock/fixture 完成度被写成产品完成度；
+- 大量质量系统早于真实内容闭环；
+- 单用户工具采用接近多租户/分布式系统的复杂度；
+- 过多队列、token、计划、运行和失效模型；
+- UI 页面数量增长但真实可操作数据不足；
+- 每个 Issue 都扩展 Schema 和 IPC；
+- 真实搜索、研究、内容生成尚未形成可用闭环；
+- 高测试数量掩盖缺少真实业务验证；
+- Issue 027—030 继续复制 Issue 026 模式的风险；
+- 原本 28—40 篇每周目标是否被工程体系推远；
+- 当前性能、恢复和审计要求是否与单用户 Windows 工具风险匹配。
+
+同时识别不能轻率删除的合理复杂度：
+
+- 密钥隔离；
+- SQLite migration/备份；
+- Windows/Electron 安全；
+- 事实来源链；
+- 硬约束回归；
+- 用户数据保护；
+- 必要幂等和崩溃恢复。
+
+结论必须平衡，不能把所有工程质量都归为过度设计。
+
+
+十五、失控风险评分
+------------------
+
+按 0—100 评分，100 表示最好：
+
+- 范围控制；
+- 架构清晰度；
+- 数据模型可维护性；
+- 测试有效性；
+- 验证效率；
+- 指令质量；
+- 开发节奏；
+- 真实产品完成度；
+- 端到端可用性；
+- 可移植性；
+- 安全与隐私；
+- 未来变更成本；
+- 单用户场景适配度；
+- 整体项目可控性。
+
+每项包含：
+
+- 分数；
+- 证据；
+- 置信度；
+- 主要扣分项；
+- Issue 027 前是否必须处理。
+
+给出最终总判定：
+
+- `CONTROLLED`
+- `CONTROLLED_BUT_OVERBUILT`
+- `DRIFTING`
+- `PARTIALLY_OUT_OF_CONTROL`
+- `OUT_OF_CONTROL`
+
+总判定不能简单平均，必须解释关键门槛。
+
+
+十六、Issue 027 授权建议
+------------------------
+
+给出一个且仅一个建议：
+
+- `AUTHORIZED_AS_PLANNED`
+- `AUTHORIZED_WITH_REDUCED_SCOPE`
+- `PAUSE_FOR_STABILIZATION`
+- `PAUSE_FOR_ARCHITECTURE_SIMPLIFICATION`
+- `PAUSE_FOR_VERTICAL_SLICE`
+- `STOP_AND_REPLAN_M3`
+
+说明：
+
+- 为什么；
+- Issue 027 前必须完成什么；
+- 哪些工作可以延后到 Issue 030；
+- 哪些 schema/UI/queue 能力不得继续复制；
+- 是否需要先修改 `AGENTS.md`；
+- 是否需要先做一次独立 code review；
+- 是否需要推送 Issue 026 并运行托管 CI；
+- 最小时间和改动范围；
+- 继续原计划的最坏后果。
+
+
+十七、后续治理调整建议
+----------------------
+
+至少给出以下方面的具体建议：
+
+1. Issue 规模预算
+   - 开工前预估生产源码、测试、表、IPC、文档和文件数；
+   -超过预算 150% 时停止；
+   -超过预算 200% 时必须外部复核。
+
+2. 指令长度
+   -公共规则只留在 AGENTS；
+   -未来 Issue 指令建议最大行数；
+   -超过上限时拆分 Issue 或减少实现细节。
+
+3. 验收数量
+   -核心行为控制在 10—20 项；
+   -参数组合用表驱动测试；
+   -不要求每个排列单独写验收证据。
+
+4. 测试分层
+   -开发期专项；
+   -Issue 级集成；
+   -里程碑 release gate；
+   -失败后先专项稳定，再重跑一次最终门禁。
+
+5. Schema 控制
+   -未来质量检查尽量复用同一通用 check/run/finding/dependency 模型；
+   -不得每个检查复制整套 plan/run/version/transition/audit 表；
+   -新增表前提交 schema budget。
+
+6. UI/IPC 控制
+   -优先复用质量工作台；
+   -不得每个检查新增整套页面和重复 IPC；
+   -共享只读详情和确认流程。
+
+7. 垂直切片
+   -在继续扩展质量系统前，验证一条最小真实本地流程；
+   -明确需要真实服务授权的部分和不需要的部分。
+
+8. 中途检查点
+   -新增行数、文件数或表数达到阈值时自动暂停；
+   -先报告，不继续编码和全量测试。
+
+每项建议标记：
+
+- `MANDATORY`
+- `RECOMMENDED`
+- `OPTIONAL`
+
+并说明适用起始 Issue。
+
+
+十八、主报告结构
+----------------
+
+`project-health-audit-after-issue026.md` 必须按以下顺序：
+
+1. 标题、审计日期和动态 Git 基线；
+2. 一页执行摘要；
+3. 最终失控判定；
+4. 十个最重要发现；
+5. Issue 026 14,000 行专项审计；
+6. Issue 001—026 规模与演化；
+7. 当前架构与依赖；
+8. Schema/migration 健康度；
+9. 测试体系与三小时验证问题；
+10. 指令和验收体系问题；
+11. 产品完成度与真实可用路径；
+12. PRD/Roadmap 偏差；
+13. 风险评分表；
+14. Issue 027 授权建议；
+15. 后续治理修改清单；
+16. 30 天恢复或继续计划；
+17. 证据、限制和 UNKNOWN；
+18. 外部评审者需要重点复核的问题。
+
+主报告至少包含：
+
+- Issue 级规模表；
+- package 规模表；
+- 最大文件表；
+- migration/schema 表；
+- 测试套件表；
+- 产品成熟度矩阵；
+- 风险评分表；
+- finding 清单；
+- 行动优先级表。
+
+不使用无证据的“优秀”“完善”“企业级”“生产级”等宣传词。
+
+
+十九、机器 JSON 合同
+--------------------
+
+JSON 顶层至少包含：
+
+- `auditVersion`
+- `generatedAt`
+- `git`
+- `scope`
+- `repositoryMetrics`
+- `issueHistory`
+- `issue026`
+- `architecture`
+- `schema`
+- `tests`
+- `instructions`
+- `productMaturity`
+- `roadmapDrift`
+- `scores`
+- `findings`
+- `issue027Recommendation`
+- `governanceActions`
+- `unknowns`
+- `evidence`
+
+要求：
+
+- 数字使用整数或明确 decimal text；
+- 未知为 `null`，不能伪造 0；
+- 枚举有限；
+- 路径为仓库相对路径；
+- 不包含源码全文、Draft 正文、Evidence 正文、密钥、绝对路径或用户名；
+- 与 Markdown 的数字和结论一致；
+- 生成后使用本地 JSON parser 校验。
+
+
+二十、完成前自检
+----------------
+
+完成前只运行审计自身的轻量检查：
+
+- 四个文件存在；
+- JSON 可解析；
+- CSV 列数一致；
+- Markdown 必需章节存在；
+- finding ID 唯一；
+- Issue 001—026 覆盖状态明确；
+- 数字在 Markdown、JSON、CSV 间一致；
+- 所有路径为相对路径；
+- 没有真实密钥、绝对路径、用户名、Source/Draft 正文；
+- `git status --short` 与开工相比没有 tracked 变化；
+- 没有 commit、push、PR、fetch/pull/rebase/reset；
+- 没有运行全量测试、构建、打包或 smoke；
+- 未进入 Issue 027。
+
+发现数字冲突时修正审计输出，不修改项目。
+
+
+二十一、最终回复
+----------------
+
+最终回复不得只说“审计完成”。必须包含：
+
+- 最终失控判定；
+- Issue 026 规模判定；
+- 三个最高严重度 finding；
+- Issue 027 授权建议；
+- 是否建议先修改 AGENTS；
+- 是否运行过任何测试或外部调用；
+- 四个输出文件的仓库相对路径；
+- Git 工作树和远端未变事实；
+- 提醒用户把四个文件上传给外部评审者。
+
+如果证据不足，不得报告 PASS；应报告 `AUDIT_INCOMPLETE` 和缺失项。
+
+
+二十二、给 Codex 的启动指令
+--------------------------
+
+暂停所有后续开发，不进入 Issue 027。完整读取根级及作用域内 `AGENTS.md` 和本 TXT，严格执行
+Issue 026 后项目健康审计。只允许读取 Git、源码、测试、Schema、历史指令、验收证据和 CI 配置；
+不得修改 tracked 文件，不得运行 npm ci、全量测试、构建、打包或 smoke，不得创建提交或远端
+写入。
+
+在被 Git 忽略的受控临时目录中生成：
+
+- `project-health-audit-after-issue026.md`
+- `project-health-audit-after-issue026.json`
+- `project-size-churn-inventory-after-issue026.csv`
+- `project-audit-evidence-index-after-issue026.md`
+
+报告必须量化 Issue 001—026 的代码、测试、Schema、包、指令和验收增长，专项解释 Issue 026
+约 14,000 行，判断是否失控、哪些开发方向偏离、哪些指令必须修改，并给出 Issue 027 是否授权
+及后续治理方案。完成后停止，等待外部评审，不修改项目。

@@ -63,6 +63,11 @@ describe('repository-facing documentation', () => {
       'docs/instructions/m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt',
+      'docs/instructions/governance/Project-health-audit-after-Issue026-Codex-instruction.txt',
+      'docs/instructions/governance/M3-project-control-recovery-phase1-Codex-instruction.txt',
+      'docs/governance/validation-gate-matrix.md',
+      'docs/governance/future-issue-instruction-template.md',
+      'docs/reviews/issue026-structural-review.md',
     ]) {
       expect(existsSync(resolve(projectRoot, path)), path).toBe(true);
     }
@@ -116,15 +121,16 @@ describe('repository-facing documentation', () => {
   it('gives future agents the frozen safety, migration, validation, and Git boundaries', () => {
     for (const required of [
       'aiDisclosure',
-      '版权风险完全不进入',
-      '不得调用真实模型',
-      'migration 只能按连续版本追加',
-      'npm run test:constraints',
-      '未经用户明确授权，不得 push',
-      'M2（Issue 012—021）以及 M3 Issue 022、',
-      'Issue 023、Issue 024、Issue 025、Issue 026 已经完成',
-      '下一项规划是 M3 Issue 027',
-      'migration v1—v19 已发布',
+      '版权风险不得进入字段',
+      '默认不得调用真实模型',
+      'migration 只能按运行时发现的连续顺序追加',
+      '## 9. 三层验证门禁',
+      '### A. 开发循环',
+      '### B. Issue 完成门禁',
+      '### C. 里程碑 / Release 门禁',
+      '未获明确授权不得 fetch、pull、push',
+      'M3 Issue 022—026 已完成',
+      'Issue 027 尚未开始',
     ]) {
       expect(agents).toContain(required);
     }

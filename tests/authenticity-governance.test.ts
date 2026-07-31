@@ -78,7 +78,7 @@ describe('Issue 021 authenticity architecture and governance', () => {
     expect(issue021).toContain("purpose TEXT NOT NULL CHECK (purpose = 'INTERNAL_ORDERING_ONLY')");
   });
 
-  it('runs a dedicated suite in full test and Windows CI', () => {
+  it('keeps a dedicated suite while Windows CI schedules full discovery once', () => {
     const packageJson = JSON.parse(source('package.json')) as {
       readonly scripts: Readonly<Record<string, string>>;
     };
@@ -86,7 +86,8 @@ describe('Issue 021 authenticity architecture and governance', () => {
       'tests/authenticity-governance.test.ts',
     );
     const ci = source('.github/workflows/ci.yml');
-    expect(ci.match(/npm run test:authenticity/gu)).toHaveLength(1);
+    expect(ci).not.toContain('npm run test:authenticity');
+    expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
     expect(packageJson.scripts.test).toBe('node scripts/run-portable-vitest.mjs run');
   });
 
@@ -108,9 +109,10 @@ describe('Issue 021 authenticity architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/M2[\s\S]{0,120}(?:完成|已完成)/iu);
-      expect(source(path), path).toMatch(/Issue 022/u);
-      expect(source(path), path).toMatch(/Issue 023/u);
+      const progress = source(path);
+      expect(progress, path).toMatch(/M2[\s\S]{0,120}(?:完成|已完成)/iu);
+      expect(progress, path).toMatch(/Issue 022/u);
+      expect(progress, path).toMatch(/Issue 023|Issue 022—026/u);
     }
   });
 });

@@ -25,9 +25,17 @@ interface Workflow {
 
 const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 const workflowPath = resolve(repositoryRoot, '.github/workflows/ci.yml');
+const packagePath = resolve(repositoryRoot, 'package.json');
 const workflowSource = readFileSync(workflowPath, 'utf8');
 const workflow = parse(workflowSource) as Workflow;
+const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as {
+  readonly scripts: Readonly<Record<string, string>>;
+};
 const windowsJob = workflow.jobs['windows-required'];
+const runCommands =
+  windowsJob?.steps
+    .map((step) => step.run?.trim())
+    .filter((command): command is string => command !== undefined) ?? [];
 
 describe('Windows CI configuration', () => {
   it('defines a non-optional Windows required job', () => {
@@ -36,38 +44,41 @@ describe('Windows CI configuration', () => {
     expect(windowsJob?.['continue-on-error']).not.toBe(true);
   });
 
-  it('runs install, all gates, database suites, constraint suites, and dependency audit', () => {
-    const commands = windowsJob?.steps
-      .map((step) => step.run)
-      .filter((command): command is string => command !== undefined)
-      .join('\n');
-
+  it('runs the release environment gates around one complete Vitest suite', () => {
     for (const command of [
       'npm ci',
       'npm run format-check',
       'npm run lint',
       'npm run typecheck',
-      'npm run test:constraints',
-      'npm run test:db',
-      'npm run test:queue',
-      'npm run test:storage',
-      'npm run test:desktop',
-      'npm run test:settings',
-      'npm run test:local-api',
-      'npm run test:portability',
-      'npm run test:providers',
-      'npm run test:capabilities',
-      'npm run test:topics',
-      'npm run test:fact-mapping',
-      'npm run test:electron-smoke',
       'npm run test',
+      'npm run test:electron-smoke',
       'npm run build',
       'npm run package:desktop',
+      'npm run package:clipper',
       'npm run test:packaged-smoke',
       'npm run audit:dependencies',
     ]) {
-      expect(commands).toContain(command);
+      expect(runCommands).toContain(command);
     }
+  });
+
+  it('does not schedule overlapping specialized Vitest selectors before the full suite', () => {
+    const vitestScripts = new Set(
+      Object.entries(packageJson.scripts)
+        .filter(([, command]) => command.includes('run-portable-vitest.mjs'))
+        .map(([name]) => name),
+    );
+    const scheduledNpmScripts = runCommands.flatMap((command) => {
+      const match = /^npm run ([\w:-]+)$/u.exec(command);
+      return match?.[1] === undefined ? [] : [match[1]];
+    });
+
+    expect(scheduledNpmScripts.filter((name) => vitestScripts.has(name))).toEqual(['test']);
+    expect(runCommands.filter((command) => command === 'npm run test')).toHaveLength(1);
+    expect(packageJson.scripts['test:constraints']).toContain('tests/agents-governance.test.ts');
+    expect(packageJson.scripts['test:fact-mapping']).toContain(
+      'tests/fact-mapping-governance.test.ts',
+    );
   });
 
   it('uses least-privilege permissions and does not expose workflow environment values', () => {

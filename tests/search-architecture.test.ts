@@ -110,9 +110,11 @@ describe('Issue 015 architecture boundaries', () => {
     expect(execution).not.toMatch(/\.enqueue(?:Job)?\s*\(/u);
   });
 
-  it('runs test:search in package scripts and Windows CI', () => {
+  it('keeps test:search available while Windows CI uses one full selector', () => {
     const packageJson = JSON.parse(source('package.json')) as { scripts: Record<string, string> };
     expect(packageJson.scripts['test:search']).toContain('search-contracts.test.ts');
-    expect(source('.github/workflows/ci.yml')).toContain('npm run test:search');
+    const ci = source('.github/workflows/ci.yml');
+    expect(ci).not.toContain('npm run test:search');
+    expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
   });
 });

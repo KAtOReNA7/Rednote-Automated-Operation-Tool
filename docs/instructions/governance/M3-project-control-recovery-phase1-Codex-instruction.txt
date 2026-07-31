@@ -1,0 +1,215 @@
+项目控制恢复 Phase 1：治理收缩与 Issue 026 结构复核
+
+一、授权范围
+
+本任务是独立的治理任务，不是 Issue 027。
+
+只允许：
+
+1. 复核当前仓库与 Issue 026 的结构风险。
+2. 去重并收缩 AGENTS.md 的过程规则。
+3. 将测试门禁拆分为开发、Issue、里程碑/Release 三层。
+4. 在不降低安全、隐私、数据完整性约束的前提下，消除可证明的重复测试调度。
+5. 建立后续 Issue 的规模预算和自动暂停规则。
+6. 更新与本任务直接相关的治理测试、CI 配置和治理文档。
+
+禁止：
+
+- 实现 Issue 027 或任何产品功能。
+- 修改业务 Schema、migration、领域状态机、repository、IPC、preload、renderer 业务页面或运行时行为。
+- 重写或删除 Issue 026 实现。
+- 读取真实密钥或用户内容，调用真实模型、搜索、网页、图片或业务 API。
+- push、PR、合并、rebase、reset、amend 或改写历史。
+
+二、可迁移起点
+
+1. 动态发现仓库根目录，不使用机器绝对路径。
+2. 以任务开始时的当前 HEAD 为基线，不预置 SHA。
+3. 读取当前分支、HEAD、origin/main 和工作树状态。
+4. 若存在本任务指令文件以外的未提交改动，立即停止并报告，不覆盖用户文件。
+5. 不把换行、文件 SHA-256、盘符、用户名、Node/Electron 补丁版本作为启动门禁。
+6. 将本指令唯一归档到仓库现有的治理类 instructions 目录；不得在根目录或桌面保留第二份。
+
+三、必须先读
+
+- 当前 AGENTS.md 全文。
+- package.json 的全部 test/build/package scripts。
+- .github/workflows/ci.yml。
+- Issue 026 指令、验收映射和本地证据。
+- packages/db/src/migrations.ts 中 v19。
+- Issue 026 新增的 quality、repository、workflow、IPC、preload 和 UI 文件。
+- 若存在 `.rednote-temp/project-health-audit-after-issue026/`，读取其中四份审计输出；不存在时不得阻塞，以仓库证据独立复核。
+
+四、先做结构复核，后做治理修改
+
+在修改文件前形成简短事实清单，至少回答：
+
+1. v19 的最终净新增表、trigger、index、IPC 数量。
+2. Issue 026 的核心真相是否仍为 Draft、Claim、Evidence 和 FactEvaluation。
+3. fact-mapping-repository.ts 的主要职责是否可以分组，但本任务不拆文件。
+4. 哪些测试是 Issue 026 专属，哪些只是重复纳入共享 settings-ipc。
+5. 哪些问题必须在 Issue 027 前解决，哪些可推迟到 M3 收口。
+
+将结论写入：
+
+`docs/reviews/issue026-structural-review.md`
+
+该文档必须区分：
+
+- 已验证事实；
+- 静态推断；
+- 未知；
+- MUST_FIX_BEFORE_ISSUE_027；
+- DEFERRED_WITH_REASON。
+
+不得把本任务称为外部独立审计；它是仓库内结构复核。
+
+五、AGENTS.md 治理收缩
+
+重构当前 AGENTS.md，而不是在末尾再追加一套规则。
+
+要求：
+
+1. 同一主题只保留一个权威规则块。
+2. 合并重复的 Git、密钥、migration、测试、文档、验收和停止规则。
+3. 保留且不得弱化：
+   - aiDisclosure 固定为 false 且不参与门禁或决策；
+   - 版权风险不进入门禁、评分、审批、优先级、排期或导出；
+   - 禁止平台自动登录、发布、评论、私信、验证码和风控规避；
+   - 本地优先、密钥隔离、Electron renderer 边界；
+   - SQLite migration 不可变、备份、回滚和数据完整性；
+   - 来源链、用户数据保护和必要的幂等/崩溃恢复；
+   - 禁止开卷数据、盗版电子书和磨铁内部业务数据。
+4. 公共规则只在 AGENTS.md 定义；未来 Issue 指令只能引用，不得整段重复。
+5. 删除“每个验收排列都必须单独举证”等会诱导证明样板的表述，改为风险导向、表驱动和代表性边界证据。
+
+六、三层验证门禁
+
+在 AGENTS.md 中建立以下权威模型：
+
+A. 开发循环
+
+- 只运行受影响 package/文件的测试。
+- 必要时运行增量 typecheck、lint 或格式检查。
+- 修复失败后先重跑失败项，不从 npm ci 或全量门禁重新开始。
+
+B. Issue 完成门禁
+
+- 运行受影响领域专项测试。
+- 运行直接相邻的集成、约束或 migration 测试。
+- 全量 Vitest 最多一次，并且仅在最终候选状态运行。
+- 不得在专项测试已选择相同文件后，再通过多个脚本无差别重复这些文件。
+- npm ci 每个最终验证序列最多一次；依赖和 lockfile 未变时，本地治理任务可不运行。
+
+C. 里程碑/Release 门禁
+
+- 才运行完整 npm ci、全量测试、build、desktop/clipper package、Electron smoke、packaged smoke、真实浏览器 smoke 和依赖审计的适用集合。
+- 真实浏览器 smoke 只在 Clipper/Local API/浏览器集成发生变化，或里程碑/Release 时运行。
+- 不适用的门禁必须记录理由，不得为了数量而执行。
+
+七、测试与 CI 去重
+
+1. 生成测试选择矩阵，列出每个 test script 的文件集合、环境差异和独立信号。
+2. 只有当两个命令选择相同文件且没有不同环境/配置语义时，才可认定为重复。
+3. 专项 scripts 继续保留给开发者按需运行。
+4. CI 不得串行运行全部专项子集后再运行覆盖同一文件的全量 Vitest。
+5. 为 CI 选择一个清晰方案：
+   - 单次全量 Vitest；或
+   - 互不重叠的稳定分片。
+6. 独立的 Electron、packaged、浏览器或安全进程边界测试不因名称相似而删除。
+7. 不删除测试文件，不降低断言，不用 skip/todo/only 绕过失败。
+8. 将矩阵和最终方案写入：
+
+`docs/governance/validation-gate-matrix.md`
+
+八、后续 Issue 默认预算
+
+在 AGENTS.md 中加入默认预算；只有用户在任务开始前明确批准，Issue 指令才可覆盖：
+
+- 生产源码新增不超过 1,500 行；
+- 测试新增不超过 1,200 行；
+- 净新增业务表不超过 2；
+- 新增 trigger 不超过 6；
+- 新增 IPC channel 不超过 2；
+- 变更文件不超过 25；
+- Issue 指令建议不超过 300 行；
+- 核心验收 10—20 项。
+
+执行规则：
+
+- 达到任一预算 100%：停止扩展，先报告实际值和剩余工作。
+- 超过任一预算 150%：自动暂停，不继续编码或运行全量门禁。
+- 预计超过 200%：必须拆分任务或取得外部复核及用户重新授权。
+- 安全修复和不可分割 migration 可申请例外，但不得自行默认豁免。
+- 代码行数不是质量目标；允许用更少代码完成。
+
+九、治理测试
+
+更新现有 AGENTS/governance 测试，至少验证：
+
+1. 硬约束仍存在且语义未改变。
+2. 三层门禁各有且仅有一个权威定义。
+3. 预算和 100%/150%/200% 停止规则存在。
+4. 不再有两套相互重复的公共过程规则标记。
+5. CI 不再静态调度可证明重复的 Vitest 文件集合。
+6. 未来 Issue 指令模板引用 AGENTS，不复制整套门禁。
+
+测试应检查语义和结构，不把整段文案或当前机器路径冻结为脆弱快照。
+
+十、实际验证限制
+
+本治理任务不允许多轮全量门禁。
+
+修改前：
+
+- 只做 Git、脚本、CI 和测试选择的静态盘点。
+- 不运行 npm ci、全量测试、build、package 或 smoke。
+
+修改后按顺序：
+
+1. 格式检查。
+2. lint。
+3. typecheck。
+4. governance/CI 配置专项测试。
+5. 如果 package.json 或 CI 的测试调度发生变化，运行一次全量 Vitest，证明未遗漏测试；否则不运行。
+
+本任务不得运行 desktop package、clipper package、Electron smoke、packaged smoke 或真实浏览器 smoke，因为产品代码没有变化。
+
+若最终全量 Vitest 失败：
+
+- 先运行失败的精确测试并修复本任务引入的问题；
+- 精确测试通过后，最多再运行一次全量 Vitest；
+- 仍失败则停止，不提交，不通过扩大范围掩盖问题。
+
+依赖未变化，不运行 npm audit；若意外出现依赖变化，应先撤销该范围外变化。
+
+十一、验收标准
+
+1. Issue 027 和产品行为均未实现或修改。
+2. Issue 026 结构复核清楚区分事实、推断和未知。
+3. AGENTS 公共过程规则完成去重，硬约束没有弱化。
+4. 开发、Issue、里程碑/Release 三层门禁成为唯一权威模型。
+5. CI 不再重复执行可证明相同的 Vitest 文件集合。
+6. 后续 Issue 默认预算和自动暂停阈值生效。
+7. 没有业务 Schema、migration、IPC、UI、repository 或 runtime 改动。
+8. 实际验证次数符合本指令限制，无重复全量门禁。
+9. 工作树最终干净，只创建一个本地提交。
+10. 未 push、未创建 PR、未合并、未产生外部业务连接或费用。
+
+十二、提交与最终报告
+
+全部验收通过后创建唯一一个本地提交，建议提交信息：
+
+`chore(governance): tighten issue budgets and validation gates`
+
+最终报告必须简洁列出：
+
+- 动态起点、最终提交、工作树和远端差异；
+- AGENTS 去重前后规则块数量；
+- 修改前后 CI/test 命令矩阵；
+- 本轮实际执行的每条验证命令及次数；
+- 是否运行全量 Vitest及其唯一原因；
+- Issue 026 MUST_FIX 与 DEFERRED 清单；
+- 下一步仍为“最小本地垂直切片”，不得自动进入 Issue 027。
+
+完成后停止。

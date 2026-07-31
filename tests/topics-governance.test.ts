@@ -82,14 +82,16 @@ describe('M3 Issue 022 Topic architecture and governance', () => {
     expect(issue022).toContain('topic_generation_runs');
   });
 
-  it('runs one dedicated Topic suite in the full test discovery and Windows CI', () => {
+  it('keeps one dedicated Topic suite while Windows CI schedules full discovery once', () => {
     const packageJson = JSON.parse(source('package.json')) as {
       readonly scripts: Readonly<Record<string, string>>;
     };
     expect(packageJson.scripts['test:topics']).toContain('tests/topics-governance.test.ts');
     expect(packageJson.scripts['test:topics']).toContain('tests/topics-renderer.test.tsx');
     expect(packageJson.scripts.test).toBe('node scripts/run-portable-vitest.mjs run');
-    expect(source('.github/workflows/ci.yml').match(/npm run test:topics/gu)).toHaveLength(1);
+    const ci = source('.github/workflows/ci.yml');
+    expect(ci).not.toContain('npm run test:topics');
+    expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
   });
 
   it('tracks contracts, ADR, plan, acceptance map, instruction index, and M3 progress', () => {
@@ -109,8 +111,9 @@ describe('M3 Issue 022 Topic architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/Issue 022.*(?:已完成|完成)|已完成.*Issue 022/isu);
-      expect(source(path), path).toMatch(/Issue 023/iu);
+      const progress = source(path);
+      expect(progress, path).toMatch(/Issue 022.*(?:已完成|完成)|已完成.*Issue 022/isu);
+      expect(progress, path).toMatch(/Issue 023|Issue 022—026/iu);
     }
   });
 });

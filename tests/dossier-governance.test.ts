@@ -9,6 +9,25 @@ function source(path: string): string {
   return readFileSync(join(ROOT, path), 'utf8');
 }
 
+function coversIssue(content: string, issueNumber: number): boolean {
+  const ranges = content.matchAll(/\bIssues?\s+0*(\d{1,4})\s*[—–-]\s*0*(\d{1,4})\b/giu);
+  for (const match of ranges) {
+    const startText = match[1];
+    const endText = match[2];
+    if (startText === undefined || endText === undefined) continue;
+    const start = Number.parseInt(startText, 10);
+    const end = Number.parseInt(endText, 10);
+    if (start <= issueNumber && issueNumber <= end) return true;
+  }
+
+  const explicitIssues = content.matchAll(/\bIssues?\s+0*(\d{1,4})\b/giu);
+  for (const match of explicitIssues) {
+    const value = match[1];
+    if (value !== undefined && Number.parseInt(value, 10) === issueNumber) return true;
+  }
+  return false;
+}
+
 function treeSource(path: string): string {
   const root = join(ROOT, path);
   return readdirSync(root, { withFileTypes: true })
@@ -80,8 +99,19 @@ describe('Issue 020 dossier architecture and governance', () => {
       'docs/product/xiaohongshu-development-roadmap-v1.md',
       'docs/instructions/README.md',
     ]) {
-      expect(source(path), path).toMatch(/Issue 022/u);
-      expect(source(path), path).toMatch(/Issue 023/u);
+      const progress = source(path);
+      expect(coversIssue(progress, 22), path).toBe(true);
+      expect(coversIssue(progress, 23), path).toBe(true);
     }
+  });
+
+  it('recognizes explicit and compact Issue ranges without accepting unrelated numbers', () => {
+    expect(coversIssue('Issue 023 已完成', 23)).toBe(true);
+    expect(coversIssue('Issue 022—026 已完成', 23)).toBe(true);
+    expect(coversIssue('Issues 022–028 completed', 23)).toBe(true);
+    expect(coversIssue('Issue 022-028 completed', 23)).toBe(true);
+    expect(coversIssue('Issue 024 已完成', 23)).toBe(false);
+    expect(coversIssue('完成范围 022—026', 23)).toBe(false);
+    expect(coversIssue('Issue 024—028 已完成', 23)).toBe(false);
   });
 });

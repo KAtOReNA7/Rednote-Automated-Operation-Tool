@@ -123,9 +123,14 @@ describe('Issue 012 provider architecture and scope', () => {
     );
   });
 
-  it('adds test:providers to Windows CI without secret or real provider configuration', () => {
+  it('keeps test:providers available while CI uses one full selector without secrets', () => {
+    const packageJson = JSON.parse(source('package.json')) as {
+      readonly scripts: Readonly<Record<string, string>>;
+    };
     const workflow = source('.github/workflows/ci.yml');
-    expect(workflow).toContain('npm run test:providers');
+    expect(packageJson.scripts['test:providers']).toContain('tests/providers-architecture.test.ts');
+    expect(workflow).not.toContain('npm run test:providers');
+    expect(workflow.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
     expect(workflow).not.toMatch(/OPENAI_API_KEY|CONTENT_AI_API_KEY|PROVIDER_BASE_URL|MODEL_ID/u);
   });
 });

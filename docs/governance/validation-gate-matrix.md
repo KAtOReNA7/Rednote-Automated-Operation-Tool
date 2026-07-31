@@ -1,0 +1,79 @@
+# Validation Gate Matrix
+
+## 目的与判定规则
+
+本矩阵记录根 `package.json` 的全部 27 个 `test`/`test:*` script。Vitest 专项脚本保留给开发
+循环和 Issue 定位；只有“选择相同文件且没有不同环境/配置语义”才视为重复。Electron、
+packaged 与真实浏览器 smoke 使用不同进程/产物，不能因为名称含 `test` 而与 Vitest 合并。
+
+文件集合均位于 `tests/`；`*.test.*` 表示实际列出的 `.test.ts` 或 `.test.tsx` 文件，不是运行时
+扩张 glob。
+
+## Script 选择矩阵
+
+| Script                  | 文件集合 / 执行入口                                                                                                                                                                                                                                                                                                         | 环境差异与独立信号                                                        | 门禁用途                        |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- | ------------------------------- |
+| `test`                  | Vitest 自动发现全部 198 个测试文件                                                                                                                                                                                                                                                                                          | portable Vitest；唯一完整测试信号                                         | Issue 最终候选最多一次；CI 单次 |
+| `test:constraints`      | `hard-constraints`, `db-hard-constraints`, `forbidden-scope.architecture`, `agents-governance`                                                                                                                                                                                                                              | portable Vitest；产品/DB/架构/治理硬约束                                  | 开发/Issue 专项                 |
+| `test:db`               | `db-migrations`, `db-recovery`, `db-persistence-windows`, `db-hard-constraints`, `provider-capability-db`, `fetch-db`                                                                                                                                                                                                       | portable Vitest；SQLite 新库、升级、恢复、Windows                         | DB 变更专项                     |
+| `test:queue`            | `queue-state-machine`, `queue-migration`, `queue-enqueue-payload`, `queue-lease-lifecycle`, `queue-control-recovery`, `queue-worker`, `queue-contracts`, `queue-performance-platform`, `queue-hard-constraints`                                                                                                             | portable Vitest；queue/lease/recovery                                     | Queue 变更专项                  |
+| `test:storage`          | `storage-root-paths`, `storage-repository`, `storage-concurrency`, `storage-logging`, `storage-db-paths`, `storage-architecture`                                                                                                                                                                                            | portable Vitest；路径、文件并发与隔离                                     | Storage 变更专项                |
+| `test:desktop`          | `desktop-contracts`, `desktop-security`, `desktop-window-state`, `desktop-renderer`, `desktop-architecture`, `provider-capability-renderer`                                                                                                                                                                                 | jsdom/portable Vitest；renderer 合同与静态安全                            | Desktop 代码专项                |
+| `test:settings`         | `settings-schema`, `settings-service`, `settings-credential-store`, `settings-locator-picker`, `settings-ipc`, `settings-renderer`, `settings-diagnostics`, `settings-secret-egress`, `settings-architecture`                                                                                                               | portable Vitest；设置、凭据与 egress                                      | Settings 变更专项               |
+| `test:local-api`        | `local-api-schema`, `local-api-binding`, `local-api-host-origin-cors`, `local-api-request-limits`, `local-api-pairing-auth`, `local-api-rate-limit`, `local-api-lifecycle`, `local-api-ipc`, `local-api-renderer`, `local-api-secret-egress`, `local-api-architecture`, `electron-smoke-support`                            | portable Vitest + 本机 loopback fixture；绑定/auth/lifecycle              | Local API 变更专项              |
+| `test:providers`        | `providers-contracts`, `providers-configuration`, `providers-capabilities`, `providers-text`, `providers-structured`, `providers-vision`, `providers-image`, `providers-usage`, `providers-errors-retry`, `providers-http-transport`, `providers-mock`, `providers-egress`, `providers-architecture`                        | portable Vitest + mock/loopback；provider 协议与 egress                   | Provider 变更专项               |
+| `test:portability`      | `portability`                                                                                                                                                                                                                                                                                                               | portable Vitest；跨卷/路径与换行身份                                      | 可移植性专项                    |
+| `test:capabilities`     | `provider-capability-plan`, `provider-capability-classifier`, `provider-capability-transport`, `provider-capability-runner`, `provider-capability-guard`, `provider-capability-db`, `provider-capability-runtime`, `provider-capability-renderer`, `provider-capability-secret-egress`, `provider-capability-architecture`  | portable Vitest + scripted transport；显式探测边界                        | Capability 变更专项             |
+| `test:model-accounting` | `model-accounting-contracts`, `model-execution-service`, `model-accounting-db`, `model-cache-storage`, `model-accounting-runtime`, `model-accounting-renderer`, `settings-ipc`, `desktop-renderer`, `provider-capability-runtime`                                                                                           | portable Vitest + mock；执行、缓存、预算/成本账本                         | Accounting 变更专项             |
+| `test:search`           | `search-contracts`, `search-url-candidates`, `search-adapters`, `search-execution`, `search-db`, `search-architecture`, `search-renderer`, `search-egress`                                                                                                                                                                  | portable Vitest + scripted mock；SearchProvider/egress                    | Search 变更专项                 |
+| `test:fetch`            | `fetch-contracts`, `fetch-network-policy`, `fetch-robots`, `fetch-html`, `fetch-db`, `fetch-execution`, `fetch-architecture`, `fetch-renderer`, `fetch-egress`                                                                                                                                                              | portable Vitest + 本机 loopback；fetch policy/robots                      | Fetch 变更专项                  |
+| `test:clipper`          | `clipper-contracts`, `clipper-service-worker`, `clipper-db`, `clipper-local-api`, `clipper-screenshot`, `clipper-renderer`, `clipper-architecture`, `clipper-egress`, `clipper-real-smoke-harness`                                                                                                                          | portable Vitest；扩展逻辑与 real-smoke harness，不启动真实浏览器          | Clipper 逻辑专项                |
+| `test:clipper-real`     | `build:clipper` + TypeScript build + `run-clipper-real-smoke.mjs`                                                                                                                                                                                                                                                           | 真实 Chrome/Edge 扩展进程边界                                             | 浏览器变更或 Release            |
+| `test:bibliography`     | `bibliography-contracts`, `bibliography-repository`, `bibliography-discovery`, `bibliography-capacity`, `bibliography-renderer`, `bibliography-governance`, `settings-ipc`                                                                                                                                                  | portable Vitest + synthetic fixture                                       | Bibliography 变更专项           |
+| `test:evidence`         | `evidence-contracts`, `evidence-policy`, `evidence-repository`, `evidence-migration`, `evidence-capacity`, `evidence-workflow`, `evidence-renderer`, `evidence-governance`, `settings-ipc`                                                                                                                                  | portable Vitest + 临时 SQLite                                             | Evidence 变更专项               |
+| `test:dossier`          | `dossier-contracts`, `dossier-policy`, `dossier-migration`, `dossier-repository`, `dossier-gold`, `dossier-capacity`, `dossier-workflow`, `dossier-renderer`, `dossier-governance`, `settings-ipc`                                                                                                                          | portable Vitest + synthetic fixture                                       | Dossier 变更专项                |
+| `test:authenticity`     | `authenticity-contracts`, `authenticity-policy`, `authenticity-migration`, `authenticity-repository`, `authenticity-gold`, `authenticity-runtime`, `authenticity-ipc`, `authenticity-renderer`, `authenticity-governance`, `settings-ipc`                                                                                   | portable Vitest + 临时 SQLite                                             | Authenticity 变更专项           |
+| `test:topics`           | `topics-contracts`, `topics-policy`, `topics-quota`, `topics-generator`, `topics-migration`, `topics-repository`, `topics-gold`, `topics-capacity`, `topics-workflow`, `topics-runtime`, `topics-ipc`, `topics-renderer`, `topics-governance`, `settings-ipc`                                                               | portable Vitest + deterministic fixtures                                  | Topic 变更专项                  |
+| `test:experiments`      | `experiments-contracts`, `experiments-policy`, `experiments-assignment`, `experiments-state-machine`, `experiments-gold`, `experiments-migration`, `experiments-repository`, `experiments-invalidation`, `experiments-capacity`, `experiments-runtime`, `experiments-ipc`, `experiments-renderer`, `experiments-governance` | portable Vitest + deterministic assignment                                | Experiment 变更专项             |
+| `test:briefs`           | `briefs-contracts`, `briefs-policy`, `briefs-authenticity-gold`, `briefs-gold`, `briefs-migration`, `briefs-repository`, `briefs-generation`, `briefs-capacity`, `briefs-runtime-ipc`, `briefs-renderer`, `briefs-governance`, `settings-ipc`                                                                               | portable Vitest + Scripted Mock                                           | Brief 变更专项                  |
+| `test:copy`             | `copy-contracts`, `copy-policy`, `copy-rewrite`, `copy-migration`, `copy-repository`, `copy-generation`, `copy-runtime-ipc`, `copy-renderer`, `copy-governance`, `settings-ipc`                                                                                                                                             | portable Vitest + Scripted Mock                                           | Copy 变更专项                   |
+| `test:fact-mapping`     | `fact-mapping-contracts`, `fact-mapping-policy`, `fact-mapping-gold`, `fact-mapping-manual`, `fact-mapping-migration`, `fact-mapping-repository`, `fact-mapping-workflow`, `fact-mapping-capacity`, `fact-mapping-runtime-ipc`, `fact-mapping-renderer`, `fact-mapping-governance`, `settings-ipc`                          | portable Vitest + 临时 SQLite/Scripted Mock；11 个专属文件 + 1 个共享文件 | Fact Mapping 变更专项           |
+| `test:electron-smoke`   | `build:desktop` + `prepare:electron` + `run-electron-smoke.mjs`                                                                                                                                                                                                                                                             | Electron 子进程、窗口策略、egress 与退出                                  | Desktop 变更或 Release          |
+| `test:packaged-smoke`   | `run-packaged-smoke.mjs`                                                                                                                                                                                                                                                                                                    | 已打包 executable 与资源布局                                              | Release 产物边界                |
+
+## 已证明的专项重叠
+
+静态脚本选择中有 7 个跨专项重叠文件：
+
+| 文件                                    | 被哪些专项选择                                                                                                                      |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `db-hard-constraints.test.ts`           | `test:constraints`, `test:db`                                                                                                       |
+| `desktop-renderer.test.tsx`             | `test:desktop`, `test:model-accounting`                                                                                             |
+| `fetch-db.test.ts`                      | `test:db`, `test:fetch`                                                                                                             |
+| `provider-capability-db.test.ts`        | `test:db`, `test:capabilities`                                                                                                      |
+| `provider-capability-renderer.test.tsx` | `test:desktop`, `test:capabilities`                                                                                                 |
+| `provider-capability-runtime.test.ts`   | `test:capabilities`, `test:model-accounting`                                                                                        |
+| `settings-ipc.test.ts`                  | `test:settings` 及 bibliography、briefs、authenticity、copy、dossier、evidence、fact-mapping、model-accounting、topics 共 10 个专项 |
+
+完整 `test` 自动发现上述全部文件。因此，旧 CI 中 23 个专项 Vitest 后再运行完整 `test` 会再次
+覆盖所有专项选择；这些重复没有新增进程或配置语义。
+
+## CI 前后方案
+
+| 类别                   | 修改前 | 修改后 | 理由                                    |
+| ---------------------- | -----: | -----: | --------------------------------------- |
+| 专项 Vitest 调度       |     23 |      0 | 专项 scripts 保留，仅从固定 CI 序列移除 |
+| 全量 Vitest 调度       |      1 |      1 | 一次自动发现全部 198 个测试文件         |
+| Electron smoke         |      1 |      1 | 独立 Electron 进程信号                  |
+| Packaged smoke         |      1 |      1 | 独立已打包产物信号                      |
+| CI 中 `test*` 命令合计 |     26 |      3 | 消除可证明重复，保留不同环境信号        |
+
+CI 采用“单次全量 Vitest”方案，不改 `package.json` 的专项入口，不删除测试文件或断言。
+`test:clipper-real` 仍是条件性真实浏览器门禁：仅在 Clipper/Local API/浏览器集成变化或
+里程碑/Release 时运行；当前固定 CI 以前未调度，本次也不新增。
+
+## Phase 1 本地适用性
+
+本任务只改治理文档、治理测试与 CI 调度。依赖与 lockfile 未变，因此不运行 `npm ci` 或依赖
+审计；产品代码未变，因此 Electron、packaged、真实浏览器 smoke、build 与 package 均为
+N/A。CI 调度发生变化，所以最终候选按授权运行恰好一次全量 Vitest，以证明自动发现未漏测。
