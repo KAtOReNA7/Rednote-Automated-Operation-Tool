@@ -678,6 +678,32 @@ export class SqliteEvidenceRepository {
       input.summary === null
         ? null
         : validateEvidenceSummaryV1(input.summary, located.locator, located.excerptHash);
+    const locatorJson = safeJson(located.locator, 16_384);
+    const replay = this.#database
+      .prepare(
+        `SELECT claim_id, source_id, source_revision, locator_json, excerpt_hash,
+                supports_or_contradicts, language, summary_zh, summary_method,
+                model_execution_id
+         FROM claim_evidence WHERE id = ?`,
+      )
+      .get(input.evidenceId) as Row | undefined;
+    if (replay !== undefined) {
+      if (
+        replay.claim_id !== input.claimId ||
+        replay.source_id !== located.locator.sourceId ||
+        replay.source_revision !== located.locator.sourceRevision ||
+        replay.locator_json !== locatorJson ||
+        replay.excerpt_hash !== located.excerptHash ||
+        replay.supports_or_contradicts !== input.relation ||
+        replay.language !== input.language ||
+        replay.summary_zh !== (summary?.textZh ?? null) ||
+        replay.summary_method !== (summary?.method ?? null) ||
+        replay.model_execution_id !== (summary?.modelExecutionId ?? null)
+      ) {
+        throw new EvidenceError('EVIDENCE_CONFLICT');
+      }
+      return;
+    }
     runInTransaction(this.#database, () => {
       this.#database
         .prepare(
@@ -693,7 +719,7 @@ export class SqliteEvidenceRepository {
           located.locator.sourceId,
           located.locator.sourceRevision,
           located.locator.version,
-          safeJson(located.locator, 16_384),
+          locatorJson,
           located.excerpt,
           located.excerptHash,
           input.relation,

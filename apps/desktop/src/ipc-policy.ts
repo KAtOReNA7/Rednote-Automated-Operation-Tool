@@ -59,6 +59,7 @@ export type DesktopIpcOperation =
   | 'confirmEvidenceConflict'
   | 'confirmDossierBuild'
   | 'confirmSourceProcessing'
+  | 'confirmSyntheticResearchIntake'
   | 'confirmDataRootSelection'
   | 'confirmTopicAction'
   | 'confirmExperimentAction'
@@ -114,6 +115,7 @@ export type DesktopIpcOperation =
   | 'previewEvidenceConflict'
   | 'previewDossierBuild'
   | 'previewSourceProcessing'
+  | 'previewSyntheticResearchIntake'
   | 'previewTopicAction'
   | 'previewExperimentAction'
   | 'previewBriefAction'
@@ -172,6 +174,13 @@ function containsControlCharacter(value: string): boolean {
   return [...value].some((character) => {
     const codePoint = character.codePointAt(0) ?? 0;
     return codePoint <= 31 || codePoint === 127;
+  });
+}
+
+function containsDisallowedMultilineControlCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return (codePoint <= 31 || codePoint === 127) && ![9, 10, 13].includes(codePoint);
   });
 }
 
@@ -1275,6 +1284,53 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         value?.confirmation === 'CANCEL_SOURCE_PROCESSING' &&
         catalogRevision(value.expectedRevision) &&
         catalogId(value.runId)
+      );
+    }
+    case 'previewSyntheticResearchIntake': {
+      const value = validateOneObject(args, ['draft']);
+      if (value === null || !isRecord(value.draft)) return false;
+      const draft = value.draft;
+      if (
+        !exactKeys(draft, [
+          'authorName',
+          'publicationDate',
+          'sourceText',
+          'sourceTitle',
+          'workTitle',
+        ])
+      ) {
+        return false;
+      }
+      const singleLine = (item: unknown, maximum: number): item is string =>
+        typeof item === 'string' &&
+        item.trim() === item &&
+        item.length >= 1 &&
+        item.length <= maximum &&
+        !containsControlCharacter(item);
+      return (
+        singleLine(draft.authorName, 120) &&
+        typeof draft.publicationDate === 'string' &&
+        /^\d{4}-\d{2}-\d{2}$/u.test(draft.publicationDate) &&
+        singleLine(draft.sourceTitle, 200) &&
+        singleLine(draft.workTitle, 200) &&
+        typeof draft.sourceText === 'string' &&
+        draft.sourceText.trim() === draft.sourceText &&
+        draft.sourceText.length >= 1 &&
+        draft.sourceText.length <= 2_000 &&
+        Buffer.byteLength(draft.sourceText, 'utf8') <= 8_192 &&
+        !containsDisallowedMultilineControlCharacter(draft.sourceText)
+      );
+    }
+    case 'confirmSyntheticResearchIntake': {
+      const value = validateOneObject(args, ['confirmation', 'inputHash', 'previewHash', 'token']);
+      return (
+        value?.confirmation === 'CREATE_SYNTHETIC_LOCAL_RESEARCH' &&
+        typeof value.inputHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.inputHash) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
       );
     }
     case 'getCatalogWork': {

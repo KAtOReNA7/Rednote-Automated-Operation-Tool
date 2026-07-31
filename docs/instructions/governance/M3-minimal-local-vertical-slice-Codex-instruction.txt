@@ -1,0 +1,225 @@
+M3 最小本地垂直切片
+
+> 完整遵守当前仓库根级及作用域内 `AGENTS.md`。本指令只定义本任务增量，不复制公共硬约束和三层门禁。
+
+## 1. 任务性质与用户结果
+
+本任务是 Issue 027 前的恢复性垂直切片，不是 Issue 027。
+
+目标：
+
+在不使用真实密钥、模型、搜索、网页抓取或付费服务的条件下，证明用户能通过正常桌面应用入口，将一份自己输入的合成内容贯通到一个可审阅、可追溯的 Fact Mapping 结果。
+
+目标链路：
+
+`用户输入 → Source/SourceRevision → Evidence/Claim/FactEvaluation → Dossier → Topic → Content Brief → Draft/CopyVersion → Fact Mapping → 本地审阅`
+
+允许部分步骤使用明确标记的人工输入或人工确认；不得把人工输入伪装为 AI 生成、真实搜索或自动事实判断。
+
+完成证据后立即停止，不进入 Issue 027。
+
+## 2. 动态起点与文件治理
+
+1. 动态发现仓库根目录、当前分支、HEAD、origin/main 和工作树状态。
+2. 不预置机器路径、SHA、换行或工具补丁版本。
+3. Phase 1 提交和 Issue 026 提交均视为合法既有历史，不改写。
+4. 除本指令文件外若工作树不干净，立即停止并报告。
+5. 将本指令唯一归档到：
+
+   `docs/instructions/governance/M3-minimal-local-vertical-slice-Codex-instruction.txt`
+
+6. 不在根目录、桌面或其他目录保留副本。
+
+## 3. 编码前可行性盘点
+
+编码前只做静态阅读，不运行测试、build、package 或 smoke。
+
+逐步列出目标链路每一段现有的：
+
+- Domain；
+- Schema；
+- repository/service/workflow；
+- IPC/preload；
+- renderer 操作入口；
+- 单一事实来源与 lineage；
+- 是否必须使用模型；
+- 当前缺失的最小桥接。
+
+将盘点写入：
+
+`docs/reviews/minimal-local-vertical-slice-plan.md`
+
+每一步只能归类为：
+
+- `REUSABLE_AS_IS`
+- `NEEDS_THIN_BRIDGE`
+- `MANUAL_INPUT_REQUIRED`
+- `BLOCKED`
+
+只有同时满足以下条件才允许编码：
+
+1. 不新增业务表或 trigger。
+2. 不新增 package。
+3. 新增 IPC channel 预计不超过 2。
+4. 不建立新的 Draft、Claim、Evidence、FactEvaluation 或正文真相来源。
+5. 缺失桥接能在本指令预算内完成。
+6. 至少能通过生产 UI/service 路径到达可审阅 Fact Mapping。
+
+若任一步为 `BLOCKED`，或预计超过任一预算 150%，立即输出
+`VERTICAL_SLICE_BLOCKED_REPLAN`，只提交盘点文档，不实现半条链路、不运行全量门禁。
+
+## 4. 输入与演示数据规则
+
+使用一份很小的、完全合成且由测试/用户自行编写的中文推理小说样例：
+
+- 不对应真实图书、作者或出版社；
+- 不复制受版权保护正文；
+- 只包含足以形成 2—4 个原子事实和一小段待审 Draft 的文本；
+- 不含个人信息、密钥或真实业务数据。
+
+关键要求：
+
+- 数据必须通过正常应用 UI、preload/IPC 和 service/repository 边界进入。
+- 禁止用 SQL、migration seed、测试 fixture 注入生产演示数据库。
+- 测试可以在临时数据库中构造自己的最小数据，但最终用户旅程证据不能只来自测试 fixture。
+- 若现有 Browser Clipper 能在不访问真实站点的情况下复用，可以使用；否则优先复用现有人工 Source/Evidence 入口。
+- 不得为了本切片新增第三套采集系统。
+
+## 5. 实施原则
+
+1. 复用现有页面；不得新增独立“垂直切片系统”或大型新页面。
+2. 可在现有总览、资料研究或内容生产页面增加紧凑的“本地闭环验证”入口、步骤状态或深链接。
+3. 用户必须能看见每一步是：
+   - 人工输入；
+   - 现有确定性处理；
+   - 本地持久化；
+   - 未使用模型。
+4. 只补真正缺失的薄桥接，不重构历史 repository、migration 或状态机。
+5. 不创建通用 orchestrator、plan/run/version/transition/audit/dependency 新框架。
+6. 不提供“一键伪造整条链路”的演示按钮。
+7. 不重复保存 Draft 正文、Claim 内容或 Evidence 正文。
+8. 现有 lineage、确认和失效机制必须继续生效。
+9. 应用关闭并重开后，已完成步骤和最终审阅结果仍可读取。
+10. 任一步失败时显示真实断点，不自动 fallback、换模型或制造成功状态。
+
+## 6. 预算
+
+本任务采用比 AGENTS 默认值更紧的预测预算：
+
+| 维度 | 预测上限 |
+| --- | ---: |
+| 生产源码新增 | 1,200 LOC |
+| 测试新增 | 900 LOC |
+| 净新增业务表 | 0 |
+| 新增 trigger | 0 |
+| 新增 IPC channel | 2 |
+| 变更文件 | 20 |
+| 核心验收 | 14 |
+
+达到任一预算 100% 时先报告，不继续扩展。
+超过 150% 时按 AGENTS 自动暂停。
+不得以“完成垂直切片”为理由自行申请 200% 例外。
+
+## 7. 核心验收
+
+| ID | 行为或不变量 |
+| --- | --- |
+| VS01 | 编码前盘点覆盖目标链路全部步骤，并标明复用、薄桥接、人工或阻塞。 |
+| VS02 | 合成内容经正常应用边界进入，不使用直接 SQL 或生产 seed。 |
+| VS03 | 最终链路复用现有 Source、Evidence、Claim、FactEvaluation、Dossier、Topic、Brief、Draft/Copy 与 Fact Mapping identity。 |
+| VS04 | 没有新正文、事实或评价真相来源。 |
+| VS05 | 人工输入与确定性处理在 UI 中被明确标记，不伪装为 AI 或真实搜索。 |
+| VS06 | 用户可以从输入逐步到达一个可审阅 Fact Mapping 结果。 |
+| VS07 | 最终结果能回溯 DraftVersion、Claim、FactEvaluation、Evidence 与 SourceRevision。 |
+| VS08 | 关闭并重开本地应用后，链路状态和审阅结果仍可读取。 |
+| VS09 | 缺失、冲突或未确认事实保持真实阻塞状态，不自动放行。 |
+| VS10 | 新增业务表、trigger 和 package 均为 0。 |
+| VS11 | 新增 IPC 不超过 2，且保持 exact-object、sender/window 与 renderer 隔离。 |
+| VS12 | 没有真实密钥、模型、搜索、网页、图片或付费调用，外部业务连接为 0。 |
+| VS13 | 预算、测试次数和未实现范围得到如实报告。 |
+| VS14 | 未实现 Issue 027，也未新增其他质量检查框架。 |
+
+## 8. 测试与用户旅程证据
+
+开发循环：
+
+- 只运行受影响领域的精确测试。
+- 失败后先重跑失败项，不重新 npm ci 或启动全量门禁。
+
+必须新增或复用一个小型垂直集成测试，验证：
+
+- 临时本地数据库；
+- 真实 service/repository 边界；
+- 全链 lineage；
+- 关闭重开读取；
+- 不发出网络或模型请求。
+
+最终 Issue 门禁最多执行：
+
+1. format-check 一次；若仅格式失败，格式化后可再运行一次。
+2. lint 一次。
+3. typecheck 一次；修复本任务错误后最多再运行一次。
+4. 垂直切片精确测试一次；修复后最多再运行一次。
+5. 受影响的直接相邻专项各一次，但不得为了覆盖链路而把所有历史领域专项逐个运行。
+6. 全量 Vitest 最多一次，仅在全部精确测试通过后的最终候选运行。
+7. 若修改 desktop/preload/IPC，运行一次 source Electron smoke；否则不运行。
+
+本任务不运行：
+
+- npm ci，除非依赖或 lockfile 发生获准变化；本任务原则上不应变化；
+- desktop package；
+- clipper package；
+- packaged smoke；
+- Chrome/Edge 真实浏览器 smoke；
+- dependency audit；
+- 里程碑/Release 门禁。
+
+全量测试失败时只修复本任务直接造成的问题；禁止从头重跑完整门禁。若无法在预算内修复，停止且不提交。
+
+用户旅程证据写入：
+
+`docs/evidence/m3-minimal-local-vertical-slice-evidence.md`
+
+必须区分：
+
+- 生产 UI/service 路径；
+- 测试路径；
+- 合成内容；
+- 人工步骤；
+- 未使用的模型/网络能力；
+- 尚未证明的真实 Provider 和真实公开页面能力。
+
+不得把合成内容切片描述为生产就绪或真实 AI 集成。
+
+## 9. 禁止范围
+
+- Issue 027—030 的任何实现。
+- 新质量检查类型。
+- 新 Schema/migration/trigger。
+- 新 package 或通用编排框架。
+- 真实 Provider、SearchProvider、Fetch、图片生成或 Batch 调用。
+- 自动登录、发布、评论、私信、验证码或风控操作。
+- 大规模 repository、IPC、broker、validator 或 CSS 重构。
+- 修改 Phase 1 治理结论以扩大预算。
+- push、PR、合并、rebase、reset、amend。
+
+## 10. 提交与最终报告
+
+全部 VS01—VS14 通过后，只创建一个本地提交：
+
+`feat(workflow): prove minimal local content vertical slice`
+
+最终报告必须列出：
+
+- 动态起点、最终提交、工作树、origin/main 差异；
+- 可行性盘点的逐步结论；
+- 实际生产 LOC、测试 LOC、表、trigger、IPC 和文件数；
+- 正常用户旅程及每个人工步骤；
+- 运行的每条验证命令和次数；
+- 外部连接、密钥、模型调用和费用；
+- 哪些能力仍未证明；
+- 是否建议授权缩减后的 Issue 027。
+
+未全部通过时不得创建“完成”提交；保留安全现场并报告阻塞。
+
+完成或阻塞后立即停止，不自动进入 Issue 027。

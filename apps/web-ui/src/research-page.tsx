@@ -6,9 +6,20 @@ import type {
   EvidenceConflictView,
   EvidenceStateView,
   SourceProcessingPreview,
+  SyntheticResearchIntakeDraft,
+  SyntheticResearchIntakePreview,
+  SyntheticResearchIntakeResult,
 } from '@mystery-operations/shared';
 
 import { DossierWorkspace } from './dossier-workspace.js';
+
+const EMPTY_SYNTHETIC_DRAFT: SyntheticResearchIntakeDraft = Object.freeze({
+  authorName: '',
+  publicationDate: '',
+  sourceText: '',
+  sourceTitle: '',
+  workTitle: '',
+});
 
 function errorText(error: DesktopError): string {
   const messages: Partial<Record<DesktopError['code'], string>> = {
@@ -114,6 +125,15 @@ export function ResearchPage(): React.JSX.Element {
     null,
   );
   const [reason, setReason] = useState('');
+  const [syntheticBusy, setSyntheticBusy] = useState(false);
+  const [syntheticDraft, setSyntheticDraft] =
+    useState<SyntheticResearchIntakeDraft>(EMPTY_SYNTHETIC_DRAFT);
+  const [syntheticPreview, setSyntheticPreview] = useState<SyntheticResearchIntakePreview | null>(
+    null,
+  );
+  const [syntheticResult, setSyntheticResult] = useState<SyntheticResearchIntakeResult | null>(
+    null,
+  );
 
   const load = useCallback(async (): Promise<void> => {
     const method = window.rednoteDesktop?.getEvidenceState;
@@ -200,6 +220,55 @@ export function ResearchPage(): React.JSX.Element {
     }
   };
 
+  const updateSyntheticDraft = (field: keyof SyntheticResearchIntakeDraft, value: string): void => {
+    setSyntheticDraft((current) => ({ ...current, [field]: value }));
+    setSyntheticPreview(null);
+  };
+
+  const previewSyntheticIntake = async (): Promise<void> => {
+    const method = window.rednoteDesktop?.previewSyntheticResearchIntake;
+    if (method === undefined) {
+      setNotice('当前桌面桥接尚未提供合成本地研究输入。');
+      return;
+    }
+    setSyntheticBusy(true);
+    try {
+      const result = await method({ draft: syntheticDraft });
+      if (result.ok) {
+        setSyntheticPreview(result.value);
+        setNotice(null);
+      } else {
+        setNotice(errorText(result.error));
+      }
+    } finally {
+      setSyntheticBusy(false);
+    }
+  };
+
+  const confirmSyntheticIntake = async (): Promise<void> => {
+    const method = window.rednoteDesktop?.confirmSyntheticResearchIntake;
+    if (method === undefined || syntheticPreview === null) return;
+    setSyntheticBusy(true);
+    try {
+      const result = await method({
+        confirmation: 'CREATE_SYNTHETIC_LOCAL_RESEARCH',
+        inputHash: syntheticPreview.inputHash,
+        previewHash: syntheticPreview.previewHash,
+        token: syntheticPreview.token,
+      });
+      setSyntheticPreview(null);
+      if (result.ok) {
+        setSyntheticResult(result.value);
+        setNotice('合成研究输入已本地持久化；模型、外部请求和费用均为 0。');
+        await load();
+      } else {
+        setNotice(errorText(result.error));
+      }
+    } finally {
+      setSyntheticBusy(false);
+    }
+  };
+
   const previewConflict = async (
     conflict: EvidenceConflictView,
     action: 'ACCEPT_CLAIM' | 'REOPEN' | 'UNDO',
@@ -268,6 +337,134 @@ export function ResearchPage(): React.JSX.Element {
           {notice}
         </div>
       )}
+
+      <section aria-labelledby="synthetic-intake-title" className="synthetic-intake">
+        <header>
+          <div>
+            <p className="section-kicker">本地闭环验证 · 上游研究输入</p>
+            <h3 id="synthetic-intake-title">手工录入完全合成的最小研究材料</h3>
+            <p>
+              这里只建立 Work、SourceRevision 与 3 条可追溯原子事实。Dossier、S1
+              权限、Topic、Brief、Draft 和 Fact Mapping 仍需在各自工作台逐步人工确认。
+            </p>
+          </div>
+          <div aria-label="执行边界" className="synthetic-intake__labels">
+            <span>手工输入</span>
+            <span>完全合成</span>
+            <span>本地持久化</span>
+            <span>模型未使用</span>
+            <span>外部请求 0</span>
+          </div>
+        </header>
+        <div className="synthetic-intake__grid">
+          <label>
+            <span>虚构作品名</span>
+            <input
+              maxLength={200}
+              onChange={(event) => updateSyntheticDraft('workTitle', event.target.value)}
+              placeholder="例：自行虚构的推理作品名"
+              value={syntheticDraft.workTitle}
+            />
+          </label>
+          <label>
+            <span>虚构作者名</span>
+            <input
+              maxLength={120}
+              onChange={(event) => updateSyntheticDraft('authorName', event.target.value)}
+              placeholder="不得使用真实作者"
+              value={syntheticDraft.authorName}
+            />
+          </label>
+          <label>
+            <span>虚构出版日期</span>
+            <input
+              onChange={(event) => updateSyntheticDraft('publicationDate', event.target.value)}
+              type="date"
+              value={syntheticDraft.publicationDate}
+            />
+          </label>
+          <label>
+            <span>合成来源标题</span>
+            <input
+              maxLength={200}
+              onChange={(event) => updateSyntheticDraft('sourceTitle', event.target.value)}
+              placeholder="例：本地合成作品资料卡"
+              value={syntheticDraft.sourceTitle}
+            />
+          </label>
+          <label className="synthetic-intake__source">
+            <span>短原文（必须逐字包含作品名、作者名和 YYYY-MM-DD 日期）</span>
+            <textarea
+              maxLength={2000}
+              onChange={(event) => updateSyntheticDraft('sourceText', event.target.value)}
+              placeholder={'作品名：你的虚构作品\n作者：你的虚构作者\n出版日期：2026-01-02'}
+              rows={6}
+              value={syntheticDraft.sourceText}
+            />
+          </label>
+        </div>
+        <div className="evidence-actions">
+          <button
+            className="primary-button"
+            disabled={syntheticBusy}
+            onClick={() => void previewSyntheticIntake()}
+            type="button"
+          >
+            预览 3 条手工事实
+          </button>
+          <span>预览不写业务数据；确认后只创建上游研究记录。</span>
+        </div>
+        {syntheticPreview === null ? null : (
+          <div aria-live="polite" className="synthetic-intake__preview">
+            <div>
+              <strong>二次确认：完全合成的本地输入</strong>
+              <p>
+                {syntheticPreview.claimLocators.map((item) => item.predicate).join(' / ')} ·
+                预计本地写入 {syntheticPreview.estimatedLocalWrites} · 模型{' '}
+                {syntheticPreview.estimatedModelRequests} · 外部请求{' '}
+                {syntheticPreview.estimatedExternalRequests} · 费用未发生
+              </p>
+              <ul>
+                {syntheticPreview.claimLocators.map((item) => (
+                  <li key={item.predicate}>
+                    {item.predicate} · code points {item.startCodePoint}–{item.endCodePoint} · “
+                    {item.excerpt}”
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <div className="evidence-actions">
+              <button onClick={() => setSyntheticPreview(null)} type="button">
+                取消
+              </button>
+              <button
+                className="primary-button"
+                disabled={syntheticBusy}
+                onClick={() => void confirmSyntheticIntake()}
+                type="button"
+              >
+                确认创建上游研究记录
+              </button>
+            </div>
+          </div>
+        )}
+        {syntheticResult === null ? null : (
+          <div aria-live="polite" className="synthetic-intake__result">
+            <strong>上游输入已保存，可关闭并重开项目后继续</strong>
+            <code>workId: {syntheticResult.workId}</code>
+            <code>sourceRevisionId: {syntheticResult.sourceRevisionId}</code>
+            <span>
+              {syntheticResult.claims
+                .map((claim) => `${claim.predicate}=${claim.status}`)
+                .join(' · ')}
+            </span>
+            <p>
+              下一步：在下方构建 WORK Dossier；到书库将该合成作品设为 S1；再去选题池生成并 lock
+              Topic，最后在内容生产页手工完成 Brief、Draft 与 LOCAL_MANUAL Fact Mapping。
+            </p>
+          </div>
+        )}
+      </section>
 
       <DossierWorkspace />
 

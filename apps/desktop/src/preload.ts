@@ -15,6 +15,7 @@ import {
   type ConfirmCatalogDiscoveryInput,
   type ConfirmEvidenceConflictInput,
   type ConfirmDossierBuildInput,
+  type ConfirmSyntheticResearchIntakeInput,
   type ConfirmSourceProcessingInput,
   type ConfirmTopicActionInput,
   type ConfirmExperimentActionInput,
@@ -49,6 +50,7 @@ import {
   type PreviewCatalogWorkSplitInput,
   type PreviewEvidenceConflictInput,
   type PreviewDossierBuildInput,
+  type PreviewSyntheticResearchIntakeInput,
   type PreviewSourceProcessingInput,
   type PreviewTopicActionInput,
   type PreviewExperimentActionInput,
@@ -104,6 +106,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmDossierBuild, input),
   confirmSourceProcessing: (input: ConfirmSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmSourceProcessing, input),
+  confirmSyntheticResearchIntake: (input: ConfirmSyntheticResearchIntakeInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmSyntheticResearchIntake, input),
   confirmTopicAction: (input: ConfirmTopicActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmTopicAction, input),
   confirmExperimentAction: (input: ConfirmExperimentActionInput) =>
@@ -196,6 +200,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewDossierBuild, input),
   previewSourceProcessing: (input: PreviewSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewSourceProcessing, input),
+  previewSyntheticResearchIntake: (input: PreviewSyntheticResearchIntakeInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewSyntheticResearchIntake, input),
   previewTopicAction: (input: PreviewTopicActionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewTopicAction, input),
   previewExperimentAction: (input: PreviewExperimentActionInput) =>

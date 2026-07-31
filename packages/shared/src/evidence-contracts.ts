@@ -166,3 +166,55 @@ export interface CancelSourceProcessingInput {
   readonly expectedRevision: number;
   readonly runId: string;
 }
+
+export interface SyntheticResearchIntakeDraft {
+  readonly authorName: string;
+  readonly publicationDate: string;
+  readonly sourceText: string;
+  readonly sourceTitle: string;
+  readonly workTitle: string;
+}
+
+export interface PreviewSyntheticResearchIntakeInput {
+  readonly draft: SyntheticResearchIntakeDraft;
+}
+
+export interface SyntheticResearchIntakePreview {
+  readonly claimLocators: readonly {
+    readonly endCodePoint: number;
+    readonly excerpt: string;
+    readonly predicate: 'author' | 'canonical_title' | 'publication_date';
+    readonly startCodePoint: number;
+  }[];
+  readonly estimatedExternalRequests: 0;
+  readonly estimatedLocalWrites: number;
+  readonly estimatedModelRequests: 0;
+  readonly expiresAt: string;
+  readonly feeState: 'NOT_INCURRED';
+  readonly inputHash: string;
+  readonly labels: readonly ['MANUAL_INPUT', 'SYNTHETIC_ONLY', 'LOCAL_PERSISTED', 'MODEL_UNUSED'];
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface ConfirmSyntheticResearchIntakeInput {
+  readonly confirmation: 'CREATE_SYNTHETIC_LOCAL_RESEARCH';
+  readonly inputHash: string;
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface SyntheticResearchIntakeResult {
+  readonly claims: readonly {
+    readonly claimId: string;
+    readonly evaluationId: string;
+    readonly predicate: 'author' | 'canonical_title' | 'publication_date';
+    readonly status: EvidenceClaimView['evaluationStatus'];
+  }[];
+  readonly externalRequestCount: 0;
+  readonly feeState: 'NOT_INCURRED';
+  readonly labels: SyntheticResearchIntakePreview['labels'];
+  readonly modelRequestCount: 0;
+  readonly sourceRevisionId: string;
+  readonly workId: string;
+}

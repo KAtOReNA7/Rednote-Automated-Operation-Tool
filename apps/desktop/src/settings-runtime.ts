@@ -34,6 +34,7 @@ import type {
   CancelSourceProcessingInput,
   CancelDossierBuildInput,
   ConfirmEvidenceConflictInput,
+  ConfirmSyntheticResearchIntakeInput,
   ConfirmSourceProcessingInput,
   ConfirmDossierBuildInput,
   ConfirmCatalogActionInput,
@@ -57,6 +58,7 @@ import type {
   PreviewCatalogWorkMergeInput,
   PreviewCatalogWorkSplitInput,
   PreviewEvidenceConflictInput,
+  PreviewSyntheticResearchIntakeInput,
   PreviewSourceProcessingInput,
   PreviewDossierBuildInput,
   PreviewProviderCapabilityProbeInput,
@@ -73,6 +75,8 @@ import type {
   EvidenceConflictView,
   EvidenceStateView,
   SourceProcessingPreview,
+  SyntheticResearchIntakePreview,
+  SyntheticResearchIntakeResult,
   DiffDossierVersionsInput,
   DossierBuildPreview,
   DossierBuildRun,
@@ -789,6 +793,22 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().evidence.cancelProcessing(input);
   }
 
+  public previewSyntheticResearchIntake(
+    input: PreviewSyntheticResearchIntakeInput,
+    senderId: number,
+    windowId: number,
+  ): SyntheticResearchIntakePreview {
+    return this.#requireActive().evidence.previewSyntheticIntake(input, senderId, windowId);
+  }
+
+  public confirmSyntheticResearchIntake(
+    input: ConfirmSyntheticResearchIntakeInput,
+    senderId: number,
+    windowId: number,
+  ): Promise<SyntheticResearchIntakeResult> {
+    return this.#requireActive().evidence.confirmSyntheticIntake(input, senderId, windowId);
+  }
+
   public listDossiers(input: ListDossiersInput): DossierListStateView {
     return this.#requireActive().dossier.list(input);
   }
@@ -1059,7 +1079,7 @@ export class DesktopSettingsRuntime {
     const fetch = new DesktopFetchRuntime(database, root);
     const catalog = new DesktopCatalogRuntime(database);
     const authenticity = new DesktopAuthenticityRuntime(database);
-    const evidence = new DesktopEvidenceRuntime(database);
+    const evidence = new DesktopEvidenceRuntime(database, root);
     const dossier = new DesktopDossierRuntime(database);
     const topics = new DesktopTopicRuntime(database);
     const experiments = new DesktopExperimentRuntime(database);

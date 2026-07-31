@@ -102,6 +102,11 @@ export interface CatalogWorkListItemV1 {
   readonly workId: string;
 }
 
+export interface SyntheticObservationResolutionV1 {
+  readonly authorAgentId: string;
+  readonly workId: string;
+}
+
 export interface CatalogWorkDetailV1 extends CatalogWorkListItemV1 {
   readonly aliases: readonly {
     readonly kind: string;
@@ -603,6 +608,35 @@ export class SqliteCatalogRepository implements BibliographyDiscoveryPersistence
     return runInTransaction(this.#database, () =>
       this.#insertObservationAndResolve(observation, runId, now),
     );
+  }
+
+  public getSyntheticObservationResolution(
+    observationId: string,
+  ): SyntheticObservationResolutionV1 | null {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(observationId)) {
+      throw new CatalogError('CATALOG_INVALID_REQUEST');
+    }
+    const row = this.#database
+      .prepare(
+        `SELECT link.entity_id AS work_id, relation.agent_id AS author_agent_id
+         FROM bibliographic_observations AS observation
+         JOIN observation_entity_links AS link
+           ON link.observation_id = observation.id AND link.entity_type = 'WORK'
+         JOIN catalog_agent_relations AS relation
+           ON relation.scope_type = 'WORK'
+          AND relation.scope_id = link.entity_id
+          AND relation.role = 'AUTHOR'
+         WHERE observation.id = ? AND observation.origin_kind = 'SYNTHETIC_FIXTURE'
+         ORDER BY relation.id
+         LIMIT 1`,
+      )
+      .get(observationId) as Row | undefined;
+    return row === undefined
+      ? null
+      : Object.freeze({
+          authorAgentId: row.author_agent_id as string,
+          workId: row.work_id as string,
+        });
   }
 
   public saveCheckpoint(

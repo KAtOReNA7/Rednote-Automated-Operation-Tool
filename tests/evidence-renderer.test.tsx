@@ -12,6 +12,8 @@ import type {
   EvidenceConflictActionPreview,
   EvidenceStateView,
   SourceProcessingPreview,
+  SyntheticResearchIntakePreview,
+  SyntheticResearchIntakeResult,
 } from '../packages/shared/src/index.js';
 
 afterEach(() => {
@@ -136,6 +138,53 @@ const modelPreview: SourceProcessingPreview = {
   token: 'token-processing',
 };
 
+const syntheticPreview: SyntheticResearchIntakePreview = {
+  claimLocators: [
+    {
+      endCodePoint: 19,
+      excerpt: '雾港七号钟楼（合成作品）',
+      predicate: 'canonical_title',
+      startCodePoint: 6,
+    },
+    {
+      endCodePoint: 30,
+      excerpt: '虚构作者甲',
+      predicate: 'author',
+      startCodePoint: 25,
+    },
+    {
+      endCodePoint: 47,
+      excerpt: '2099-04-17',
+      predicate: 'publication_date',
+      startCodePoint: 37,
+    },
+  ],
+  estimatedExternalRequests: 0,
+  estimatedLocalWrites: 24,
+  estimatedModelRequests: 0,
+  expiresAt: '2026-07-31T04:05:00.000Z',
+  feeState: 'NOT_INCURRED',
+  inputHash: 'd'.repeat(64),
+  labels: ['MANUAL_INPUT', 'SYNTHETIC_ONLY', 'LOCAL_PERSISTED', 'MODEL_UNUSED'],
+  previewHash: 'e'.repeat(64),
+  token: 'synthetic-preview-token',
+};
+
+const syntheticResult: SyntheticResearchIntakeResult = {
+  claims: syntheticPreview.claimLocators.map(({ predicate }, index) => ({
+    claimId: `synthetic-claim-${index + 1}`,
+    evaluationId: `synthetic-evaluation-${index + 1}`,
+    predicate,
+    status: 'VERIFIED',
+  })),
+  externalRequestCount: 0,
+  feeState: 'NOT_INCURRED',
+  labels: syntheticPreview.labels,
+  modelRequestCount: 0,
+  sourceRevisionId: 'synthetic-source:1',
+  workId: 'synthetic-work',
+};
+
 describe('Issue 019 Research renderer', () => {
   it('shows source, exact excerpt, non-evidence summary, stale/budget/conflict states as text', async () => {
     const cancel = vi.fn().mockResolvedValue({ ok: true, value: state });
@@ -212,5 +261,63 @@ describe('Issue 019 Research renderer', () => {
     expect(screen.getByText(/不会降级、猜测或发送请求/u)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '明确确认本地执行' })).toBeDisabled();
     expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it('keeps synthetic intake blank, labeled, previewed, and separately confirmed', async () => {
+    const preview = vi.fn().mockResolvedValue({ ok: true, value: syntheticPreview });
+    const confirm = vi.fn().mockResolvedValue({ ok: true, value: syntheticResult });
+    const bridge = {
+      confirmSyntheticResearchIntake: confirm,
+      getEvidenceState: vi.fn().mockResolvedValue({ ok: true, value: state }),
+      previewSyntheticResearchIntake: preview,
+    } as unknown as DesktopBridge;
+    Object.defineProperty(window, 'rednoteDesktop', { configurable: true, value: bridge });
+    render(<ResearchPage />);
+    await screen.findByText('<script>source title</script>');
+
+    expect(screen.getByLabelText('虚构作品名')).toHaveValue('');
+    expect(screen.getByText('手工输入')).toBeInTheDocument();
+    expect(screen.getByText('完全合成')).toBeInTheDocument();
+    expect(screen.getByText('本地持久化')).toBeInTheDocument();
+    expect(screen.getByText('模型未使用')).toBeInTheDocument();
+    expect(screen.getByText('外部请求 0')).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText('虚构作品名'), '雾港七号钟楼（合成作品）');
+    await userEvent.type(screen.getByLabelText('虚构作者名'), '虚构作者甲');
+    await userEvent.type(screen.getByLabelText('虚构出版日期'), '2099-04-17');
+    await userEvent.type(screen.getByLabelText('合成来源标题'), '本地合成作品资料卡');
+    await userEvent.type(
+      screen.getByLabelText(/短原文/u),
+      '作品名：雾港七号钟楼（合成作品）{enter}作者：虚构作者甲{enter}出版日期：2099-04-17',
+    );
+    await userEvent.click(screen.getByRole('button', { name: '预览 3 条手工事实' }));
+
+    await waitFor(() =>
+      expect(preview).toHaveBeenCalledWith({
+        draft: {
+          authorName: '虚构作者甲',
+          publicationDate: '2099-04-17',
+          sourceText: '作品名：雾港七号钟楼（合成作品）\n作者：虚构作者甲\n出版日期：2099-04-17',
+          sourceTitle: '本地合成作品资料卡',
+          workTitle: '雾港七号钟楼（合成作品）',
+        },
+      }),
+    );
+    expect(await screen.findByText(/canonical_title \/ author \/ publication_date/u)).toBeVisible();
+    expect(confirm).not.toHaveBeenCalled();
+
+    await userEvent.click(screen.getByRole('button', { name: '确认创建上游研究记录' }));
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith({
+        confirmation: 'CREATE_SYNTHETIC_LOCAL_RESEARCH',
+        inputHash: syntheticPreview.inputHash,
+        previewHash: syntheticPreview.previewHash,
+        token: syntheticPreview.token,
+      }),
+    );
+    expect(await screen.findByText(/workId: synthetic-work/u)).toBeVisible();
+    expect(
+      screen.getByText(/canonical_title=VERIFIED · author=VERIFIED · publication_date=VERIFIED/u),
+    ).toBeVisible();
   });
 });

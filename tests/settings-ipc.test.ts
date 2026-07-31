@@ -112,6 +112,14 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       token: 'a'.repeat(43),
     },
   ],
+  confirmSyntheticResearchIntake: [
+    {
+      confirmation: 'CREATE_SYNTHETIC_LOCAL_RESEARCH',
+      inputHash: 'a'.repeat(64),
+      previewHash: 'b'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
   confirmDataRootSelection: [
     {
       confirmation: 'ACTIVATE_DATA_ROOT',
@@ -331,6 +339,17 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     {
       includeModelSteps: false,
       sourceRevisionIds: ['source-fixture:1'],
+    },
+  ],
+  previewSyntheticResearchIntake: [
+    {
+      draft: {
+        authorName: '合成作者',
+        publicationDate: '2026-01-02',
+        sourceText: '作品名：合成作品\n作者：合成作者\n出版日期：2026-01-02',
+        sourceTitle: '本地合成资料卡',
+        workTitle: '合成作品',
+      },
     },
   ],
   previewTopicAction: [{ kind: 'GENERATE', profileId: 'primary' }],

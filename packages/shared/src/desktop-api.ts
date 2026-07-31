@@ -51,6 +51,7 @@ import type {
 } from './catalog-contracts.js';
 import type {
   CancelSourceProcessingInput,
+  ConfirmSyntheticResearchIntakeInput,
   ConfirmEvidenceConflictInput,
   ConfirmSourceProcessingInput,
   EvidenceConflictActionPreview,
@@ -58,8 +59,11 @@ import type {
   EvidenceStateView,
   GetEvidenceStateInput,
   PreviewEvidenceConflictInput,
+  PreviewSyntheticResearchIntakeInput,
   PreviewSourceProcessingInput,
   SourceProcessingPreview,
+  SyntheticResearchIntakePreview,
+  SyntheticResearchIntakeResult,
 } from './evidence-contracts.js';
 import type {
   CancelDossierBuildInput,
@@ -194,6 +198,8 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   previewSourceProcessing: 'evidence:preview-processing',
   confirmSourceProcessing: 'evidence:confirm-processing',
   cancelSourceProcessing: 'evidence:cancel-processing',
+  previewSyntheticResearchIntake: 'evidence:preview-synthetic-research',
+  confirmSyntheticResearchIntake: 'evidence:confirm-synthetic-research',
   listDossiers: 'dossier:list',
   getDossier: 'dossier:get',
   previewDossierBuild: 'dossier:preview-build',
@@ -818,6 +824,12 @@ export interface DesktopBridge {
   cancelSourceProcessing?(
     input: CancelSourceProcessingInput,
   ): Promise<DesktopResult<EvidenceStateView>>;
+  previewSyntheticResearchIntake?(
+    input: PreviewSyntheticResearchIntakeInput,
+  ): Promise<DesktopResult<SyntheticResearchIntakePreview>>;
+  confirmSyntheticResearchIntake?(
+    input: ConfirmSyntheticResearchIntakeInput,
+  ): Promise<DesktopResult<SyntheticResearchIntakeResult>>;
   listDossiers?(input: ListDossiersInput): Promise<DesktopResult<DossierListStateView>>;
   getDossier?(input: GetDossierInput): Promise<DesktopResult<DossierDetailStateView>>;
   previewDossierBuild?(

@@ -23,6 +23,7 @@ import {
   type ConfirmCatalogDiscoveryInput,
   type ConfirmDossierBuildInput,
   type ConfirmEvidenceConflictInput,
+  type ConfirmSyntheticResearchIntakeInput,
   type ConfirmSourceProcessingInput,
   type ConfirmTopicActionInput,
   type ConfirmExperimentActionInput,
@@ -61,6 +62,7 @@ import {
   type PreviewCatalogWorkSplitInput,
   type PreviewDossierBuildInput,
   type PreviewEvidenceConflictInput,
+  type PreviewSyntheticResearchIntakeInput,
   type PreviewSourceProcessingInput,
   type PreviewTopicActionInput,
   type PreviewExperimentActionInput,
@@ -541,6 +543,36 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('cancelSourceProcessing', DESKTOP_IPC_CHANNELS.cancelSourceProcessing, (_event, args) =>
     options.settingsRuntime.cancelSourceProcessing(args[0] as CancelSourceProcessingInput),
+  );
+  register(
+    'previewSyntheticResearchIntake',
+    DESKTOP_IPC_CHANNELS.previewSyntheticResearchIntake,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewSyntheticResearchIntake(
+        args[0] as PreviewSyntheticResearchIntakeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmSyntheticResearchIntake',
+    DESKTOP_IPC_CHANNELS.confirmSyntheticResearchIntake,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmSyntheticResearchIntake(
+        args[0] as ConfirmSyntheticResearchIntakeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
   );
   register('listDossiers', DESKTOP_IPC_CHANNELS.listDossiers, (_event, args) =>
     options.settingsRuntime.listDossiers(args[0] as ListDossiersInput),
