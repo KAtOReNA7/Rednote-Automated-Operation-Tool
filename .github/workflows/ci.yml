@@ -47,8 +47,11 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Run complete Vitest suite once
+      - name: Run normal Vitest suite once
         run: npm run test
+
+      - name: Run isolated capacity Vitest suite once
+        run: node scripts/run-portable-vitest.mjs --observable --suite=capacity run
 
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke

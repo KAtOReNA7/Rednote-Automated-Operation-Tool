@@ -2,6 +2,31 @@ import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'vitest/config';
 
+export const CAPACITY_TEST_FILES = [
+  'tests/bibliography-capacity.test.ts',
+  'tests/briefs-capacity.test.ts',
+  'tests/dossier-capacity.test.ts',
+  'tests/evidence-capacity.test.ts',
+  'tests/experiments-capacity.test.ts',
+  'tests/fact-mapping-capacity.test.ts',
+  'tests/queue-performance-platform.test.ts',
+  'tests/queue-worker.test.ts',
+  'tests/search-db.test.ts',
+  'tests/storage-logging.test.ts',
+  'tests/storage-repository.test.ts',
+  'tests/storage-root-paths.test.ts',
+  'tests/topics-capacity.test.ts',
+] as const;
+
+export const NORMAL_TEST_EXCLUDES = [...CAPACITY_TEST_FILES] as const;
+
+const selectedSuite = process.env.REDNOTE_VITEST_SUITE;
+if (selectedSuite !== undefined && selectedSuite !== 'normal' && selectedSuite !== 'capacity') {
+  throw new Error('REDNOTE_VITEST_SUITE must be normal or capacity.');
+}
+
+const baseExclude = ['**/coverage/**', '**/dist/**', '**/node_modules/**'];
+
 export default defineConfig({
   resolve: {
     alias: {
@@ -73,8 +98,12 @@ export default defineConfig({
   test: {
     clearMocks: true,
     environment: 'node',
-    exclude: ['**/coverage/**', '**/dist/**', '**/node_modules/**'],
-    include: ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
+    exclude: selectedSuite === 'normal' ? [...baseExclude, ...NORMAL_TEST_EXCLUDES] : baseExclude,
+    fileParallelism: selectedSuite !== 'capacity',
+    include:
+      selectedSuite === 'capacity'
+        ? [...CAPACITY_TEST_FILES]
+        : ['tests/**/*.test.ts', 'tests/**/*.test.tsx'],
     maxWorkers: 1,
     passWithNoTests: false,
     sequence: {

@@ -164,7 +164,7 @@ npm ci
 ### 3. 验证并启动
 
 ```powershell
-# 格式、lint、类型、测试与构建
+# 格式、lint、类型、普通测试、隔离容量测试与构建
 npm run check
 
 # 启动本地桌面开发版本
@@ -300,6 +300,7 @@ npm run format-check
 npm run lint
 npm run typecheck
 npm run test
+npm run test:capacity
 npm run build
 ```
 
@@ -307,28 +308,8 @@ npm run build
 <summary><strong>Windows / Electron 发布级门禁</strong></summary>
 
 ```powershell
-npm run test:constraints
-npm run test:db
-npm run test:queue
-npm run test:desktop
-npm run test:storage
-npm run test:settings
-npm run test:local-api
-npm run test:portability
-npm run test:providers
-npm run test:capabilities
-npm run test:model-accounting
-npm run test:search
-npm run test:fetch
-npm run test:clipper
-npm run test:bibliography
-npm run test:evidence
-npm run test:dossier
-npm run test:authenticity
-npm run test:topics
-npm run test:experiments
-npm run test:briefs
-npm run test:copy
+npm run test
+npm run test:capacity
 npm run test:clipper-real
 npm run test:electron-smoke
 npm run package:clipper
@@ -339,7 +320,8 @@ npm run test:packaged-smoke
 
 </details>
 
-所有测试只使用合成数据、运行时随机 token、临时 SQLite 和本机 loopback；不读取真实密钥，
+领域 `test:*` 脚本只用于精确定位，不进入普通/容量固定链。所有测试只使用合成数据、运行时随机
+token、临时 SQLite 和本机 loopback；不读取真实密钥，
 不调用真实模型、搜索、图片或业务 API，也不产生真实服务费用。
 
 ## 不可变产品边界
