@@ -67,6 +67,8 @@ import {
   type GetFactMappingClaimChainInput,
   type PreviewFactMappingActionInput,
   type PreviewFactMappingDecisionInput,
+  type ConfirmReadingAuthenticityInput,
+  type PreviewReadingAuthenticityInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type SetCredentialInput,
@@ -120,6 +122,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmFactMappingAction, input),
   confirmFactMappingDecision: (input: ConfirmFactMappingDecisionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmFactMappingDecision, input),
+  confirmReadingAuthenticity: (input: ConfirmReadingAuthenticityInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.confirmReadingAuthenticity, input),
   cancelSourceProcessing: (input: CancelSourceProcessingInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.cancelSourceProcessing, input),
   exportDiagnosticReport: (input: ExportDiagnosticReportInput) =>
@@ -214,6 +218,8 @@ const desktopBridge: DesktopBridge = Object.freeze({
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewFactMappingAction, input),
   previewFactMappingDecision: (input: PreviewFactMappingDecisionInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewFactMappingDecision, input),
+  previewReadingAuthenticity: (input: PreviewReadingAuthenticityInput) =>
+    ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewReadingAuthenticity, input),
   diffCopyDraftVersions: (input: DiffCopyDraftVersionsInput) =>
     ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.diffCopyDraftVersions, input),
   previewModelCacheClear: () => ipcRenderer.invoke(DESKTOP_IPC_CHANNELS.previewModelCacheClear),

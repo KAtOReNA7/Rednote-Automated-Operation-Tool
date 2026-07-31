@@ -124,6 +124,8 @@ export type DesktopIpcOperation =
   | 'confirmFactMappingAction'
   | 'previewFactMappingDecision'
   | 'confirmFactMappingDecision'
+  | 'previewReadingAuthenticity'
+  | 'confirmReadingAuthenticity'
   | 'diffCopyDraftVersions'
   | 'diffDossierVersions'
   | 'previewModelCacheClear'
@@ -1068,6 +1070,32 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
           'REOPEN',
         ].includes(String(value.kind)) &&
         dossierIdentifier(value.executionId, 128) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'previewReadingAuthenticity': {
+      const value = validateOneObject(args, ['draftId', 'expectedRevision']);
+      return (
+        value !== null &&
+        dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        Number(value.expectedRevision) >= 0
+      );
+    }
+    case 'confirmReadingAuthenticity': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'expectedRevision',
+        'previewHash',
+        'token',
+      ]);
+      return (
+        value?.confirmation === 'SAVE_READING_AUTHENTICITY_CHECK' &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        Number(value.expectedRevision) >= 0 &&
         typeof value.previewHash === 'string' &&
         /^[a-f0-9]{64}$/u.test(value.previewHash) &&
         typeof value.token === 'string' &&

@@ -11,10 +11,64 @@ import type {
   StatementKind,
   FactDomain,
   FactMateriality,
+  ReadingAuthenticityReasonCode,
+  ReadingAuthenticityStatus,
 } from '@mystery-operations/quality';
 
 export type FactMappingDisplayStatus =
   'AWAITING_REVIEW' | 'FACT_BLOCKED' | 'PASS' | 'STALE' | 'UNCHECKED';
+
+export interface PreviewReadingAuthenticityInput {
+  readonly draftId: string;
+  readonly expectedRevision: number;
+}
+
+export interface ReadingAuthenticityFindingView {
+  readonly artifactId: string;
+  readonly artifactKind: DraftArtifactKind;
+  readonly disposition: 'BLOCKED' | 'REVIEW_REQUIRED';
+  readonly draftVersionId: string;
+  readonly endCodePoint: number;
+  readonly reasonCode: ReadingAuthenticityReasonCode;
+  readonly selectedTextHash: string;
+  readonly startCodePoint: number;
+  readonly textHash: string;
+}
+
+export interface ReadingAuthenticityReadModel {
+  readonly draftId: string;
+  readonly draftRevision: number;
+  readonly draftVersionId: string;
+  readonly evaluatedAt: string;
+  readonly evaluationStatus: Exclude<ReadingAuthenticityStatus, 'STALE' | 'NOT_RUN'>;
+  readonly findings: readonly ReadingAuthenticityFindingView[];
+  readonly reasonCodes: readonly ReadingAuthenticityReasonCode[];
+  readonly savedStatus: ReadingAuthenticityStatus;
+  readonly truncated: boolean;
+}
+
+export interface ReadingAuthenticityPreview {
+  readonly expiresAt: string;
+  readonly preview: {
+    readonly costState: 'NOT_APPLICABLE';
+    readonly externalRequestCount: 0;
+    readonly readModel: ReadingAuthenticityReadModel;
+    readonly writes: readonly ['APPEND_QUALITY_CHECK'];
+  };
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface ConfirmReadingAuthenticityInput {
+  readonly confirmation: 'SAVE_READING_AUTHENTICITY_CHECK';
+  readonly expectedRevision: number;
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface ReadingAuthenticityResult {
+  readonly readModel: ReadingAuthenticityReadModel;
+}
 
 export interface GetFactMappingChecksInput {
   readonly limit: number;

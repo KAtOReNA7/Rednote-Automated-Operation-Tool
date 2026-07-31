@@ -1,0 +1,205 @@
+M3 Issue 027：阅读真实性与公开评分检查（缩减版）
+
+> 完整遵守当前根级及作用域内 `AGENTS.md`。本指令只定义 Issue 027 增量，不复制公共规则、硬约束或三层门禁。
+
+## 1. 用户结果与停止点
+
+在现有文案工作台中，为当前不可变 DraftVersion 增加“真实性与评分检查”。用户可预览并保存检查摘要，看到：
+
+- `PASS`
+- `BLOCKED`
+- `REVIEW_REQUIRED`
+- `STALE`
+- `NOT_RUN`
+
+检查只处理：
+
+1. 正文是否声称了当前阅读状态不支持的具体亲历；
+2. 个人评分、资料分析评分及其公开标签是否与当前权威记录一致；
+3. 内部预测分是否错误进入公开内容。
+
+不自动修改 Draft，不推进审批、导出或发布。
+
+完成后立即停止，不进入 Issue 028。
+
+## 2. 动态起点与指令归档
+
+1. 动态读取仓库根、分支、HEAD、origin/main 和工作树，不预置路径或 SHA。
+2. 除本指令外工作树必须干净；否则停止。
+3. 将本指令唯一归档到现有 `docs/instructions/m3/`，不得在根目录或桌面保留副本。
+4. 开工前确认本地、origin/main 与远端没有未经处理的分歧；只读核验允许，禁止 pull、push、PR、rebase、reset 或 amend。
+
+## 3. 冻结实施方案
+
+严格采用缩减设计报告的方案 B：
+
+- 复用现有 DraftVersion、Issue 021 authenticity truth、quality utilities 和 `quality_checks`；
+- 0 新 package；
+- 0 新表；
+- 0 trigger；
+- 0 migration；
+- 恰好 2 个新 IPC；
+- 只在现有 Copy/文案工作台增加小型区块；
+- 同步、本地、确定性 preview/confirm；
+- 不使用 queue、worker、模型、搜索、网络或人工 decision overlay。
+
+若现有 `quality_checks` 无法满足最小结果保存，立即停止并报告，不得自行增加 Schema。
+
+## 4. 单一真相与复用边界
+
+必须保持：
+
+- 公开文本唯一来源：当前不可变 DraftVersion payload；
+- 阅读状态：current reading state/revision；
+- R2 确认：current、未撤销的 experience assertion revision；
+- 表达权限：current expression permission snapshot 及其依赖；
+- 个人评分：current active personal score record；
+- 资料分析评分：current active research score record 与 current Dossier；
+- 内部预测分：禁止查询、禁止进入 input hash、DTO、details 或 UI；
+- 事实真伪：继续由 Claim/Evidence/FactEvaluation 与 Fact Mapping 负责。
+
+Issue 027 不复制正文、assertion 原文、Evidence 正文或评分真相，不修改 Fact Mapping 的分类和 rollup 语义。
+
+## 5. 检查器与状态
+
+新增纯本地 detector/evaluator，复用 public artifact materializer、Unicode segmenter、locator 和 hash。
+
+规则：
+
+1. 具体阅读亲历，如“我读完”“我重读”“读完后我”，只有 R1 且 current permission 有效时可通过。
+2. R2 只允许与 current 逐条 assertion、lineage 和文本/结构 hash 精确匹配的观点；泛化成读过、重读或读完必须阻断。
+3. R3、S1、S2、UNCLASSIFIED 的具体亲历和个人评分全部阻断。
+4. 普通“我认为”不能自动等同于具体阅读亲历；无法安全判断时进入 `REVIEW_REQUIRED`。
+5. 实际文本没有评分表达时，不因 score plan 本身制造错误。
+6. 个人评分必须同时满足 R1、current active 用户记录、精确 `valueSourceId` 和可解析公开值一致。
+7. R2 即使存在可保存的 personal score，也不能通过公开 Draft 的个人评分检查。
+8. 资料分析评分必须匹配 current research score、current Dossier、公开值，并实际显示“资料分析评分”。
+9. `scorePlan=NONE` 却出现明确评分、来源类型冲突或无法归属的多个分数，必须 `BLOCKED` 或 `REVIEW_REQUIRED`。
+10. 只解析有限、无歧义的评分格式；不得扩张成通用中文 NLP 或自由 scale 推断。
+11. finding 超出上限时设置 `truncated=true`，截断结果不得 PASS。
+12. AI 标识和版权不进入 detector、input hash、result、severity、排序或任何决策。
+
+`STALE` 与 `NOT_RUN` 由 read model 根据当前 input hash 推导，不新增状态表。
+
+## 6. 持久化与 freshness
+
+复用 `quality_checks`：
+
+- `check_type='READING_AUTHENTICITY'`；
+- 保存 Draft/DraftVersion、checker version、input hash、PASS/FAIL、severity 和有限 details；
+- details 只允许版本、计数、reason code、公开 artifact identity、code-point locator、token hash 和 truncated；
+- 不保存全文、绝对路径、内部预测、密钥或原始请求。
+
+稳定 ID 使用 check type、DraftVersion、checker version 与 input hash 的语义 hash。
+
+repository 只允许 append/read，使用既有主键和 `INSERT OR IGNORE` 实现幂等；不提供 update/delete。
+
+input hash 至少覆盖：
+
+- DraftVersion 与公开 artifact hashes；
+- Brief version/input hash、permission snapshot 和 score plan；
+- current reading revision；
+- 实际使用的 current assertion revision；
+- 实际使用的 personal/research score identity/revision；
+- research score 对应的 current Dossier version；
+- authenticity、score、checker、detector policy version。
+
+## 7. IPC、运行时与 UI
+
+仅新增：
+
+1. `quality:reading-authenticity:preview`
+2. `quality:reading-authenticity:confirm`
+
+preview：
+
+- 输入仅为 draft identity 与 expected revision；
+- 只读、同步、确定性；
+- 返回有界 findings、五态 read model、0 外部请求、费用不适用及一次性确认 token；
+- 不写业务数据。
+
+confirm：
+
+- 绑定 sender/window、preview hash、input hash、TTL 和 expected revision；
+- 重新计算 current dependency hash；
+- stale、重放、多余字段或错误窗口必须失败；
+- 只追加一条 content-addressed summary。
+
+Renderer 不接收正文副本、内部预测、绝对路径、token digest 或 DB details。
+
+UI 只在现有文案工作台增加紧凑区块，显示五态、reason、有限定位与“未修改文案”；不新增路由、大页面或第三个 IPC。
+
+## 8. 预算
+
+| 维度 | 目标 | 硬上限 |
+| --- | ---: | ---: |
+| 生产源码新增 | 1,000—1,300 LOC | 1,500 |
+| 测试新增 | 700—950 LOC | 1,200 |
+| 净新增表 | 0 | 0 |
+| trigger | 0 | 0 |
+| migration | 0 | 0 |
+| 新增 IPC | 2 | 2 |
+| 变更文件 | 22—24 | 25 |
+| 核心验收 | 16 | 16 |
+
+IPC 达到 2 后立即冻结。变更文件达到 25 后不得增加 CSS、便利重构或补充框架。
+
+任一指标达到 100% 时停止扩展并报告；超过 150% 自动暂停且不运行最终 normal；不得自行申请 200% 例外。
+
+## 9. 核心验收
+
+1. RA01：只检查当前不可变 DraftVersion，旧版本不能冒充当前。
+2. RA02：复用 Issue 021 六态，不新增 reading state。
+3. RA03：标题、正文、标签、置顶评论中的问题均有精确 code-point locator/hash。
+4. RA04：R1 + current permission 可通过；R3/S1/S2/UNCLASSIFIED 的具体亲历阻断。
+5. RA05：R2 只允许 current 精确 assertion；泛化亲历阻断。
+6. RA06：歧义或截断结果为 REVIEW_REQUIRED，不得 PASS。
+7. RA07：公开个人评分必须匹配 R1、current user record、source 和 value。
+8. RA08：R2 personal score 不得通过公开 Draft 检查。
+9. RA09：资料分析评分必须匹配 current score/Dossier/value，并显示公开标签。
+10. RA10：NONE 计划下的明确评分、类型冲突和无法归属分数不能 PASS。
+11. RA11：internal prediction 不被查询或外泄。
+12. RA12：相同 current input 幂等；依赖变化后旧结果显示 STALE。
+13. RA13：details/DTO 有界且不保存全文、原始 assertion、内部评分或路径。
+14. RA14：preview 无写入；confirm 严格绑定并拒绝 stale、重放和额外字段。
+15. RA15：现有工作台显示结果，不提供修文、审批、导出、发布或后续 Issue 入口。
+16. RA16：无真实密钥、业务网络、模型调用、外部请求或费用；永久硬约束保持不变。
+
+## 10. 测试与验证
+
+开发期只运行当前失败点对应的精确测试；每次重跑必须有新定位或修改。
+
+建议新增不超过 5 个紧凑测试文件：policy/gold、repository、runtime+IPC、renderer、governance。不得新增 capacity 测试。
+
+Issue 相关测试使用一次显式非重复文件集合，覆盖新测试及必要的 authenticity-policy、copy-policy、hard-constraints 和一个现有 IPC security 文件；不运行全部历史领域专项组合。
+
+最终候选：
+
+1. 依赖与 lockfile 未变时不运行 npm ci。
+2. format-check、lint、typecheck 各一次；修复本任务问题后按 AGENTS 进展式复验。
+3. 使用 observable normal 入口一次，持久保存日志、结构化结果和 exit code。
+4. capacity 不适用，不运行。
+5. build 一次。
+6. 因 desktop/preload/IPC 改动，使用该 build 产物运行一次 source Electron smoke，避免重复 build。
+7. 不运行 desktop/clipper package、packaged smoke、真实浏览器 smoke、dependency audit 或 Release 门禁。
+
+失败分类与可观测重跑完全遵守 AGENTS，不在本指令另设机械次数上限。
+
+## 11. 文档与交付
+
+只创建必要文档：
+
+- 最小合同；
+- 一份 ADR，记录复用 `quality_checks`、0 migration 和否决大型 overlay；
+- 一份包含 16 项的验收/证据文档；
+- 实现通过后更新 README 与 AGENTS 状态。
+
+不得为每个测试排列建立独立文档或证据文件。
+
+全部通过后创建唯一一个本地提交：
+
+`feat(quality): add reading authenticity checks`
+
+最终报告列出动态 Git、预算、实际文件、两 IPC、0 Schema、验证命令与次数、未证明范围及外部副作用。
+
+不 push、不创建 PR、不合并、不进入 Issue 028。完成或阻塞后立即停止。

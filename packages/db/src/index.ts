@@ -5,6 +5,7 @@ export { SqliteCopyRepository } from './copy-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteFactMappingRepository } from './fact-mapping-repository.js';
+export { SqliteReadingAuthenticityRepository } from './reading-authenticity-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
 export { SqliteExperimentRepository } from './experiment-repository.js';
 export { SqliteDossierRepository } from './dossier-repository.js';
@@ -96,6 +97,7 @@ export type {
   FactMappingStatementView,
   FactMappingWorkflowExecution,
 } from './fact-mapping-repository.js';
+export type { ReadingAuthenticityPreparedCheck } from './reading-authenticity-repository.js';
 export type {
   ExperimentActionPreview,
   ExperimentAssignmentPreview,

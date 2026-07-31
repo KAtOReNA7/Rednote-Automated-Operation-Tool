@@ -22,7 +22,10 @@ import type { TopicErrorCode } from '@mystery-operations/topics';
 import type { ExperimentErrorCode } from '@mystery-operations/experiments';
 import type { BriefErrorCode } from '@mystery-operations/briefs';
 import type { CopyErrorCode } from '@mystery-operations/copy';
-import type { FactMappingErrorCode } from '@mystery-operations/quality';
+import type {
+  FactMappingErrorCode,
+  ReadingAuthenticityErrorCode,
+} from '@mystery-operations/quality';
 import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
@@ -147,6 +150,10 @@ import type {
   GetFactMappingClaimChainInput,
   PreviewFactMappingActionInput,
   PreviewFactMappingDecisionInput,
+  ConfirmReadingAuthenticityInput,
+  PreviewReadingAuthenticityInput,
+  ReadingAuthenticityPreview,
+  ReadingAuthenticityResult,
 } from './quality-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
@@ -192,6 +199,8 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   confirmFactMappingAction: 'quality:fact-mapping:confirm-action',
   previewFactMappingDecision: 'quality:fact-mapping:preview-decision',
   confirmFactMappingDecision: 'quality:fact-mapping:confirm-decision',
+  previewReadingAuthenticity: 'quality:reading-authenticity:preview',
+  confirmReadingAuthenticity: 'quality:reading-authenticity:confirm',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -286,6 +295,7 @@ export interface DesktopError {
     | BriefErrorCode
     | CopyErrorCode
     | FactMappingErrorCode
+    | ReadingAuthenticityErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -808,6 +818,12 @@ export interface DesktopBridge {
   confirmFactMappingDecision?(
     input: ConfirmFactMappingDecisionInput,
   ): Promise<DesktopResult<FactMappingDecisionResult>>;
+  previewReadingAuthenticity?(
+    input: PreviewReadingAuthenticityInput,
+  ): Promise<DesktopResult<ReadingAuthenticityPreview>>;
+  confirmReadingAuthenticity?(
+    input: ConfirmReadingAuthenticityInput,
+  ): Promise<DesktopResult<ReadingAuthenticityResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

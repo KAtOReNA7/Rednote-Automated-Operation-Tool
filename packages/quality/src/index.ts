@@ -12,4 +12,5 @@ export * from './identity.js';
 export * from './mapping.js';
 export * from './manual.js';
 export * from './rollup.js';
+export * from './reading-authenticity.js';
 export * from './statements.js';

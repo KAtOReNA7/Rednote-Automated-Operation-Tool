@@ -10,7 +10,7 @@ import { TopicError } from '@mystery-operations/topics';
 import { ExperimentError } from '@mystery-operations/experiments';
 import { BriefError } from '@mystery-operations/briefs';
 import { CopyError } from '@mystery-operations/copy';
-import { FactMappingError } from '@mystery-operations/quality';
+import { FactMappingError, ReadingAuthenticityError } from '@mystery-operations/quality';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -79,6 +79,8 @@ import {
   type GetFactMappingClaimChainInput,
   type PreviewFactMappingActionInput,
   type PreviewFactMappingDecisionInput,
+  type ConfirmReadingAuthenticityInput,
+  type PreviewReadingAuthenticityInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -122,6 +124,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof ReadingAuthenticityError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof FactMappingError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -473,6 +478,36 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       }
       return options.settingsRuntime.confirmFactMappingDecision(
         args[0] as ConfirmFactMappingDecisionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'previewReadingAuthenticity',
+    DESKTOP_IPC_CHANNELS.previewReadingAuthenticity,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new ReadingAuthenticityError('READING_AUTHENTICITY_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.previewReadingAuthenticity(
+        args[0] as PreviewReadingAuthenticityInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmReadingAuthenticity',
+    DESKTOP_IPC_CHANNELS.confirmReadingAuthenticity,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new ReadingAuthenticityError('READING_AUTHENTICITY_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmReadingAuthenticity(
+        args[0] as ConfirmReadingAuthenticityInput,
         event.sender.id,
         window.id,
       );

@@ -123,6 +123,7 @@ import type {
   PreviewCopyActionInput,
   ConfirmFactMappingActionInput,
   ConfirmFactMappingDecisionInput,
+  ConfirmReadingAuthenticityInput,
   FactMappingActionPreview,
   FactMappingActionResult,
   FactMappingClaimChainView,
@@ -135,6 +136,9 @@ import type {
   GetFactMappingClaimChainInput,
   PreviewFactMappingActionInput,
   PreviewFactMappingDecisionInput,
+  PreviewReadingAuthenticityInput,
+  ReadingAuthenticityPreview,
+  ReadingAuthenticityResult,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -174,6 +178,7 @@ import { DesktopExperimentRuntime } from './experiment-runtime.js';
 import { DesktopBriefRuntime } from './brief-runtime.js';
 import { DesktopCopyRuntime } from './copy-runtime.js';
 import { DesktopFactMappingRuntime } from './fact-mapping-runtime.js';
+import { DesktopReadingAuthenticityRuntime } from './reading-authenticity-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -214,6 +219,7 @@ interface ActiveProject {
   readonly briefs: DesktopBriefRuntime;
   readonly copy: DesktopCopyRuntime;
   readonly factMapping: DesktopFactMappingRuntime;
+  readonly readingAuthenticity: DesktopReadingAuthenticityRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
   readonly experiments: DesktopExperimentRuntime;
@@ -737,6 +743,22 @@ export class DesktopSettingsRuntime {
     return this.#requireActive().factMapping.confirmDecision(input, senderId, windowId);
   }
 
+  public previewReadingAuthenticity(
+    input: PreviewReadingAuthenticityInput,
+    senderId: number,
+    windowId: number,
+  ): ReadingAuthenticityPreview {
+    return this.#requireActive().readingAuthenticity.preview(input, senderId, windowId);
+  }
+
+  public confirmReadingAuthenticity(
+    input: ConfirmReadingAuthenticityInput,
+    senderId: number,
+    windowId: number,
+  ): ReadingAuthenticityResult {
+    return this.#requireActive().readingAuthenticity.confirm(input, senderId, windowId);
+  }
+
   public previewBriefAction(
     input: PreviewBriefActionInput,
     senderId: number,
@@ -973,6 +995,7 @@ export class DesktopSettingsRuntime {
     this.#active?.briefs.clearWindow(windowId);
     this.#active?.copy.clearWindow(windowId);
     this.#active?.factMapping.clearWindow(windowId);
+    this.#active?.readingAuthenticity.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -1086,6 +1109,7 @@ export class DesktopSettingsRuntime {
     const briefs = new DesktopBriefRuntime(database);
     const copy = new DesktopCopyRuntime(database);
     const factMapping = new DesktopFactMappingRuntime(database);
+    const readingAuthenticity = new DesktopReadingAuthenticityRuntime(database);
     catalog.start();
     dossier.start();
     topics.start();
@@ -1099,6 +1123,7 @@ export class DesktopSettingsRuntime {
       briefs,
       copy,
       factMapping,
+      readingAuthenticity,
       capabilities,
       catalog,
       dossier,

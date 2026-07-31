@@ -8,6 +8,8 @@ import type {
   CopyDraftListView,
   CopyRewriteScopeV1,
   PreviewCopyActionInput,
+  ReadingAuthenticityPreview,
+  ReadingAuthenticityReadModel,
 } from '@mystery-operations/shared';
 
 const PAGE_SIZE = 12;
@@ -42,6 +44,23 @@ function lineage(payload: ContentDraftPayloadV1) {
 
 function titleText(payload: ContentDraftPayloadV1): string {
   return payload.titles.find(({ titleId }) => titleId === payload.selectedTitleId)?.text ?? '';
+}
+
+function findingFragment(
+  payload: ContentDraftPayloadV1,
+  finding: ReadingAuthenticityReadModel['findings'][number],
+): string {
+  const text =
+    finding.artifactKind === 'SELECTED_TITLE'
+      ? payload.titles.find(({ titleId }) => titleId === finding.artifactId)?.text
+      : finding.artifactKind === 'BODY_BLOCK'
+        ? payload.blocks.find(({ blockId }) => blockId === finding.artifactId)?.text
+        : finding.artifactKind === 'TAG'
+          ? payload.tags.find(({ tagId }) => tagId === finding.artifactId)?.text
+          : payload.pinnedComment?.text;
+  return Array.from(text ?? '')
+    .slice(finding.startCodePoint, finding.endCodePoint)
+    .join('');
 }
 
 function withTitle(payload: ContentDraftPayloadV1, text: string): ContentDraftPayloadV1 {
@@ -93,6 +112,8 @@ export function CopyWorkbench(): React.JSX.Element {
   const [query, setQuery] = useState('');
   const [status, setStatus] = useState<CopyDraftListView['items'][number]['status'] | null>(null);
   const [preview, setPreview] = useState<CopyActionPreview | null>(null);
+  const [readingPreview, setReadingPreview] = useState<ReadingAuthenticityPreview | null>(null);
+  const [readingCheck, setReadingCheck] = useState<ReadingAuthenticityReadModel | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('正在读取本地文案 Draft…');
   const [rewriteInstruction, setRewriteInstruction] = useState('');
@@ -160,6 +181,8 @@ export function CopyWorkbench(): React.JSX.Element {
     setDraft(result.value.payload);
     setRewriteBlockId(result.value.payload.blocks[0]?.blockId ?? '');
     setPreview(null);
+    setReadingPreview(null);
+    setReadingCheck(null);
   }, []);
 
   useEffect(() => {
@@ -209,6 +232,8 @@ export function CopyWorkbench(): React.JSX.Element {
       if ('detail' in result.value) {
         setDetail(result.value.detail);
         setDraft(result.value.detail.payload);
+        setReadingPreview(null);
+        setReadingCheck(null);
       }
       setMessage(mutation ? 'mutation 已进入本地队列。' : '已保存新的不可变 DraftVersion。');
       await loadList();
@@ -222,6 +247,49 @@ export function CopyWorkbench(): React.JSX.Element {
       detail !== null && draft !== null && JSON.stringify(detail.payload) !== JSON.stringify(draft),
     [detail, draft],
   );
+
+  const previewReadingAuthenticity = useCallback(async () => {
+    if (detail === null) return;
+    const method = window.rednoteDesktop?.previewReadingAuthenticity;
+    if (method === undefined) return;
+    setBusy(true);
+    try {
+      const result = await method({ draftId: detail.draftId, expectedRevision: detail.revision });
+      if (!result.ok) {
+        setMessage(`真实性与评分检查预览失败：${result.error.code}`);
+        return;
+      }
+      setReadingPreview(result.value);
+      setReadingCheck(result.value.preview.readModel);
+      setMessage('检查预览仅计算当前不可变 Draft；尚未写入质量检查摘要。');
+    } finally {
+      setBusy(false);
+    }
+  }, [detail]);
+
+  const confirmReadingAuthenticity = useCallback(async () => {
+    if (readingPreview === null) return;
+    const method = window.rednoteDesktop?.confirmReadingAuthenticity;
+    if (method === undefined) return;
+    setBusy(true);
+    try {
+      const result = await method({
+        confirmation: 'SAVE_READING_AUTHENTICITY_CHECK',
+        expectedRevision: readingPreview.preview.readModel.draftRevision,
+        previewHash: readingPreview.previewHash,
+        token: readingPreview.token,
+      });
+      if (!result.ok) {
+        setMessage(`真实性与评分检查确认失败：${result.error.code}`);
+        return;
+      }
+      setReadingCheck(result.value.readModel);
+      setReadingPreview(null);
+      setMessage('真实性与评分检查摘要已追加；Draft 内容与流程状态均未改变。');
+    } finally {
+      setBusy(false);
+    }
+  }, [readingPreview]);
 
   const rewriteScope = useMemo<CopyRewriteScopeV1>(() => {
     if (rewriteKind === 'BODY_BLOCK' || rewriteKind === 'BODY_BLOCK_RANGE') {
@@ -508,6 +576,51 @@ export function CopyWorkbench(): React.JSX.Element {
                   experiment：
                   {draft.brief.experimentBinding === null ? '未绑定' : '已绑定（不代表已有结果）'}
                 </span>
+              </section>
+
+              <section className="copy-lock-card" aria-label="真实性与评分检查">
+                <strong>真实性与评分检查</strong>
+                <span>
+                  已保存：{readingCheck?.savedStatus ?? '尚未读取'} · 本次判断：
+                  {readingCheck?.evaluationStatus ?? 'NOT_RUN'}
+                </span>
+                <span>只检查第一人称阅读表述、公开评分来源与内部预测分泄漏；检查不修改文案。</span>
+                {readingCheck?.findings.length ? (
+                  <ol>
+                    {readingCheck.findings.map((finding, index) => (
+                      <li key={`${finding.artifactKind}-${finding.artifactId}-${index}`}>
+                        <strong>{finding.disposition}</strong> · {finding.reasonCode} · “
+                        {findingFragment(detail.payload, finding)}”
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <small>暂无定位项；请先预览当前 Draft 的检查结果。</small>
+                )}
+                {readingCheck?.truncated ? (
+                  <small>定位项已截断，结果不会标记为 PASS。</small>
+                ) : null}
+                <div>
+                  <button
+                    disabled={busy || dirty || detail.status !== 'READY_FOR_QUALITY_PIPELINE'}
+                    onClick={() => void previewReadingAuthenticity()}
+                    type="button"
+                  >
+                    预览检查
+                  </button>
+                  <button
+                    disabled={busy || readingPreview === null}
+                    onClick={() => void confirmReadingAuthenticity()}
+                    type="button"
+                  >
+                    确认保存摘要
+                  </button>
+                  {readingPreview === null ? null : (
+                    <button disabled={busy} onClick={() => setReadingPreview(null)} type="button">
+                      取消预览
+                    </button>
+                  )}
+                </div>
               </section>
 
               <section className="copy-lock-card">

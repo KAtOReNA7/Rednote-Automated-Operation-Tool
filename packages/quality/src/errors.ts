@@ -27,3 +27,30 @@ export class FactMappingError extends Error {
     this.retryable = retryable;
   }
 }
+
+export const READING_AUTHENTICITY_ERROR_CODES = [
+  'READING_AUTHENTICITY_INVALID_CONTRACT',
+  'READING_AUTHENTICITY_NOT_FOUND',
+  'READING_AUTHENTICITY_NOT_READY',
+  'READING_AUTHENTICITY_STALE_REVISION',
+  'READING_AUTHENTICITY_CONFIRMATION_INVALID',
+  'READING_AUTHENTICITY_CONFIRMATION_EXPIRED',
+] as const;
+
+export type ReadingAuthenticityErrorCode = (typeof READING_AUTHENTICITY_ERROR_CODES)[number];
+
+export class ReadingAuthenticityError extends Error {
+  public readonly code: ReadingAuthenticityErrorCode;
+  public readonly retryable: boolean;
+
+  public constructor(
+    code: ReadingAuthenticityErrorCode,
+    message: string = code,
+    retryable = false,
+  ) {
+    super(message);
+    this.name = 'ReadingAuthenticityError';
+    this.code = code;
+    this.retryable = retryable;
+  }
+}
