@@ -34,6 +34,7 @@ M2（Issue 012—021）已完成。
 - [Issue 023：版本化实验设计与确定性分配](./m3/M3-Issue023-versioned-experiment-management-Codex-instruction.txt)
 - [Issue 024：结构化 Content Brief、字段锁定与受控生成](./m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt)
 - [Issue 025：版本化文案生成与局部重写](./m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt)
+- [Issue 026：正文事实声明映射、证据回溯与事实质量检查](./m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt)
 
-M3 Issue 022—025 已完成；Issue 025 指令只归档于本目录。下一项仅规划 Issue 026，未收到明确
+M3 Issue 022—026 已完成；Issue 026 指令只归档于本目录。下一项仅规划 Issue 027，未收到明确
 授权时不得自动开始。

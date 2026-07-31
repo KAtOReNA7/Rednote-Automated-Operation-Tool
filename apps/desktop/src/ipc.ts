@@ -10,6 +10,7 @@ import { TopicError } from '@mystery-operations/topics';
 import { ExperimentError } from '@mystery-operations/experiments';
 import { BriefError } from '@mystery-operations/briefs';
 import { CopyError } from '@mystery-operations/copy';
+import { FactMappingError } from '@mystery-operations/quality';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -69,6 +70,13 @@ import {
   type GetCopyDraftInput,
   type GetCopyDraftsInput,
   type PreviewCopyActionInput,
+  type ConfirmFactMappingActionInput,
+  type ConfirmFactMappingDecisionInput,
+  type GetFactMappingCheckInput,
+  type GetFactMappingChecksInput,
+  type GetFactMappingClaimChainInput,
+  type PreviewFactMappingActionInput,
+  type PreviewFactMappingDecisionInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -112,6 +120,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof FactMappingError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof CopyError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -392,6 +403,78 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   });
   register('diffCopyDraftVersions', DESKTOP_IPC_CHANNELS.diffCopyDraftVersions, (_event, args) =>
     options.settingsRuntime.diffCopyDraftVersions(args[0] as DiffCopyDraftVersionsInput),
+  );
+  register('getFactMappingChecks', DESKTOP_IPC_CHANNELS.getFactMappingChecks, (_event, args) =>
+    options.settingsRuntime.getFactMappingChecks(args[0] as GetFactMappingChecksInput),
+  );
+  register('getFactMappingCheck', DESKTOP_IPC_CHANNELS.getFactMappingCheck, (_event, args) =>
+    options.settingsRuntime.getFactMappingCheck(args[0] as GetFactMappingCheckInput),
+  );
+  register(
+    'getFactMappingClaimChain',
+    DESKTOP_IPC_CHANNELS.getFactMappingClaimChain,
+    (_event, args) =>
+      options.settingsRuntime.getFactMappingClaimChain(args[0] as GetFactMappingClaimChainInput),
+  );
+  register(
+    'previewFactMappingAction',
+    DESKTOP_IPC_CHANNELS.previewFactMappingAction,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new FactMappingError('FACT_MAPPING_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.previewFactMappingAction(
+        args[0] as PreviewFactMappingActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmFactMappingAction',
+    DESKTOP_IPC_CHANNELS.confirmFactMappingAction,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new FactMappingError('FACT_MAPPING_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmFactMappingAction(
+        args[0] as ConfirmFactMappingActionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'previewFactMappingDecision',
+    DESKTOP_IPC_CHANNELS.previewFactMappingDecision,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new FactMappingError('FACT_MAPPING_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.previewFactMappingDecision(
+        args[0] as PreviewFactMappingDecisionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmFactMappingDecision',
+    DESKTOP_IPC_CHANNELS.confirmFactMappingDecision,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new FactMappingError('FACT_MAPPING_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmFactMappingDecision(
+        args[0] as ConfirmFactMappingDecisionInput,
+        event.sender.id,
+        window.id,
+      );
+    },
   );
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),

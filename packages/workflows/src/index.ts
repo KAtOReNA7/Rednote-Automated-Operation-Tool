@@ -58,6 +58,18 @@ export {
   createTopicQuotaPlanJobHandler,
   registerTopicPlanningJobs,
 } from './topic-planning-handler.js';
+export {
+  FACT_MAPPING_MODEL_BOUNDARY,
+  FactMappingCheckService,
+  createFactMappingCheckJobHandler,
+  registerFactMappingCheckJob,
+} from './fact-mapping-handler.js';
+export type {
+  FactMappingCheckServiceOptions,
+  FactMappingJobResultV1,
+  FactMappingModelSlotV1,
+  FactMappingWorkflowPersistenceV1,
+} from './fact-mapping-handler.js';
 
 export type { BackoffPolicy, ExponentialBackoffOptions } from './queue/backoff.js';
 export type { QueueClock, QueueScheduler } from './queue/clock.js';

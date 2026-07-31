@@ -10,6 +10,7 @@ import type {
 } from '@mystery-operations/shared';
 
 import { CopyWorkbench } from './copy-workbench.js';
+import { FactMappingWorkbench } from './fact-mapping-workbench.js';
 
 const PROFILE_LABELS: Readonly<Record<string, string>> = {
   CROSS_WORK_COMPARISON: '跨作品比较',
@@ -532,6 +533,7 @@ export function ContentProductionPage(): React.JSX.Element {
       </section>
 
       <CopyWorkbench />
+      <FactMappingWorkbench />
 
       <div className="brief-layout">
         <aside className="brief-list-panel">

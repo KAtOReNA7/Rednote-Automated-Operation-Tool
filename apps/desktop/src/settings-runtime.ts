@@ -117,6 +117,20 @@ import type {
   GetCopyDraftInput,
   GetCopyDraftsInput,
   PreviewCopyActionInput,
+  ConfirmFactMappingActionInput,
+  ConfirmFactMappingDecisionInput,
+  FactMappingActionPreview,
+  FactMappingActionResult,
+  FactMappingClaimChainView,
+  FactMappingDetailView,
+  FactMappingDecisionPreview,
+  FactMappingDecisionResult,
+  FactMappingListView,
+  GetFactMappingCheckInput,
+  GetFactMappingChecksInput,
+  GetFactMappingClaimChainInput,
+  PreviewFactMappingActionInput,
+  PreviewFactMappingDecisionInput,
 } from '@mystery-operations/shared';
 import {
   CREDENTIAL_SLOT,
@@ -155,6 +169,7 @@ import { DesktopTopicRuntime } from './topic-runtime.js';
 import { DesktopExperimentRuntime } from './experiment-runtime.js';
 import { DesktopBriefRuntime } from './brief-runtime.js';
 import { DesktopCopyRuntime } from './copy-runtime.js';
+import { DesktopFactMappingRuntime } from './fact-mapping-runtime.js';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -194,6 +209,7 @@ interface ActiveProject {
   readonly authenticity: DesktopAuthenticityRuntime;
   readonly briefs: DesktopBriefRuntime;
   readonly copy: DesktopCopyRuntime;
+  readonly factMapping: DesktopFactMappingRuntime;
   readonly catalog: DesktopCatalogRuntime;
   readonly evidence: DesktopEvidenceRuntime;
   readonly experiments: DesktopExperimentRuntime;
@@ -499,6 +515,7 @@ export class DesktopSettingsRuntime {
       await previous?.topics.close();
       await previous?.briefs.close();
       await previous?.copy.close();
+      await previous?.factMapping.close();
       previous?.database.close();
       return this.getSetupState();
     } catch (error) {
@@ -507,6 +524,7 @@ export class DesktopSettingsRuntime {
       await prepared.topics.close();
       await prepared.briefs.close();
       await prepared.copy.close();
+      await prepared.factMapping.close();
       prepared.database.close();
       throw error;
     }
@@ -669,6 +687,50 @@ export class DesktopSettingsRuntime {
 
   public diffCopyDraftVersions(input: DiffCopyDraftVersionsInput): CopyDraftVersionDiffView {
     return this.#requireActive().copy.diff(input);
+  }
+
+  public getFactMappingChecks(input: GetFactMappingChecksInput): FactMappingListView {
+    return this.#requireActive().factMapping.list(input);
+  }
+
+  public getFactMappingCheck(input: GetFactMappingCheckInput): FactMappingDetailView {
+    return this.#requireActive().factMapping.get(input);
+  }
+
+  public getFactMappingClaimChain(input: GetFactMappingClaimChainInput): FactMappingClaimChainView {
+    return this.#requireActive().factMapping.getClaimChain(input);
+  }
+
+  public previewFactMappingAction(
+    input: PreviewFactMappingActionInput,
+    senderId: number,
+    windowId: number,
+  ): FactMappingActionPreview {
+    return this.#requireActive().factMapping.preview(input, senderId, windowId);
+  }
+
+  public confirmFactMappingAction(
+    input: ConfirmFactMappingActionInput,
+    senderId: number,
+    windowId: number,
+  ): FactMappingActionResult {
+    return this.#requireActive().factMapping.confirm(input, senderId, windowId);
+  }
+
+  public previewFactMappingDecision(
+    input: PreviewFactMappingDecisionInput,
+    senderId: number,
+    windowId: number,
+  ): FactMappingDecisionPreview {
+    return this.#requireActive().factMapping.previewDecision(input, senderId, windowId);
+  }
+
+  public confirmFactMappingDecision(
+    input: ConfirmFactMappingDecisionInput,
+    senderId: number,
+    windowId: number,
+  ): FactMappingDecisionResult {
+    return this.#requireActive().factMapping.confirmDecision(input, senderId, windowId);
   }
 
   public previewBriefAction(
@@ -890,6 +952,7 @@ export class DesktopSettingsRuntime {
     this.#active?.experiments.clearWindow(windowId);
     this.#active?.briefs.clearWindow(windowId);
     this.#active?.copy.clearWindow(windowId);
+    this.#active?.factMapping.clearWindow(windowId);
     this.#active?.catalog.clearWindow(windowId);
     this.#active?.evidence.clearWindow(windowId);
     this.#active?.dossier.clearWindow(windowId);
@@ -935,6 +998,7 @@ export class DesktopSettingsRuntime {
     await this.#active?.topics.close();
     await this.#active?.briefs.close();
     await this.#active?.copy.close();
+    await this.#active?.factMapping.close();
     this.#active?.database.close();
     this.#active = null;
   }
@@ -1001,17 +1065,20 @@ export class DesktopSettingsRuntime {
     const experiments = new DesktopExperimentRuntime(database);
     const briefs = new DesktopBriefRuntime(database);
     const copy = new DesktopCopyRuntime(database);
+    const factMapping = new DesktopFactMappingRuntime(database);
     catalog.start();
     dossier.start();
     topics.start();
     briefs.start();
     copy.start();
+    factMapping.start();
     accountingRepository.recoverInterrupted(new Date().toISOString());
     return {
       accounting,
       authenticity,
       briefs,
       copy,
+      factMapping,
       capabilities,
       catalog,
       dossier,

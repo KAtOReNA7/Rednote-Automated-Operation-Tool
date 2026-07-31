@@ -4,6 +4,7 @@ export { SqliteBriefRepository } from './brief-repository.js';
 export { SqliteCopyRepository } from './copy-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
+export { SqliteFactMappingRepository } from './fact-mapping-repository.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
 export { SqliteExperimentRepository } from './experiment-repository.js';
 export { SqliteDossierRepository } from './dossier-repository.js';
@@ -83,6 +84,18 @@ export type {
   RegisterSourceInputV1,
   SourceClassificationInputV1,
 } from './evidence-repository.js';
+export type {
+  FactMappingClaimChainView,
+  FactMappingDetailView,
+  FactMappingDisplayStatus,
+  FactMappingListItem,
+  FactMappingListView,
+  FactMappingPreviewView,
+  FactMappingPreparedExecution,
+  FactMappingStartExecution,
+  FactMappingStatementView,
+  FactMappingWorkflowExecution,
+} from './fact-mapping-repository.js';
 export type {
   ExperimentActionPreview,
   ExperimentAssignmentPreview,

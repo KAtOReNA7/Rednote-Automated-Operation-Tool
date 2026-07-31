@@ -12,7 +12,7 @@ afterEach(cleanTemporaryDatabases);
 
 describe('M3 Issue 025 migration', () => {
   it('appends exactly the next migration and creates normalized STRICT tables', async () => {
-    expect(MIGRATIONS.at(-1)).toMatchObject({
+    expect(MIGRATIONS[17]).toMatchObject({
       name: 'versioned_copy_generation',
       version: 18,
     });
@@ -60,7 +60,7 @@ describe('M3 Issue 025 migration', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [18], schemaVersion: 18 });
+    expect(result).toMatchObject({ appliedVersions: [18, 19], schemaVersion: 19 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

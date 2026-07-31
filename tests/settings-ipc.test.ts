@@ -248,6 +248,9 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       versionOffset: 0,
     },
   ],
+  getFactMappingChecks: [{ limit: 25, offset: 0, status: null }],
+  getFactMappingCheck: [{ draftId: 'draft-fixture-000001' }],
+  getFactMappingClaimChain: [{ statementId: 'statement-fixture-000001' }],
   getWindowState: [],
   listLocalApiClients: [],
   listDossiers: [{ limit: 25, offset: 0 }],
@@ -399,6 +402,43 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       confirmation: 'APPLY_COPY_ACTION',
       executionId: null,
       kind: 'CREATE_MANUAL_SCAFFOLD',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  previewFactMappingAction: [
+    {
+      draftId: 'draft-fixture-000001',
+      kind: 'START',
+      mode: 'LOCAL_MANUAL',
+    },
+  ],
+  confirmFactMappingAction: [
+    {
+      confirmation: 'APPLY_FACT_MAPPING_ACTION',
+      executionId: 'fact-mapping-execution-fixture',
+      kind: 'START',
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
+  previewFactMappingDecision: [
+    {
+      draftId: 'draft-fixture-000001',
+      expectedRevision: 0,
+      kind: 'RECLASSIFY',
+      reason: '用户确认该句是观点。',
+      statementId: 'statement-fixture-000001',
+      statementKind: 'OPINION',
+      materiality: 'NOT_APPLICABLE',
+      domain: 'NOT_APPLICABLE',
+    },
+  ],
+  confirmFactMappingDecision: [
+    {
+      confirmation: 'APPLY_FACT_MAPPING_ACTION',
+      executionId: 'fact-mapping-decision-fixture',
+      kind: 'RECLASSIFY',
       previewHash: 'a'.repeat(64),
       token: 'a'.repeat(43),
     },

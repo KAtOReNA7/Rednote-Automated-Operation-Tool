@@ -113,6 +113,9 @@ jobs:
       - name: Run versioned Copy generation suites
         run: npm run test:copy
 
+      - name: Run factual claim mapping and evidence trace suites
+        run: npm run test:fact-mapping
+
       - name: Run Electron runtime smoke
         run: npm run test:electron-smoke
 

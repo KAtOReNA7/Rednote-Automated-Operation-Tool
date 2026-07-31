@@ -28,6 +28,9 @@
       "path": "../providers"
     },
     {
+      "path": "../quality"
+    },
+    {
       "path": "../settings"
     },
     {

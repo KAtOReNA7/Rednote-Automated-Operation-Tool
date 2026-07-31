@@ -10547,6 +10547,1016 @@ BEGIN
 END;
 `;
 
+const FACTUAL_CLAIM_MAPPING = `
+CREATE TABLE fact_mapping_policy_registry (
+  policy_kind TEXT PRIMARY KEY CHECK (policy_kind IN (
+    'SEGMENTATION', 'CLASSIFICATION', 'KEY_FACT', 'PROTECTED_SIGNAL',
+    'CANDIDATE', 'TYPED_COMPATIBILITY', 'MAPPING', 'CHECKER'
+  )),
+  current_version TEXT NOT NULL CHECK (length(current_version) BETWEEN 1 AND 128),
+  revision INTEGER NOT NULL DEFAULT 1 CHECK (revision > 0),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+INSERT INTO fact_mapping_policy_registry(policy_kind, current_version, updated_at) VALUES
+  ('SEGMENTATION', 'fact-segmentation-v1', ${UTC_NOW}),
+  ('CLASSIFICATION', 'fact-classification-v1', ${UTC_NOW}),
+  ('KEY_FACT', 'key-fact-policy-v1', ${UTC_NOW}),
+  ('PROTECTED_SIGNAL', 'protected-signal-policy-v1', ${UTC_NOW}),
+  ('CANDIDATE', 'claim-candidate-policy-v1', ${UTC_NOW}),
+  ('TYPED_COMPATIBILITY', 'typed-fact-compatibility-v1', ${UTC_NOW}),
+  ('MAPPING', 'fact-mapping-v1', ${UTC_NOW}),
+  ('CHECKER', 'fact-mapping-checker-v1', ${UTC_NOW});
+
+CREATE TABLE fact_mapping_checks (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  draft_id TEXT NOT NULL UNIQUE REFERENCES drafts(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  contract_version TEXT NOT NULL CHECK (contract_version = 'fact-mapping-v1'),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE fact_mapping_plans (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_id TEXT NOT NULL REFERENCES fact_mapping_checks(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_id TEXT NOT NULL REFERENCES drafts(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  brief_version_id TEXT NOT NULL REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  expected_draft_revision INTEGER NOT NULL CHECK (expected_draft_revision >= 0),
+  mode TEXT NOT NULL CHECK (mode IN ('LOCAL_MANUAL', 'MODEL_ASSISTED')),
+  artifact_count INTEGER NOT NULL CHECK (artifact_count BETWEEN 1 AND 64),
+  input_code_point_count INTEGER NOT NULL CHECK (
+    input_code_point_count BETWEEN 1 AND 40000
+  ),
+  protected_signal_count INTEGER NOT NULL CHECK (
+    protected_signal_count BETWEEN 0 AND 1024
+  ),
+  statement_count INTEGER NOT NULL CHECK (statement_count BETWEEN 1 AND 512),
+  candidate_claim_count INTEGER NOT NULL CHECK (
+    candidate_claim_count BETWEEN 0 AND 256
+  ),
+  evidence_count INTEGER NOT NULL CHECK (evidence_count BETWEEN 0 AND 16384),
+  source_revision_count INTEGER NOT NULL CHECK (
+    source_revision_count BETWEEN 0 AND 512
+  ),
+  maximum_model_requests INTEGER NOT NULL CHECK (
+    (mode = 'LOCAL_MANUAL' AND maximum_model_requests = 0) OR
+    (mode = 'MODEL_ASSISTED' AND maximum_model_requests = 1)
+  ),
+  capability_state TEXT NOT NULL CHECK (
+    capability_state IN ('SUPPORTED', 'UNSUPPORTED', 'UNKNOWN', 'STALE')
+  ),
+  cache_state TEXT NOT NULL CHECK (
+    cache_state IN ('AVAILABLE', 'MISS', 'UNKNOWN')
+  ),
+  budget_state TEXT NOT NULL CHECK (
+    budget_state IN ('AVAILABLE', 'BLOCKED', 'UNKNOWN')
+  ),
+  credential_state TEXT NOT NULL CHECK (
+    credential_state IN ('AVAILABLE', 'MISSING', 'NOT_REQUIRED', 'UNKNOWN')
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  candidate_hash TEXT NOT NULL CHECK (
+    length(candidate_hash) = 64 AND candidate_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  preview_hash TEXT NOT NULL CHECK (
+    length(preview_hash) = 64 AND preview_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  checker_version TEXT NOT NULL CHECK (checker_version = 'fact-mapping-checker-v1'),
+  segmentation_version TEXT NOT NULL CHECK (
+    segmentation_version = 'fact-segmentation-v1'
+  ),
+  classification_version TEXT NOT NULL CHECK (
+    classification_version = 'fact-classification-v1'
+  ),
+  key_fact_policy_version TEXT NOT NULL CHECK (
+    key_fact_policy_version = 'key-fact-policy-v1'
+  ),
+  mapping_policy_version TEXT NOT NULL CHECK (
+    mapping_policy_version = 'fact-mapping-v1'
+  ),
+  expires_at TEXT NOT NULL CHECK (expires_at ${UTC_REQUIRED}),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  CHECK (expires_at > created_at)
+) STRICT;
+
+CREATE TABLE fact_mapping_runs (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  execution_id TEXT NOT NULL UNIQUE CHECK (length(execution_id) BETWEEN 1 AND 128),
+  plan_id TEXT NOT NULL REFERENCES fact_mapping_plans(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  check_id TEXT NOT NULL REFERENCES fact_mapping_checks(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_id TEXT NOT NULL REFERENCES drafts(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  job_id TEXT REFERENCES jobs(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  model_execution_id TEXT REFERENCES model_runs(execution_id)
+    ON UPDATE CASCADE ON DELETE SET NULL,
+  mode TEXT NOT NULL CHECK (mode IN ('LOCAL_MANUAL', 'MODEL_ASSISTED')),
+  status TEXT NOT NULL CHECK (status IN (
+    'PLANNED', 'QUEUED', 'RUNNING', 'AWAITING_REVIEW', 'PASS',
+    'FACT_BLOCKED', 'FAILED', 'CANCELLED', 'AMBIGUOUS', 'STALE', 'SUPERSEDED'
+  )),
+  external_request_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    external_request_count IN (0, 1)
+  ),
+  stable_error_code TEXT CHECK (
+    stable_error_code IS NULL OR length(stable_error_code) BETWEEN 1 AND 128
+  ),
+  input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+  candidate_hash TEXT NOT NULL CHECK (length(candidate_hash) = 64),
+  dependency_hash TEXT NOT NULL CHECK (length(dependency_hash) = 64),
+  preview_hash TEXT NOT NULL CHECK (length(preview_hash) = 64),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  finished_at TEXT CHECK (finished_at ${UTC_OPTIONAL} finished_at ${UTC_REQUIRED}),
+  CHECK (
+    (status IN ('PLANNED', 'QUEUED', 'RUNNING') AND finished_at IS NULL) OR
+    (status NOT IN ('PLANNED', 'QUEUED', 'RUNNING') AND finished_at IS NOT NULL)
+  ),
+  CHECK (mode = 'MODEL_ASSISTED' OR external_request_count = 0)
+) STRICT;
+
+CREATE TABLE fact_mapping_check_versions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_id TEXT NOT NULL REFERENCES fact_mapping_checks(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_id TEXT NOT NULL REFERENCES drafts(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_version_id TEXT NOT NULL REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  run_id TEXT NOT NULL REFERENCES fact_mapping_runs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  version_number INTEGER NOT NULL CHECK (version_number > 0),
+  previous_version_id TEXT REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  decision_revision INTEGER NOT NULL DEFAULT 0 CHECK (decision_revision >= 0),
+  status TEXT NOT NULL CHECK (status IN ('PASS', 'FACT_BLOCKED', 'AWAITING_REVIEW')),
+  satisfied_count INTEGER NOT NULL DEFAULT 0 CHECK (satisfied_count >= 0),
+  not_applicable_count INTEGER NOT NULL DEFAULT 0 CHECK (not_applicable_count >= 0),
+  needs_review_count INTEGER NOT NULL DEFAULT 0 CHECK (needs_review_count >= 0),
+  blocking_key_fact_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    blocking_key_fact_count >= 0
+  ),
+  unmapped_supporting_fact_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    unmapped_supporting_fact_count >= 0
+  ),
+  conflicted_count INTEGER NOT NULL DEFAULT 0 CHECK (conflicted_count >= 0),
+  stale_count INTEGER NOT NULL DEFAULT 0 CHECK (stale_count >= 0),
+  warning_boundary_escape_count INTEGER NOT NULL DEFAULT 0 CHECK (
+    warning_boundary_escape_count >= 0
+  ),
+  reason_codes_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(reason_codes_json) AND json_type(reason_codes_json) = 'array' AND
+    length(CAST(reason_codes_json AS BLOB)) BETWEEN 2 AND 8192
+  ),
+  input_hash TEXT NOT NULL CHECK (
+    length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  artifact_hash TEXT NOT NULL CHECK (
+    length(artifact_hash) = 64 AND artifact_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  candidate_hash TEXT NOT NULL CHECK (
+    length(candidate_hash) = 64 AND candidate_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  dependency_hash TEXT NOT NULL CHECK (
+    length(dependency_hash) = 64 AND dependency_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  checker_version TEXT NOT NULL CHECK (checker_version = 'fact-mapping-checker-v1'),
+  segmentation_version TEXT NOT NULL CHECK (
+    segmentation_version = 'fact-segmentation-v1'
+  ),
+  classification_version TEXT NOT NULL CHECK (
+    classification_version = 'fact-classification-v1'
+  ),
+  key_fact_policy_version TEXT NOT NULL CHECK (
+    key_fact_policy_version = 'key-fact-policy-v1'
+  ),
+  mapping_policy_version TEXT NOT NULL CHECK (
+    mapping_policy_version = 'fact-mapping-v1'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (check_id, version_number),
+  UNIQUE (draft_version_id, checker_version, input_hash)
+) STRICT;
+
+CREATE TABLE fact_mapping_heads (
+  check_id TEXT PRIMARY KEY REFERENCES fact_mapping_checks(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  current_version_id TEXT NOT NULL UNIQUE REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  check_revision INTEGER NOT NULL CHECK (check_revision >= 0),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE fact_mapping_artifacts (
+  check_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  artifact_kind TEXT NOT NULL CHECK (artifact_kind IN (
+    'SELECTED_TITLE', 'BODY_BLOCK', 'TAG', 'PINNED_COMMENT'
+  )),
+  artifact_id TEXT NOT NULL CHECK (length(artifact_id) BETWEEN 1 AND 512),
+  artifact_order INTEGER CHECK (artifact_order IS NULL OR artifact_order >= 0),
+  text_hash TEXT NOT NULL CHECK (
+    length(text_hash) = 64 AND text_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  code_point_length INTEGER NOT NULL CHECK (
+    code_point_length BETWEEN 1 AND 20000
+  ),
+  profile_id TEXT NOT NULL CHECK (length(profile_id) BETWEEN 1 AND 128),
+  lineage_hash TEXT NOT NULL CHECK (
+    length(lineage_hash) = 64 AND lineage_hash NOT GLOB '*[^0-9a-f]*'
+  ),
+  current_at_creation INTEGER NOT NULL CHECK (current_at_creation = 1),
+  PRIMARY KEY (check_version_id, artifact_kind, artifact_id)
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE fact_mapping_statements (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  artifact_kind TEXT NOT NULL,
+  artifact_id TEXT NOT NULL,
+  statement_order INTEGER NOT NULL CHECK (statement_order BETWEEN 0 AND 511),
+  start_code_point INTEGER NOT NULL CHECK (start_code_point >= 0),
+  end_code_point INTEGER NOT NULL CHECK (end_code_point > start_code_point),
+  artifact_text_hash TEXT NOT NULL CHECK (length(artifact_text_hash) = 64),
+  selected_text_hash TEXT NOT NULL CHECK (length(selected_text_hash) = 64),
+  locator_version TEXT NOT NULL CHECK (locator_version = 'draft-text-locator-v1'),
+  statement_kind TEXT NOT NULL CHECK (statement_kind IN (
+    'FACT', 'OPINION', 'ANALYTICAL_JUDGMENT', 'PERSONAL_EXPERIENCE',
+    'RHETORICAL', 'LABEL_OR_WARNING', 'MIXED', 'AMBIGUOUS'
+  )),
+  materiality TEXT NOT NULL CHECK (materiality IN (
+    'KEY_FACT', 'SUPPORTING_FACT', 'NOT_APPLICABLE'
+  )),
+  fact_domain TEXT NOT NULL CHECK (fact_domain IN (
+    'BIBLIOGRAPHIC', 'AWARD', 'NUMERIC', 'DATE_TIME', 'RANKING',
+    'QUOTATION_ATTRIBUTION', 'PLOT_OR_STRUCTURE', 'INDUSTRY_OR_MARKET',
+    'CREATOR_OR_PUBLISHER', 'OTHER', 'NOT_APPLICABLE'
+  )),
+  classification_reason_code TEXT NOT NULL CHECK (
+    length(classification_reason_code) BETWEEN 1 AND 128
+  ),
+  requires_review INTEGER NOT NULL CHECK (requires_review IN (0, 1)),
+  provenance TEXT NOT NULL CHECK (provenance IN (
+    'DETERMINISTIC', 'MODEL_CANDIDATE', 'USER_DEFINED', 'USER_CONFIRMED'
+  )),
+  statement_revision INTEGER NOT NULL DEFAULT 1 CHECK (statement_revision > 0),
+  contract_version TEXT NOT NULL CHECK (contract_version = 'draft-statement-v1'),
+  segmentation_version TEXT NOT NULL CHECK (
+    segmentation_version = 'fact-segmentation-v1'
+  ),
+  classification_version TEXT NOT NULL CHECK (
+    classification_version = 'fact-classification-v1'
+  ),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (check_version_id, statement_order),
+  UNIQUE (
+    check_version_id, artifact_kind, artifact_id, start_code_point, end_code_point
+  ),
+  FOREIGN KEY (check_version_id, artifact_kind, artifact_id)
+    REFERENCES fact_mapping_artifacts(check_version_id, artifact_kind, artifact_id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  CHECK (
+    (statement_kind = 'FACT' AND materiality <> 'NOT_APPLICABLE' AND
+      fact_domain <> 'NOT_APPLICABLE') OR
+    (statement_kind = 'MIXED' AND materiality <> 'NOT_APPLICABLE' AND
+      fact_domain <> 'NOT_APPLICABLE') OR
+    (statement_kind NOT IN ('FACT', 'MIXED') AND materiality = 'NOT_APPLICABLE' AND
+      fact_domain = 'NOT_APPLICABLE')
+  )
+) STRICT;
+
+CREATE TABLE fact_mapping_signals (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  statement_id TEXT REFERENCES fact_mapping_statements(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  warning_field TEXT CHECK (warning_field IS NULL OR warning_field IN (
+    'coverWarningText', 'titleWarningMarker', 'bodyOpeningWarningText',
+    'pinnedCommentWarningText'
+  )),
+  signal_kind TEXT NOT NULL CHECK (signal_kind IN (
+    'NUMBER', 'PERCENT', 'CURRENCY', 'DATE', 'RANKING', 'AWARD', 'ISBN',
+    'BIBLIOGRAPHIC_IDENTITY', 'QUOTATION_ATTRIBUTION'
+  )),
+  start_code_point INTEGER NOT NULL CHECK (start_code_point >= 0),
+  end_code_point INTEGER NOT NULL CHECK (end_code_point > start_code_point),
+  token_hash TEXT NOT NULL CHECK (length(token_hash) = 64),
+  acknowledged INTEGER NOT NULL CHECK (acknowledged IN (0, 1)),
+  acknowledgement_reason TEXT CHECK (
+    acknowledgement_reason IS NULL OR
+    length(CAST(acknowledgement_reason AS BLOB)) BETWEEN 1 AND 2000
+  ),
+  policy_version TEXT NOT NULL CHECK (
+    policy_version = 'protected-signal-policy-v1'
+  ),
+  CHECK ((statement_id IS NULL) <> (warning_field IS NULL)),
+  CHECK (
+    acknowledged = 0 OR
+    statement_id IS NOT NULL OR acknowledgement_reason IS NOT NULL
+  )
+) STRICT;
+
+CREATE TABLE fact_mapping_links (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  statement_id TEXT NOT NULL UNIQUE REFERENCES fact_mapping_statements(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_id TEXT REFERENCES claims(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  claim_revision INTEGER,
+  claim_current_snapshot INTEGER NOT NULL CHECK (claim_current_snapshot IN (0, 1)),
+  fact_evaluation_id TEXT REFERENCES fact_evaluations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  evaluation_revision INTEGER,
+  evaluation_policy_version TEXT,
+  evaluation_status_snapshot TEXT CHECK (
+    evaluation_status_snapshot IS NULL OR evaluation_status_snapshot IN (
+      'NOT_EVALUATED', 'INSUFFICIENT', 'SUPPORTED_NOT_VERIFIED', 'VERIFIED',
+      'CONFLICTED', 'FACT_BLOCKED', 'STALE_REVIEW_REQUIRED', 'REJECTED'
+    )
+  ),
+  fact_policy_satisfied INTEGER NOT NULL CHECK (fact_policy_satisfied IN (0, 1)),
+  fact_policy_reason_code TEXT NOT NULL CHECK (
+    length(fact_policy_reason_code) BETWEEN 1 AND 128
+  ),
+  relation TEXT NOT NULL CHECK (relation IN (
+    'EXACT', 'SUPPORTED_PARAPHRASE', 'NARROWER_THAN_CLAIM',
+    'BROADER_THAN_CLAIM', 'VALUE_CONFLICT', 'SCOPE_MISMATCH',
+    'SUBJECT_MISMATCH', 'PREDICATE_MISMATCH', 'MULTIPLE_CANDIDATES',
+    'NO_CLAIM', 'STALE', 'NOT_APPLICABLE'
+  )),
+  compatibility_ok INTEGER CHECK (compatibility_ok IS NULL OR compatibility_ok IN (0, 1)),
+  compatibility_reason_code TEXT CHECK (
+    compatibility_reason_code IS NULL OR
+    length(compatibility_reason_code) BETWEEN 1 AND 128
+  ),
+  candidate_provenance_json TEXT NOT NULL DEFAULT '[]' CHECK (
+    json_valid(candidate_provenance_json) AND
+    json_type(candidate_provenance_json) = 'array' AND
+    length(CAST(candidate_provenance_json AS BLOB)) BETWEEN 2 AND 1024
+  ),
+  mapper_provenance TEXT NOT NULL CHECK (mapper_provenance IN (
+    'DETERMINISTIC', 'MODEL_CANDIDATE', 'USER_DEFINED', 'USER_CONFIRMED'
+  )),
+  reason TEXT CHECK (
+    reason IS NULL OR length(CAST(reason AS BLOB)) BETWEEN 1 AND 2000
+  ),
+  input_hash TEXT NOT NULL CHECK (length(input_hash) = 64),
+  semantic_hash TEXT NOT NULL CHECK (length(semantic_hash) = 64),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  CHECK (
+    (relation IN ('NO_CLAIM', 'NOT_APPLICABLE') AND claim_id IS NULL AND
+      fact_evaluation_id IS NULL) OR
+    (relation NOT IN ('NO_CLAIM', 'NOT_APPLICABLE') AND claim_id IS NOT NULL AND
+      claim_revision IS NOT NULL AND (
+        (fact_evaluation_id IS NULL AND evaluation_revision IS NULL AND
+          evaluation_policy_version IS NULL AND evaluation_status_snapshot IS NULL) OR
+        (fact_evaluation_id IS NOT NULL AND evaluation_revision IS NOT NULL AND
+          evaluation_policy_version IS NOT NULL AND evaluation_status_snapshot IS NOT NULL)
+      ))
+  )
+) STRICT;
+
+CREATE TABLE fact_mapping_link_evidence (
+  mapping_id TEXT NOT NULL REFERENCES fact_mapping_links(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  evidence_id TEXT NOT NULL REFERENCES claim_evidence(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  source_id TEXT NOT NULL,
+  source_revision INTEGER NOT NULL CHECK (source_revision > 0),
+  evidence_revision INTEGER NOT NULL CHECK (evidence_revision > 0),
+  evidence_relation TEXT NOT NULL CHECK (
+    evidence_relation IN ('SUPPORTS', 'CONTRADICTS', 'QUALIFIES')
+  ),
+  evidence_excerpt_hash TEXT NOT NULL CHECK (length(evidence_excerpt_hash) = 64),
+  source_content_hash TEXT NOT NULL CHECK (length(source_content_hash) BETWEEN 1 AND 128),
+  source_availability TEXT NOT NULL CHECK (
+    source_availability IN ('AVAILABLE', 'UNAVAILABLE', 'RETRACTED', 'SUPERSEDED')
+  ),
+  source_current_snapshot INTEGER NOT NULL CHECK (source_current_snapshot IN (0, 1)),
+  authority_tier TEXT NOT NULL CHECK (authority_tier IN (
+    'OFFICIAL_PRIMARY', 'INDEPENDENT_SECONDARY', 'DISCUSSION_CONTEXT', 'UNKNOWN'
+  )),
+  use_class TEXT NOT NULL CHECK (use_class IN (
+    'KEY_FACT_ELIGIBLE', 'SUPPORTING_ONLY', 'CONTEXT_ONLY', 'NOT_CLASSIFIED'
+  )),
+  independence_state TEXT NOT NULL CHECK (independence_state IN (
+    'CONFIRMED_INDEPENDENT', 'DEPENDENT', 'UNKNOWN'
+  )),
+  lineage_group TEXT CHECK (
+    lineage_group IS NULL OR length(lineage_group) BETWEEN 1 AND 128
+  ),
+  PRIMARY KEY (mapping_id, evidence_id),
+  FOREIGN KEY (source_id, source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE fact_mapping_dependencies (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  dependency_kind TEXT NOT NULL CHECK (dependency_kind IN (
+    'DRAFT_VERSION', 'BRIEF_VERSION', 'BRIEF_EVIDENCE', 'DRAFT_LINEAGE',
+    'SUBJECT', 'CLAIM', 'FACT_EVALUATION', 'EVIDENCE', 'SOURCE_REVISION',
+    'CONFLICT', 'POLICY', 'MODEL_EXECUTION'
+  )),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 512),
+  dependency_revision TEXT NOT NULL CHECK (length(dependency_revision) BETWEEN 1 AND 128),
+  dependency_hash TEXT NOT NULL CHECK (length(dependency_hash) = 64),
+  draft_version_id TEXT REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  brief_version_id TEXT REFERENCES content_brief_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  brief_evidence_id TEXT REFERENCES content_brief_evidence_refs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  subject_type TEXT,
+  subject_id TEXT,
+  claim_id TEXT REFERENCES claims(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  fact_evaluation_id TEXT REFERENCES fact_evaluations(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  evidence_id TEXT REFERENCES claim_evidence(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  source_id TEXT,
+  source_revision INTEGER,
+  conflict_id TEXT REFERENCES fact_conflicts(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  model_execution_id TEXT REFERENCES model_runs(execution_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  current_at_creation INTEGER NOT NULL CHECK (current_at_creation IN (0, 1)),
+  UNIQUE (check_version_id, dependency_kind, dependency_id),
+  FOREIGN KEY (subject_type, subject_id)
+    REFERENCES fact_subjects(subject_type, subject_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (source_id, source_revision)
+    REFERENCES source_revisions(source_id, revision)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (
+    (dependency_kind = 'DRAFT_VERSION' AND draft_version_id IS NOT NULL) OR
+    (dependency_kind = 'BRIEF_VERSION' AND brief_version_id IS NOT NULL) OR
+    (dependency_kind = 'BRIEF_EVIDENCE' AND brief_evidence_id IS NOT NULL) OR
+    dependency_kind = 'DRAFT_LINEAGE' OR
+    (dependency_kind = 'SUBJECT' AND subject_type IS NOT NULL AND subject_id IS NOT NULL) OR
+    (dependency_kind = 'CLAIM' AND claim_id IS NOT NULL) OR
+    (dependency_kind = 'FACT_EVALUATION' AND fact_evaluation_id IS NOT NULL) OR
+    (dependency_kind = 'EVIDENCE' AND evidence_id IS NOT NULL) OR
+    (dependency_kind = 'SOURCE_REVISION' AND source_id IS NOT NULL AND
+      source_revision IS NOT NULL) OR
+    (dependency_kind = 'CONFLICT' AND conflict_id IS NOT NULL) OR
+    dependency_kind = 'POLICY' OR
+    (dependency_kind = 'MODEL_EXECUTION' AND model_execution_id IS NOT NULL)
+  )
+) STRICT;
+
+CREATE TABLE fact_mapping_decisions (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  check_id TEXT NOT NULL REFERENCES fact_mapping_checks(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  resulting_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  statement_id TEXT NOT NULL REFERENCES fact_mapping_statements(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  parent_decision_id TEXT REFERENCES fact_mapping_decisions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  decision_kind TEXT NOT NULL CHECK (decision_kind IN (
+    'CONFIRM_CLASSIFICATION', 'RECLASSIFY', 'SPLIT', 'MAP_CLAIM',
+    'UNMAP_CLAIM', 'UNDO', 'REOPEN'
+  )),
+  expected_revision INTEGER NOT NULL CHECK (expected_revision >= 0),
+  resulting_revision INTEGER NOT NULL CHECK (
+    resulting_revision = expected_revision + 1
+  ),
+  preview_hash TEXT NOT NULL CHECK (length(preview_hash) = 64),
+  before_hash TEXT NOT NULL CHECK (length(before_hash) = 64),
+  after_hash TEXT NOT NULL CHECK (length(after_hash) = 64),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  reason TEXT CHECK (
+    reason IS NULL OR length(CAST(reason AS BLOB)) BETWEEN 1 AND 2000
+  ),
+  actor TEXT NOT NULL CHECK (actor = 'USER'),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  UNIQUE (check_id, resulting_revision)
+) STRICT;
+
+CREATE TABLE fact_mapping_invalidations (
+  id TEXT PRIMARY KEY CHECK (length(id) BETWEEN 1 AND 128),
+  event_identity TEXT NOT NULL UNIQUE CHECK (
+    length(event_identity) BETWEEN 1 AND 1024
+  ),
+  check_version_id TEXT NOT NULL REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE CASCADE,
+  dependency_kind TEXT NOT NULL CHECK (length(dependency_kind) BETWEEN 1 AND 64),
+  dependency_id TEXT NOT NULL CHECK (length(dependency_id) BETWEEN 1 AND 512),
+  observed_revision TEXT NOT NULL CHECK (length(observed_revision) BETWEEN 1 AND 128),
+  reason_code TEXT NOT NULL CHECK (length(reason_code) BETWEEN 1 AND 128),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED})
+) STRICT;
+
+DROP INDEX idx_quality_checks_draft_result;
+ALTER TABLE quality_checks RENAME TO quality_checks_issue026_legacy;
+
+CREATE TABLE quality_checks (
+  id TEXT PRIMARY KEY NOT NULL CHECK (length(trim(id)) > 0),
+  draft_id TEXT NOT NULL REFERENCES drafts(id) ON UPDATE CASCADE ON DELETE CASCADE,
+  draft_version_id TEXT REFERENCES content_draft_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  fact_mapping_version_id TEXT REFERENCES fact_mapping_check_versions(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  fact_mapping_run_id TEXT REFERENCES fact_mapping_runs(id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  check_type TEXT NOT NULL CHECK (check_type IN (
+    'FACT_MAPPING', 'INTERNAL_CONSISTENCY', 'READING_AUTHENTICITY', 'SPOILER',
+    'DUPLICATION', 'TITLE_BODY_CONSISTENCY', 'IMAGE_TECHNICAL', 'STRUCTURED_OUTPUT'
+  )),
+  result TEXT NOT NULL CHECK (result IN ('PASS', 'FAIL')),
+  summary_status TEXT CHECK (
+    summary_status IS NULL OR summary_status IN ('PASS', 'FACT_BLOCKED', 'AWAITING_REVIEW')
+  ),
+  severity TEXT NOT NULL CHECK (length(trim(severity)) > 0),
+  reason_code TEXT CHECK (
+    reason_code IS NULL OR reason_code IN (
+      'ALL_FACTS_SATISFIED', 'KEY_FACT_BLOCKED', 'REVIEW_REQUIRED'
+    )
+  ),
+  details_json TEXT NOT NULL DEFAULT '{}' CHECK (
+    json_valid(details_json) AND length(CAST(details_json AS BLOB)) <= 4096
+  ),
+  checker_version TEXT NOT NULL CHECK (length(trim(checker_version)) > 0),
+  input_hash TEXT CHECK (
+    input_hash IS NULL OR
+    (length(input_hash) = 64 AND input_hash NOT GLOB '*[^0-9a-f]*')
+  ),
+  legacy_unresolved INTEGER NOT NULL DEFAULT 1 CHECK (legacy_unresolved IN (0, 1)),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  CHECK (
+    check_type <> 'FACT_MAPPING' OR legacy_unresolved = 1 OR
+    (draft_version_id IS NOT NULL AND fact_mapping_version_id IS NOT NULL AND
+      fact_mapping_run_id IS NOT NULL AND summary_status IS NOT NULL AND
+      reason_code IS NOT NULL AND input_hash IS NOT NULL)
+  ),
+  CHECK (
+    legacy_unresolved = 0 OR
+    (draft_version_id IS NULL AND fact_mapping_version_id IS NULL AND
+      fact_mapping_run_id IS NULL AND summary_status IS NULL AND input_hash IS NULL)
+  )
+) STRICT;
+
+INSERT INTO quality_checks(
+  id, draft_id, check_type, result, severity, details_json,
+  checker_version, legacy_unresolved, created_at
+)
+SELECT
+  id, draft_id, check_type, result, severity, details_json,
+  checker_version, 1, created_at
+FROM quality_checks_issue026_legacy;
+
+DROP TABLE quality_checks_issue026_legacy;
+
+CREATE INDEX idx_quality_checks_draft_result
+  ON quality_checks(draft_id, result, created_at DESC);
+CREATE INDEX idx_quality_checks_fact_mapping_version
+  ON quality_checks(fact_mapping_version_id);
+CREATE INDEX idx_quality_checks_fact_mapping_run
+  ON quality_checks(fact_mapping_run_id);
+CREATE UNIQUE INDEX idx_quality_checks_fact_mapping_identity
+  ON quality_checks(draft_version_id, check_type, checker_version, input_hash)
+  WHERE check_type = 'FACT_MAPPING' AND legacy_unresolved = 0;
+CREATE UNIQUE INDEX idx_quality_checks_legacy_identity
+  ON quality_checks(draft_id, check_type, checker_version)
+  WHERE legacy_unresolved = 1;
+CREATE INDEX idx_fact_mapping_plans_draft
+  ON fact_mapping_plans(draft_id, created_at DESC);
+CREATE INDEX idx_fact_mapping_plans_check ON fact_mapping_plans(check_id);
+CREATE INDEX idx_fact_mapping_plans_version ON fact_mapping_plans(draft_version_id);
+CREATE INDEX idx_fact_mapping_plans_brief ON fact_mapping_plans(brief_version_id);
+CREATE INDEX idx_fact_mapping_runs_draft
+  ON fact_mapping_runs(draft_id, status, created_at DESC);
+CREATE INDEX idx_fact_mapping_runs_plan ON fact_mapping_runs(plan_id);
+CREATE INDEX idx_fact_mapping_runs_check ON fact_mapping_runs(check_id);
+CREATE INDEX idx_fact_mapping_runs_version ON fact_mapping_runs(draft_version_id);
+CREATE INDEX idx_fact_mapping_runs_job ON fact_mapping_runs(job_id);
+CREATE INDEX idx_fact_mapping_runs_model ON fact_mapping_runs(model_execution_id);
+CREATE UNIQUE INDEX idx_fact_mapping_one_active_run
+  ON fact_mapping_runs(draft_id)
+  WHERE status IN ('PLANNED', 'QUEUED', 'RUNNING');
+CREATE INDEX idx_fact_mapping_versions_check
+  ON fact_mapping_check_versions(check_id, version_number DESC);
+CREATE INDEX idx_fact_mapping_versions_draft_id
+  ON fact_mapping_check_versions(draft_id, created_at DESC);
+CREATE INDEX idx_fact_mapping_versions_draft
+  ON fact_mapping_check_versions(draft_version_id, created_at DESC);
+CREATE INDEX idx_fact_mapping_versions_run ON fact_mapping_check_versions(run_id);
+CREATE INDEX idx_fact_mapping_versions_previous
+  ON fact_mapping_check_versions(previous_version_id);
+CREATE INDEX idx_fact_mapping_artifacts_order
+  ON fact_mapping_artifacts(check_version_id, artifact_kind, artifact_order, artifact_id);
+CREATE INDEX idx_fact_mapping_statements_order
+  ON fact_mapping_statements(check_version_id, statement_order);
+CREATE INDEX idx_fact_mapping_statements_artifact_kind
+  ON fact_mapping_statements(artifact_kind, check_version_id);
+CREATE INDEX idx_fact_mapping_statements_artifact_id
+  ON fact_mapping_statements(artifact_id, check_version_id);
+CREATE INDEX idx_fact_mapping_signals_statement
+  ON fact_mapping_signals(check_version_id, statement_id, signal_kind);
+CREATE INDEX idx_fact_mapping_signals_statement_id
+  ON fact_mapping_signals(statement_id);
+CREATE INDEX idx_fact_mapping_links_version
+  ON fact_mapping_links(check_version_id);
+CREATE INDEX idx_fact_mapping_links_claim
+  ON fact_mapping_links(claim_id, fact_evaluation_id, check_version_id);
+CREATE INDEX idx_fact_mapping_links_evaluation
+  ON fact_mapping_links(fact_evaluation_id, check_version_id);
+CREATE INDEX idx_fact_mapping_link_evidence_source
+  ON fact_mapping_link_evidence(source_id, source_revision, mapping_id);
+CREATE INDEX idx_fact_mapping_link_evidence_evidence
+  ON fact_mapping_link_evidence(evidence_id, mapping_id);
+CREATE INDEX idx_fact_mapping_dependency_reverse
+  ON fact_mapping_dependencies(
+    dependency_kind, dependency_id, check_version_id
+  );
+CREATE INDEX idx_fact_mapping_dependency_claim
+  ON fact_mapping_dependencies(claim_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_evidence
+  ON fact_mapping_dependencies(evidence_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_source
+  ON fact_mapping_dependencies(source_id, source_revision, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_draft
+  ON fact_mapping_dependencies(draft_version_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_brief
+  ON fact_mapping_dependencies(brief_version_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_brief_evidence
+  ON fact_mapping_dependencies(brief_evidence_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_subject_type
+  ON fact_mapping_dependencies(subject_type, subject_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_subject_id
+  ON fact_mapping_dependencies(subject_id, subject_type, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_evaluation
+  ON fact_mapping_dependencies(fact_evaluation_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_conflict
+  ON fact_mapping_dependencies(conflict_id, check_version_id);
+CREATE INDEX idx_fact_mapping_dependency_model
+  ON fact_mapping_dependencies(model_execution_id, check_version_id);
+CREATE INDEX idx_fact_mapping_decision_history
+  ON fact_mapping_decisions(check_id, resulting_revision DESC);
+CREATE INDEX idx_fact_mapping_decision_version
+  ON fact_mapping_decisions(resulting_version_id);
+CREATE INDEX idx_fact_mapping_decision_statement
+  ON fact_mapping_decisions(statement_id);
+CREATE INDEX idx_fact_mapping_decision_parent
+  ON fact_mapping_decisions(parent_decision_id);
+CREATE INDEX idx_fact_mapping_invalidation_version
+  ON fact_mapping_invalidations(check_version_id, created_at DESC);
+CREATE INDEX idx_fact_mapping_invalidation_dependency
+  ON fact_mapping_invalidations(dependency_kind, dependency_id, created_at DESC);
+
+CREATE TRIGGER fact_mapping_head_same_check_insert
+BEFORE INSERT ON fact_mapping_heads
+WHEN NOT EXISTS (
+  SELECT 1 FROM fact_mapping_check_versions AS version
+  WHERE version.id = NEW.current_version_id AND version.check_id = NEW.check_id
+)
+BEGIN SELECT RAISE(ABORT, 'fact mapping head must reference the same check'); END;
+
+CREATE TRIGGER fact_mapping_head_same_check_update
+BEFORE UPDATE OF current_version_id ON fact_mapping_heads
+WHEN NOT EXISTS (
+  SELECT 1 FROM fact_mapping_check_versions AS version
+  WHERE version.id = NEW.current_version_id AND version.check_id = NEW.check_id
+)
+BEGIN SELECT RAISE(ABORT, 'fact mapping head must reference the same check'); END;
+
+CREATE TRIGGER fact_mapping_head_revision_guard
+BEFORE UPDATE ON fact_mapping_heads
+WHEN NEW.check_revision <> OLD.check_revision + 1
+BEGIN SELECT RAISE(ABORT, 'invalid fact mapping head revision'); END;
+
+CREATE TRIGGER fact_mapping_statement_overlap_guard
+BEFORE INSERT ON fact_mapping_statements
+WHEN EXISTS (
+  SELECT 1 FROM fact_mapping_statements AS existing
+  WHERE existing.check_version_id = NEW.check_version_id
+    AND existing.artifact_kind = NEW.artifact_kind
+    AND existing.artifact_id = NEW.artifact_id
+    AND NEW.start_code_point < existing.end_code_point
+    AND NEW.end_code_point > existing.start_code_point
+)
+BEGIN SELECT RAISE(ABORT, 'fact mapping statement locators overlap'); END;
+
+CREATE TRIGGER fact_mapping_statement_bounds_guard
+BEFORE INSERT ON fact_mapping_statements
+WHEN NOT EXISTS (
+  SELECT 1 FROM fact_mapping_artifacts AS artifact
+  WHERE artifact.check_version_id = NEW.check_version_id
+    AND artifact.artifact_kind = NEW.artifact_kind
+    AND artifact.artifact_id = NEW.artifact_id
+    AND artifact.text_hash = NEW.artifact_text_hash
+    AND NEW.end_code_point <= artifact.code_point_length
+)
+BEGIN SELECT RAISE(ABORT, 'invalid fact mapping statement locator'); END;
+
+CREATE TRIGGER fact_mapping_link_version_guard
+BEFORE INSERT ON fact_mapping_links
+WHEN NOT EXISTS (
+  SELECT 1 FROM fact_mapping_statements AS statement
+  WHERE statement.id = NEW.statement_id
+    AND statement.check_version_id = NEW.check_version_id
+)
+BEGIN SELECT RAISE(ABORT, 'mapping and statement versions differ'); END;
+
+CREATE TRIGGER fact_mapping_link_evaluation_guard
+BEFORE INSERT ON fact_mapping_links
+WHEN NEW.fact_evaluation_id IS NOT NULL AND NOT EXISTS (
+  SELECT 1 FROM fact_evaluations AS evaluation
+  WHERE evaluation.id = NEW.fact_evaluation_id AND evaluation.claim_id = NEW.claim_id
+)
+BEGIN SELECT RAISE(ABORT, 'mapping evaluation belongs to another claim'); END;
+
+CREATE TRIGGER fact_mapping_link_evidence_guard
+BEFORE INSERT ON fact_mapping_link_evidence
+WHEN NOT EXISTS (
+  SELECT 1
+  FROM fact_mapping_links AS mapping
+  JOIN claim_evidence AS evidence ON evidence.id = NEW.evidence_id
+  WHERE mapping.id = NEW.mapping_id
+    AND mapping.claim_id = evidence.claim_id
+    AND evidence.source_id = NEW.source_id
+    AND evidence.source_revision = NEW.source_revision
+)
+BEGIN SELECT RAISE(ABORT, 'mapping evidence chain is inconsistent'); END;
+
+CREATE TRIGGER quality_fact_mapping_reference_guard
+BEFORE INSERT ON quality_checks
+WHEN NEW.check_type = 'FACT_MAPPING' AND NEW.legacy_unresolved = 0 AND NOT EXISTS (
+  SELECT 1
+  FROM fact_mapping_check_versions AS version
+  JOIN fact_mapping_runs AS run ON run.id = NEW.fact_mapping_run_id
+  WHERE version.id = NEW.fact_mapping_version_id
+    AND version.draft_id = NEW.draft_id
+    AND version.draft_version_id = NEW.draft_version_id
+    AND version.run_id = run.id
+    AND version.status = NEW.summary_status
+    AND version.input_hash = NEW.input_hash
+)
+BEGIN SELECT RAISE(ABORT, 'invalid FACT_MAPPING quality summary reference'); END;
+
+CREATE TRIGGER fact_mapping_run_revision_guard
+BEFORE UPDATE ON fact_mapping_runs
+WHEN NEW.revision <> OLD.revision + 1 OR NEW.execution_id <> OLD.execution_id
+BEGIN SELECT RAISE(ABORT, 'invalid fact mapping run revision'); END;
+
+CREATE TRIGGER fact_mapping_check_versions_immutable_update
+BEFORE UPDATE ON fact_mapping_check_versions
+BEGIN SELECT RAISE(ABORT, 'fact mapping check versions are immutable'); END;
+CREATE TRIGGER fact_mapping_check_versions_immutable_delete
+BEFORE DELETE ON fact_mapping_check_versions
+BEGIN SELECT RAISE(ABORT, 'fact mapping check versions are immutable'); END;
+CREATE TRIGGER fact_mapping_artifacts_immutable_update
+BEFORE UPDATE ON fact_mapping_artifacts
+BEGIN SELECT RAISE(ABORT, 'fact mapping artifacts are immutable'); END;
+CREATE TRIGGER fact_mapping_artifacts_immutable_delete
+BEFORE DELETE ON fact_mapping_artifacts
+BEGIN SELECT RAISE(ABORT, 'fact mapping artifacts are immutable'); END;
+CREATE TRIGGER fact_mapping_statements_immutable_update
+BEFORE UPDATE ON fact_mapping_statements
+BEGIN SELECT RAISE(ABORT, 'fact mapping statements are immutable'); END;
+CREATE TRIGGER fact_mapping_statements_immutable_delete
+BEFORE DELETE ON fact_mapping_statements
+BEGIN SELECT RAISE(ABORT, 'fact mapping statements are immutable'); END;
+CREATE TRIGGER fact_mapping_signals_immutable_update
+BEFORE UPDATE ON fact_mapping_signals
+BEGIN SELECT RAISE(ABORT, 'fact mapping signals are immutable'); END;
+CREATE TRIGGER fact_mapping_signals_immutable_delete
+BEFORE DELETE ON fact_mapping_signals
+BEGIN SELECT RAISE(ABORT, 'fact mapping signals are immutable'); END;
+CREATE TRIGGER fact_mapping_links_immutable_update
+BEFORE UPDATE ON fact_mapping_links
+BEGIN SELECT RAISE(ABORT, 'fact mapping links are immutable'); END;
+CREATE TRIGGER fact_mapping_links_immutable_delete
+BEFORE DELETE ON fact_mapping_links
+BEGIN SELECT RAISE(ABORT, 'fact mapping links are immutable'); END;
+CREATE TRIGGER fact_mapping_link_evidence_immutable_update
+BEFORE UPDATE ON fact_mapping_link_evidence
+BEGIN SELECT RAISE(ABORT, 'fact mapping evidence links are immutable'); END;
+CREATE TRIGGER fact_mapping_link_evidence_immutable_delete
+BEFORE DELETE ON fact_mapping_link_evidence
+BEGIN SELECT RAISE(ABORT, 'fact mapping evidence links are immutable'); END;
+CREATE TRIGGER fact_mapping_dependencies_immutable_update
+BEFORE UPDATE ON fact_mapping_dependencies
+BEGIN SELECT RAISE(ABORT, 'fact mapping dependencies are immutable'); END;
+CREATE TRIGGER fact_mapping_dependencies_immutable_delete
+BEFORE DELETE ON fact_mapping_dependencies
+BEGIN SELECT RAISE(ABORT, 'fact mapping dependencies are immutable'); END;
+CREATE TRIGGER fact_mapping_decisions_immutable_update
+BEFORE UPDATE ON fact_mapping_decisions
+BEGIN SELECT RAISE(ABORT, 'fact mapping decisions are immutable'); END;
+CREATE TRIGGER fact_mapping_decisions_immutable_delete
+BEFORE DELETE ON fact_mapping_decisions
+BEGIN SELECT RAISE(ABORT, 'fact mapping decisions are immutable'); END;
+CREATE TRIGGER fact_mapping_invalidations_immutable_update
+BEFORE UPDATE ON fact_mapping_invalidations
+BEGIN SELECT RAISE(ABORT, 'fact mapping invalidations are immutable'); END;
+CREATE TRIGGER fact_mapping_invalidations_immutable_delete
+BEFORE DELETE ON fact_mapping_invalidations
+BEGIN SELECT RAISE(ABORT, 'fact mapping invalidations are immutable'); END;
+CREATE TRIGGER quality_checks_fact_mapping_immutable_update
+BEFORE UPDATE ON quality_checks
+WHEN OLD.check_type = 'FACT_MAPPING'
+BEGIN SELECT RAISE(ABORT, 'FACT_MAPPING quality summaries are immutable'); END;
+CREATE TRIGGER quality_checks_fact_mapping_immutable_delete
+BEFORE DELETE ON quality_checks
+WHEN OLD.check_type = 'FACT_MAPPING'
+BEGIN SELECT RAISE(ABORT, 'FACT_MAPPING quality summaries are immutable'); END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_draft_head_change
+AFTER UPDATE OF current_version_id ON content_draft_heads
+WHEN NEW.current_version_id <> OLD.current_version_id
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'DRAFT_VERSION:' || NEW.draft_id || ':' || NEW.draft_revision || ':' ||
+      dependency.check_version_id,
+    dependency.check_version_id, 'DRAFT_VERSION', OLD.current_version_id,
+    CAST(NEW.draft_revision AS TEXT), 'NEW_DRAFT_VERSION', NEW.updated_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'DRAFT_VERSION'
+    AND dependency.draft_version_id = OLD.current_version_id;
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_claim_change
+AFTER UPDATE ON claims
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'CLAIM:' || NEW.id || ':' || NEW.revision || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'CLAIM', NEW.id, CAST(NEW.revision AS TEXT),
+    'CLAIM_CHANGED', ${UTC_NOW}
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'CLAIM' AND dependency.claim_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_evidence_change
+AFTER UPDATE ON claim_evidence
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'EVIDENCE:' || NEW.id || ':' || NEW.revision || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'EVIDENCE', NEW.id, CAST(NEW.revision AS TEXT),
+    'EVIDENCE_CHANGED', ${UTC_NOW}
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'EVIDENCE' AND dependency.evidence_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_source_revision_change
+AFTER UPDATE ON source_revisions
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'SOURCE_REVISION:' || NEW.source_id || ':' || NEW.revision || ':' ||
+      NEW.updated_at || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'SOURCE_REVISION',
+    NEW.source_id || ':' || NEW.revision, NEW.updated_at,
+    'SOURCE_REVISION_CHANGED', NEW.updated_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'SOURCE_REVISION'
+    AND dependency.source_id = NEW.source_id
+    AND dependency.source_revision = NEW.revision;
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_source_classification
+AFTER INSERT ON source_classifications
+WHEN NEW.classification_revision > 1
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'SOURCE_CLASSIFICATION:' || NEW.source_id || ':' || NEW.source_revision || ':' ||
+      NEW.classification_revision || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'SOURCE_REVISION',
+    NEW.source_id || ':' || NEW.source_revision,
+    CAST(NEW.classification_revision AS TEXT), 'SOURCE_CLASSIFICATION_CHANGED', NEW.created_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'SOURCE_REVISION'
+    AND dependency.source_id = NEW.source_id
+    AND dependency.source_revision = NEW.source_revision;
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_fact_evaluation
+AFTER INSERT ON fact_evaluations
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'FACT_EVALUATION:' || NEW.claim_id || ':' || NEW.id || ':' ||
+      dependency.check_version_id,
+    dependency.check_version_id, 'CLAIM', NEW.claim_id, NEW.id,
+    'FACT_EVALUATION_CHANGED', NEW.created_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'CLAIM' AND dependency.claim_id = NEW.claim_id
+    AND NOT EXISTS (
+      SELECT 1 FROM fact_mapping_dependencies AS exact
+      WHERE exact.check_version_id = dependency.check_version_id
+        AND exact.dependency_kind = 'FACT_EVALUATION'
+        AND exact.fact_evaluation_id = NEW.id
+    );
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_conflict_change
+AFTER UPDATE ON fact_conflicts
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'CONFLICT:' || NEW.id || ':' || NEW.revision || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'CONFLICT', NEW.id, CAST(NEW.revision AS TEXT),
+    'FACT_CONFLICT_CHANGED', NEW.updated_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'CONFLICT' AND dependency.conflict_id = NEW.id;
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_resolution_decision
+AFTER INSERT ON resolution_decisions
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'ENTITY_RESOLUTION:' || NEW.id || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'SUBJECT', dependency.dependency_id, NEW.id,
+    'CANONICAL_ENTITY_CHANGED', NEW.created_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'SUBJECT'
+    AND dependency.subject_type = NEW.entity_type
+    AND dependency.subject_id IN (NEW.survivor_entity_id, NEW.affected_entity_id);
+END;
+
+CREATE TRIGGER invalidate_fact_mapping_on_policy_change
+AFTER UPDATE ON fact_mapping_policy_registry
+WHEN NEW.current_version <> OLD.current_version
+BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind,
+    dependency_id, observed_revision, reason_code, created_at
+  )
+  SELECT
+    lower(hex(randomblob(16))),
+    'FACT_MAPPING_POLICY:' || NEW.policy_kind || ':' || NEW.revision || ':' ||
+      dependency.check_version_id,
+    dependency.check_version_id, 'POLICY', dependency.dependency_id,
+    CAST(NEW.revision AS TEXT), 'FACT_MAPPING_POLICY_CHANGED', NEW.updated_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'POLICY'
+    AND dependency.dependency_id = NEW.policy_kind || ':' || OLD.current_version;
+END;
+
+CREATE TRIGGER fact_mapping_policy_revision_guard
+BEFORE UPDATE ON fact_mapping_policy_registry
+WHEN NEW.revision <> OLD.revision + 1 OR NEW.policy_kind <> OLD.policy_kind
+BEGIN SELECT RAISE(ABORT, 'invalid fact mapping policy revision'); END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -10644,5 +11654,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'versioned_copy_generation',
     sql: VERSIONED_COPY_GENERATION,
     version: 18,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'factual_claim_mapping',
+    sql: FACTUAL_CLAIM_MAPPING,
+    version: 19,
   }),
 ]);

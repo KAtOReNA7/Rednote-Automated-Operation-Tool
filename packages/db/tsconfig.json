@@ -36,6 +36,9 @@
       "path": "../providers"
     },
     {
+      "path": "../quality"
+    },
+    {
       "path": "../search"
     },
     {

@@ -22,6 +22,7 @@ import type { TopicErrorCode } from '@mystery-operations/topics';
 import type { ExperimentErrorCode } from '@mystery-operations/experiments';
 import type { BriefErrorCode } from '@mystery-operations/briefs';
 import type { CopyErrorCode } from '@mystery-operations/copy';
+import type { FactMappingErrorCode } from '@mystery-operations/quality';
 import type {
   CancelLocalApiPairingRequest,
   LocalApiClientView,
@@ -127,6 +128,22 @@ import type {
   GetCopyDraftsInput,
   PreviewCopyActionInput,
 } from './copy-contracts.js';
+import type {
+  ConfirmFactMappingActionInput,
+  ConfirmFactMappingDecisionInput,
+  FactMappingActionPreview,
+  FactMappingActionResult,
+  FactMappingClaimChainView,
+  FactMappingDetailView,
+  FactMappingDecisionPreview,
+  FactMappingDecisionResult,
+  FactMappingListView,
+  GetFactMappingCheckInput,
+  GetFactMappingChecksInput,
+  GetFactMappingClaimChainInput,
+  PreviewFactMappingActionInput,
+  PreviewFactMappingDecisionInput,
+} from './quality-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
 
@@ -164,6 +181,13 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   previewCopyAction: 'copy:preview-action',
   confirmCopyAction: 'copy:confirm-action',
   diffCopyDraftVersions: 'copy:diff-versions',
+  getFactMappingChecks: 'quality:fact-mapping:list',
+  getFactMappingCheck: 'quality:fact-mapping:get',
+  getFactMappingClaimChain: 'quality:fact-mapping:get-claim-chain',
+  previewFactMappingAction: 'quality:fact-mapping:preview-action',
+  confirmFactMappingAction: 'quality:fact-mapping:confirm-action',
+  previewFactMappingDecision: 'quality:fact-mapping:preview-decision',
+  confirmFactMappingDecision: 'quality:fact-mapping:confirm-decision',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -255,6 +279,7 @@ export interface DesktopError {
     | ExperimentErrorCode
     | BriefErrorCode
     | CopyErrorCode
+    | FactMappingErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -756,6 +781,27 @@ export interface DesktopBridge {
   diffCopyDraftVersions?(
     input: DiffCopyDraftVersionsInput,
   ): Promise<DesktopResult<CopyDraftVersionDiffView>>;
+  getFactMappingChecks?(
+    input: GetFactMappingChecksInput,
+  ): Promise<DesktopResult<FactMappingListView>>;
+  getFactMappingCheck?(
+    input: GetFactMappingCheckInput,
+  ): Promise<DesktopResult<FactMappingDetailView>>;
+  getFactMappingClaimChain?(
+    input: GetFactMappingClaimChainInput,
+  ): Promise<DesktopResult<FactMappingClaimChainView>>;
+  previewFactMappingAction?(
+    input: PreviewFactMappingActionInput,
+  ): Promise<DesktopResult<FactMappingActionPreview>>;
+  confirmFactMappingAction?(
+    input: ConfirmFactMappingActionInput,
+  ): Promise<DesktopResult<FactMappingActionResult>>;
+  previewFactMappingDecision?(
+    input: PreviewFactMappingDecisionInput,
+  ): Promise<DesktopResult<FactMappingDecisionPreview>>;
+  confirmFactMappingDecision?(
+    input: ConfirmFactMappingDecisionInput,
+  ): Promise<DesktopResult<FactMappingDecisionResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,

@@ -6,6 +6,7 @@ export * from './evidence-contracts.js';
 export * from './experiment-contracts.js';
 export * from './brief-contracts.js';
 export * from './copy-contracts.js';
+export * from './quality-contracts.js';
 export * from './dossier-contracts.js';
 export * from './topic-contracts.js';
 

@@ -79,6 +79,7 @@ describe('M3 Issue 024 Content Brief architecture and governance', () => {
     const migrations = source('packages/db/src/migrations.ts');
     const issue024 = migrations.slice(
       migrations.indexOf('const STRUCTURED_CONTENT_BRIEF_GENERATOR'),
+      migrations.indexOf('const VERSIONED_COPY_GENERATION'),
     );
     expect(issue024).toContain('content_brief_versions');
     expect(issue024).toContain('content_brief_generation_runs');

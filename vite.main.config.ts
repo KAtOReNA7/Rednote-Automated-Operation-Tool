@@ -61,6 +61,9 @@ export default defineConfig({
       '@mystery-operations/providers': fileURLToPath(
         new URL('./packages/providers/src/index.ts', import.meta.url),
       ),
+      '@mystery-operations/quality': fileURLToPath(
+        new URL('./packages/quality/src/index.ts', import.meta.url),
+      ),
       '@mystery-operations/search': fileURLToPath(
         new URL('./packages/search/src/index.ts', import.meta.url),
       ),

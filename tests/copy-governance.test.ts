@@ -80,7 +80,10 @@ describe('M3 Issue 025 Copy architecture and governance', () => {
 
   it('keeps v18 bounded and free of downstream writes, secrets and arbitrary paths', () => {
     const migrations = source('packages/db/src/migrations.ts');
-    const issue025 = migrations.slice(migrations.indexOf('const VERSIONED_COPY_GENERATION'));
+    const issue025 = migrations.slice(
+      migrations.indexOf('const VERSIONED_COPY_GENERATION'),
+      migrations.indexOf('const FACTUAL_CLAIM_MAPPING'),
+    );
     expect(issue025).toContain('content_draft_versions');
     expect(issue025).toContain('content_draft_mutation_runs');
     expect(issue025).not.toMatch(

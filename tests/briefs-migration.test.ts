@@ -54,7 +54,7 @@ describe('M3 Issue 024 migration', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [17, 18], schemaVersion: 18 });
+    expect(result).toMatchObject({ appliedVersions: [17, 18, 19], schemaVersion: 19 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

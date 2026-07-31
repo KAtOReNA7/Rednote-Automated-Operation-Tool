@@ -3,8 +3,8 @@
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
   <img alt="M3 in progress" src="https://img.shields.io/badge/M3-进行中-ff2442" />
-  <img alt="Issues 001–025 completed" src="https://img.shields.io/badge/已完成-Issues%20001--025-2ea44f" />
-  <img alt="Next M3 Issue 026" src="https://img.shields.io/badge/下一步-M3%20Issue%20026-ff8a00" />
+  <img alt="Issues 001–026 completed" src="https://img.shields.io/badge/已完成-Issues%20001--026-2ea44f" />
+  <img alt="Next M3 Issue 027" src="https://img.shields.io/badge/下一步-M3%20Issue%20027-ff8a00" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
 </p>
@@ -31,15 +31,15 @@
 | 你想知道的                   | 当前答案                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------- |
 | **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认 |
-| **做到哪一步？**             | M0、M1、M2 已完成；M3 已交付 Topic、实验、Brief 与版本化文案工作台              |
-| **下一步是什么？**           | M3 Issue 026（事实映射检查，仅规划，尚未授权或开始）                            |
+| **做到哪一步？**             | M0、M1、M2 已完成；M3 已交付 Topic、实验、Brief、文案与事实映射工作台           |
+| **下一步是什么？**           | M3 Issue 027（真实性与评分检查，仅规划，尚未授权或开始）                        |
 | **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                              |
 | **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                        |
 | **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                      |
 
 > [!TIP]
 > 里程碑快照：M1（Issue 006—011）与 M2（Issue 012—021）均已完成验收；M3 已完成
-> Issue 025，下一步仅规划 Issue 026。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
+> Issue 026，下一步仅规划 Issue 027。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
 > `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`，且外部请求数为 0。
 > Fetch 只处理研究流程明确选择的单个已持久化候选；结果仍是
 > `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`，不会自动入队或升级为事实。Issue 019
@@ -54,7 +54,11 @@
 > Experiment 约束投影为五类结构化 Content Brief，保留逐字段 provenance/lock、确定性
 > readiness 和单请求受控 structured generation。Issue 025 在 current ready Brief 上建立五类
 > 版本化 Draft，支持手工 scaffold、单请求完整生成、有限 scope 局部重写、字段锁、Brief lineage
-> 与实际剧透警告；结构有效只表示等待质量检查，仍没有图片、质量结果、审批、导出或发布。
+> 与实际剧透警告；结构有效只表示等待质量检查。Issue 026 把 current immutable Draft 的公开文本
+> 派生为 Unicode locator 与原子 Statement，以本地 allowlist 映射到 current Claim、
+> FactEvaluation、Evidence 与 SourceRevision，并提供 `PASS / FACT_BLOCKED / AWAITING_REVIEW`、
+> 人工复核和可选单请求 Scripted Mock 辅助。FACT_MAPPING PASS 只代表本项检查通过，仍没有
+> Issue 027—030、图片、审批、导出或发布。
 
 > [!IMPORTANT]
 > 本项目是**非官方开发项目**，不代表小红书或任何平台立场。当前版本没有接通真实内容工作流、
@@ -66,8 +70,8 @@
 flowchart LR
     M0["M0<br/>Issue 001–005<br/>基础与硬约束"] --> M1["M1<br/>Issue 006–011<br/>本地应用基础设施"]
     M1 --> M2["M2<br/>Issue 012–021<br/>模型、搜索、书库与研究"]
-    M2 --> M3["M3<br/>Issue 022–025 完成<br/>选题、实验、Brief 与文案"]
-    M3 --> NEXT["NEXT<br/>M3 Issue 026<br/>事实映射检查"]
+    M2 --> M3["M3<br/>Issue 022–026 完成<br/>选题、实验、Brief、文案与事实映射"]
+    M3 --> NEXT["NEXT<br/>M3 Issue 027<br/>真实性与评分检查"]
     NEXT -.-> FUTURE["M3–M6<br/>内容、视觉、运营与发布"]
 
     classDef done fill:#fff0f2,stroke:#ff2442,color:#111,stroke-width:2px;
@@ -86,7 +90,7 @@ flowchart LR
 | M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**         |
 | M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**         |
 | M2     |    012–021 | 模型接口、搜索、书库与研究             | **已完成 · 10/10** |
-| M3     |    022–027 | 选题、实验、文案与质量门禁             | **进行中 · 4/6**   |
+| M3     |    022–027 | 选题、实验、文案与质量门禁             | **进行中 · 5/6**   |
 | M4–M6  |       后续 | 视觉、审批、导出、运营与发布           | **未开始**         |
 
 ### 最近完成
@@ -107,9 +111,10 @@ flowchart LR
 |   023 | 可检验单变量实验、跨作品复现、确定性分配与版本状态       | **已完成** |
 |   024 | 五类结构化 Brief、证据映射、字段锁定、就绪门与受控生成   | **已完成** |
 |   025 | 五类版本化文案、实际剧透警告、局部重写、结构门与工作台   | **已完成** |
+|   026 | 原子 Statement、事实映射、证据回溯、人工复核与质量汇总   | **已完成** |
 
 > [!NOTE]
-> “下一步”只表示路线图顺序，不表示已经开始开发。下一项仅规划 Issue 026，仓库不会自动进入。
+> “下一步”只表示路线图顺序，不表示已经开始开发。下一项仅规划 Issue 027，仓库不会自动进入。
 
 ## 能力边界
 
@@ -125,13 +130,14 @@ flowchart LR
 | 五类 SearchProvider、URL/domain 归一化、SearchRun、持久限速和被动本地输入   | Search API 生产 codec、浏览器插件业务                     |
 | 单候选受控 Fetch、DNS/socket 固定、robots、净化 HTML 与文本内容寻址快照     | 自动抓取、站点遍历、Source/Claim 或把抓取结果当作证据     |
 | Work / Expression / Edition 三级书目、分层 Coverage 与可逆实体决策          | 质量编排、审批、排期与发布                                |
-| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计   | 正文事实映射、质量编排、审批、排期与发布                  |
+| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计   | 真实性/评分、剧透、一致性与质量编排                       |
 | 版本化 Dossier、共识/争议/缺口、整数 coverage、readiness 与精确增量重建     | 封面、图片或自动质量结论                                  |
 | 六态阅读真实性、R2 逐条观点、三类评分隔离、剧透策略与书库权限矩阵           | 自动发布、运营数据回收或策略复盘                          |
 | 五类 Topic Pool、确定性资格/排序/去重、状态控制与 10/8/6/3/3 配额计划       | 图片或质量流程                                            |
 | 单变量 Experiment、跨三本 Work 复现、热度分层、确定性 assignment 与版本历史 | 真实指标回收、效果/显著性/winner 与实验执行               |
 | 五类 Content Brief、Evidence 映射、真实性/评分/剧透约束、字段锁与就绪门     | 图片、事实检查、审批或发布                                |
-| 五类版本化 Copy、标题/正文/标签/评论、实际警告、lineage、锁与局部重写       | Issue 026—030 的质量检查、图片、审批、导出与发布          |
+| 五类版本化 Copy、标题/正文/标签/评论、实际警告、lineage、锁与局部重写       | Issue 027—030 的后续质量检查、图片、审批、导出与发布      |
+| FACT_MAPPING Statement、类型化 Claim 映射、证据链、精确失效与人工复核       | 整体质量通过、审批、导出或发布                            |
 
 ## 快速开始
 
@@ -184,6 +190,7 @@ flowchart LR
     MAIN --> EXPERIMENTS["Experiment<br/>Design / Assignment / Version"]
     MAIN --> BRIEFS["Content Brief<br/>Evidence / Lock / Readiness"]
     MAIN --> COPY["Versioned Copy<br/>Draft / Rewrite / Structure"]
+    MAIN --> QUALITY["Fact Mapping<br/>Statement / Claim / Evidence trace"]
     MODEL --> PROBE["用户显式能力探测"]
     PROBE --> PROVIDERS["Provider 接口"]
     API -.-> CLIPPER["浏览器插件"]
@@ -210,6 +217,9 @@ flowchart LR
     AUTH --> BRIEFS
     BRIEFS --> COPY
     MODEL -.-> COPY
+    COPY --> QUALITY
+    EVIDENCE --> QUALITY
+    MODEL -.-> QUALITY
 ```
 
 关键边界：
@@ -453,6 +463,14 @@ npm run test:packaged-smoke
 - [Issue 025 实施计划](./docs/m3-issue025-implementation-plan.md)
 - [Issue 025 验收映射](./docs/m3-issue025-acceptance-map.md)
 - [Issue 025 本地验收证据](./docs/evidence/m3-issue025-local-evidence.md)
+- [Draft Statement V1 合同](./docs/contracts/draft-statement-v1.md)
+- [Fact Mapping V1 合同](./docs/contracts/fact-mapping-v1.md)
+- [FACT_MAPPING Quality Check V1 合同](./docs/contracts/fact-mapping-quality-check-v1.md)
+- [ADR 0022：事实声明映射、证据回溯与精确失效](./docs/adr/0022-factual-claim-mapping.md)
+- [Issue 026 实施计划](./docs/m3-issue026-implementation-plan.md)
+- [Issue 026 验收映射](./docs/m3-issue026-acceptance-map.md)
+- [Issue 026 本地验收证据](./docs/evidence/m3-issue026-local-evidence.md)
+- [Issue 026 外发矩阵](./docs/security/m3-issue026-egress-matrix.md)
 
 </details>
 
@@ -470,5 +488,5 @@ npm run test:packaged-smoke
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  M3 正在进行；Issue 022–025 已完成，下一步仅规划 Issue 026，仓库不会自动开始后续开发。
+  M3 正在进行；Issue 022–026 已完成，下一步仅规划 Issue 027，仓库不会自动开始后续开发。
 </p>

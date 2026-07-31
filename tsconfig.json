@@ -47,6 +47,9 @@
       "path": "./packages/providers"
     },
     {
+      "path": "./packages/quality"
+    },
+    {
       "path": "./packages/search"
     },
     {

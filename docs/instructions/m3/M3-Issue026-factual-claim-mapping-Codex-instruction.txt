@@ -1,0 +1,1143 @@
+M3 Issue 026：正文事实声明映射、证据回溯与事实质量检查——增量开发指令
+====================================================================
+
+本文件是 Issue 026 的唯一有效增量指令。
+
+完整遵守仓库根级及作用域内 `AGENTS.md`；本指令仅定义 Issue 026 的增量规则，不复制或弱化
+其中的动态基线、可迁移路径、Windows、安全、费用、硬约束、SQLite、队列、测试、Git 和文档
+治理公共规则。
+
+推荐模型：GPT-5.6 Sol
+推荐推理强度：High；数据模型、事实语义、迁移、精确失效、恢复和并发使用 XHigh
+目标提交信息：feat(quality): add factual claim mapping checks
+
+
+一、合法起点、归档、授权与停止点
+--------------------------------
+
+以执行时当前本地 `main` 动态 HEAD 为起点，不写死聊天中观察到的远端提交、盘符、绝对路径、
+migration 版本或 checksum。
+
+开工只读核对必须证明：
+
+- 当前分支、工作树和远端状态符合根级 `AGENTS.md`；
+- 远端语义状态为 Issue 025 已完成，下一项为 Issue 026；
+- Issue 019 的 SourceRevision、AtomicClaim、Evidence、FactEvaluation 与 FactPolicy 可用；
+- Issue 024 的 current ContentBrief、BriefEvidenceRef 和 readiness 可用；
+- Issue 025 的 Draft、immutable DraftVersion、DraftBlock、DraftLineageRef、字段锁和
+  `READY_FOR_QUALITY_PIPELINE` 可用；
+- Core 已有 `QualityCheckType.FACT_MAPPING`，但 Issue 026 业务实现尚不存在；
+- migration 尾部、适用门禁、包边界和历史文档均由仓库实际状态动态发现。
+
+如果存在未知未提交修改、本地与远端不一致、Issue 025 能力不完整、历史 migration 变化或当前
+状态无法证明，停止并报告；不要自行 pull、rebase、reset、merge、切换分支或覆盖用户文件。
+
+本 TXT 完整读取后，在业务修改开始前唯一归档到：
+
+`docs/instructions/m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt`
+
+根目录及原位置不留第二份副本，并更新历史指令索引。
+
+本 Issue 只授权：
+
+- 实现 Fact Mapping Check V1；
+- 追加运行时发现的下一条连续 migration；
+- 新增 FACT_MAPPING 专项包、仓储、受限 IPC、UI、队列 handler、合同、ADR、计划和验收证据；
+- 更新与 Issue 026 完成状态直接相关的 README、Roadmap、AGENTS 和文档索引；
+- 全部门禁通过后创建恰好一个本地提交。
+
+不得 push、创建 PR、合并或进入 Issue 027。
+
+
+二、授权目标
+------------
+
+实现一个版本化、可审计、可人工复核的事实映射检查：
+
+- 对 current 且结构有效的 DraftVersion 建立精确公开文本快照；
+- 把公开文案拆成可定位、可分类的原子 Statement；
+- 区分事实、观点、分析判断、个人体验、修辞、标签/警告和混合/不确定表达；
+- 将每条事实 Statement 映射到既有 current AtomicClaim；
+- 从 Claim 回溯到 current FactEvaluation、Evidence、EvidenceLocator 和 SourceRevision；
+- 对数字、日期、排名、奖项、入围、出版信息和书目身份实施强化规则；
+- 对缺少有效 Claim/证据、冲突、值不一致或 scope 不一致的关键事实输出 `FACT_BLOCKED`；
+- 允许用户查看并修正 Statement 边界、分类和既有 Claim 映射；
+- 支持纯本地手工检查，以及经 ModelExecutionService 的可选单请求辅助分类/候选映射；
+- 保存检查器、分段、分类、匹配、FactPolicy 和输入版本；
+- 在 Draft、Claim、Evidence、SourceRevision 或政策变化时精确失效；
+- 将完成结果以现有 `QualityCheckType.FACT_MAPPING` 接入质量记录；
+- 在内容生产页面提供事实映射检查工作台；
+- 为 Issue 030 保留只读、版本化的汇总输入，但不实现质量编排。
+
+
+三、本 Issue 明确不做
+--------------------
+
+- 不创建、抓取、生成或修改 Source、SourceRevision、AtomicClaim、Evidence、FactEvaluation、
+  Dossier、Brief 或 Draft 文案；
+- 不为未映射事实自动启动 Search、Fetch、Browser Clip、研究、Dossier rebuild 或模型写作；
+- 不自动改写正文、标题、标签或置顶评论；
+- 不用模型记忆、搜索摘要、BrowserClip context、中文摘要或 DraftLineage 本身替代 Evidence；
+- 不实现 Issue 027 的第一人称真实性和评分全文检查；
+- 不实现 Issue 028 的隐含剧透与警告完整性检查；
+- 不实现 Issue 029 的一致性、重复度、标题正文一致性或模板损坏检查；
+- 不实现 Issue 030 的质量编排、总分、审批队列或通过后状态推进；
+- 不生成图片，不进入审批、排期、导出、发布包或发布流程；
+- 不把 `READY_FOR_QUALITY_PIPELINE`、结构通过或 FACT_MAPPING PASS 等同于整体质量通过；
+- 不读取真实密钥，不调用真实模型、搜索、网页、图片或业务 API，不产生费用；
+- 不加入 AI 标识或版权检查；
+- 不进入 Issue 027 或任何后续范围。
+
+
+四、事实来源与语义依赖
+----------------------
+
+Issue 026 必须复用并尊重以下冻结事实：
+
+1. Draft 来源
+
+- 只检查一个明确 Draft identity 的一个 immutable DraftVersion；
+- DraftVersion 必须具有完整 payload hash、BriefVersion、profile、Work、lineage 和 lock snapshot；
+- current DraftVersion 变化不能改写历史检查；
+- `STRUCTURE_INVALID`、`STALE`、`ARCHIVED` 或缺少依赖的 DraftVersion 不得产生 PASS。
+
+2. Claim 来源
+
+- 只能引用 Issue 019 已持久化的 AtomicClaim；
+- Claim 必须具有受控 subject、predicate、类型化 value 和规范化 scope；
+- 映射不能新建业务 ID，不能以自由文本伪造 Claim；
+- alias/redirect 必须先解析为 current canonical entity。
+
+3. Evidence 来源
+
+- 只有绑定 immutable SourceRevision 和有效 EvidenceLocator 的 Evidence 可参与；
+- SearchCandidate、Search snippet、模型输出、中文摘要、用户备注和无 locator 文本不能参与；
+- BrowserClip 固定为 discussion/context，不能满足关键事实来源要求；
+- `SUPPORTS`、`CONTRADICTS`、`QUALIFIES` 必须分别可见，不能只展示支持项。
+
+4. FactPolicy 来源
+
+- 关键事实只有在 current FactEvaluation 为 `VERIFIED` 时才满足；
+- 一个 `OFFICIAL_PRIMARY + KEY_FACT_ELIGIBLE`，或两个已确认独立 lineage group 的
+  `INDEPENDENT_SECONDARY + KEY_FACT_ELIGIBLE` 才能验证关键事实；
+- unresolved material conflict、`FACT_BLOCKED`、`STALE_REVIEW_REQUIRED`、`REJECTED`、
+  context-only、dependent 或未知独立性不能被映射器升级；
+- Issue 026 只消费评估，不重新定义或绕过 FactPolicy。
+
+5. Brief 与 Lineage
+
+- DraftLineageRef 和 BriefEvidenceRef 只用于建立有界候选 allowlist；
+- lineage 表示生成来源，不等于正文事实已经验证；
+- lineage 中存在 Evidence ID 不能自动让 Statement PASS；
+- 最终仍须验证 Statement—Claim 语义、Claim evaluation 和完整证据链。
+
+
+五、检查对象与公开文本表面
+--------------------------
+
+定义 `DraftPublicArtifactV1`，只检查当前 DraftVersion 的以下实际公开文本：
+
+- `SELECTED_TITLE`
+- `BODY_BLOCK`
+- `TAG`
+- `PINNED_COMMENT`
+
+以下不作为独立事实 Statement：
+
+- `coverWarningText`
+- `titleWarningMarker`
+- `bodyOpeningWarningText`
+- `pinnedCommentWarningText`
+- 系统要求的“公开资料整理”“资料分析评分”等固定标签文本
+
+但固定标签或警告中夹带了标签本身以外的新事实时，必须被识别为越界文本并进入人工复核，不能
+利用 artifact kind 逃避检查。
+
+`BODY_BLOCK` 是主要验收对象。标题、标签和置顶评论纳入检查，是为了防止把事实从正文移到其他
+公开表面后绕过映射；这不等于实现 Issue 029 的标题正文一致性。
+
+每个 artifact 保存或派生：
+
+- DraftVersion ID；
+- artifact kind；
+- stable artifact ID；
+- block/tag order，可空；
+- 规范化文本 hash；
+- Unicode code point 长度；
+- profile、Work 和 Brief lineage allowlist；
+- 只读 currentness。
+
+不得把整篇 Draft 复制到 job payload、audit、普通日志、诊断或错误 DTO。
+
+
+六、精确文本定位器
+------------------
+
+定义 `DraftTextLocatorV1`：
+
+- `draftVersionId`
+- `artifactKind`
+- `artifactId`
+- `textHash`
+- `startCodePoint`
+- `endCodePoint`
+- `locatorVersion`
+- `selectedTextHash`
+
+规则：
+
+- 区间为 Unicode code point 闭开区间；
+- 创建和读取时从 immutable DraftVersion 的 artifact 文本重新切片并校验；
+- artifact ID、文本 hash、区间或 selected text hash 任一不一致即 fail closed；
+- 空区间、越界、重叠冲突和跨 artifact locator 被拒绝；
+- 中文、日文、英文、emoji、组合字符和 CRLF/LF 规范化有专项测试；
+- 数据库保存 locator 与 hash，不重复保存整段 Draft 文本；
+- renderer 通过受限详情接口取得当前 Draft 中的有界片段，不从检查记录读取复制正文。
+
+
+七、Statement 原子化
+--------------------
+
+定义 immutable `DraftStatementV1`。每条 Statement 必须：
+
+- 只属于一个 DraftVersion 和一个 artifact；
+- 具有一个精确 DraftTextLocator；
+- 对应一个最小、可独立判断的语义断言或非事实表达；
+- 记录 segmentation policy/version、provenance、revision 和 createdAt；
+- 记录 statement text hash，但不在普通日志或队列中保存全文；
+- 不跨 block、标题、标签或评论；
+- 不把多个主语、谓词、值或 scope 的事实强行合成一个 Statement。
+
+原子化规则：
+
+- “A 获奖并于 2024 年出版”必须拆成至少两个 Statement；
+- 一个包含多个作品的事实比较，优先映射到既有关系 Claim；没有该 Claim 时必须拆分或待复核；
+- 事实与观点混合的句子必须拆分；无法无损拆分时标记 `MIXED`；
+- 引号内原话与“某人曾这样说”的归属事实分开处理；
+- 文本中的段落序号、列表序号和排版数字不自动成为事实；
+- 完整诡计分析允许存在 plot/structure Statement，但仍按事实或分析判断分类；
+- 分段器不得改变 Draft 文本。
+
+Statement provenance 至少包括：
+
+- `DETERMINISTIC`
+- `MODEL_CANDIDATE`
+- `USER_DEFINED`
+- `USER_CONFIRMED`
+
+模型候选永远不是最终用户确认，也不能直接产生质量 PASS。
+
+
+八、事实性分类合同
+------------------
+
+定义有限 `StatementKindV1`：
+
+- `FACT`
+- `OPINION`
+- `ANALYTICAL_JUDGMENT`
+- `PERSONAL_EXPERIENCE`
+- `RHETORICAL`
+- `LABEL_OR_WARNING`
+- `MIXED`
+- `AMBIGUOUS`
+
+定义 `FactMaterialityV1`：
+
+- `KEY_FACT`
+- `SUPPORTING_FACT`
+- `NOT_APPLICABLE`
+
+定义 `FactDomainV1`：
+
+- `BIBLIOGRAPHIC`
+- `AWARD`
+- `NUMERIC`
+- `DATE_TIME`
+- `RANKING`
+- `QUOTATION_ATTRIBUTION`
+- `PLOT_OR_STRUCTURE`
+- `INDUSTRY_OR_MARKET`
+- `CREATOR_OR_PUBLISHER`
+- `OTHER`
+- `NOT_APPLICABLE`
+
+分类规则：
+
+- `FACT` 必须具有 materiality 和 domain；
+- 其他 kind 的 materiality/domain 必须为 `NOT_APPLICABLE`，除非处于待拆分的 `MIXED`；
+- `OPINION` 表达喜恶、价值判断或推荐，不因没有 Claim 而失败；
+- `ANALYTICAL_JUDGMENT` 是可争论的结构/逻辑解释，不得伪装为外部事实；
+- `PERSONAL_EXPERIENCE` 只表示本轮不做事实映射，仍必须留给 Issue 027 检查；
+- `RHETORICAL` 不得包含可独立核验的对象、值和归属；
+- `LABEL_OR_WARNING` 只能是系统冻结标签或纯警告；
+- `MIXED` 和 `AMBIGUOUS` 不能 PASS，必须拆分或人工确认；
+- 模型不得把具有受保护事实信号的文本静默降级为观点、修辞或标签。
+
+分类与“真伪”分离：Statement 是 FACT 不表示其内容为真；是否可公开由 Claim、FactEvaluation 和
+Evidence 链决定。
+
+
+九、关键事实与受保护信号
+------------------------
+
+定义版本化 `KeyFactPolicyV1`。以下通常为关键事实：
+
+- 书名、原名、译名、作者、译者、出版社、版本、ISBN、出版/连载时间；
+- 获奖、入围、提名、榜单、排名和评委/奖项身份；
+- 明确数字、百分比、金额、销量、播放量、下载量、评分、样本量或市场份额；
+- 日期、时间区间、先后顺序和“首部/首次/唯一/最高”等可核验断言；
+- 对作者、出版社、奖项、改编、版权交易或产业主体的具体行为归属；
+- 引语及其说话人、场合和时间归属；
+- 会显著影响读者理解、购买判断或作品比较结论的书目、情节或结构事实。
+
+受保护信号 detector 至少覆盖：
+
+- 阿拉伯数字、中文数字、百分号、货币和单位；
+- 年/月/日与有限日期表达；
+- 第一、TOP、排名、销量、冠军、入围、获奖、提名等版本化词表；
+- ISBN、书名号和明确书目身份组合；
+- 中文、日文和英文有限奖项/排名提示词；
+- 断言性引用归属。
+
+规则：
+
+- detector 只产生“必须分类/复核”的信号，不单独证明 Statement 是事实或真实；
+- “我给这本书 8 分”可以被确认是观点/个人评分，但不能被 detector 静默忽略；
+- 列表序号、章节号、标题中作品固有数字和固定警告不得误判为数值事实；
+- 模型不能独自移除 protected signal；
+- 用户把 protected signal 确认为非事实时必须给出有界 reason，并保留 audit；
+- 数字、日期、奖项和排名事实不得只做文本相似匹配，必须校验类型化值和 scope。
+
+
+十、Claim 候选集合
+------------------
+
+定义有界 `ClaimCandidateSetV1`，按以下顺序构建：
+
+1. Draft artifact 的 DraftLineageRef 所允许的 BriefEvidenceRef；
+2. BriefVersion 的 required/current EvidenceRef；
+3. 上述 Evidence 实际所属的 current AtomicClaim；
+4. Draft/Brief 所绑定 canonical Work、Expression、Edition、Agent 的 current Claim；
+5. 对 cross-work profile，分别按每个 Work 构建，禁止跨作品借用。
+
+候选集合必须：
+
+- 全部来自本地已持久化记录；
+- 记录构建 policy/version 和 input hash；
+- 有固定最大 Claim、Evidence、SourceRevision 和字符数量；
+- 按 canonical subject、predicate、scope 和稳定 ID 确定性排序；
+- 去除 duplicate/redirect 后保留 provenance；
+- 过滤 deleted/unavailable/rejected 记录；
+- 保留 conflicted/stale 候选供 UI 解释，但不得满足 PASS；
+- 不读取 Source 全文进入 renderer；
+- 不执行 Search、Fetch、模型联网或新增研究任务。
+
+候选集为空不是自动创建 Claim 的理由；对应事实进入 `NO_CLAIM`。
+
+
+十一、Statement—Claim 映射
+---------------------------
+
+定义 immutable `StatementClaimMappingV1`。一个原子 FACT Statement 在 V1 最终只能由一个 current
+AtomicClaim 满足；如果需要多个 Claim 才能表达，必须先拆分 Statement，或使用已有的关系 Claim。
+
+`MappingRelationV1` 至少包括：
+
+- `EXACT`
+- `SUPPORTED_PARAPHRASE`
+- `NARROWER_THAN_CLAIM`
+- `BROADER_THAN_CLAIM`
+- `VALUE_CONFLICT`
+- `SCOPE_MISMATCH`
+- `SUBJECT_MISMATCH`
+- `PREDICATE_MISMATCH`
+- `MULTIPLE_CANDIDATES`
+- `NO_CLAIM`
+- `STALE`
+- `NOT_APPLICABLE`
+
+只有以下 relation 可以进入满足判定：
+
+- `EXACT`
+- 经过本地约束和人工确认的 `SUPPORTED_PARAPHRASE`
+- Statement 确实比 Claim 更窄、且没有引入新值/新 scope 的 `NARROWER_THAN_CLAIM`
+
+以下永远不能 PASS：
+
+- `BROADER_THAN_CLAIM`
+- 任意 value/scope/subject/predicate mismatch；
+- multiple candidates 未解决；
+- no claim；
+- stale；
+- 把相似措辞误当语义支持。
+
+映射保存：
+
+- Statement ID/version；
+- Claim ID/revision；
+- current FactEvaluation ID/revision/policy version；
+- relation；
+- candidate provenance；
+- mapper provenance；
+- decision reason，可空；
+- input/semantic hash；
+- createdAt。
+
+不得复制 Claim 的自由文本值、Evidence 正文或 Source 正文到普通 mapping details JSON。
+
+
+十二、类型化值、数字、日期和奖项校验
+------------------------------------
+
+实现本地、确定性的 `TypedFactCompatibilityV1`：
+
+- `INTEGER` 使用整数；
+- `DECIMAL_TEXT` 使用规范十进制字符串，不使用浮点；
+- 百分比保留原始单位与规范值；
+- 金额必须保留币种和量级；
+- 日期保留 `YEAR / MONTH / DAY` 精度；
+- range、before/after 和大约值不得被精确值替代；
+- identifier 必须精确规范化；
+- entity ref 先解析 canonical identity；
+- enum 和 boolean 必须匹配 registry；
+- scientific notation、NaN、Infinity 和不可解析值被拒绝。
+
+数字规则：
+
+- Statement 中每个事实数字都必须被对应 Claim value/scope 消费；
+- Claim 中存在数字但 Statement 省略，不必失败；
+- Statement 新增 Claim 没有的数字、单位、排名或比较级时为 `VALUE_CONFLICT` 或
+  `BROADER_THAN_CLAIM`；
+- 不允许用“约”“超过”“不足”等限定词掩盖精确不一致。
+
+日期规则：
+
+- 日期按 Issue 019 精度语义比较；
+- `2024` 可与更精确日期兼容，但 Statement 不能凭较粗 Claim 宣称具体到日；
+- 不同月份、年份或不兼容区间必须失败。
+
+奖项规则：
+
+- 作品/作者/译者主体必须匹配；
+- “获奖”“入围”“提名”“候选”“榜首”是不同 predicate，不得互换；
+- 奖项届次、年份、类别和 territory/language scope 必须兼容；
+- 媒体书单、销售榜和正式奖项不得互换；
+- 只有 current verified Claim 的证据链可以满足。
+
+
+十三、Evidence 与 SourceRevision 回溯
+------------------------------------
+
+每个可满足的映射必须可确定性展开为：
+
+`DraftTextLocator → DraftStatement → AtomicClaim → FactEvaluation
+→ Evidence → EvidenceLocator → SourceRevision → Source`
+
+UI 和详情 DTO 至少显示：
+
+- Statement 有界片段；
+- Claim subject/predicate/类型化 value 的安全格式化摘要；
+- FactEvaluation 状态、policy version 和 observedAt；
+- 每条 Evidence 的 supports/contradicts/qualifies；
+- Source 分类、独立性、lineage group、语言、标题/站点；
+- SourceRevision ID、content hash 摘要和 currentness；
+- 有界精确 evidence excerpt；
+- 中文摘要仅以“非证据摘要”展示，不参与通过计数。
+
+规则：
+
+- 不把 source URL、完整网页正文或受控文件绝对路径放入普通列表 DTO；
+- 需要查看来源时只通过已有安全来源详情能力，Issue 026 不新增任意 URL 打开器；
+- Evidence locator 在读取时重新验证；
+- 任何 contradicting evidence、material conflict 或 unavailable/retracted revision 必须可见；
+- 两个二级来源必须展示独立 lineage group，不能只显示“2 个来源”；
+- 映射器不能自行改变 Source 分类、独立性或 FactEvaluation。
+
+
+十四、检查结果与状态机
+----------------------
+
+定义 `FactMappingCheckV1` 稳定 identity，绑定一个 Draft identity；定义 immutable
+`FactMappingCheckVersionV1`，每个版本绑定一个明确 DraftVersion。
+
+`FactMappingRunStatusV1`：
+
+- `PLANNED`
+- `QUEUED`
+- `RUNNING`
+- `AWAITING_REVIEW`
+- `PASS`
+- `FACT_BLOCKED`
+- `FAILED`
+- `CANCELLED`
+- `AMBIGUOUS`
+- `STALE`
+- `SUPERSEDED`
+
+`StatementDispositionV1`：
+
+- `SATISFIED`
+- `NOT_APPLICABLE`
+- `NEEDS_REVIEW`
+- `BLOCKING_KEY_FACT`
+- `UNMAPPED_SUPPORTING_FACT`
+- `CONFLICTED`
+- `STALE`
+
+聚合规则：
+
+- `PASS`：所有 in-scope artifact 已覆盖；所有 FACT Statement 都映射到 current verified Claim；
+  所有非事实分类已确定；没有 MIXED、AMBIGUOUS、冲突、stale 或未检查 protected signal；
+- `FACT_BLOCKED`：至少一个 KEY_FACT 为 no claim、invalid mapping、非 VERIFIED、冲突、
+  unavailable、stale 或类型化值/scope 不匹配；
+- `AWAITING_REVIEW`：存在 MIXED、AMBIGUOUS、multiple candidates、待拆分或 supporting fact
+  尚未解决；
+- `FAILED`：本地校验、持久化或 pre-send 技术失败；
+- `AMBIGUOUS`：模型请求可能已发送但无法确认结果，不能自动重发；
+- `STALE`：依赖快照变化；
+- `CANCELLED` 不产生 PASS/FAIL；
+- historical check version 不原地更新。
+
+`AWAITING_REVIEW` 不是 PASS。用户完成复核后必须创建新的 immutable check version 或 decision
+revision，再重新本地汇总。
+
+
+十五、与现有 QualityCheck 的集成
+--------------------------------
+
+复用现有：
+
+- `QualityCheckType.FACT_MAPPING`
+- `QualityCheckOutcome.PASS`
+- `QualityCheckOutcome.FAIL`
+
+不新增第二个事实检查类型，不改变其他七类 QualityCheckType。
+
+权威数据：
+
+- Statement、Mapping、Dependency、Decision 和 FactMappingCheckVersion 是 Issue 026 的详细真相；
+- `quality_checks` 只保存对某个 DraftVersion、checker version 和 run 的汇总桥接记录；
+- PASS 只对应 FactMappingCheckVersion `PASS`；
+- `FACT_BLOCKED` 和完成后的 `AWAITING_REVIEW` 对应 QualityCheckOutcome `FAIL`，severity/reason
+  使用有限 registry；
+- technical FAILED、CANCELLED、AMBIGUOUS、STALE 不得伪造成质量 FAIL 或 PASS；
+- 相同 DraftVersion + FACT_MAPPING + checker version + input hash 幂等；
+- 新 DraftVersion 不继承旧 DraftVersion 的 PASS；
+- Issue 026 不根据单项 PASS 推进 Draft、Content、Approval 或 Export 状态。
+
+如果现有 `quality_checks` 无法精确绑定 DraftVersion/run，必须通过下一条 migration 保守扩展或
+重建，并完整保留旧行；不得用无限 `details_json` 或拼接 checker version 绕过真实关系。
+
+
+十六、手工检查与人工复核
+------------------------
+
+无模型配置时必须完整可用：
+
+- 从 READY DraftVersion 建立 deterministic artifact snapshot；
+- 本地 detector 标出 protected signals；
+- 用户逐条建立或调整 Statement 边界；
+- 用户把 Statement 分类为 FACT、OPINION、ANALYTICAL_JUDGMENT 等；
+- 对 FACT 从有界 ClaimCandidateSet 中选择既有 Claim；
+- 查看 Claim—Evidence—SourceRevision 链；
+- 确认、撤销、重新分类、拆分和重新映射；
+- 重新运行本地 compatibility 与 FactPolicy 汇总；
+- 形成 PASS、FACT_BLOCKED 或 AWAITING_REVIEW。
+
+人工操作必须：
+
+- preview 显示 before/after、DraftVersion、locator、classification、Claim、evaluation 和结果影响；
+- 使用 expected revision、preview hash、sender/window 绑定的短期单次 token；
+- protected signal 被改为非事实时要求有界非空 reason；
+- mapping 到非 current、非候选、非 VERIFIED 或不兼容 Claim 时拒绝；
+- undo/reopen 创建新 decision，不改写历史；
+- stale revision、重复消费和并发竞争 fail closed；
+- audit 只保存 ID、枚举、hash、reason code 和有限 reason，不保存整篇 Draft 或 Source 正文。
+
+Issue 026 不提供“忽略事实检查”“强制通过”“把冲突当作通过”等绕过开关。
+
+
+十七、可选模型辅助路径
+----------------------
+
+实现 provider-neutral `FactMappingAssistV1`，但本轮只用 Scripted Mock 验证。
+
+模型职责仅限：
+
+- 提议 Statement 边界；
+- 提议 StatementKind、FactMateriality 和 FactDomain；
+- 从输入 allowlist 提议一个或多个 Claim candidate；
+- 提议 MappingRelation 和有界 reason code；
+- 标出 MIXED/AMBIGUOUS。
+
+模型不得：
+
+- 创建或修改 Claim、Evidence、Source、FactEvaluation；
+- 输出 allowlist 外 ID；
+- 宣称 FactPolicy 通过；
+- 把模型记忆作为证据；
+- 自动将 MODEL_CANDIDATE 变为 USER_CONFIRMED；
+- 修改 Draft；
+- 执行搜索、工具或网页访问；
+- 返回内部推理。
+
+模型输入必须有界，只包含：
+
+- current DraftVersion 的公开 artifact 文本；
+- artifact/lineage/Work IDs；
+- 有界 Claim candidate 的安全结构化摘要；
+- FactEvaluation 状态与有限 Evidence/Source 元数据；
+- 分类、key-fact 和 output schema/policy；
+- prompt injection 防护说明。
+
+模型输出 exact structured object，只允许：
+
+- locator candidate；
+- statement classification；
+- protected signal acknowledgement；
+- allowlisted Claim IDs；
+- mapping relation；
+- bounded reason codes。
+
+所有输出必须本地重新切片、hash、ID allowlist、类型、值、scope、FactPolicy 和 currentness 校验。
+模型请求最多一个；不自动 retry、repair、fallback、换模型或换协议。structured capability、
+预算、credential 和 ModelExecution 规则沿用现有实现。after-send ambiguous 不自动重发。
+
+
+十八、Plan、确认、队列与恢复
+----------------------------
+
+定义 `FactMappingPlanV1`，preview 至少显示：
+
+- Draft/DraftVersion/Brief/Profile/Work IDs；
+- artifact、字符、protected signal 和预计 Statement 数；
+- candidate Claim、Evidence、SourceRevision 数；
+- 运行模式：`LOCAL_MANUAL` 或 `MODEL_ASSISTED`；
+- 精确最大模型请求数：0 或 1；
+- capability、cache、预算和凭据就绪结论；
+- 预计本地写入；
+- checker/segmentation/classification/keyFact/mapping/FactPolicy versions；
+- draft/input/candidate/dependency/preview hash；
+- expected revisions、expiry。
+
+新增一个有界 handler：
+
+- `FACT_MAPPING_CHECK_V1`
+
+要求：
+
+- 只有桌面显式 preview/confirm 的 producer；
+- payload 只含 ID、版本、hash、mode 和有限计数；
+- executionId 幂等；
+- 同一 Draft 同时最多一个 active FACT_MAPPING mutation；
+- 模型调用期间不持有数据库长事务；
+- pause/cancel/shutdown/lease/heartbeat 使用现有 JobQueue；
+- pre-send 可安全恢复；
+- after-send ambiguous 不自动重发、takeover 或 fallback；
+- 执行前和发布结果前重验 Draft/currentness/candidate/dependency/preview hash；
+- 失败、取消、ambiguous 或 stale 不替换 current check version；
+- job result 不包含 Draft 正文、Statement 文本、Evidence excerpt、Source URL、路径、secret 或
+  raw response；
+- 完成后不自动启动 Issue 027—030。
+
+
+十九、依赖与精确失效
+--------------------
+
+每个 check version 至少保存：
+
+- Draft identity、DraftVersion、payload/artifact hashes；
+- BriefVersion、BriefEvidenceRef 和 DraftLineageRef snapshot；
+- Work/Expression/Edition/Agent canonical identities；
+- AtomicClaim ID/revision/semantic fingerprint；
+- FactEvaluation ID/revision/policy/input hash；
+- Evidence ID/revision/locator/hash；
+- Source/SourceRevision ID、revision、content hash、availability；
+- conflict decision revision；
+- alias/merge/split/redirect revision；
+- segmentation/classification/keyFact/mapping/checker policy versions；
+- 可选 ModelExecution/run。
+
+失效规则：
+
+- 新 DraftVersion 不改写旧检查；旧检查保留历史并变为非 current，新版本状态为未检查；
+- 目标 DraftVersion 本身不可变，如 hash 不匹配则 fail closed；
+- Claim value/scope/status/revision 变化只失效引用该 Claim 的检查；
+- Evidence、SourceRevision、classification、independence、lineage 或 availability 变化只失效其
+  依赖检查；
+- material conflict resolve/undo/reopen 精确失效相关检查；
+- Work merge/split/undo/redirect 精确失效关联 subject；
+- FactPolicy、predicate registry、value schema 或本 Issue policy version 变化使匹配输入失效；
+- 无关 Draft、Work、Claim 或 Source 变化不触发全库 stale；
+- 失效幂等，不自动重跑、不自动改 Draft、不自动研究；
+- stale 查询、反向依赖和 current check 查询必须有索引，禁止 O(n²) 全库扫描。
+
+
+二十、Migration 与仓储
+----------------------
+
+追加运行时发现的下一条连续 migration；不预置 migration 版本或 checksum，不修改历史 migration。
+
+优先建立一个 Electron 无关的 `packages/quality`，本轮只实现 FACT_MAPPING 子域；不得为 Issue
+027—030 预建业务实现或隐藏入口。复用 `packages/core` 的 QualityCheckType、Issue 019
+Evidence/FactPolicy、Issue 025 Copy/Draft 合同。
+
+至少规范化覆盖：
+
+- fact mapping check identity/current pointer；
+- immutable check versions；
+- public artifact snapshots/hashes；
+- draft statements/locators/classifications；
+- protected signals；
+- statement—claim mappings；
+- mapping dependencies；
+- user decisions/transitions；
+- plan/run；
+- `quality_checks` 汇总桥接；
+- checker/policy versions；
+- stale/current indexes。
+
+推荐逻辑表边界：
+
+- `fact_mapping_checks`
+- `fact_mapping_check_versions`
+- `fact_mapping_statements`
+- `fact_mapping_signals`
+- `fact_mapping_links`
+- `fact_mapping_dependencies`
+- `fact_mapping_decisions`
+- `fact_mapping_runs`
+
+可以根据现有 schema 合理合并，但不得把全部业务塞入一个 JSON 字段，也不得创建第二套 Draft、
+Claim、Evidence、Source 或 FactEvaluation 真相。
+
+数据库要求：
+
+- 真实 FK 连接 DraftVersion、Claim、FactEvaluation、Evidence、SourceRevision 和 model run；
+- STRICT、CHECK、unique、delete policy、append-only 和 current pointer guard；
+- Statement locator、classification、materiality、domain、relation、status 使用有限枚举；
+- 同一 check version 的 locator 重叠和重复 mapping 被约束；
+- current pointer 切换事务化并使用 expected revision；
+- historical check/version/statement/mapping/decision 不可覆盖或删除；
+- 旧 `quality_checks`、Draft 和 Issues 018—025 数据完整保留；
+- 旧 FACT_MAPPING 行若缺少 DraftVersion，只能保守标记为 legacy/unresolved，不能伪装 current PASS；
+- 列表、详情、Statement、Claim chain、history、stale 和 reverse dependency 查询有界分页和索引；
+- 新库、从当前上一版升级、迁移前备份、失败回滚、quick_check、foreign_key_check 全部测试；
+- DB/WAL/SHM 不保存 raw model response、完整 prompt、secret、Authorization、Source 正文、
+  任意绝对路径或重复整篇 Draft。
+
+
+二十一、事实映射工作台 UI
+------------------------
+
+在“内容生产”现有文案工作台中增加事实映射检查区域，至少提供：
+
+- READY Draft 列表、筛选、分页和当前 FACT_MAPPING 状态；
+- DraftVersion、profile、Work、Brief 与结构状态只读摘要；
+- 检查模式选择：纯本地手工或模型辅助；
+- preview、显式确认、进度、取消和历史；
+- 公开 artifact 覆盖视图；
+- 按 artifact 顺序的 Statement 列表；
+- Statement 有界文本、kind、materiality、domain、protected signal 和 review 状态；
+- 拆分、重新分类、确认、撤销和 reopen；
+- 有界 Claim candidate 搜索/选择，只限当前允许主体；
+- Claim—Evaluation—Evidence—SourceRevision 展开视图；
+- supports/contradicts/qualifies、来源等级、独立性和 conflict 可见；
+- 数字、日期、奖项和值/scope compatibility 结果；
+- PASS、FACT_BLOCKED、AWAITING_REVIEW、STALE、FAILED、CANCELLED、AMBIGUOUS 空/错/加载状态；
+- 版本历史、input diff、失效原因和“返回文案编辑”入口。
+
+UI 必须明确显示：
+
+- “事实映射通过只代表本项检查通过，不代表整体质量、审批或可发布”；
+- “观点和分析判断不要求 Claim，但第一人称与评分仍待 Issue 027 检查”；
+- “缺少关键事实来源将产生 FACT_BLOCKED；系统不会自动补写或搜索”；
+- “中文摘要不是证据；模型建议不是事实结论”；
+- “数字、日期、排名和奖项必须匹配类型化 Claim 与 current 证据链”；
+- “修改文案会产生新 DraftVersion，需要重新检查”；
+- “AI 标识和版权不参与本项检查”不得作为 UI 风险项、设置项或绕过项重复出现；只在既有治理
+  测试中继续保护。
+
+事实检查页面不得：
+
+- 编辑或覆盖 Draft 正文；
+- 创建 Claim/Source/Evidence；
+- 提供任意 URL、任意 SQL、任意模型请求编辑器；
+- 显示完整 Source 正文、完整内部 prompt、credential、路径或 raw response；
+- 提供“强制通过”按钮；
+- 自动跳转审批、导出或发布。
+
+
+二十二、IPC 与共享 DTO
+----------------------
+
+preload 只增加固定、窄、分页、版本化方法，至少覆盖：
+
+- list checks；
+- get check summary/detail；
+- preview start；
+- confirm start；
+- cancel；
+- list statements；
+- get claim/evidence chain；
+- preview/confirm manual decision；
+- history/invalidation reasons。
+
+所有请求 exact-object 校验：
+
+- ID、枚举、长度、分页、排序；
+- senderFrame/origin/window；
+- expected revisions；
+- draft/input/candidate/dependency/preview hash；
+- 短期单次 token；
+- bounded reason。
+
+renderer DTO 只接收完成 UI 所需的：
+
+- 有界 Statement 片段；
+- 有限 Claim value summary；
+- 有限 Evidence excerpt；
+- 来源分类、标题/站点、语言、revision 和 currentness；
+- 状态、reason code、计数和 hashes 的安全摘要。
+
+renderer/preload 不接收：
+
+- Source 全文或托管路径；
+- credential/token/digest；
+- Authorization/header；
+- raw provider request/response；
+- 完整 prompt；
+- 模型内部推理；
+- 数据库 SQL/stack/绝对路径；
+- INTERNAL_PREDICTION；
+- 其他 Draft 的正文。
+
+
+二十三、失败、取消、并发与恢复
+------------------------------
+
+必须覆盖：
+
+- preview 后 DraftVersion 变化；
+- preview 后 Claim/Evaluation/Evidence/SourceRevision 变化；
+- concurrent manual decision；
+- 同 Draft 两个检查竞争；
+- 重复 executionId；
+- 取消发生在分段前、模型发送前、模型发送后和发布前；
+- pre-send crash/restart；
+- after-send timeout/connection loss/crash；
+- DB 写入失败；
+- 迁移失败；
+- renderer/window 销毁；
+- 应用 shutdown；
+- stale lease。
+
+规则：
+
+- 已证明未发送的任务可以安全恢复；
+- 可能已发送的模型请求必须 AMBIGUOUS，不自动重试；
+- 失败或取消不产生 current PASS/FAIL 汇总；
+- 部分 Statement/Mapping 不发布为 current check version；
+- 旧 current check 在新版本完整提交前保持；
+- 相同 input 的本地重放幂等；
+- 相同已完成 executionId 不重复模型请求、预算、ledger 或业务写入；
+- 不宣称 exactly-once。
+
+
+二十四、容量、性能与确定性
+--------------------------
+
+定义版本化上限并验证：
+
+- 单 Draft 最大公开 artifact 数；
+- 单 artifact 和整篇最大 Unicode code point；
+- 最大 Statement、protected signal、candidate Claim、Evidence、SourceRevision 数；
+- 最大 evidence excerpt、reason、DTO 和 IPC 字节；
+- 列表/历史分页上限；
+- 同机 FACT_MAPPING 并发上限；
+- 单次模型输入/输出上限。
+
+容量金标至少包括：
+
+- 1,000 个 Draft 的检查摘要分页；
+- 一个达到 V1 上限附近的 Draft；
+- 多 Work comparison；
+- 大量 Claim candidate 的确定性截断；
+- 反向依赖精确失效；
+- 关键查询 `EXPLAIN QUERY PLAN` 使用预期索引；
+- 相同输入在不同插入顺序、重启和 Windows 路径下得到相同 Statement 排序、candidate 顺序、
+  input hash 和汇总结果。
+
+不以真实用户内容规模或 40 篇发布目标放宽事实检查。
+
+
+二十五、专项金标
+----------------
+
+新增独立 `test:fact-mapping`，纳入全量测试与 Windows CI。
+
+合成 fixture 必须来自仓库测试数据，不读取正式 ProjectDataRoot。至少建立：
+
+1. 单书不剧透判卷：
+   - 1 个书目 KEY_FACT；
+   - 1 个已验证奖项事实；
+   - 2 个观点；
+   - 最终 PASS。
+
+2. 完整诡计分析：
+   - 1 个 plot FACT；
+   - 2 个 ANALYTICAL_JUDGMENT；
+   - 1 个 FULL warning label；
+   - warning 不被当作事实；
+   - 最终 PASS。
+
+3. Cross-work comparison：
+   - 至少两个 Work；
+   - 各自 Claim/Evidence 不交叉借用；
+   - 1 个 subject mismatch 负例。
+
+4. 数字/日期/奖项：
+   - exact integer/decimal/date precision/award status PASS；
+   -数值、单位、年份、届次、获奖/入围互换分别失败。
+
+5. 无来源关键事实：
+   - `NO_CLAIM`；
+   -最终 `FACT_BLOCKED`；
+   -不得自动创建研究任务。
+
+6. 冲突事实：
+   - current unresolved material conflict；
+   -contradicting Evidence 可见；
+   -最终 `FACT_BLOCKED`。
+
+7. 支持性事实待复核：
+   -非关键 supporting fact 未解决；
+   -最终 `AWAITING_REVIEW`，不得 PASS。
+
+8. 人工复核：
+   - split MIXED；
+   - protected signal 分类 reason；
+   -map/unmap/reclassify/undo/reopen；
+   -stale token 和并发 revision 失败。
+
+9. 模型辅助：
+   -Scripted Mock 正常候选；
+   -allowlist 外 Claim ID；
+   -越界 locator；
+   -额外字段；
+   -prompt injection；
+   -after-send ambiguous；
+   -请求数与 preview 一致。
+
+10. 精确失效：
+    - Draft 新版本；
+    -Claim/Evidence/SourceRevision/FactPolicy/conflict 变化；
+    -无关实体不失效。
+
+
+二十六、增量验收矩阵
+--------------------
+
+验收映射至少逐项、独立覆盖以下 60 项；允许在 implementation plan 中细分增加，不得合并减少：
+
+1. 只接受可检查的 immutable DraftVersion；
+2. selected title/body/tag/pinned comment artifact 覆盖完整；
+3. warning/固定标签不会被误当事实；
+4. 警告夹带新事实不能逃逸；
+5. Unicode code point locator 正确；
+6. locator hash/currentness fail closed；
+7. Statement 原子化和稳定排序；
+8. 多事实句正确拆分；
+9. FACT/OPINION 正确区分；
+10. ANALYTICAL_JUDGMENT 与事实分离；
+11. PERSONAL_EXPERIENCE 留给 Issue 027；
+12. RHETORICAL/LABEL 边界；
+13. MIXED/AMBIGUOUS 不能 PASS；
+14. protected signal detector 覆盖数字/日期/奖项/排名；
+15. 列表序号和作品固有数字负例；
+16. protected signal 不被模型静默降级；
+17. Claim candidate 只来自本地有界 allowlist；
+18. cross-work Claim 不交叉借用；
+19. alias/redirect 解析 current canonical identity；
+20. 不创建 Claim、Evidence、Source 或研究任务；
+21. EXACT mapping；
+22. SUPPORTED_PARAPHRASE 本地约束；
+23. NARROWER/BROADER 区分；
+24. subject/predicate/value/scope mismatch；
+25. multiple candidates/no claim；
+26. integer/decimal/percent/currency/unit compatibility；
+27. 日期精度和区间 compatibility；
+28. 获奖/入围/提名/排名 predicate 不互换；
+29. KEY_FACT 只接受 current VERIFIED；
+30. official primary 路径；
+31. 两个独立 secondary lineage 路径；
+32. dependent/context-only/BrowserClip 不能满足；
+33. unresolved conflict 产生 FACT_BLOCKED；
+34. stale/retracted/unavailable SourceRevision 不能满足；
+35. Claim—Evaluation—Evidence—SourceRevision 链完整可见；
+36. contradicts/qualifies 不被隐藏；
+37. 中文摘要明确非证据；
+38. PASS 聚合正确；
+39. FACT_BLOCKED 聚合正确；
+40. AWAITING_REVIEW 聚合正确且非 PASS；
+41. `quality_checks` FACT_MAPPING 汇总桥接正确；
+42. 单项 PASS 不推进整体质量/审批/导出；
+43. 手工路径无模型配置可用；
+44. 人工 split/reclassify/map/unmap/undo/reopen；
+45. 短期 token、preview hash、expected revision 和窗口绑定；
+46. 模型 exact schema、allowlist、locator/hash 校验；
+47. 无自动 retry/repair/fallback/换模型；
+48. executionId 幂等、取消、恢复和 after-send ambiguous；
+49. Draft/Claim/Evidence/Source/FactPolicy 精确失效；
+50. 无关实体不失效；
+51. migration 新库/升级/备份/回滚/FK/quick check；
+52. 历史 v1—当前 migration 与 Issues 018—025 数据保留；
+53. append-only/current pointer/并发约束；
+54. 分页、容量、确定性和 query plan；
+55. UI 状态、映射链、人工复核和错误态；
+56. IPC exact-object、egress 与 renderer 边界；
+57. quality 之外受保护表零写入；
+58. 真实密钥、业务网络、模型调用和费用为 0；
+59. AI 标识和版权仍不参与检查；
+60. Issue 027—030、图片、审批、导出和发布功能不存在。
+
+验收映射不得预填 PASS。每项必须回填独立代码、测试、命令或文档证据，不写“同上”。
+
+
+二十七、受保护表与零副作用断言
+------------------------------
+
+Issue 026 运行前后必须断言以下领域不会被修改：
+
+- Source/SourceRevision；
+- AtomicClaim/Evidence/FactEvaluation/Conflict decision；
+- Catalog/Dossier/ReadingState/ExperienceAssertion；
+- Topic/Experiment/ContentBrief；
+- Draft/DraftVersion 文案及字段锁；
+- assets；
+- approvals；
+- post_packages；
+- publications；
+- metric_snapshots；
+- strategy decisions。
+
+允许写入：
+
+- FACT_MAPPING 专属表；
+- `quality_checks` 中精确 FACT_MAPPING 汇总；
+- 对应 job/model run/accounting/audit 的有限记录。
+
+缓存命中、模型候选失败、取消和 ambiguous 的写入语义必须符合现有 ModelExecution 与 JobQueue
+合同。
+
+
+二十八、文档交付
+----------------
+
+至少交付：
+
+- `docs/contracts/draft-statement-v1.md`
+- `docs/contracts/fact-mapping-v1.md`
+- `docs/contracts/fact-mapping-quality-check-v1.md`
+- `docs/adr/` 下运行时下一号 ADR；
+- `docs/m3-issue026-implementation-plan.md`
+- `docs/m3-issue026-acceptance-map.md`
+- `docs/evidence/m3-issue026-local-evidence.md`
+- 必要的脱敏 egress matrix；
+- 归档后的本指令；
+- 更新后的 `docs/instructions/README.md`、文档中心、README、AGENTS 和 Roadmap。
+
+文档必须明确：
+
+- FACT_MAPPING PASS 不是整体质量通过；
+- Issue 027 是真实性与评分检查；
+- Issue 028 是剧透检查；
+- Issue 029 是一致性、重复度和标题检查；
+- Issue 030 才是质量编排；
+- 下一步只规划 Issue 027，不自动开始。
+
+不要为统一措辞改写历史 Issue 指令、历史 ADR、历史验收映射或已发布 migration。
+
+
+二十九、实施顺序
+----------------
+
+建议按以下顺序实施，不以超大单文件一次完成：
+
+1. 只读基线、规则、现有 schema/包/测试/CI inventory；
+2. 建立 implementation plan 和未预填 PASS 的 acceptance map；
+3. 冻结 DraftStatement、locator、classification、key-fact 和 mapping 合同；
+4. 冻结状态机、FactPolicy 消费规则和质量汇总合同；
+5. 设计并测试下一条 migration 与旧数据保留；
+6. 实现纯本地 Statement、detector、candidate、compatibility 和 rollup；
+7. 实现仓储、精确失效、人工 decision 和 history；
+8. 实现 plan、JobQueue handler 和 Scripted Mock 模型辅助；
+9. 实现受限 main/preload/IPC/shared DTO；
+10. 实现事实映射工作台；
+11. 完成 gold fixture、专项测试、容量/query plan、egress 和架构测试；
+12. 同步文档和状态；
+13. 从最新 npm ci 开始完整运行最终门禁；
+14. 审核 diff、secret、路径、临时文件、进程、listener 和远端状态；
+15. 创建恰好一个本地提交并停止。
+
+
+三十、完成定义与最终报告
+------------------------
+
+只有以下全部成立才可报告 PASS：
+
+- 60 项或更细的增量验收全部有独立证据；
+- `test:fact-mapping` 纳入全量测试和 Windows CI；
+- 从同一次最新 npm ci 开始的全部正式门禁通过；
+- 失败、skip、todo、lint warning、漏洞、意外外部连接和残留进程/listener 均为 0；
+- source/packaged Electron smoke 与适用 Chrome/Edge 隔离 smoke 按当前 CI 真实执行并如实报告；
+- migration 新库、升级、备份、失败回滚、FK 和完整性检查通过；
+- 历史 migration 和 Issues 018—025 数据保留；
+- 无真实密钥读取、真实模型/API/搜索/网页/图片调用和费用；
+- Fact Mapping 没有修改 Draft 或研究事实；
+- AI 标识和版权不参与字段、分类、检查、结果或状态；
+- Issue 027—030 未实现；
+- 指令唯一归档；
+- 只创建一个本地提交；
+- 工作树干净；
+- 未 push、未创建 PR、未合并；
+- 停止在 Issue 026。
+
+最终报告至少包含：
+
+- 动态基线、最终 commit/parent、分支、工作树和远端事实；
+- Statement/FACT/OPINION/ANALYSIS/MIXED 数量；
+- KEY_FACT/SUPPORTING_FACT 和 protected signal 数量；
+- EXACT/paraphrase/mismatch/no-claim 映射数量；
+- Claim/Evaluation/Evidence/SourceRevision 链数量；
+- PASS/FACT_BLOCKED/AWAITING_REVIEW/STALE 金标；
+- 数字、日期、奖项和 cross-work 结果；
+- 人工复核、模型辅助、幂等、取消、恢复和 ambiguous 结果；
+- migration 和数据保留；
+- 专项/全量测试、构建、打包、smoke、依赖审计；
+- 外部连接、真实密钥、真实调用和费用；
+- 受保护表零写入；
+- Git 和未实施范围；
+- 下一步仅为 Issue 027。
+
+托管 GitHub CI 未实际触发和读取时，不得报告为 PASS。
+
+
+三十一、给 Codex 的启动指令
+--------------------------
+
+继续当前本地 `main`。完整读取仓库根级及作用域内 `AGENTS.md` 和本 TXT；动态只读核对当前
+工作树、HEAD、远端及 Issue 025 语义能力，状态不一致即停止，不自行 pull、rebase、reset、
+merge 或覆盖用户文件。随后把本 TXT 唯一归档到
+`docs/instructions/m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt`。
+
+只实施 M3 Issue 026：建立 Draft 公开文本 artifact、Unicode locator、原子 Statement、事实/观点/
+分析/体验分类、关键事实与 protected signal、Statement—Claim 映射、类型化数字/日期/奖项校验、
+Claim—FactEvaluation—Evidence—SourceRevision 回溯、PASS/FACT_BLOCKED/AWAITING_REVIEW、
+人工复核、可选 Scripted Mock 模型辅助、精确失效、FACT_MAPPING 质量汇总、事实映射工作台、
+下一条 migration、合同、ADR、专项测试和完整验收。
+
+不得修改 Draft 或研究事实，不得自动搜索、抓取、补写或启动后续质量检查；不得实现 Issue
+027—030、图片、审批、导出或发布。真实密钥、业务网络、真实模型/API 调用和费用保持为 0。
+全部门禁通过后只创建一个本地提交并停止，不得 push，不得进入 Issue 027。

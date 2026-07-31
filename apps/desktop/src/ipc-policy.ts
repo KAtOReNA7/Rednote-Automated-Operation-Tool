@@ -33,6 +33,13 @@ import {
   assertContentDraftPayload,
   assertRewriteScope,
 } from '@mystery-operations/copy';
+import {
+  FACT_MAPPING_LIMITS,
+  FACT_MAPPING_MODES,
+  FACT_DOMAINS,
+  FACT_MATERIALITIES,
+  STATEMENT_KINDS,
+} from '@mystery-operations/quality';
 
 import { isTrustedRendererUrl } from './security-policy.js';
 
@@ -87,6 +94,9 @@ export type DesktopIpcOperation =
   | 'getBriefs'
   | 'getCopyDraft'
   | 'getCopyDrafts'
+  | 'getFactMappingCheck'
+  | 'getFactMappingChecks'
+  | 'getFactMappingClaimChain'
   | 'getWindowState'
   | 'listLocalApiClients'
   | 'listBrowserClips'
@@ -108,6 +118,10 @@ export type DesktopIpcOperation =
   | 'previewExperimentAction'
   | 'previewBriefAction'
   | 'previewCopyAction'
+  | 'previewFactMappingAction'
+  | 'confirmFactMappingAction'
+  | 'previewFactMappingDecision'
+  | 'confirmFactMappingDecision'
   | 'diffCopyDraftVersions'
   | 'diffDossierVersions'
   | 'previewModelCacheClear'
@@ -898,6 +912,157 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         dossierIdentifier(value.draftId, COPY_LIMITS.identifierBytes) &&
         dossierIdentifier(value.fromVersionId, COPY_LIMITS.identifierBytes) &&
         dossierIdentifier(value.toVersionId, COPY_LIMITS.identifierBytes)
+      );
+    }
+    case 'getFactMappingChecks': {
+      const value = validateOneObject(args, ['limit', 'offset', 'status']);
+      return (
+        value !== null &&
+        Number.isSafeInteger(value.limit) &&
+        Number(value.limit) >= 1 &&
+        Number(value.limit) <= FACT_MAPPING_LIMITS.maxPageSize &&
+        Number.isSafeInteger(value.offset) &&
+        Number(value.offset) >= 0 &&
+        Number(value.offset) <= FACT_MAPPING_LIMITS.maxPageOffset &&
+        (value.status === null ||
+          ['AWAITING_REVIEW', 'FACT_BLOCKED', 'PASS', 'STALE', 'UNCHECKED'].includes(
+            String(value.status),
+          ))
+      );
+    }
+    case 'getFactMappingCheck': {
+      const value = validateOneObject(args, ['draftId']);
+      return (
+        value !== null && dossierIdentifier(value.draftId, FACT_MAPPING_LIMITS.identifierBytes)
+      );
+    }
+    case 'getFactMappingClaimChain': {
+      const value = validateOneObject(args, ['statementId']);
+      return (
+        value !== null && dossierIdentifier(value.statementId, FACT_MAPPING_LIMITS.identifierBytes)
+      );
+    }
+    case 'previewFactMappingAction': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      if (value === null) return false;
+      if (value.kind === 'START') {
+        return (
+          exactKeys(value, ['draftId', 'kind', 'mode']) &&
+          dossierIdentifier(value.draftId, FACT_MAPPING_LIMITS.identifierBytes) &&
+          FACT_MAPPING_MODES.includes(value.mode as (typeof FACT_MAPPING_MODES)[number])
+        );
+      }
+      return (
+        value.kind === 'CANCEL' &&
+        exactKeys(value, ['executionId', 'expectedRevision', 'kind']) &&
+        dossierIdentifier(value.executionId, 128) &&
+        Number.isSafeInteger(value.expectedRevision) &&
+        Number(value.expectedRevision) >= 0
+      );
+    }
+    case 'confirmFactMappingAction': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'executionId',
+        'kind',
+        'previewHash',
+        'token',
+      ]);
+      return (
+        value?.confirmation === 'APPLY_FACT_MAPPING_ACTION' &&
+        ['START', 'CANCEL'].includes(String(value.kind)) &&
+        dossierIdentifier(value.executionId, 128) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
+      );
+    }
+    case 'previewFactMappingDecision': {
+      const value =
+        args.length === 1 && isRecord(args[0])
+          ? (args[0] as Readonly<Record<string, unknown>>)
+          : null;
+      if (
+        value === null ||
+        !dossierIdentifier(value.draftId, FACT_MAPPING_LIMITS.identifierBytes) ||
+        !dossierIdentifier(value.statementId, 128) ||
+        !Number.isSafeInteger(value.expectedRevision) ||
+        Number(value.expectedRevision) < 0 ||
+        !(
+          value.reason === null ||
+          (typeof value.reason === 'string' &&
+            value.reason.trim() === value.reason &&
+            value.reason.length >= 1 &&
+            Array.from(value.reason).length <= FACT_MAPPING_LIMITS.reasonCodePoints)
+        )
+      ) {
+        return false;
+      }
+      const base = ['draftId', 'expectedRevision', 'kind', 'reason', 'statementId'];
+      switch (value.kind) {
+        case 'CONFIRM_CLASSIFICATION':
+        case 'UNMAP_CLAIM':
+        case 'REOPEN':
+          return exactKeys(value, base);
+        case 'RECLASSIFY':
+          return (
+            exactKeys(value, [...base, 'domain', 'materiality', 'statementKind']) &&
+            FACT_DOMAINS.includes(value.domain as (typeof FACT_DOMAINS)[number]) &&
+            FACT_MATERIALITIES.includes(value.materiality as (typeof FACT_MATERIALITIES)[number]) &&
+            STATEMENT_KINDS.includes(value.statementKind as (typeof STATEMENT_KINDS)[number])
+          );
+        case 'SPLIT':
+          return (
+            exactKeys(value, [...base, 'splitCodePoint']) &&
+            Number.isSafeInteger(value.splitCodePoint) &&
+            Number(value.splitCodePoint) >= 1 &&
+            Number(value.splitCodePoint) <= FACT_MAPPING_LIMITS.artifactCodePoints
+          );
+        case 'MAP_CLAIM':
+          return (
+            exactKeys(value, [...base, 'claimId', 'relation']) &&
+            dossierIdentifier(value.claimId, FACT_MAPPING_LIMITS.identifierBytes) &&
+            ['EXACT', 'NARROWER_THAN_CLAIM', 'SUPPORTED_PARAPHRASE'].includes(
+              String(value.relation),
+            )
+          );
+        case 'UNDO':
+          return (
+            exactKeys(value, [...base, 'targetVersionId']) &&
+            dossierIdentifier(value.targetVersionId, 128)
+          );
+        default:
+          return false;
+      }
+    }
+    case 'confirmFactMappingDecision': {
+      const value = validateOneObject(args, [
+        'confirmation',
+        'executionId',
+        'kind',
+        'previewHash',
+        'token',
+      ]);
+      return (
+        value?.confirmation === 'APPLY_FACT_MAPPING_ACTION' &&
+        [
+          'CONFIRM_CLASSIFICATION',
+          'RECLASSIFY',
+          'SPLIT',
+          'MAP_CLAIM',
+          'UNMAP_CLAIM',
+          'UNDO',
+          'REOPEN',
+        ].includes(String(value.kind)) &&
+        dossierIdentifier(value.executionId, 128) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
       );
     }
     case 'getExperiment': {
