@@ -13,6 +13,7 @@ import {
   assertProcessesExited,
   assertSocketSnapshot,
   inspectProcessTree,
+  recordObservationStage,
   waitForExit,
   waitForSmokeReport,
 } from './issue011-smoke-support.mjs';
@@ -65,11 +66,25 @@ for (const mode of ['disabled', 'enabled']) {
   });
   const exitPromise = waitForExit(child);
   try {
+    const reportStartedAt = Date.now();
     const report = await waitForSmokeReport(outputPath);
+    recordObservationStage('smoke-report-ready', reportStartedAt, { mode, packaged: false });
     assertIssue013CapabilityFixture(capabilityFixture, report);
     const snapshot = await inspectProcessTree(child.pid);
+    const socketStartedAt = Date.now();
     const socketEvidence = assertSocketSnapshot(snapshot, mode, port, capabilityFixture.port);
+    recordObservationStage('socket-policy-check', socketStartedAt, {
+      mode,
+      packaged: false,
+      ...socketEvidence,
+    });
+    const exitStartedAt = Date.now();
     const exitCode = await exitPromise;
+    recordObservationStage('electron-exit-wait', exitStartedAt, {
+      exitCode,
+      mode,
+      packaged: false,
+    });
     if (exitCode !== 0) {
       throw new Error(
         `Electron source smoke exited with ${String(exitCode)} and report ${JSON.stringify(report)}: ${stderr}`,
@@ -78,7 +93,7 @@ for (const mode of ['disabled', 'enabled']) {
     assertCommonReport(report, false, mode, port);
     await assertProcessesExited(snapshot.processIds);
     await assertPortReleased(port);
-    results.push({ mode, ...socketEvidence, portReleased: true });
+    results.push({ mode, ...socketEvidence, portReleased: true, processesExited: true });
   } finally {
     if (child.exitCode === null) {
       child.kill();
