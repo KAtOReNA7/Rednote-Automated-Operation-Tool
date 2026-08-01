@@ -10,7 +10,11 @@ import { TopicError } from '@mystery-operations/topics';
 import { ExperimentError } from '@mystery-operations/experiments';
 import { BriefError } from '@mystery-operations/briefs';
 import { CopyError } from '@mystery-operations/copy';
-import { FactMappingError, ReadingAuthenticityError } from '@mystery-operations/quality';
+import {
+  FactMappingError,
+  ReadingAuthenticityError,
+  SpoilerQualityError,
+} from '@mystery-operations/quality';
 import {
   type CancelCatalogDiscoveryInput,
   type CancelDossierBuildInput,
@@ -81,6 +85,8 @@ import {
   type PreviewFactMappingDecisionInput,
   type ConfirmReadingAuthenticityInput,
   type PreviewReadingAuthenticityInput,
+  type ConfirmSpoilerQualityInput,
+  type PreviewSpoilerQualityInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -124,6 +130,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof SpoilerQualityError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof ReadingAuthenticityError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -513,6 +522,28 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
       );
     },
   );
+  register('previewSpoilerQuality', DESKTOP_IPC_CHANNELS.previewSpoilerQuality, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new SpoilerQualityError('SPOILER_QUALITY_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.previewSpoilerQuality(
+      args[0] as PreviewSpoilerQualityInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmSpoilerQuality', DESKTOP_IPC_CHANNELS.confirmSpoilerQuality, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new SpoilerQualityError('SPOILER_QUALITY_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.confirmSpoilerQuality(
+      args[0] as ConfirmSpoilerQualityInput,
+      event.sender.id,
+      window.id,
+    );
+  });
   register('getEvidenceState', DESKTOP_IPC_CHANNELS.getEvidenceState, (_event, args) =>
     options.settingsRuntime.getEvidenceState(args[0] as GetEvidenceStateInput),
   );

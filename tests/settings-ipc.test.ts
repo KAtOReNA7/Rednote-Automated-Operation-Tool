@@ -476,6 +476,20 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       token: 'a'.repeat(43),
     },
   ],
+  previewSpoilerQuality: [
+    {
+      draftId: 'draft-fixture-000001',
+      expectedRevision: 1,
+    },
+  ],
+  confirmSpoilerQuality: [
+    {
+      confirmation: 'SAVE_SPOILER_QUALITY_CHECK',
+      expectedRevision: 1,
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
   updateLocalApiSettings: [{ enabled: true, expectedRevision: 0, port: 43_119 }],
   updateNonSecretSettings: [
     {

@@ -10,6 +10,8 @@ import type {
   PreviewCopyActionInput,
   ReadingAuthenticityPreview,
   ReadingAuthenticityReadModel,
+  SpoilerQualityPreview,
+  SpoilerQualityReadModel,
 } from '@mystery-operations/shared';
 
 const PAGE_SIZE = 12;
@@ -114,6 +116,8 @@ export function CopyWorkbench(): React.JSX.Element {
   const [preview, setPreview] = useState<CopyActionPreview | null>(null);
   const [readingPreview, setReadingPreview] = useState<ReadingAuthenticityPreview | null>(null);
   const [readingCheck, setReadingCheck] = useState<ReadingAuthenticityReadModel | null>(null);
+  const [spoilerPreview, setSpoilerPreview] = useState<SpoilerQualityPreview | null>(null);
+  const [spoilerCheck, setSpoilerCheck] = useState<SpoilerQualityReadModel | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('正在读取本地文案 Draft…');
   const [rewriteInstruction, setRewriteInstruction] = useState('');
@@ -183,6 +187,8 @@ export function CopyWorkbench(): React.JSX.Element {
     setPreview(null);
     setReadingPreview(null);
     setReadingCheck(null);
+    setSpoilerPreview(null);
+    setSpoilerCheck(null);
   }, []);
 
   useEffect(() => {
@@ -234,6 +240,8 @@ export function CopyWorkbench(): React.JSX.Element {
         setDraft(result.value.detail.payload);
         setReadingPreview(null);
         setReadingCheck(null);
+        setSpoilerPreview(null);
+        setSpoilerCheck(null);
       }
       setMessage(mutation ? 'mutation 已进入本地队列。' : '已保存新的不可变 DraftVersion。');
       await loadList();
@@ -290,6 +298,49 @@ export function CopyWorkbench(): React.JSX.Element {
       setBusy(false);
     }
   }, [readingPreview]);
+
+  const previewSpoilerQuality = useCallback(async () => {
+    if (detail === null) return;
+    const method = window.rednoteDesktop?.previewSpoilerQuality;
+    if (method === undefined) return;
+    setBusy(true);
+    try {
+      const result = await method({ draftId: detail.draftId, expectedRevision: detail.revision });
+      if (!result.ok) {
+        setMessage(`剧透确定性检查预览失败：${result.error.code}`);
+        return;
+      }
+      setSpoilerPreview(result.value);
+      setSpoilerCheck(result.value.preview.readModel);
+      setMessage('剧透预览只运行声明、警告与窄词法规则；尚未写入质量检查摘要。');
+    } finally {
+      setBusy(false);
+    }
+  }, [detail]);
+
+  const confirmSpoilerQuality = useCallback(async () => {
+    if (spoilerPreview === null) return;
+    const method = window.rednoteDesktop?.confirmSpoilerQuality;
+    if (method === undefined) return;
+    setBusy(true);
+    try {
+      const result = await method({
+        confirmation: 'SAVE_SPOILER_QUALITY_CHECK',
+        expectedRevision: spoilerPreview.preview.readModel.draftRevision,
+        previewHash: spoilerPreview.previewHash,
+        token: spoilerPreview.token,
+      });
+      if (!result.ok) {
+        setMessage(`剧透确定性检查确认失败：${result.error.code}`);
+        return;
+      }
+      setSpoilerCheck(result.value.readModel);
+      setSpoilerPreview(null);
+      setMessage('剧透确定性检查摘要已追加；Draft 内容与流程状态均未改变。');
+    } finally {
+      setBusy(false);
+    }
+  }, [spoilerPreview]);
 
   const rewriteScope = useMemo<CopyRewriteScopeV1>(() => {
     if (rewriteKind === 'BODY_BLOCK' || rewriteKind === 'BODY_BLOCK_RANGE') {
@@ -618,6 +669,54 @@ export function CopyWorkbench(): React.JSX.Element {
                   {readingPreview === null ? null : (
                     <button disabled={busy} onClick={() => setReadingPreview(null)} type="button">
                       取消预览
+                    </button>
+                  )}
+                </div>
+              </section>
+
+              <section className="copy-lock-card" aria-label="剧透确定性子集检查">
+                <strong>SPOILER · 确定性子集</strong>
+                <span>
+                  已保存：{spoilerCheck?.savedStatus ?? '尚未读取'} · 本次判断：
+                  {spoilerCheck?.evaluationStatus ?? 'NOT_RUN'}
+                </span>
+                <span>
+                  PASS
+                  只表示声明、警告与有限词法规则未发现复核证据，不代表完整剧情语义判断或发布许可。
+                </span>
+                {spoilerCheck?.findings.length ? (
+                  <ol>
+                    {spoilerCheck.findings.map((finding, index) => (
+                      <li key={`${finding.surface}-${finding.artifactId}-${index}`}>
+                        <strong>{finding.disposition}</strong> · {finding.reasonCode} ·{' '}
+                        {finding.surface} [{finding.startCodePoint}, {finding.endCodePoint})
+                      </li>
+                    ))}
+                  </ol>
+                ) : (
+                  <small>暂无有限规则定位项；请先预览当前不可变 Draft。</small>
+                )}
+                {spoilerCheck?.truncated ? (
+                  <small>扫描或定位项已截断，结果不会标记为 PASS。</small>
+                ) : null}
+                <div>
+                  <button
+                    disabled={busy || dirty || detail.status !== 'READY_FOR_QUALITY_PIPELINE'}
+                    onClick={() => void previewSpoilerQuality()}
+                    type="button"
+                  >
+                    预览剧透检查
+                  </button>
+                  <button
+                    disabled={busy || spoilerPreview === null}
+                    onClick={() => void confirmSpoilerQuality()}
+                    type="button"
+                  >
+                    确认保存剧透摘要
+                  </button>
+                  {spoilerPreview === null ? null : (
+                    <button disabled={busy} onClick={() => setSpoilerPreview(null)} type="button">
+                      取消剧透预览
                     </button>
                   )}
                 </div>

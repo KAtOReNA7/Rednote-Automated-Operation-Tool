@@ -3,8 +3,8 @@
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
   <img alt="M3 in progress" src="https://img.shields.io/badge/M3-进行中-ff2442" />
-  <img alt="Issues 001–027 completed" src="https://img.shields.io/badge/已完成-Issues%20001--027-2ea44f" />
-  <img alt="Next M3 Issue 028" src="https://img.shields.io/badge/下一步-M3%20Issue%20028-ff8a00" />
+  <img alt="Issues 001–028 completed" src="https://img.shields.io/badge/已完成-Issues%20001--028-2ea44f" />
+  <img alt="Next M3 Issue 029" src="https://img.shields.io/badge/下一步-M3%20Issue%20029-ff8a00" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
 </p>
@@ -31,15 +31,15 @@
 | 你想知道的                   | 当前答案                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------- |
 | **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认 |
-| **做到哪一步？**             | M0、M1、M2 已完成；M3 已交付事实映射与阅读真实性/评分检查                       |
-| **下一步是什么？**           | M3 Issue 028（尚未授权或开始）                                                  |
+| **做到哪一步？**             | M0、M1、M2 已完成；M3 已交付事实、真实性/评分与确定性剧透检查                   |
+| **下一步是什么？**           | M3 Issue 029（尚未授权或开始）                                                  |
 | **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                              |
 | **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                        |
 | **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                      |
 
 > [!TIP]
 > 里程碑快照：M1（Issue 006—011）与 M2（Issue 012—021）均已完成验收；M3 已完成
-> Issue 027，下一步仅规划 Issue 028。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
+> Issue 028，下一步仅规划 Issue 029。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
 > `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`，且外部请求数为 0。
 > Fetch 只处理研究流程明确选择的单个已持久化候选；结果仍是
 > `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`，不会自动入队或升级为事实。Issue 019
@@ -59,7 +59,10 @@
 > FactEvaluation、Evidence 与 SourceRevision，并提供 `PASS / FACT_BLOCKED / AWAITING_REVIEW`、
 > 人工复核和可选单请求 Scripted Mock 辅助。Issue 027 复用 current Draft 与 Issue 021 权限，新增
 > `PASS / BLOCKED / REVIEW_REQUIRED / STALE / NOT_RUN` 阅读真实性与公开评分检查；它只追加有界摘要，
-> 不修改文案。单项 PASS 仍不代表整体质量通过，也没有 Issue 028—030、图片、审批、导出或发布。
+> 不修改文案。Issue 028 再以确定性子集核对 Brief/Draft 剧透声明、四个 warning surface 和
+> NO/LIGHT 的窄答案式表达候选；FULL 正文允许直接拆解凶手、结局与核心诡计。单项 PASS 只表示
+> 有限规则未发现复核证据，仍不代表全文语义安全、整体质量通过或发布许可，也没有 Issue 029—030、
+> 图片、审批、导出或发布。
 > 其后的治理专项只用完全合成材料接通
 > `Work → SourceRevision → Dossier → Topic → Brief → Draft → Fact Mapping` 最小本地闭环；
 > 每个下游步骤仍由用户在既有工作台分别预览、确认或手工填写，不是自动内容流水线。
@@ -74,8 +77,8 @@
 flowchart LR
     M0["M0<br/>Issue 001–005<br/>基础与硬约束"] --> M1["M1<br/>Issue 006–011<br/>本地应用基础设施"]
     M1 --> M2["M2<br/>Issue 012–021<br/>模型、搜索、书库与研究"]
-    M2 --> M3["M3<br/>Issue 022–027 完成<br/>选题、实验、文案与质量检查"]
-    M3 --> NEXT["NEXT<br/>M3 Issue 028<br/>尚未开始"]
+    M2 --> M3["M3<br/>Issue 022–028 完成<br/>选题、实验、文案与质量检查"]
+    M3 --> NEXT["NEXT<br/>M3 Issue 029<br/>尚未开始"]
     NEXT -.-> FUTURE["M3–M6<br/>内容、视觉、运营与发布"]
 
     classDef done fill:#fff0f2,stroke:#ff2442,color:#111,stroke-width:2px;
@@ -94,7 +97,7 @@ flowchart LR
 | M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**         |
 | M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**         |
 | M2     |    012–021 | 模型接口、搜索、书库与研究             | **已完成 · 10/10** |
-| M3     |    022–030 | 选题、实验、文案与质量门禁             | **进行中 · 6/9**   |
+| M3     |    022–030 | 选题、实验、文案与质量门禁             | **进行中 · 7/9**   |
 | M4–M6  |       后续 | 视觉、审批、导出、运营与发布           | **未开始**         |
 
 ### 最近完成
@@ -117,9 +120,10 @@ flowchart LR
 |   025 | 五类版本化文案、实际剧透警告、局部重写、结构门与工作台   | **已完成** |
 |   026 | 原子 Statement、事实映射、证据回溯、人工复核与质量汇总   | **已完成** |
 |   027 | 阅读真实性、公开评分来源、五态摘要与文案工作台检查       | **已完成** |
+|   028 | 确定性剧透声明、警告 surface、窄候选定位与五态摘要       | **已完成** |
 
 > [!NOTE]
-> “下一步”只表示路线图顺序，不表示已经开始开发。下一项仅规划 Issue 028，仓库不会自动进入。
+> “下一步”只表示路线图顺序，不表示已经开始开发。下一项仅规划 Issue 029，仓库不会自动进入。
 > 当前额外完成的是不新增业务表、trigger、package 或质量类型的最小垂直切片验证，不计作
 > Issue 027 业务范围。普通测试与容量测试现使用静态零重叠集合；长任务会持久记录 stdout/stderr、结构化结果、
 > 起止时间与真实 exit code，该治理收口同样不改变产品能力。
@@ -144,9 +148,10 @@ flowchart LR
 | 五类 Topic Pool、确定性资格/排序/去重、状态控制与 10/8/6/3/3 配额计划       | 图片或质量流程                                            |
 | 单变量 Experiment、跨三本 Work 复现、热度分层、确定性 assignment 与版本历史 | 真实指标回收、效果/显著性/winner 与实验执行               |
 | 五类 Content Brief、Evidence 映射、真实性/评分/剧透约束、字段锁与就绪门     | 图片、事实检查、审批或发布                                |
-| 五类版本化 Copy、标题/正文/标签/评论、实际警告、lineage、锁与局部重写       | Issue 028—030 的后续质量检查、图片、审批、导出与发布      |
+| 五类版本化 Copy、标题/正文/标签/评论、实际警告、lineage、锁与局部重写       | Issue 029—030 的后续质量检查、图片、审批、导出与发布      |
 | FACT_MAPPING Statement、类型化 Claim 映射、证据链、精确失效与人工复核       | 整体质量通过、审批、导出或发布                            |
 | 阅读亲历与公开评分的五态检查、精确定位、幂等摘要与现有工作台区块            | 自动修文、评分预测公开、质量总分或流程推进                |
+| 剧透声明/警告确定性子集、FULL 放行、窄候选定位与精确 stale                  | 全文剧情理解、自动补警告、质量总分或流程推进              |
 | 完全合成、手工确认、可重开的最小本地内容闭环                                | 真实 Provider、真实素材、自动编排或真实生产可用性         |
 
 ## 快速开始
@@ -468,6 +473,10 @@ token、临时 SQLite 和本机 loopback；不读取真实密钥，
 - [ADR 0023：缩减范围的阅读真实性与评分检查](./docs/adr/0023-reading-authenticity-score-check.md)
 - [Issue 027 验收与证据](./docs/m3-issue027-acceptance-evidence.md)
 - [Issue 027 执行指令](./docs/instructions/m3/M3-Issue027-reading-authenticity-score-check-Codex-instruction.txt)
+- [Spoiler Quality Check V1 合同](./docs/contracts/spoiler-quality-check-v1.md)
+- [ADR 0024：确定性剧透声明与警告检查](./docs/adr/0024-spoiler-quality-check.md)
+- [Issue 028 验收与证据](./docs/m3-issue028-acceptance-evidence.md)
+- [Issue 028 V2 执行指令](./docs/instructions/m3/M3-Issue028-deterministic-spoiler-quality-subset-Codex-instruction-v2.txt)
 - [最小本地垂直切片验收证据](./docs/evidence/m3-minimal-local-vertical-slice-evidence.md)
 - [Issue 027 前验证可靠性盘点](./docs/reviews/m3-validation-reliability-plan.md)
 
@@ -487,5 +496,5 @@ token、临时 SQLite 和本机 loopback；不读取真实密钥，
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  M3 Issue 022–027、合成最小闭环与验证可靠性收口已完成；Issue 028 仅规划，尚未开始。
+  M3 Issue 022–028、合成最小闭环与验证可靠性收口已完成；Issue 029 仅规划，尚未开始。
 </p>

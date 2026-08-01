@@ -56,7 +56,7 @@ describe('repository-facing documentation', () => {
       ['AGENTS.md', agents],
       ['docs/product/xiaohongshu-development-roadmap-v1.md', roadmap],
     ] as const) {
-      expect(projectProgress(content), path).toEqual({ completedThrough: 27, nextIssue: 28 });
+      expect(projectProgress(content), path).toEqual({ completedThrough: 28, nextIssue: 29 });
     }
     expect(readme).toContain('M1（Issue 006—011）');
     expect(readme).toContain('M2（Issue 012—021）均已完成验收');
@@ -69,6 +69,7 @@ describe('repository-facing documentation', () => {
     expect(readme).toContain(
       'FACT_MAPPING Statement、类型化 Claim 映射、证据链、精确失效与人工复核',
     );
+    expect(readme).toContain('剧透声明/警告确定性子集、FULL 放行、窄候选定位与精确 stale');
     expect(readme).toContain('Work / Expression / Edition');
     expect(readme).toContain('Source revision、AtomicClaim、精确 EvidenceLocator');
     expect(readme).toContain('版本化 Dossier、共识/争议/缺口');
@@ -93,6 +94,10 @@ describe('repository-facing documentation', () => {
     });
     expect(projectProgress('Issue 022—026 已完成；下一项是 Issue 028')).toBeNull();
     expect(projectProgress('Issue 022—028 已完成；Next Issue 028')).toBeNull();
+    expect(projectProgress('Issue 022—028 已完成；下一项是 Issue 029')).toEqual({
+      completedThrough: 28,
+      nextIssue: 29,
+    });
   });
 
   it('keeps every repository-local README link resolvable', () => {

@@ -1,0 +1,213 @@
+M3 Issue 028 正式增量指令（基线修复后修订版）
+任务：剧透声明与警告检查（确定性子集）
+
+一、授权与唯一目标
+
+本指令授权你完成两件连续事项：
+
+1. 动态核验当前 origin/main 已同时包含 Issue 027 与其治理测试修复，并确认当前远端 HEAD 的精确托管 CI 全绿；仅在该基线上进入第 2 项。
+2. 实施 Issue 028 的“剧透声明与警告检查（确定性子集）”，创建唯一一个本地提交后停止。
+
+不得实施“自动理解全部剧情语义”。不得进入 Issue 029、Issue 030 或任何后续 Issue。
+
+仓库根目录、分支、HEAD、远端状态和测试入口必须在运行时动态解析。不得依赖本机绝对路径、预置 SHA、指令文件 SHA-256、换行风格或旧电脑目录作为开工门禁。
+
+先完整阅读仓库根 AGENTS.md，并以其中当前唯一权威治理规则为准。本指令只描述 Issue 028 增量范围；若与 AGENTS.md 存在实质冲突，停止并报告冲突，不自行扩张范围。
+
+二、Phase 0：核验当前绿色远端基线
+
+1. 动态执行只读 Git 盘点：仓库根、当前分支、工作树、暂存区、tracking branch、本地与远端分叉、最近提交语义。
+2. 允许开工的基线只有：
+   - 工作树和暂存区干净；
+   - 当前分支为 main；
+   - 历史中存在已完成的 Issue 027 阅读真实性与评分检查提交；
+   - 其后只允许存在已经完成的 Issue 027 托管 CI 治理/架构测试修复；
+   - 本地 HEAD、tracking branch 与当前 origin/main 完全一致，分叉为 0/0。
+3. 本轮 Phase 0 不再 push、pull、merge 或创建提交；只允许 `git fetch origin` 更新只读远端引用。
+4. 动态定位“当前 origin/main HEAD”的精确 GitHub Actions run。不得再要求历史 Issue 027 原提交的红色 run 变绿，也不得从本地结果推断当前基线绿色。
+5. 核验当前远端 HEAD 的 required Windows job 已实际完成且成功，并确认 normal、capacity、Electron smoke、build、desktop/clipper package、packaged smoke、dependency audit 与清理步骤均为成功状态。
+6. 若当前远端 HEAD 已变化、CI 不是绿色、本地与远端不一致、存在未知提交、脏工作树、开放冲突或无法辨认的基线，立即停止，不自行同步或处理用户文件。
+7. Phase 0 不运行本地测试、npm ci、build、package 或 smoke。
+
+三、产品政策与诚实边界
+
+1. FULL_TRICK_ANALYSIS 被明确允许。核心诡计、凶手、结局和关键逻辑拆解本身不得成为失败、阻断或人工复核理由。
+2. 检查目标是：
+   - Brief 与 Draft 的剧透声明是否一致；
+   - 所需警告是否存在、级别是否准确、是否落到正确表面；
+   - NO_SPOILER / LIGHT_SPOILER 中是否出现有限规则能发现的可疑答案式表达。
+3. PASS 的唯一含义是：
+   “本版本的确定性声明与警告子集通过，且有限规则未发现需复核证据。”
+4. PASS 绝不等于：
+   - 已证明全文无剧透；
+   - 已理解所有剧情语义；
+   - 可以导出或发布；
+   - 封面视觉警告已经显著。
+5. 同义改写、代词指代、隐喻、跨段推理、身份反转、真实凶手/结局判断，以及警告与正文语义的完整等价性，均不在确定性能力承诺内。
+6. 不能确定时进入 REVIEW_REQUIRED，不得扩大关键词表伪装语义能力，也不得静默 PASS。
+7. AI 标识固定保持 false。AI 参与程度与版权风险不得进入本检查的输入 hash、finding、状态、评分、保存、优先级、排期、审批或未来聚合门禁。
+
+四、实施范围
+
+复用现有 DraftVersion、BriefVersion、冻结 spoiler plan、public artifact materialization/locator、quality_checks、Issue 027 的安全确认形状和 Copy 工作台。
+
+必须实现：
+
+1. 纯确定性 spoiler evaluator 与版本化 checker 常量。
+2. 当前 Draft/Brief truth query、精确 freshness 和 append-only SPOILER 摘要仓储。
+3. 两个且仅两个新 IPC：
+   - quality:spoiler:preview
+   - quality:spoiler:confirm
+4. preview 只读；confirm 使用短期、单次、sender/window/draft/version/revision/inputHash 绑定令牌，并在 main 中重新读取和重算。
+5. Copy 工作台中的一张紧凑 SPOILER 卡片；不得新增路由或独立页面。
+6. PASS、BLOCKED、REVIEW_REQUIRED 三种保存结论；STALE、NOT_RUN 为查询派生状态，不新增数据库枚举。
+7. content-addressed、append-only 保存：INSERT OR IGNORE 后回读逐字段核验；碰撞或不一致 fail closed。
+8. 有界 finding，只保存 allowlist 元数据、surface/artifact identity、Unicode code-point 范围、text hash、reason code 和规则版本。
+9. Draft/Brief current pointer、revision、input/lock hash、spoiler plan 或 invalidation 变化后，旧结果必须精确变为 STALE。
+
+不得实现：
+
+- 新 package、依赖、表、trigger、migration、队列、worker 或任务恢复框架；
+- 模型、Search、Fetch、图片、OCR、网络、真实 API 或费用调用；
+- 自动改写正文、自动补警告、审批、导出、发布或平台自动化；
+- 封面渲染显著性判断；
+- 完整剧情真相库或人工裁决系统；
+- 第三个 IPC；
+- Issue 029/030 的聚合或隐藏入口；
+- 对 Issue 027 框架进行大规模泛化或复制。
+
+只有无业务枚举、已出现至少两次、能明显减少重复的小型内部 helper 才允许抽取。不得新建“通用质量平台”。
+
+五、确定性规则
+
+1. 只处理 current、不可变、结构有效且可进入质量管线的 DraftVersion。
+2. Draft 冻结的 Brief id/version/input hash/lock hash/spoiler plan 必须与当前 Brief 可核验事实一致；明确不一致为 BLOCKED。
+3. 任一 Draft/Brief invalidation、current pointer 变化或依赖 hash 变化都会使旧摘要 STALE。
+4. NO_SPOILER：placement 必须为 NONE，reveal flags 全部为 false，四个 warning 字段为空；明确矛盾为 BLOCKED。
+5. LIGHT_SPOILER：placement 为 BODY_OPENING，不得声明揭示核心诡计或结局；正文开头警告存在且明确表达轻度范围。缺失或明确写成 FULL 级警告为 BLOCKED。
+6. FULL_TRICK_ANALYSIS：Brief 已确认，reveal flags 符合冻结合同；封面、标题、正文开头及当前 Copy 合同要求的置顶评论警告均存在，且明确表达完整/核心诡计/结局范围。缺失或降级为轻度警告为 BLOCKED。
+7. FULL 分支不运行公开内容泄露 detector。合成正文即使直接包含凶手、结局、核心诡计等文字，也必须在声明与警告正确时 PASS。
+8. 标题 marker 必须实际包含在当前所选标题。正文开头只验证专用字段和结构契约，不猜测 CSS 或最终视觉。
+9. NO/LIGHT 仅运行窄、版本化词法候选规则，并复用 NFC、换行规范化和 Unicode code-point locator。
+10. 问句、否定、引用、反例、书名/人名、元讨论、上下文不完整、笼统“剧透预警”或扫描截断等无法确定场景，进入 REVIEW_REQUIRED 或明确的有限排除规则。
+11. 候选不得被声明为作品真实答案或事实证据。
+12. finding 数量、扫描字节和 details_json 必须有界；达到截断上限时不得 PASS。
+
+六、数据与安全合同
+
+1. 复用 quality_checks.check_type = SPOILER；0 Schema 变更。
+2. 保存字段使用现有 draft_id、draft_version_id、result、severity、details_json、checker_version、input_hash、legacy_unresolved=0。
+3. 不借用 Fact Mapping 专用 summary_status/reason_code 数据库枚举；领域状态与有限 reason 存在有界 details 中。
+4. input hash 至少覆盖：
+   - Draft id/revision/current version/status/structural validity/invalidation 摘要；
+   - materialized artifact kind/order/work id/code-point length/text hash；
+   - 四个 warning surface 的 presence/text hash；
+   - Draft 冻结 Brief lineage、hash 与 spoiler plan；
+   - 当前 Brief pointer/readiness/invalidation/hash 与 spoiler plan；
+   - spoiler policy、Draft contract、normalization/locator、warning classifier、candidate detector 与 checker 版本。
+5. input hash 不得包含时间戳、随机值、原文、AI 标识、版权风险、模型信息或密钥。
+6. SQLite、IPC、日志、audit、诊断和证据文档不得保存/输出正文、警告全文、凭据、请求头、绝对路径或 SQL。
+7. Renderer 只能使用两个窄 preload 方法；不得导入 Node/Electron/SQLite/fs/net/crypto。
+8. DTO 必须 exact-object 校验、大小受限，并复用现有 sender frame/origin/BrowserWindow 绑定安全策略。
+
+七、结构预算
+
+硬预算：
+
+- 生产源码不超过 1,300 LOC；
+- 测试不超过 950 LOC；
+- 变更文件不超过 24 个；
+- 新 IPC 恰好 2 个；
+- 新 package、dependency、表、trigger、migration 均为 0；
+- 核心验收保持 10—18 项；
+- 本指令归档后不得再复制第二份。
+
+预算按本 Issue 相对 Phase 0 绿色基线的 diff 统计，不把换行差异或生成物计为能力。
+
+达到任一硬预算前，先删除非必要包装、重复 DTO、重复测试和非必要文档改写。预计仍会超限时停止编码，输出 `ISSUE028_SCOPE_BUDGET_BLOCKED`；不得先超支再解释，也不得通过合并不同安全职责的文件伪造合规。
+
+八、核心验收
+
+至少逐项证明：
+
+I028-AC01 current、结构有效和可进入质量管线的输入资格。
+I028-AC02 Draft/Brief lineage 或 spoiler plan 明确不一致为 BLOCKED。
+I028-AC03 NO 的 placement、flags、四个 warning 字段规则。
+I028-AC04 LIGHT 的 opening warning 与禁止 FULL 声明规则。
+I028-AC05 FULL 的确认及四个 warning surface 完整性。
+I028-AC06 含凶手、结局、核心诡计的 FULL 合成正文仍可 PASS。
+I028-AC07 NO/LIGHT 候选仅输出 Unicode locator/hash，不声明真实答案。
+I028-AC08 歧义、笼统警告或扫描截断不会静默 PASS。
+I028-AC09 UI 明示“确定性子集”，不显示“全文安全”或“可导出”。
+I028-AC10 details/DTO 有界且不包含正文、警告全文、密钥、路径或 SQL。
+I028-AC11 重复确认幂等，历史 append-only，碰撞不一致 fail closed。
+I028-AC12 exact-current、STALE、NOT_RUN 及精确 invalidation。
+I028-AC13 preview 只读；confirm token 绑定、单次消费并重算。
+I028-AC14 renderer/preload/IPC 安全边界。
+I028-AC15 0 package/Schema/model/network/cost，测试仅用合成数据。
+I028-AC16 AI 标识、版权风险不影响任何结果；FULL 政策保持允许。
+
+不得预填 PASS。验收证据必须引用行为测试或实际运行结果。
+
+九、验证策略
+
+遵循 AGENTS.md 的 Issue 级、milestone/release 分层门禁。禁止因“看起来更完整”反复运行全量门禁。
+
+1. 开发期：只运行新增或精确受影响的 policy、repository、runtime/IPC、renderer 测试。修复代码或测试后允许再次运行相应精确测试；不得设置导致任务因任意两次失败自动终止的机械次数上限。
+2. 禁止无代码/测试/环境变化的盲目重跑。每次失败先保存可观测摘要、定位根因，再修复并复验最小失败集合。
+3. 代码稳定后只运行一次 Issue 028 风险 normal 集合，包含：
+   - 新增 Issue 028 测试；
+   - 既有 Copy policy/contracts；
+   - reading-authenticity；
+   - IPC/renderer boundary；
+   - hard constraints。
+   不得把 capacity 文件混入，不得把整个仓库 normal 套件伪装成 Issue 风险集合。
+4. format-check、lint、typecheck、Issue 风险 normal、build 均需 PASS。
+5. Electron source smoke 运行一次，验证两个 channel、安全参数、0 外部业务连接、端口/listener/进程释放。
+6. capacity、package、packaged smoke、真实浏览器 smoke、npm ci、dependency audit 默认为 N/A，因为本 Issue 不改变相关风险面。若 lockfile 或依赖意外变化，立即回退该变化；不得用新增依赖解决问题。
+7. 若一次聚合测试输出不可观测，可用可观测 runner 对同一既定风险文件集合重跑一次；这不是授权跑仓库全量。之后只精确复验已定位失败。
+8. 不得删除测试、skip、todo、降低断言、增加宽松 timeout，或用源码字符串搜索替代行为证据。
+9. 托管全量/跨平台门禁留给 Issue 028 后续 push/CI 任务，不在本地 Issue 实施阶段重复承担 release gate。
+
+十、文档、Git 与交付
+
+1. 新增或更新最少必要文档：
+   - docs/contracts/spoiler-quality-check-v1.md
+   - docs/adr/0024-spoiler-quality-check.md
+   - docs/m3-issue028-acceptance-evidence.md
+   - 本指令唯一归档到 docs/instructions/m3/ 下
+2. AGENTS.md 只有在发现真实治理冲突时才允许修改；不得为了本 Issue 重写公共规则。
+3. README 只在现有状态索引确实要求逐 Issue 更新时做最小文本修改；不得生成或修改横幅图片。
+4. 不提交临时日志、数据库、WAL/SHM、缓存、测试输出、打包产物、用户文件或 ignored 设计报告。
+5. 验收全部通过后创建恰好一个本地提交，建议提交信息：
+   feat(quality): add deterministic spoiler warning checks
+6. 提交前检查 diff、预算、指令唯一性、工作树和 staged 内容。提交后工作树必须干净。
+7. 不 push Issue 028，不创建 PR，不合并，不进入 Issue 029。
+
+十一、失败处理
+
+以下情况停止且不创建完成提交：
+
+- Phase 0 本地/远端不是 0/0，或当前 origin/main HEAD 的精确托管 CI 不通过；
+- 实现需要模型、剧情真相库、queue、export、新 Schema、第三个 IPC 或超出硬预算；
+- 无法诚实区分确定性 PASS 与完整语义安全；
+- 关键门禁存在未定位失败；
+- 检测到未授权用户文件或范围外变更。
+
+停止时保留已授权且可解释的工作，列出精确 blocker、已运行命令、未运行门禁、diff 预算和恢复所需最小授权。不得自行 reset、删除或覆盖用户文件。
+
+十二、最终反馈格式
+
+最终只报告可核验事实：
+
+1. 结论：PASS 或明确 blocker；
+2. Phase 0 当前远端基线及其精确托管 CI 结果；
+3. 动态基线、最终本地提交、分叉和工作树；
+4. 实际规则边界及 PASS 的诚实含义；
+5. package/Schema/IPC/LOC/文件预算；
+6. 各门禁实际命令、文件数、测试数、失败/skip/todo；
+7. Electron smoke 的连接和资源释放结果；
+8. 密钥、模型、网络、费用、AI 标识与版权不变量；
+9. 明确未进入 Issue 029/030，未 push Issue 028。
+
+现在开始：先执行 Phase 0 动态核验；只有当前 origin/main 已包含 Issue 027 与治理修复、且当前远端 HEAD 的精确托管 Windows CI 为绿色，才实施 Issue 028 确定性子集。

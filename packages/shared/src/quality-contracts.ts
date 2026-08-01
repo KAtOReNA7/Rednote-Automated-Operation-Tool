@@ -13,6 +13,9 @@ import type {
   FactMateriality,
   ReadingAuthenticityReasonCode,
   ReadingAuthenticityStatus,
+  SpoilerQualityReasonCode,
+  SpoilerQualityStatus,
+  SpoilerQualitySurface,
 } from '@mystery-operations/quality';
 
 export type FactMappingDisplayStatus =
@@ -68,6 +71,58 @@ export interface ConfirmReadingAuthenticityInput {
 
 export interface ReadingAuthenticityResult {
   readonly readModel: ReadingAuthenticityReadModel;
+}
+
+export interface PreviewSpoilerQualityInput {
+  readonly draftId: string;
+  readonly expectedRevision: number;
+}
+
+export interface SpoilerQualityFindingView {
+  readonly artifactId: string;
+  readonly disposition: 'BLOCKED' | 'REVIEW_REQUIRED';
+  readonly endCodePoint: number;
+  readonly reasonCode: SpoilerQualityReasonCode;
+  readonly ruleVersion: string;
+  readonly selectedTextHash: string;
+  readonly startCodePoint: number;
+  readonly surface: SpoilerQualitySurface;
+  readonly textHash: string;
+}
+
+export interface SpoilerQualityReadModel {
+  readonly draftId: string;
+  readonly draftRevision: number;
+  readonly draftVersionId: string;
+  readonly evaluatedAt: string;
+  readonly evaluationStatus: Exclude<SpoilerQualityStatus, 'STALE' | 'NOT_RUN'>;
+  readonly findings: readonly SpoilerQualityFindingView[];
+  readonly reasonCodes: readonly SpoilerQualityReasonCode[];
+  readonly savedStatus: SpoilerQualityStatus;
+  readonly truncated: boolean;
+}
+
+export interface SpoilerQualityPreview {
+  readonly expiresAt: string;
+  readonly preview: {
+    readonly costState: 'NOT_APPLICABLE';
+    readonly externalRequestCount: 0;
+    readonly readModel: SpoilerQualityReadModel;
+    readonly writes: readonly ['APPEND_QUALITY_CHECK'];
+  };
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface ConfirmSpoilerQualityInput {
+  readonly confirmation: 'SAVE_SPOILER_QUALITY_CHECK';
+  readonly expectedRevision: number;
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface SpoilerQualityResult {
+  readonly readModel: SpoilerQualityReadModel;
 }
 
 export interface GetFactMappingChecksInput {

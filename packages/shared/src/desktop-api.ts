@@ -25,6 +25,7 @@ import type { CopyErrorCode } from '@mystery-operations/copy';
 import type {
   FactMappingErrorCode,
   ReadingAuthenticityErrorCode,
+  SpoilerQualityErrorCode,
 } from '@mystery-operations/quality';
 import type {
   CancelLocalApiPairingRequest,
@@ -154,6 +155,10 @@ import type {
   PreviewReadingAuthenticityInput,
   ReadingAuthenticityPreview,
   ReadingAuthenticityResult,
+  ConfirmSpoilerQualityInput,
+  PreviewSpoilerQualityInput,
+  SpoilerQualityPreview,
+  SpoilerQualityResult,
 } from './quality-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
@@ -201,6 +206,8 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   confirmFactMappingDecision: 'quality:fact-mapping:confirm-decision',
   previewReadingAuthenticity: 'quality:reading-authenticity:preview',
   confirmReadingAuthenticity: 'quality:reading-authenticity:confirm',
+  previewSpoilerQuality: 'quality:spoiler:preview',
+  confirmSpoilerQuality: 'quality:spoiler:confirm',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -296,6 +303,7 @@ export interface DesktopError {
     | CopyErrorCode
     | FactMappingErrorCode
     | ReadingAuthenticityErrorCode
+    | SpoilerQualityErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -824,6 +832,12 @@ export interface DesktopBridge {
   confirmReadingAuthenticity?(
     input: ConfirmReadingAuthenticityInput,
   ): Promise<DesktopResult<ReadingAuthenticityResult>>;
+  previewSpoilerQuality?(
+    input: PreviewSpoilerQualityInput,
+  ): Promise<DesktopResult<SpoilerQualityPreview>>;
+  confirmSpoilerQuality?(
+    input: ConfirmSpoilerQualityInput,
+  ): Promise<DesktopResult<SpoilerQualityResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,
