@@ -107,6 +107,28 @@ export interface SyntheticObservationResolutionV1 {
   readonly workId: string;
 }
 
+export interface UserLocalEntityResolutionV1 {
+  readonly candidates: readonly {
+    readonly authorNames: readonly string[];
+    readonly matchReasons: readonly ('AUTHOR_NAME' | 'WORK_TITLE')[];
+    readonly workId: string;
+    readonly workTitle: string;
+  }[];
+  readonly outcome: 'AMBIGUOUS_REVIEW_REQUIRED' | 'CREATE_NEW';
+}
+
+export interface CreateUserLocalWorkInputV1 {
+  readonly authorAgentId: string;
+  readonly authorName: string;
+  readonly editionId: string;
+  readonly editionNote: string | null;
+  readonly expressionId: string;
+  readonly language: string;
+  readonly publicationDate: string | null;
+  readonly workId: string;
+  readonly workTitle: string;
+}
+
 export interface CatalogWorkDetailV1 extends CatalogWorkListItemV1 {
   readonly aliases: readonly {
     readonly kind: string;
@@ -215,6 +237,13 @@ function assertExpectedRevision(actual: number, expected: number): void {
       safeDetails: { actualRevision: actual, expectedRevision: expected },
     });
   }
+}
+
+function catalogIdentifier(value: string): string {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(value)) {
+    throw new CatalogError('CATALOG_INVALID_REQUEST');
+  }
+  return value;
 }
 
 export class SqliteCatalogRepository implements BibliographyDiscoveryPersistenceV1 {
@@ -608,6 +637,138 @@ export class SqliteCatalogRepository implements BibliographyDiscoveryPersistence
     return runInTransaction(this.#database, () =>
       this.#insertObservationAndResolve(observation, runId, now),
     );
+  }
+
+  public previewUserLocalEntityResolution(
+    workTitleValue: string,
+    authorNameValue: string,
+  ): UserLocalEntityResolutionV1 {
+    const workTitle = normalizeBibliographicText(workTitleValue);
+    const authorName = normalizeBibliographicText(authorNameValue);
+    const rows = this.#database
+      .prepare(
+        `SELECT work.id, work.canonical_title,
+           (SELECT json_group_array(agent.canonical_name)
+            FROM catalog_agent_relations AS relation
+            JOIN catalog_agents AS agent ON agent.id = relation.agent_id
+            WHERE relation.scope_type = 'WORK' AND relation.scope_id = work.id
+              AND relation.role IN ('AUTHOR', 'COAUTHOR', 'ORIGINAL_CREATOR')) AS author_names_json,
+           EXISTS(SELECT 1 FROM catalog_entity_aliases AS alias
+             WHERE alias.entity_type = 'WORK' AND alias.entity_id = work.id
+               AND alias.normalized_value = ?) AS title_match,
+           EXISTS(SELECT 1 FROM catalog_agent_relations AS relation
+             JOIN catalog_agents AS agent ON agent.id = relation.agent_id
+             WHERE relation.scope_type = 'WORK' AND relation.scope_id = work.id
+               AND relation.role IN ('AUTHOR', 'COAUTHOR', 'ORIGINAL_CREATOR')
+               AND agent.normalized_name = ?) AS author_match
+         FROM books AS work WHERE work.catalog_state = 'ACTIVE'
+           AND (title_match = 1 OR author_match = 1) ORDER BY work.id LIMIT 16`,
+      )
+      .all(workTitle.normalized, authorName.normalized) as Row[];
+    const candidates = rows.map((row) =>
+      Object.freeze({
+        authorNames: Object.freeze(JSON.parse(row.author_names_json as string) as string[]),
+        matchReasons: Object.freeze([
+          ...(row.author_match === 1 ? (['AUTHOR_NAME'] as const) : []),
+          ...(row.title_match === 1 ? (['WORK_TITLE'] as const) : []),
+        ]),
+        workId: row.id as string,
+        workTitle: row.canonical_title as string,
+      }),
+    );
+    return Object.freeze({
+      candidates: Object.freeze(candidates),
+      outcome: candidates.length === 0 ? 'CREATE_NEW' : 'AMBIGUOUS_REVIEW_REQUIRED',
+    });
+  }
+
+  public createUserLocalWork(input: CreateUserLocalWorkInputV1, now: string): void {
+    const workId = catalogIdentifier(input.workId);
+    const expressionId = catalogIdentifier(input.expressionId);
+    const editionId = catalogIdentifier(input.editionId);
+    const authorAgentId = catalogIdentifier(input.authorAgentId);
+    const workTitle = normalizeBibliographicText(input.workTitle);
+    const authorName = normalizeBibliographicText(input.authorName);
+    if (
+      input.language.length < 1 ||
+      input.language.length > 32 ||
+      (input.editionNote !== null &&
+        (input.editionNote.length < 1 || input.editionNote.length > 512)) ||
+      (input.publicationDate !== null &&
+        !/^\d{4}(?:-(?:0[1-9]|1[0-2])(?:-(?:0[1-9]|[12]\d|3[01]))?)?$/u.test(input.publicationDate))
+    ) {
+      throw new CatalogError('CATALOG_INVALID_REQUEST');
+    }
+    const resolution = this.previewUserLocalEntityResolution(workTitle.raw, authorName.raw);
+    if (resolution.outcome !== 'CREATE_NEW') throw new CatalogError('CATALOG_CONFLICT');
+    runInTransaction(this.#database, () => {
+      this.#database
+        .prepare(
+          `INSERT INTO books (id, canonical_title, author_id, language, work_type,
+             discovery_status, created_at, updated_at, catalog_state, catalog_revision)
+           VALUES (?, ?, NULL, ?, 'MYSTERY', 'USER_CONFIRMED_LOCAL_INPUT', ?, ?, 'ACTIVE', 1)`,
+        )
+        .run(workId, workTitle.raw, input.language, now, now);
+      this.#database
+        .prepare(
+          `INSERT INTO expressions (id, work_id, expression_kind, canonical_title,
+             normalized_title, language, created_at, updated_at)
+           VALUES (?, ?, 'LEGACY_UNSPECIFIED', ?, ?, ?, ?, ?)`,
+        )
+        .run(expressionId, workId, workTitle.raw, workTitle.normalized, input.language, now, now);
+      this.#database
+        .prepare(
+          `INSERT INTO book_editions (id, expression_id, publication_date, edition_label,
+             is_motie, is_unreleased, catalog_state, catalog_revision)
+           VALUES (?, ?, ?, ?, 0, 0, 'ACTIVE', 1)`,
+        )
+        .run(editionId, expressionId, input.publicationDate, input.editionNote);
+      this.#database
+        .prepare(
+          `INSERT INTO catalog_agents (id, agent_type, canonical_name, normalized_name,
+             created_at, updated_at) VALUES (?, 'PERSON', ?, ?, ?, ?)`,
+        )
+        .run(authorAgentId, authorName.raw, authorName.normalized, now, now);
+      const alias = this.#database.prepare(
+        `INSERT INTO catalog_entity_aliases (id, entity_type, entity_id, alias_kind,
+           raw_value, normalized_value, language, normalization_version, created_at)
+         VALUES (?, ?, ?, 'CANONICAL', ?, ?, ?, ?, ?)`,
+      );
+      alias.run(
+        `alias-${this.#idFactory()}`,
+        'WORK',
+        workId,
+        workTitle.raw,
+        workTitle.normalized,
+        input.language,
+        BIBLIOGRAPHY_NORMALIZATION_VERSION,
+        now,
+      );
+      alias.run(
+        `alias-${this.#idFactory()}`,
+        'AGENT',
+        authorAgentId,
+        authorName.raw,
+        authorName.normalized,
+        null,
+        BIBLIOGRAPHY_NORMALIZATION_VERSION,
+        now,
+      );
+      this.#database
+        .prepare(
+          `INSERT INTO catalog_agent_relations (id, scope_type, scope_id, agent_id, role,
+             verification_state, revision, created_at, updated_at)
+           VALUES (?, 'WORK', ?, ?, 'AUTHOR', 'USER_CONFIRMED', 1, ?, ?)`,
+        )
+        .run(`relation-${this.#idFactory()}`, workId, authorAgentId, now, now);
+      this.#audit(
+        'ENTITY_CREATED',
+        'WORK',
+        workId,
+        { authorAgentId, editionId, expressionId, originKind: 'USER_LOCAL_INPUT' },
+        now,
+      );
+    });
   }
 
   public getSyntheticObservationResolution(

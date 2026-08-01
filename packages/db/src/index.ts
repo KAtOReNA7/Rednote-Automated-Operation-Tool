@@ -43,7 +43,7 @@ export { SqliteSettingsRepository } from './settings-repository.js';
 export { SqliteProviderCapabilityRepository } from './provider-capability-repository.js';
 export { SqliteSearchRepository } from './search-repository.js';
 export { SqliteTopicRepository } from './topic-repository.js';
-export { runInTransaction } from './transaction.js';
+export { runInCoordinatedTransaction, runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
 export type {
@@ -72,6 +72,8 @@ export type {
   CatalogSummaryViewV1,
   CatalogWorkDetailV1,
   CatalogWorkListItemV1,
+  CreateUserLocalWorkInputV1,
+  UserLocalEntityResolutionV1,
   UndoDecisionPreviewV1,
   WorkMergePreviewV1,
   WorkSplitPreviewV1,

@@ -13,6 +13,7 @@ import {
   type DraftLineageRefV1,
   validateDraftStructure,
 } from '../packages/copy/src/index.js';
+import type { RealResearchIntakeDraft } from '../packages/shared/src/index.js';
 import {
   SqliteBriefRepository,
   SqliteCopyRepository,
@@ -168,6 +169,50 @@ function completeManualCopy(
         titleId: 'manual-title',
       },
     ],
+  };
+}
+
+function realIntakeDraft(
+  suffix: string,
+  readingState: RealResearchIntakeDraft['readingState'],
+): RealResearchIntakeDraft {
+  const workTitle = `真实作品${suffix}`;
+  const authorName = `真实作者${suffix}`;
+  return {
+    authorName,
+    authorizationConfirmed: true,
+    editionNote: '用户确认的本地版本说明',
+    publicationDate: '1841',
+    readingState,
+    sourceLocator: '用户本地研究笔记第 1 节',
+    sourceTitle: `获准本地资料${suffix}`,
+    sourceType: 'USER_LOCAL_NOTE',
+    spoilerConfirmed: readingState === 'S1_RESEARCH_ONLY',
+    spoilerLevel: readingState === 'S1_RESEARCH_ONLY' ? 'FULL_TRICK_ANALYSIS' : 'NO_SPOILER',
+    statements: [
+      {
+        claimTarget: 'WORK_TITLE',
+        confirmed: true,
+        evidenceExcerpt: `本地资料将《${workTitle}》列为作品标题。`,
+        evidenceLocator: '第 1 节标题栏',
+        statement: `《${workTitle}》是本次录入的作品标题。`,
+      },
+      {
+        claimTarget: 'NONE',
+        confirmed: true,
+        evidenceExcerpt: '',
+        evidenceLocator: '',
+        statement: '叙事结构可理解为本次资料分析的对象。',
+      },
+      {
+        claimTarget: 'AUTHORSHIP',
+        confirmed: true,
+        evidenceExcerpt: '',
+        evidenceLocator: '',
+        statement: `作者是${authorName}。`,
+      },
+    ],
+    workTitle,
   };
 }
 
@@ -634,6 +679,187 @@ describe('M3 minimal local vertical slice', () => {
       if (briefRuntime !== null) await briefRuntime.close();
       if (copyRuntime !== null) await copyRuntime.close();
       if (database !== null) database.close();
+    }
+  });
+
+  it('keeps authorized real intake distinct, idempotent, ambiguity-safe, and transactional', async () => {
+    const networkGuard = vi.fn(() => {
+      throw new Error('Unexpected external request in authorized real intake.');
+    });
+    vi.stubGlobal('fetch', networkGuard);
+    const caseDirectory = createControlledCaseDirectory();
+    const root = await initializeProjectDataRoot(join(caseDirectory, 'real-intake-data'));
+    const databasePath = join(root.databaseDirectory, 'rednote.sqlite');
+    await initializeDatabase({ databasePath });
+    const database = connectDatabase(databasePath);
+    let clock = new Date('2026-08-01T05:00:00.000Z');
+    try {
+      const runtime = new DesktopEvidenceRuntime(database, root, () => clock);
+      const invalid = realIntakeDraft('缺授权', 'S1_RESEARCH_ONLY');
+      expect(() =>
+        runtime.previewRealIntake(
+          { draft: { ...invalid, authorizationConfirmed: false } },
+          101,
+          201,
+        ),
+      ).toThrow(/EVIDENCE_INVALID_REQUEST/u);
+      expect(rowCount(database, 'books')).toBe(0);
+
+      const wrongWindow = runtime.previewRealIntake(
+        { draft: realIntakeDraft('错误窗口', 'R1_READ_CLEAR') },
+        101,
+        201,
+      );
+      await expect(
+        runtime.confirmRealIntake(
+          {
+            confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH',
+            inputHash: wrongWindow.inputHash,
+            previewHash: wrongWindow.previewHash,
+            token: wrongWindow.token,
+          },
+          101,
+          202,
+        ),
+      ).rejects.toThrow(/EVIDENCE_CONFIRMATION_INVALID/u);
+
+      const expired = runtime.previewRealIntake(
+        { draft: realIntakeDraft('过期确认', 'R2_READ_FUZZY') },
+        101,
+        201,
+      );
+      clock = new Date('2026-08-01T05:06:00.000Z');
+      await expect(
+        runtime.confirmRealIntake(
+          {
+            confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH',
+            inputHash: expired.inputHash,
+            previewHash: expired.previewHash,
+            token: expired.token,
+          },
+          101,
+          201,
+        ),
+      ).rejects.toThrow(/EVIDENCE_CONFIRMATION_EXPIRED/u);
+
+      const states = ['S1_RESEARCH_ONLY', 'R1_READ_CLEAR', 'R2_READ_FUZZY'] as const;
+      for (const [index, readingState] of states.entries()) {
+        clock = new Date(`2026-08-01T05:${String(10 + index).padStart(2, '0')}:00.000Z`);
+        const draft = realIntakeDraft(String(index + 1), readingState);
+        const preview = runtime.previewRealIntake({ draft }, 101, 201);
+        expect(preview).toMatchObject({
+          canConfirm: true,
+          entityResolution: { candidates: [], outcome: 'CREATE_NEW' },
+          estimatedExternalRequests: 0,
+          estimatedModelRequests: 0,
+          feeState: 'NOT_INCURRED',
+          readingState,
+          source: { originKind: 'USER_LOCAL_INPUT', sourceType: 'USER_LOCAL_NOTE' },
+        });
+        expect(
+          preview.statements.map(({ classification, disposition }) => [
+            classification,
+            disposition,
+          ]),
+        ).toEqual([
+          ['FACT', 'CLAIM_WITH_EVIDENCE'],
+          ['MIXED', 'SOURCE_ONLY_NON_FACT'],
+          ['FACT', 'CLAIM_WITHOUT_EVIDENCE'],
+        ]);
+        const confirmation = {
+          confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH' as const,
+          inputHash: preview.inputHash,
+          previewHash: preview.previewHash,
+          token: preview.token,
+        };
+        const saved = await runtime.confirmRealIntake(confirmation, 101, 201);
+        const replay = await runtime.confirmRealIntake(confirmation, 101, 201);
+        expect(replay).toEqual(saved);
+        expect(saved).toMatchObject({
+          externalRequestCount: 0,
+          feeState: 'NOT_INCURRED',
+          modelRequestCount: 0,
+          readingState,
+          scoreRecordsCreated: 0,
+          sourceOriginKind: 'USER_LOCAL_INPUT',
+        });
+        expect(saved.statements).toMatchObject([
+          { classification: 'FACT', status: 'SUPPORTED_NOT_VERIFIED' },
+          { claimId: null, classification: 'MIXED', status: 'SOURCE_ONLY_NON_FACT' },
+          { classification: 'FACT', evidenceId: null, status: 'NOT_EVALUATED' },
+        ]);
+        const detail = database
+          .prepare(
+            `SELECT state.state, spoiler.spoiler_level
+             FROM reading_states AS root
+             JOIN reading_state_revisions AS state ON state.id = root.current_revision_id
+             JOIN reading_spoiler_preferences AS preference ON preference.reading_state_id = root.id
+             JOIN reading_spoiler_preference_revisions AS spoiler
+               ON spoiler.id = preference.current_revision_id
+             WHERE root.book_id = ?`,
+          )
+          .get(saved.workId);
+        expect(detail).toMatchObject({
+          spoiler_level: readingState === 'S1_RESEARCH_ONLY' ? 'FULL_TRICK_ANALYSIS' : 'NO_SPOILER',
+          state: readingState,
+        });
+        const duplicate = runtime.previewRealIntake({ draft }, 101, 201);
+        expect(duplicate).toMatchObject({
+          canConfirm: false,
+          entityResolution: { outcome: 'AMBIGUOUS_REVIEW_REQUIRED' },
+        });
+      }
+      expect(rowCount(database, 'books')).toBe(3);
+      expect(rowCount(database, 'sources')).toBe(3);
+      expect(rowCount(database, 'claims')).toBe(6);
+      expect(rowCount(database, 'claim_evidence')).toBe(3);
+      expect(rowCount(database, 'personal_score_records')).toBe(0);
+      expect(rowCount(database, 'research_analysis_score_records')).toBe(0);
+      expect(rowCount(database, 'experience_assertions')).toBe(0);
+      expect(
+        database
+          .prepare(
+            `SELECT count(*) AS count FROM source_revisions
+             WHERE origin_kind = 'USER_LOCAL_INPUT'`,
+          )
+          .get(),
+      ).toEqual({ count: 3 });
+      expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      expect(networkGuard).not.toHaveBeenCalled();
+    } finally {
+      database.close();
+    }
+
+    const rollbackRoot = await initializeProjectDataRoot(join(caseDirectory, 'rollback-data'));
+    const rollbackPath = join(rollbackRoot.databaseDirectory, 'rednote.sqlite');
+    await initializeDatabase({ databasePath: rollbackPath });
+    const rollbackDatabase = connectDatabase(rollbackPath);
+    try {
+      const runtime = new DesktopEvidenceRuntime(rollbackDatabase, rollbackRoot);
+      const preview = runtime.previewRealIntake(
+        { draft: realIntakeDraft('事务回滚', 'S1_RESEARCH_ONLY') },
+        301,
+        401,
+      );
+      rollbackDatabase.prepare("DELETE FROM account_profiles WHERE id = 'primary'").run();
+      await expect(
+        runtime.confirmRealIntake(
+          {
+            confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH',
+            inputHash: preview.inputHash,
+            previewHash: preview.previewHash,
+            token: preview.token,
+          },
+          301,
+          401,
+        ),
+      ).rejects.toThrow(/EVIDENCE_INVALID_REQUEST/u);
+      for (const table of ['books', 'sources', 'claims', 'claim_evidence', 'reading_states']) {
+        expect(rowCount(rollbackDatabase, table)).toBe(0);
+      }
+      expect(rollbackDatabase.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      rollbackDatabase.close();
     }
   });
 });

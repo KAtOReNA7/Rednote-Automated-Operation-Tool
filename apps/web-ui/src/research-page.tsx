@@ -5,6 +5,8 @@ import type {
   EvidenceConflictActionPreview,
   EvidenceConflictView,
   EvidenceStateView,
+  RealResearchIntakeDraft,
+  RealResearchIntakePreview,
   SourceProcessingPreview,
   SyntheticResearchIntakeDraft,
   SyntheticResearchIntakePreview,
@@ -20,6 +22,62 @@ const EMPTY_SYNTHETIC_DRAFT: SyntheticResearchIntakeDraft = Object.freeze({
   sourceTitle: '',
   workTitle: '',
 });
+
+function emptyRealStatement(): RealResearchIntakeDraft['statements'][number] {
+  return {
+    claimTarget: 'NONE',
+    confirmed: false,
+    evidenceExcerpt: '',
+    evidenceLocator: '',
+    statement: '',
+  };
+}
+
+const EMPTY_REAL_DRAFT: RealResearchIntakeDraft = Object.freeze({
+  authorName: '',
+  authorizationConfirmed: false,
+  editionNote: '',
+  publicationDate: '',
+  readingState: 'S1_RESEARCH_ONLY',
+  sourceLocator: '',
+  sourceTitle: '',
+  sourceType: 'USER_LOCAL_NOTE',
+  spoilerConfirmed: false,
+  spoilerLevel: 'NO_SPOILER',
+  statements: Object.freeze([Object.freeze(emptyRealStatement())]),
+  workTitle: '',
+});
+
+// Compact data table keeps the bounded form definition readable.
+// prettier-ignore
+const REAL_TEXT_FIELDS = Object.freeze([
+  ['workTitle', 'real-work-title', '真实作品名', 200, ''],
+  ['authorName', 'real-author-name', '作者名', 120, ''],
+  ['publicationDate', 'real-publication-date', '出版日期（可选，YYYY / YYYY-MM / YYYY-MM-DD）', 10, '1841'],
+  ['editionNote', 'real-edition-note', '版本或出版说明（可选）', 512, ''],
+  ['sourceTitle', 'real-source-title', '本地资料来源名称', 200, '例：用户整理的公版作品研究笔记'],
+  ['sourceLocator', 'real-source-locator', '资料定位说明（可选）', 500, '例：本地笔记第 2 节；不填写绝对路径'],
+] as const);
+
+// Compact data table keeps each authoritative option set together.
+// prettier-ignore
+const REAL_SELECT_FIELDS = Object.freeze([
+  ['sourceType', 'real-source-type', '来源类型', [
+    ['USER_LOCAL_NOTE', '用户本地笔记（未获官方认证）'], ['BIBLIOGRAPHIC_NOTE', '书目信息笔记'], ['PUBLIC_DOMAIN_TEXT_EXCERPT', '公版文本摘录'],
+  ]],
+  ['readingState', 'real-reading-state', '阅读 / 资料状态', [
+    ['S1_RESEARCH_ONLY', 'S1 · 仅公开资料研究'], ['R1_READ_CLEAR', 'R1 · 已读且记忆清晰'], ['R2_READ_FUZZY', 'R2 · 已读但记忆模糊'],
+  ]],
+  ['spoilerLevel', 'real-spoiler-level', '剧透级别', [
+    ['NO_SPOILER', '无剧透'], ['LIGHT_SPOILER', '轻微剧透'], ['FULL_TRICK_ANALYSIS', '完整诡计分析'],
+  ]],
+] as const);
+
+const REAL_STATEMENT_FIELDS = Object.freeze([
+  ['statement', '陈述文本', 1_000, 3],
+  ['evidenceExcerpt', '本地证据摘录（可选；空缺将保持证据不足）', 2_000, 3],
+  ['evidenceLocator', '摘录定位或证据说明（可选）', 500, 2],
+] as const);
 
 function errorText(error: DesktopError): string {
   const messages: Partial<Record<DesktopError['code'], string>> = {
@@ -125,6 +183,9 @@ export function ResearchPage(): React.JSX.Element {
     null,
   );
   const [reason, setReason] = useState('');
+  const [realBusy, setRealBusy] = useState(false);
+  const [realDraft, setRealDraft] = useState<RealResearchIntakeDraft>(EMPTY_REAL_DRAFT);
+  const [realPreview, setRealPreview] = useState<RealResearchIntakePreview | null>(null);
   const [syntheticBusy, setSyntheticBusy] = useState(false);
   const [syntheticDraft, setSyntheticDraft] =
     useState<SyntheticResearchIntakeDraft>(EMPTY_SYNTHETIC_DRAFT);
@@ -217,6 +278,128 @@ export function ResearchPage(): React.JSX.Element {
       setNotice('已记录协作取消请求；不会启动新的外部调用。');
     } else {
       setNotice(errorText(result.error));
+    }
+  };
+
+  const invalidateRealPreview = (): void => {
+    setRealPreview(null);
+  };
+
+  const updateRealDraft = <K extends keyof RealResearchIntakeDraft>(
+    field: K,
+    value: RealResearchIntakeDraft[K],
+  ): void => {
+    setRealDraft((current) => ({ ...current, [field]: value }));
+    invalidateRealPreview();
+  };
+
+  const updateRealStatement = <K extends keyof RealResearchIntakeDraft['statements'][number]>(
+    index: number,
+    field: K,
+    value: RealResearchIntakeDraft['statements'][number][K],
+  ): void => {
+    updateRealDraft(
+      'statements',
+      realDraft.statements.map((statement, statementIndex) =>
+        statementIndex === index ? { ...statement, [field]: value } : statement,
+      ),
+    );
+  };
+
+  const updateRealSelect = (
+    field: 'readingState' | 'sourceType' | 'spoilerLevel',
+    value: string,
+  ): void => {
+    setRealDraft((current) => ({ ...current, [field]: value }) as RealResearchIntakeDraft);
+    invalidateRealPreview();
+  };
+
+  const focusRealField = (id: string, message: string): void => {
+    setNotice(message);
+    globalThis.setTimeout(() => document.getElementById(id)?.focus(), 0);
+  };
+
+  const previewRealIntake = async (): Promise<void> => {
+    const method = window.rednoteDesktop?.previewRealResearchIntake;
+    if (method === undefined) {
+      setNotice('当前桌面桥接尚未提供真实作品本地录入。');
+      return;
+    }
+    const normalized: RealResearchIntakeDraft = {
+      ...realDraft,
+      ...Object.fromEntries(REAL_TEXT_FIELDS.map(([field]) => [field, realDraft[field].trim()])),
+      statements: realDraft.statements.map((statement) => ({
+        ...statement,
+        evidenceExcerpt: statement.evidenceExcerpt.trim(),
+        evidenceLocator: statement.evidenceLocator.trim(),
+        statement: statement.statement.trim(),
+      })),
+    };
+    const required: readonly [string, string, string][] = [
+      ['real-work-title', normalized.workTitle, '请填写真实作品名。'],
+      ['real-author-name', normalized.authorName, '请填写作者名。'],
+      ['real-source-title', normalized.sourceTitle, '请填写本地资料来源名称。'],
+    ];
+    const missing = required.find(([, value]) => value.length === 0);
+    if (missing !== undefined) {
+      focusRealField(missing[0], missing[2]);
+      return;
+    }
+    const statementIndex = normalized.statements.findIndex(
+      (statement) => statement.statement.length === 0 || !statement.confirmed,
+    );
+    if (statementIndex >= 0) {
+      focusRealField(
+        `real-statement-${statementIndex}`,
+        `请填写并逐条确认第 ${statementIndex + 1} 条陈述。`,
+      );
+      return;
+    }
+    if (!normalized.authorizationConfirmed) {
+      focusRealField('real-authorization', '请确认该作品及资料获准用于本地试运行。');
+      return;
+    }
+    if (normalized.spoilerLevel === 'FULL_TRICK_ANALYSIS' && !normalized.spoilerConfirmed) {
+      focusRealField('real-spoiler-confirm', '完整诡计分析必须单独确认醒目剧透警告。');
+      return;
+    }
+    setRealDraft(normalized);
+    setRealBusy(true);
+    try {
+      const result = await method({ draft: normalized });
+      if (result.ok) {
+        setRealPreview(result.value);
+        setNotice(null);
+      } else {
+        setNotice(errorText(result.error));
+      }
+    } finally {
+      setRealBusy(false);
+    }
+  };
+
+  const confirmRealIntake = async (): Promise<void> => {
+    const method = window.rednoteDesktop?.confirmRealResearchIntake;
+    if (method === undefined || realPreview === null || !realPreview.canConfirm) return;
+    setRealBusy(true);
+    try {
+      const result = await method({
+        confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH',
+        inputHash: realPreview.inputHash,
+        previewHash: realPreview.previewHash,
+        token: realPreview.token,
+      });
+      if (result.ok) {
+        setRealPreview(null);
+        await load();
+        setNotice(
+          `真实作品研究输入已保存：${result.value.readingState} / ${result.value.spoilerLevel}；评分 ${result.value.scoreRecordsCreated}，模型、外部请求和费用均为 0。`,
+        );
+      } else {
+        setNotice(errorText(result.error));
+      }
+    } finally {
+      setRealBusy(false);
     }
   };
 
@@ -337,6 +520,204 @@ export function ResearchPage(): React.JSX.Element {
           {notice}
         </div>
       )}
+
+      <section aria-labelledby="real-intake-title" className="synthetic-intake real-intake">
+        <header>
+          <div>
+            <p className="section-kicker">用户授权 · 真实作品本地录入</p>
+            <h3 id="real-intake-title">录入真实作品与有限研究材料</h3>
+            <p>
+              本入口与合成测试材料严格分离。系统不会因录入而把用户陈述自动认定为事实；缺少可定位证据的
+              Claim 将保持证据不足，也不会生成评分或第一人称体验。
+            </p>
+          </div>
+          <p>用户授权 · 本地持久化 · 非官方认证 · 模型未使用 · 外部请求 0</p>
+        </header>
+        <div className="synthetic-intake__grid">
+          {REAL_TEXT_FIELDS.map(([field, id, label, maxLength, placeholder]) => (
+            <label htmlFor={id} key={field}>
+              <span>{label}</span>
+              <input
+                id={id}
+                maxLength={maxLength}
+                onChange={(event) => updateRealDraft(field, event.currentTarget.value)}
+                placeholder={placeholder}
+                value={realDraft[field]}
+              />
+            </label>
+          ))}
+          {REAL_SELECT_FIELDS.map(([field, id, label, options]) => (
+            <label htmlFor={id} key={field}>
+              <span>{label}</span>
+              <select
+                id={id}
+                onChange={(event) => updateRealSelect(field, event.currentTarget.value)}
+                value={realDraft[field]}
+              >
+                {options.map(([value, optionLabel]) => (
+                  <option key={value} value={value}>
+                    {optionLabel}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ))}
+          {realDraft.spoilerLevel === 'FULL_TRICK_ANALYSIS' ? (
+            <label className="real-intake__warning" htmlFor="real-spoiler-confirm">
+              <input
+                checked={realDraft.spoilerConfirmed}
+                id="real-spoiler-confirm"
+                onChange={(event) =>
+                  updateRealDraft('spoilerConfirmed', event.currentTarget.checked)
+                }
+                type="checkbox"
+              />
+              <span>⚠️ 我确认启用完整诡计分析，并要求正文前显示醒目剧透警告。</span>
+            </label>
+          ) : null}
+        </div>
+
+        <div className="real-intake__statements">
+          <div className="panel-heading">
+            <h4>有限研究陈述（1—5 条逐条确认）</h4>
+            <div className="evidence-actions">
+              <button
+                disabled={realDraft.statements.length >= 5}
+                onClick={() =>
+                  updateRealDraft('statements', [...realDraft.statements, emptyRealStatement()])
+                }
+                type="button"
+              >
+                添加
+              </button>
+              <button
+                disabled={realDraft.statements.length <= 1}
+                onClick={() => updateRealDraft('statements', realDraft.statements.slice(0, -1))}
+                type="button"
+              >
+                删除末条
+              </button>
+            </div>
+          </div>
+          {realDraft.statements.map((statement, index) => (
+            <fieldset className="real-intake__statement" key={index}>
+              <legend>陈述 {index + 1}</legend>
+              {REAL_STATEMENT_FIELDS.map(([field, label, maxLength, rows]) => (
+                <label key={field}>
+                  <span>{label}</span>
+                  <textarea
+                    id={field === 'statement' ? `real-statement-${index}` : undefined}
+                    maxLength={maxLength}
+                    onChange={(event) =>
+                      updateRealStatement(index, field, event.currentTarget.value)
+                    }
+                    rows={rows}
+                    value={statement[field]}
+                  />
+                </label>
+              ))}
+              <label>
+                <span>事实映射目标</span>
+                <select
+                  onChange={(event) =>
+                    updateRealStatement(
+                      index,
+                      'claimTarget',
+                      event.currentTarget
+                        .value as RealResearchIntakeDraft['statements'][number]['claimTarget'],
+                    )
+                  }
+                  value={statement.claimTarget}
+                >
+                  <option value="NONE">不映射 Claim；仅保存为 Source 内容</option>
+                  <option value="WORK_TITLE">作品标题</option>
+                  <option value="AUTHORSHIP">作者关系</option>
+                  <option value="PUBLICATION_DATE">出版日期</option>
+                </select>
+              </label>
+              <label className="real-intake__confirmation" htmlFor={`real-confirm-${index}`}>
+                <input
+                  checked={statement.confirmed}
+                  id={`real-confirm-${index}`}
+                  onChange={(event) =>
+                    updateRealStatement(index, 'confirmed', event.currentTarget.checked)
+                  }
+                  type="checkbox"
+                />
+                <span>我逐条确认这段陈述及其证据说明。</span>
+              </label>
+            </fieldset>
+          ))}
+        </div>
+
+        <label className="real-intake__authorization" htmlFor="real-authorization">
+          <input
+            checked={realDraft.authorizationConfirmed}
+            id="real-authorization"
+            onChange={(event) =>
+              updateRealDraft('authorizationConfirmed', event.currentTarget.checked)
+            }
+            type="checkbox"
+          />
+          <span>我确认该作品及上述资料获准用于本次本地试运行。</span>
+        </label>
+        <div className="evidence-actions">
+          <button
+            className="primary-button"
+            disabled={realBusy}
+            onClick={() => void previewRealIntake()}
+            type="button"
+          >
+            预览实体解析与陈述分类
+          </button>
+          <span>预览不写业务数据；确认提交才会原子写入来源链。</span>
+        </div>
+        {realPreview === null ? null : (
+          <div aria-live="polite" className="synthetic-intake__preview">
+            <div>
+              <strong>
+                实体解析：
+                {realPreview.entityResolution.outcome === 'CREATE_NEW'
+                  ? '未发现候选，将新建实体'
+                  : '发现潜在重复，必须停止并人工审查'}
+              </strong>
+              <p>
+                {realPreview.source.originKind} / {realPreview.source.sourceType} ·{' '}
+                {realPreview.readingState} · {realPreview.spoilerLevel} · 模型 0 · 外部请求 0 ·
+                费用未发生
+              </p>
+              {realPreview.entityResolution.candidates.map((candidate) => (
+                <p key={candidate.workId}>
+                  候选：{candidate.workTitle} / {candidate.authorNames.join('、') || '作者未知'} ·{' '}
+                  {candidate.matchReasons.join('、')}
+                </p>
+              ))}
+              <ul>
+                {realPreview.statements.map((statement, index) => (
+                  <li key={`${index}-${statement.statement}`}>
+                    {statement.classification} → {statement.disposition}：{statement.statement}
+                    {statement.evidenceExcerpt === null ? '（无证据摘录）' : '（含本地证据摘录）'}
+                  </li>
+                ))}
+              </ul>
+              <p>此预览不代表官方认证；用户本地资料默认只有 supporting / unknown 资格。</p>
+            </div>
+            <div className="evidence-actions">
+              <button onClick={() => setRealPreview(null)} type="button">
+                取消
+              </button>
+              <button
+                className="primary-button"
+                disabled={realBusy || !realPreview.canConfirm}
+                onClick={() => void confirmRealIntake()}
+                type="button"
+              >
+                确认创建真实作品研究记录
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
 
       <section aria-labelledby="synthetic-intake-title" className="synthetic-intake">
         <header>

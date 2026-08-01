@@ -28,6 +28,7 @@ import {
   type ConfirmCatalogDiscoveryInput,
   type ConfirmDossierBuildInput,
   type ConfirmEvidenceConflictInput,
+  type ConfirmRealResearchIntakeInput,
   type ConfirmSyntheticResearchIntakeInput,
   type ConfirmSourceProcessingInput,
   type ConfirmTopicActionInput,
@@ -67,6 +68,7 @@ import {
   type PreviewCatalogWorkSplitInput,
   type PreviewDossierBuildInput,
   type PreviewEvidenceConflictInput,
+  type PreviewRealResearchIntakeInput,
   type PreviewSyntheticResearchIntakeInput,
   type PreviewSourceProcessingInput,
   type PreviewTopicActionInput,
@@ -637,6 +639,36 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
   );
   register('cancelSourceProcessing', DESKTOP_IPC_CHANNELS.cancelSourceProcessing, (_event, args) =>
     options.settingsRuntime.cancelSourceProcessing(args[0] as CancelSourceProcessingInput),
+  );
+  register(
+    'previewRealResearchIntake',
+    DESKTOP_IPC_CHANNELS.previewRealResearchIntake,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_INVALID_REQUEST');
+      }
+      return options.settingsRuntime.previewRealResearchIntake(
+        args[0] as PreviewRealResearchIntakeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
+  );
+  register(
+    'confirmRealResearchIntake',
+    DESKTOP_IPC_CHANNELS.confirmRealResearchIntake,
+    (event, args) => {
+      const window = options.getWindow();
+      if (window === null || window.webContents.id !== event.sender.id) {
+        throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+      }
+      return options.settingsRuntime.confirmRealResearchIntake(
+        args[0] as ConfirmRealResearchIntakeInput,
+        event.sender.id,
+        window.id,
+      );
+    },
   );
   register(
     'previewSyntheticResearchIntake',

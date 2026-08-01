@@ -748,8 +748,36 @@
 }
 
 .synthetic-intake__grid input,
-.synthetic-intake__grid textarea {
+.synthetic-intake__grid textarea,
+.synthetic-intake__grid select {
   width: 100%;
+}
+
+.real-intake__statement {
+  display: grid;
+  gap: 12px;
+}
+
+.real-intake__statement label {
+  display: grid;
+  gap: 6px;
+}
+
+.real-intake__confirmation,
+.real-intake__authorization,
+.real-intake__warning {
+  align-items: center;
+  display: flex !important;
+  gap: 9px !important;
+}
+
+.real-intake__warning {
+  background: rgb(255 175 65 / 10%);
+  border: 1px solid rgb(255 175 65 / 45%);
+  border-radius: 12px;
+  color: #ffd49a;
+  grid-column: 1 / -1;
+  padding: 12px;
 }
 
 .synthetic-intake__source {

@@ -22,6 +22,8 @@ import {
   type SourceOriginKind,
   type SourceProcessingPlanV1,
   type SourceUseClass,
+  type UserLocalSourceType,
+  USER_LOCAL_SOURCE_TYPES,
   EvidenceError,
   canonicalEvidenceJson,
   detectMaterialConflict,
@@ -54,6 +56,7 @@ export interface RegisterSourceInputV1 {
   readonly extractedTextHash: string | null;
   readonly extractedTextPath: string | null;
   readonly language: string;
+  readonly localSourceType?: UserLocalSourceType;
   readonly originKind: SourceOriginKind;
   readonly originRecordId: string;
   readonly originRevision: number;
@@ -358,12 +361,14 @@ export class SqliteEvidenceRepository {
           input.title,
           input.publisherOrSite,
           classification.authorityTier,
-          input.originKind,
+          input.originKind === 'USER_LOCAL_INPUT'
+            ? (input.localSourceType as UserLocalSourceType)
+            : input.originKind,
           input.retrievedAt,
           input.contentHash,
           input.extractedTextPath,
           input.language,
-          input.originKind === 'SYNTHETIC_FIXTURE' ? 1 : 0,
+          ['SYNTHETIC_FIXTURE', 'USER_LOCAL_INPUT'].includes(input.originKind) ? 1 : 0,
         );
       this.#insertSourceRevision(
         {
@@ -1410,7 +1415,7 @@ export class SqliteEvidenceRepository {
   ): EvidenceSourceViewV1 {
     const row = this.#database
       .prepare(
-        `SELECT source.title, revision.origin_kind, revision.origin_record_id,
+        `SELECT source.title, source.source_type, revision.origin_kind, revision.origin_record_id,
                 revision.origin_revision, revision.content_hash,
                 revision.extracted_text_hash, revision.extracted_text_path,
                 revision.language, revision.availability, revision.published_at,
@@ -1434,6 +1439,7 @@ export class SqliteEvidenceRepository {
       .get(input.sourceId, revision) as Row | undefined;
     if (
       row === undefined ||
+      (input.originKind === 'USER_LOCAL_INPUT' && row.source_type !== input.localSourceType) ||
       row.origin_kind !== input.originKind ||
       row.origin_record_id !== input.originRecordId ||
       row.origin_revision !== input.originRevision ||
@@ -1527,7 +1533,10 @@ export class SqliteEvidenceRepository {
         input.classification.lineageGroup === null) ||
       (input.originKind === 'SYNTHETIC_FIXTURE'
         ? input.classification.classifiedBy !== 'SYNTHETIC_FIXTURE'
-        : input.classification.classifiedBy !== 'USER')
+        : input.classification.classifiedBy !== 'USER') ||
+      (input.originKind === 'USER_LOCAL_INPUT'
+        ? !USER_LOCAL_SOURCE_TYPES.includes(input.localSourceType as UserLocalSourceType)
+        : input.localSourceType !== undefined)
     ) {
       throw new EvidenceError('EVIDENCE_INVALID_SOURCE');
     }
@@ -1559,7 +1568,7 @@ export class SqliteEvidenceRepository {
     readonly extractedTextPath: string | null;
     readonly url: string;
   } | null {
-    if (kind === 'SYNTHETIC_FIXTURE') return null;
+    if (kind === 'SYNTHETIC_FIXTURE' || kind === 'USER_LOCAL_INPUT') return null;
     if (kind === 'FETCH_DOCUMENT') {
       const row = this.#database
         .prepare(

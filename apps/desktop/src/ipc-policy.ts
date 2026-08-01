@@ -1,4 +1,4 @@
-import type { DesktopResult } from '@mystery-operations/shared';
+import { normalizeRealResearchIntakeDraft, type DesktopResult } from '@mystery-operations/shared';
 import {
   assertBatchReadingStateDraft,
   assertExperienceAssertionDraft,
@@ -59,6 +59,7 @@ export type DesktopIpcOperation =
   | 'confirmEvidenceConflict'
   | 'confirmDossierBuild'
   | 'confirmSourceProcessing'
+  | 'confirmRealResearchIntake'
   | 'confirmSyntheticResearchIntake'
   | 'confirmDataRootSelection'
   | 'confirmTopicAction'
@@ -115,6 +116,7 @@ export type DesktopIpcOperation =
   | 'previewEvidenceConflict'
   | 'previewDossierBuild'
   | 'previewSourceProcessing'
+  | 'previewRealResearchIntake'
   | 'previewSyntheticResearchIntake'
   | 'previewTopicAction'
   | 'previewExperimentAction'
@@ -1368,6 +1370,22 @@ function validArguments(operation: DesktopIpcOperation, args: readonly unknown[]
         value?.confirmation === 'CANCEL_SOURCE_PROCESSING' &&
         catalogRevision(value.expectedRevision) &&
         catalogId(value.runId)
+      );
+    }
+    case 'previewRealResearchIntake': {
+      const value = validateOneObject(args, ['draft']);
+      return value !== null && normalizeRealResearchIntakeDraft(value.draft) !== null;
+    }
+    case 'confirmRealResearchIntake': {
+      const value = validateOneObject(args, ['confirmation', 'inputHash', 'previewHash', 'token']);
+      return (
+        value?.confirmation === 'CREATE_AUTHORIZED_REAL_RESEARCH' &&
+        typeof value.inputHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.inputHash) &&
+        typeof value.previewHash === 'string' &&
+        /^[a-f0-9]{64}$/u.test(value.previewHash) &&
+        typeof value.token === 'string' &&
+        /^[A-Za-z0-9_-]{43}$/u.test(value.token)
       );
     }
     case 'previewSyntheticResearchIntake': {

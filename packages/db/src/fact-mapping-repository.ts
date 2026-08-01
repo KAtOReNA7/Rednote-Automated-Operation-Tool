@@ -1814,7 +1814,11 @@ export class SqliteFactMappingRepository {
       .all(...claimIds) as unknown as readonly EvidenceRow[];
     const result = new Map<string, SourceEvidenceTraceV1[]>();
     for (const row of rows) {
-      if (!['FETCH_DOCUMENT', 'BROWSER_CLIP', 'SYNTHETIC_FIXTURE'].includes(row.origin_kind)) {
+      if (
+        !['FETCH_DOCUMENT', 'BROWSER_CLIP', 'SYNTHETIC_FIXTURE', 'USER_LOCAL_INPUT'].includes(
+          row.origin_kind,
+        )
+      ) {
         continue;
       }
       const locator = json<ClaimEvidenceV1['locator']>(row.locator_json);

@@ -8,9 +8,17 @@ export const SOURCE_PROCESSING_PLAN_VERSION = 'source-processing-plan-v1' as con
 export const SOURCE_ORIGIN_KINDS = Object.freeze([
   'FETCH_DOCUMENT',
   'BROWSER_CLIP',
+  'USER_LOCAL_INPUT',
   'SYNTHETIC_FIXTURE',
 ] as const);
 export type SourceOriginKind = (typeof SOURCE_ORIGIN_KINDS)[number];
+
+export const USER_LOCAL_SOURCE_TYPES = Object.freeze([
+  'BIBLIOGRAPHIC_NOTE',
+  'PUBLIC_DOMAIN_TEXT_EXCERPT',
+  'USER_LOCAL_NOTE',
+] as const);
+export type UserLocalSourceType = (typeof USER_LOCAL_SOURCE_TYPES)[number];
 
 export const SOURCE_AUTHORITY_TIERS = Object.freeze([
   'OFFICIAL_PRIMARY',

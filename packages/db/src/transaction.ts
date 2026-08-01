@@ -9,8 +9,11 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   );
 }
 
+const coordinatedTransactions = new WeakSet<DatabaseSync>();
+
 export function runInTransaction<T>(database: DatabaseSync, action: () => T): T {
   if (database.isTransaction) {
+    if (coordinatedTransactions.has(database)) return action();
     throw new Error('Nested transactions are not supported; use the active transaction.');
   }
 
@@ -30,5 +33,17 @@ export function runInTransaction<T>(database: DatabaseSync, action: () => T): T 
       database.exec('ROLLBACK');
     }
     throw error;
+  }
+}
+
+export function runInCoordinatedTransaction<T>(database: DatabaseSync, action: () => T): T {
+  if (database.isTransaction || coordinatedTransactions.has(database)) {
+    throw new Error('A coordinated transaction must own the outer transaction.');
+  }
+  coordinatedTransactions.add(database);
+  try {
+    return runInTransaction(database, action);
+  } finally {
+    coordinatedTransactions.delete(database);
   }
 }

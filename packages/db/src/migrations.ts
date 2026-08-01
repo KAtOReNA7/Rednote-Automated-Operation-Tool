@@ -11557,6 +11557,92 @@ WHEN NEW.revision <> OLD.revision + 1 OR NEW.policy_kind <> OLD.policy_kind
 BEGIN SELECT RAISE(ABORT, 'invalid fact mapping policy revision'); END;
 `;
 
+const AUTHORIZED_USER_LOCAL_SOURCE_ORIGIN = `
+DROP TRIGGER source_revisions_append_only_update;
+DROP TRIGGER source_revisions_append_only_delete;
+DROP TRIGGER research_dossier_invalidate_source_revision;
+DROP TRIGGER invalidate_fact_mapping_on_source_revision_change;
+CREATE TABLE source_revisions_issue020_new (
+  source_id TEXT NOT NULL REFERENCES sources(id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  revision INTEGER NOT NULL CHECK (typeof(revision) = 'integer' AND revision > 0),
+  contract_version TEXT NOT NULL CHECK (contract_version IN ('source-evidence-v1', 'legacy-source-v1')),
+  origin_kind TEXT NOT NULL CHECK (origin_kind IN ('FETCH_DOCUMENT', 'BROWSER_CLIP', 'SYNTHETIC_FIXTURE', 'USER_LOCAL_INPUT', 'LEGACY_SOURCE')),
+  origin_record_id TEXT NOT NULL CHECK (length(origin_record_id) BETWEEN 1 AND 128),
+  origin_revision INTEGER NOT NULL CHECK (typeof(origin_revision) = 'integer' AND origin_revision > 0),
+  content_hash TEXT NOT NULL CHECK (length(content_hash) BETWEEN 1 AND 128),
+  canonical_url_hash TEXT CHECK (canonical_url_hash IS NULL OR (length(canonical_url_hash) = 64 AND canonical_url_hash NOT GLOB '*[^0-9a-f]*')),
+  display_host TEXT CHECK (display_host IS NULL OR length(display_host) BETWEEN 1 AND 253),
+  extracted_text_hash TEXT CHECK (extracted_text_hash IS NULL OR (length(extracted_text_hash) = 64 AND extracted_text_hash NOT GLOB '*[^0-9a-f]*')),
+  extracted_text_path TEXT CHECK (extracted_text_path IS NULL OR (length(extracted_text_path) BETWEEN 1 AND 1024 AND extracted_text_path GLOB 'sources/snapshots/??/*' AND instr(extracted_text_path, '..') = 0 AND instr(extracted_text_path, char(92)) = 0 AND instr(extracted_text_path, ':') = 0 AND substr(extracted_text_path, 1, 1) <> '/')),
+  language TEXT NOT NULL CHECK (length(language) BETWEEN 1 AND 32),
+  availability TEXT NOT NULL CHECK (availability IN ('AVAILABLE', 'UNAVAILABLE', 'RETRACTED', 'SUPERSEDED')),
+  retrieved_at TEXT NOT NULL CHECK (retrieved_at ${UTC_REQUIRED}),
+  published_at TEXT,
+  published_at_precision TEXT NOT NULL DEFAULT 'UNKNOWN' CHECK (published_at_precision IN ('YEAR', 'MONTH', 'DAY', 'UNKNOWN') AND ((published_at_precision = 'UNKNOWN' AND published_at IS NULL) OR (published_at_precision <> 'UNKNOWN' AND published_at IS NOT NULL))),
+  warnings_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(warnings_json) AND json_type(warnings_json) = 'array' AND length(CAST(warnings_json AS BLOB)) BETWEEN 2 AND 16384),
+  provenance_json TEXT NOT NULL CHECK (json_valid(provenance_json) AND json_type(provenance_json) = 'object' AND length(CAST(provenance_json AS BLOB)) BETWEEN 2 AND 16384),
+  synthetic INTEGER NOT NULL DEFAULT 0 CHECK (synthetic IN (0, 1)),
+  created_at TEXT NOT NULL CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (source_id, revision),
+  UNIQUE (origin_kind, origin_record_id, origin_revision),
+  CHECK ((extracted_text_hash IS NULL) = (extracted_text_path IS NULL)),
+  CHECK ((origin_kind = 'SYNTHETIC_FIXTURE') = (synthetic = 1)),
+  CHECK (origin_kind IN ('LEGACY_SOURCE', 'BROWSER_CLIP') OR extracted_text_hash IS NOT NULL),
+  CHECK (contract_version = 'legacy-source-v1' OR (canonical_url_hash IS NOT NULL AND display_host IS NOT NULL))
+) STRICT, WITHOUT ROWID;
+INSERT INTO source_revisions_issue020_new
+SELECT * FROM source_revisions;
+DROP TABLE source_revisions;
+ALTER TABLE source_revisions_issue020_new RENAME TO source_revisions;
+CREATE INDEX idx_source_revisions_origin ON source_revisions(origin_kind, origin_record_id, origin_revision);
+CREATE INDEX idx_source_revisions_availability ON source_revisions(availability, created_at DESC);
+CREATE TRIGGER source_revisions_append_only_update
+BEFORE UPDATE ON source_revisions BEGIN SELECT RAISE(ABORT, 'source revisions are append-only'); END;
+CREATE TRIGGER source_revisions_append_only_delete
+BEFORE DELETE ON source_revisions BEGIN SELECT RAISE(ABORT, 'source revisions are append-only'); END;
+CREATE TRIGGER research_dossier_invalidate_source_revision
+AFTER INSERT ON source_revisions WHEN NEW.revision > 1 BEGIN
+  INSERT OR IGNORE INTO research_dossier_invalidations(
+    id, event_identity, dossier_id, current_version_id, dependency_type, dependency_id,
+    observed_revision, reason_code, created_at)
+  SELECT
+    'dossier-invalidation-' || lower(hex(randomblob(16))),
+    'SOURCE_REVISION:' || NEW.source_id || ':' || NEW.revision || ':' || dossier.id,
+    dossier.id, dossier.current_version_id, 'SOURCE_REVISION', NEW.source_id,
+    CAST(NEW.revision AS TEXT), 'SOURCE_REVISION_CHANGED', NEW.created_at
+  FROM research_dossier_dependencies AS dependency
+  JOIN research_dossiers AS dossier ON dossier.current_version_id = dependency.version_id
+  WHERE dependency.dependency_type = 'SOURCE_REVISION' AND dependency.dependency_id = NEW.source_id
+    AND dependency.dependency_revision NOT LIKE CAST(NEW.revision AS TEXT) || '.%';
+  UPDATE research_dossiers
+  SET state = 'REBUILD_REQUIRED', readiness = 'BUILD_REQUIRED',
+      invalidation_reasons_json = '["SOURCE_REVISION_CHANGED"]',
+      revision = revision + 1, updated_at = NEW.created_at
+  WHERE current_version_id IN (
+    SELECT dependency.version_id
+    FROM research_dossier_dependencies AS dependency
+    WHERE dependency.dependency_type = 'SOURCE_REVISION'
+      AND dependency.dependency_id = NEW.source_id
+      AND dependency.dependency_revision NOT LIKE CAST(NEW.revision AS TEXT) || '.%');
+END;
+CREATE TRIGGER invalidate_fact_mapping_on_source_revision_change
+AFTER UPDATE ON source_revisions BEGIN
+  INSERT OR IGNORE INTO fact_mapping_invalidations(
+    id, event_identity, check_version_id, dependency_kind, dependency_id,
+    observed_revision, reason_code, created_at)
+  SELECT
+    lower(hex(randomblob(16))),
+    'SOURCE_REVISION:' || NEW.source_id || ':' || NEW.revision || ':' || NEW.updated_at || ':' || dependency.check_version_id,
+    dependency.check_version_id, 'SOURCE_REVISION',
+    NEW.source_id || ':' || NEW.revision, NEW.updated_at,
+    'SOURCE_REVISION_CHANGED', NEW.updated_at
+  FROM fact_mapping_dependencies AS dependency
+  WHERE dependency.dependency_kind = 'SOURCE_REVISION' AND dependency.source_id = NEW.source_id
+    AND dependency.source_revision = NEW.revision;
+END;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -11660,5 +11746,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'factual_claim_mapping',
     sql: FACTUAL_CLAIM_MAPPING,
     version: 19,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'authorized_user_local_source_origin',
+    sql: AUTHORIZED_USER_LOCAL_SOURCE_ORIGIN,
+    version: 20,
   }),
 ]);

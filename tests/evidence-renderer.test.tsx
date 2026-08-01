@@ -2,7 +2,7 @@
 
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -11,6 +11,7 @@ import type {
   DesktopBridge,
   EvidenceConflictActionPreview,
   EvidenceStateView,
+  RealResearchIntakePreview,
   SourceProcessingPreview,
   SyntheticResearchIntakePreview,
   SyntheticResearchIntakeResult,
@@ -185,6 +186,36 @@ const syntheticResult: SyntheticResearchIntakeResult = {
   workId: 'synthetic-work',
 };
 
+const realPreview: RealResearchIntakePreview = {
+  canConfirm: true,
+  entityResolution: { candidates: [], outcome: 'CREATE_NEW' },
+  estimatedExternalRequests: 0,
+  estimatedModelRequests: 0,
+  expiresAt: '2026-08-01T05:05:00.000Z',
+  feeState: 'NOT_INCURRED',
+  inputHash: 'f'.repeat(64),
+  previewHash: '1'.repeat(64),
+  readingState: 'S1_RESEARCH_ONLY',
+  source: {
+    originKind: 'USER_LOCAL_INPUT',
+    sourceLocator: '用户本地笔记第 1 节',
+    sourceTitle: '获准本地资料',
+    sourceType: 'USER_LOCAL_NOTE',
+  },
+  spoilerLevel: 'FULL_TRICK_ANALYSIS',
+  statements: [
+    {
+      claimTarget: 'WORK_TITLE',
+      classification: 'FACT',
+      disposition: 'CLAIM_WITHOUT_EVIDENCE',
+      evidenceExcerpt: null,
+      evidenceLocator: null,
+      statement: '《莫格街凶杀案》是作品标题。',
+    },
+  ],
+  token: 'real-preview-token',
+};
+
 describe('Issue 019 Research renderer', () => {
   it('shows source, exact excerpt, non-evidence summary, stale/budget/conflict states as text', async () => {
     const cancel = vi.fn().mockResolvedValue({ ok: true, value: state });
@@ -319,5 +350,90 @@ describe('Issue 019 Research renderer', () => {
     expect(
       screen.getByText(/canonical_title=VERIFIED · author=VERIFIED · publication_date=VERIFIED/u),
     ).toBeVisible();
+  });
+
+  it('focuses missing real fields, previews entity resolution, and confirms separately', async () => {
+    const preview = vi.fn().mockResolvedValue({ ok: true, value: realPreview });
+    const confirm = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        externalRequestCount: 0,
+        feeState: 'NOT_INCURRED',
+        modelRequestCount: 0,
+        readingState: 'S1_RESEARCH_ONLY',
+        scoreRecordsCreated: 0,
+        sourceOriginKind: 'USER_LOCAL_INPUT',
+        sourceRevisionId: 'user-local-source:1',
+        spoilerLevel: 'FULL_TRICK_ANALYSIS',
+        statements: [
+          {
+            claimId: 'claim-real',
+            classification: 'FACT',
+            evaluationId: 'evaluation-real',
+            evidenceId: null,
+            status: 'INSUFFICIENT',
+          },
+        ],
+        workId: 'work-real',
+      },
+    });
+    Object.defineProperty(window, 'rednoteDesktop', {
+      configurable: true,
+      value: {
+        confirmRealResearchIntake: confirm,
+        getEvidenceState: vi.fn().mockResolvedValue({ ok: true, value: state }),
+        previewRealResearchIntake: preview,
+      } as unknown as DesktopBridge,
+    });
+    render(<ResearchPage />);
+    await screen.findByText('<script>source title</script>');
+    const section = screen
+      .getByRole('heading', { name: '录入真实作品与有限研究材料' })
+      .closest('section');
+    if (section === null) throw new Error('Missing real-intake section.');
+    const form = within(section);
+
+    await userEvent.click(form.getByRole('button', { name: '预览实体解析与陈述分类' }));
+    expect(await screen.findByText('请填写真实作品名。')).toBeVisible();
+    expect(document.activeElement).toBe(form.getByLabelText('真实作品名'));
+    expect(preview).not.toHaveBeenCalled();
+
+    await userEvent.type(form.getByLabelText('真实作品名'), '莫格街凶杀案');
+    await userEvent.type(form.getByLabelText('作者名'), '埃德加·爱伦·坡');
+    await userEvent.type(form.getByLabelText('本地资料来源名称'), '获准本地资料');
+    await userEvent.type(form.getByLabelText('资料定位说明（可选）'), '用户本地笔记第 1 节');
+    await userEvent.selectOptions(form.getByLabelText('剧透级别'), 'FULL_TRICK_ANALYSIS');
+    await userEvent.click(form.getByLabelText(/醒目剧透警告/u));
+    await userEvent.type(form.getByLabelText('陈述文本'), '《莫格街凶杀案》是作品标题。');
+    await userEvent.selectOptions(form.getByLabelText('事实映射目标'), 'WORK_TITLE');
+    await userEvent.click(form.getByLabelText(/逐条确认/u));
+    await userEvent.click(form.getByLabelText(/获准用于本次本地试运行/u));
+    await userEvent.click(form.getByRole('button', { name: '预览实体解析与陈述分类' }));
+
+    await waitFor(() => expect(preview).toHaveBeenCalledTimes(1));
+    expect(preview.mock.calls[0]?.[0]).toMatchObject({
+      draft: {
+        authorizationConfirmed: true,
+        readingState: 'S1_RESEARCH_ONLY',
+        sourceType: 'USER_LOCAL_NOTE',
+        spoilerConfirmed: true,
+        spoilerLevel: 'FULL_TRICK_ANALYSIS',
+        workTitle: '莫格街凶杀案',
+      },
+    });
+    expect(await form.findByText(/未发现候选，将新建实体/u)).toBeVisible();
+    expect(form.getByText(/FACT → CLAIM_WITHOUT_EVIDENCE/u)).toBeVisible();
+    expect(confirm).not.toHaveBeenCalled();
+
+    await userEvent.click(form.getByRole('button', { name: '确认创建真实作品研究记录' }));
+    await waitFor(() =>
+      expect(confirm).toHaveBeenCalledWith({
+        confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH',
+        inputHash: realPreview.inputHash,
+        previewHash: realPreview.previewHash,
+        token: realPreview.token,
+      }),
+    );
+    expect(await screen.findByText(/评分 0，模型、外部请求和费用均为 0/u)).toBeVisible();
   });
 });

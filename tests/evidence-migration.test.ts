@@ -213,3 +213,95 @@ describe('Issue 019 migration v12', () => {
     }
   });
 });
+
+describe('authorized user-local source migration v20', () => {
+  it('preserves v19 revisions and adds only the truthful USER_LOCAL_INPUT origin', async () => {
+    expect(MIGRATIONS[19]).toMatchObject({
+      foreignKeysDisabled: true,
+      name: 'authorized_user_local_source_origin',
+      version: 20,
+    });
+    const databasePath = createTemporaryDatabasePath('真实本地来源升级');
+    await initializeDatabase({ databasePath, migrations: MIGRATIONS.slice(0, 19) });
+    let database = connectDatabase(databasePath);
+    database
+      .prepare(
+        `INSERT INTO sources(id, url, title, source_tier, source_type, retrieved_at,
+           content_hash, language, user_supplied)
+         VALUES ('source-before-v20', 'https://legacy.invalid/item', '迁移前来源',
+           'UNKNOWN', 'LEGACY_SOURCE', '2026-08-01T01:00:00.000Z',
+           'legacy-content', 'zh-CN', 1)`,
+      )
+      .run();
+    database
+      .prepare(
+        `INSERT INTO source_revisions(
+           source_id, revision, contract_version, origin_kind, origin_record_id,
+           origin_revision, content_hash, language, availability, retrieved_at,
+           published_at_precision, warnings_json, provenance_json, synthetic,
+           created_at, updated_at)
+         VALUES ('source-before-v20', 1, 'legacy-source-v1', 'LEGACY_SOURCE',
+           'source-before-v20', 1, 'legacy-content', 'zh-CN', 'AVAILABLE',
+           '2026-08-01T01:00:00.000Z', 'UNKNOWN', '[]', '{}', 0,
+           '2026-08-01T01:00:00.000Z', '2026-08-01T01:00:00.000Z')`,
+      )
+      .run();
+    database.close();
+
+    const migrated = await initializeDatabase({ databasePath });
+    expect(migrated.appliedVersions).toEqual([20]);
+    expect(migrated.backupPath).not.toBeNull();
+    database = connectDatabase(databasePath);
+    try {
+      expect(
+        database
+          .prepare(
+            `SELECT source_id, revision, origin_kind, content_hash
+             FROM source_revisions WHERE source_id = 'source-before-v20'`,
+          )
+          .get(),
+      ).toEqual({
+        content_hash: 'legacy-content',
+        origin_kind: 'LEGACY_SOURCE',
+        revision: 1,
+        source_id: 'source-before-v20',
+      });
+      database
+        .prepare(
+          `INSERT INTO sources(id, url, title, source_tier, source_type, retrieved_at,
+             content_hash, language, user_supplied)
+           VALUES ('source-user-local', 'https://user-local-input.invalid/item',
+             '真实本地来源', 'UNKNOWN', 'USER_LOCAL_NOTE',
+             '2026-08-01T02:00:00.000Z', ?, 'zh-CN', 1)`,
+        )
+        .run('a'.repeat(64));
+      database
+        .prepare(
+          `INSERT INTO source_revisions(
+             source_id, revision, contract_version, origin_kind, origin_record_id,
+             origin_revision, content_hash, canonical_url_hash, display_host,
+             extracted_text_hash, extracted_text_path, language, availability,
+             retrieved_at, published_at_precision, warnings_json, provenance_json,
+             synthetic, created_at, updated_at)
+           VALUES ('source-user-local', 1, 'source-evidence-v1', 'USER_LOCAL_INPUT',
+             'user-local-record', 1, ?, ?, 'user-local-input.invalid', ?,
+             'sources/snapshots/aa/local.txt', 'zh-CN', 'AVAILABLE',
+             '2026-08-01T02:00:00.000Z', 'UNKNOWN', '[]', '{}', 0,
+             '2026-08-01T02:00:00.000Z', '2026-08-01T02:00:00.000Z')`,
+        )
+        .run('a'.repeat(64), 'b'.repeat(64), 'a'.repeat(64));
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE source_revisions SET language = 'en-US'
+             WHERE source_id = 'source-user-local' AND revision = 1`,
+          )
+          .run(),
+      ).toThrow(/append-only/u);
+      expect(database.prepare('PRAGMA quick_check').get()).toEqual({ quick_check: 'ok' });
+      expect(database.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+    } finally {
+      database.close();
+    }
+  });
+});

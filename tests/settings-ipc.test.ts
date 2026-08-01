@@ -112,6 +112,14 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       token: 'a'.repeat(43),
     },
   ],
+  confirmRealResearchIntake: [
+    {
+      confirmation: 'CREATE_AUTHORIZED_REAL_RESEARCH',
+      inputHash: 'a'.repeat(64),
+      previewHash: 'b'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
   confirmSyntheticResearchIntake: [
     {
       confirmation: 'CREATE_SYNTHETIC_LOCAL_RESEARCH',
@@ -339,6 +347,32 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
     {
       includeModelSteps: false,
       sourceRevisionIds: ['source-fixture:1'],
+    },
+  ],
+  previewRealResearchIntake: [
+    {
+      draft: {
+        authorName: '埃德加·爱伦·坡',
+        authorizationConfirmed: true,
+        editionNote: '',
+        publicationDate: '1841',
+        readingState: 'S1_RESEARCH_ONLY',
+        sourceLocator: '用户本地笔记第 1 节',
+        sourceTitle: '获准本地资料',
+        sourceType: 'USER_LOCAL_NOTE',
+        spoilerConfirmed: true,
+        spoilerLevel: 'FULL_TRICK_ANALYSIS',
+        statements: [
+          {
+            claimTarget: 'WORK_TITLE',
+            confirmed: true,
+            evidenceExcerpt: '本地资料列明作品标题。',
+            evidenceLocator: '第 1 节',
+            statement: '《莫格街凶杀案》是作品标题。',
+          },
+        ],
+        workTitle: '莫格街凶杀案',
+      },
     },
   ],
   previewSyntheticResearchIntake: [
@@ -595,6 +629,27 @@ describe('Issue 010 strict IPC request policy', () => {
           RENDERER,
           'updateNonSecretSettings',
         ),
+      ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    }
+  });
+
+  it('rejects unauthorized, unconfirmed, malformed, or extended real-intake drafts', () => {
+    const request = validRequests.previewRealResearchIntake[0] as {
+      readonly draft: Record<string, unknown>;
+    };
+    for (const draft of [
+      { ...request.draft, authorizationConfirmed: false },
+      { ...request.draft, readingState: 'R3_READ_UNCONFIRMED_DETAILS' },
+      { ...request.draft, unexpected: true },
+      {
+        ...request.draft,
+        statements: [
+          { ...(request.draft.statements as Record<string, unknown>[])[0], confirmed: false },
+        ],
+      },
+    ]) {
+      expect(
+        validateDesktopIpcRequest(RENDERER, [{ draft }], RENDERER, 'previewRealResearchIntake'),
       ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
     }
   });

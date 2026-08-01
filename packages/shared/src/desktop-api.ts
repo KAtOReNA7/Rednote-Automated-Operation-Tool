@@ -56,6 +56,7 @@ import type {
 } from './catalog-contracts.js';
 import type {
   CancelSourceProcessingInput,
+  ConfirmRealResearchIntakeInput,
   ConfirmSyntheticResearchIntakeInput,
   ConfirmEvidenceConflictInput,
   ConfirmSourceProcessingInput,
@@ -64,9 +65,12 @@ import type {
   EvidenceStateView,
   GetEvidenceStateInput,
   PreviewEvidenceConflictInput,
+  PreviewRealResearchIntakeInput,
   PreviewSyntheticResearchIntakeInput,
   PreviewSourceProcessingInput,
   SourceProcessingPreview,
+  RealResearchIntakePreview,
+  RealResearchIntakeResult,
   SyntheticResearchIntakePreview,
   SyntheticResearchIntakeResult,
 } from './evidence-contracts.js';
@@ -221,6 +225,8 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   previewSourceProcessing: 'evidence:preview-processing',
   confirmSourceProcessing: 'evidence:confirm-processing',
   cancelSourceProcessing: 'evidence:cancel-processing',
+  previewRealResearchIntake: 'evidence:preview-real-research',
+  confirmRealResearchIntake: 'evidence:confirm-real-research',
   previewSyntheticResearchIntake: 'evidence:preview-synthetic-research',
   confirmSyntheticResearchIntake: 'evidence:confirm-synthetic-research',
   listDossiers: 'dossier:list',
@@ -868,6 +874,12 @@ export interface DesktopBridge {
   cancelSourceProcessing?(
     input: CancelSourceProcessingInput,
   ): Promise<DesktopResult<EvidenceStateView>>;
+  previewRealResearchIntake?(
+    input: PreviewRealResearchIntakeInput,
+  ): Promise<DesktopResult<RealResearchIntakePreview>>;
+  confirmRealResearchIntake?(
+    input: ConfirmRealResearchIntakeInput,
+  ): Promise<DesktopResult<RealResearchIntakeResult>>;
   previewSyntheticResearchIntake?(
     input: PreviewSyntheticResearchIntakeInput,
   ): Promise<DesktopResult<SyntheticResearchIntakePreview>>;

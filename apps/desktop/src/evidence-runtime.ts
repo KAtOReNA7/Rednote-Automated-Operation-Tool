@@ -4,6 +4,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import {
   BIBLIOGRAPHIC_OBSERVATION_VERSION,
   BIBLIOGRAPHY_NORMALIZATION_VERSION,
+  CatalogError,
   detectScriptHints,
   normalizeBibliographicText,
   type BibliographicObservationV1,
@@ -22,27 +23,39 @@ import {
   type FactConflictAction,
   type SourceProcessingPlanV1,
 } from '@mystery-operations/evidence';
+import { AuthenticityError } from '@mystery-operations/authenticity';
+import { classifyStatement, type StatementKind } from '@mystery-operations/quality';
 import {
+  runInCoordinatedTransaction,
+  SqliteAuthenticityRepository,
   SqliteEvidenceRepository,
   SqliteCatalogRepository,
   type EvidenceSummaryViewV1,
   type FactConflictPreviewV1,
   type FactConflictViewV1,
 } from '@mystery-operations/db';
+import { normalizeRealResearchIntakeDraft } from '@mystery-operations/shared';
 import type {
   CancelSourceProcessingInput,
   ConfirmSyntheticResearchIntakeInput,
+  ConfirmRealResearchIntakeInput,
   ConfirmEvidenceConflictInput,
   ConfirmSourceProcessingInput,
   EvidenceConflictActionPreview,
   GetEvidenceStateInput,
   PreviewSyntheticResearchIntakeInput,
+  PreviewRealResearchIntakeInput,
   PreviewEvidenceConflictInput,
   PreviewSourceProcessingInput,
   SourceProcessingPreview,
   SyntheticResearchIntakeDraft,
   SyntheticResearchIntakePreview,
   SyntheticResearchIntakeResult,
+  RealResearchClaimTarget,
+  RealResearchIntakeDraft,
+  RealResearchIntakePreview,
+  RealResearchIntakeResult,
+  RealResearchStatementDraft,
 } from '@mystery-operations/shared';
 import { LocalFileRepository, type ProjectDataRoot } from '@mystery-operations/storage';
 
@@ -64,6 +77,13 @@ interface SyntheticIntakeConfirmation {
   readonly inputHash: string;
   readonly locators: readonly SyntheticLocator[];
 }
+
+// prettier-ignore
+type RealPreparedStatement = Readonly<{ claimTarget: RealResearchClaimTarget; classification: StatementKind; disposition: RealResearchIntakePreview['statements'][number]['disposition']; evidenceEndCodePoint: number | null; evidenceStartCodePoint: number | null; input: RealResearchStatementDraft }>;
+// prettier-ignore
+type RealIntakeConfirmation = Readonly<{ draft: RealResearchIntakeDraft; entityResolution: RealResearchIntakePreview['entityResolution']; inputHash: string; preparedStatements: readonly RealPreparedStatement[]; profileId: string; sourceText: string }>;
+// prettier-ignore
+type RealIntakeReplay = Readonly<{ inputHash: string; previewHash: string; result: RealResearchIntakeResult; senderId: number; windowId: number }>;
 
 const SYNTHETIC_LABELS = Object.freeze([
   'MANUAL_INPUT',
@@ -142,6 +162,54 @@ function locateSyntheticFacts(draft: SyntheticResearchIntakeDraft): readonly Syn
   );
 }
 
+function prepareRealStatements(draft: RealResearchIntakeDraft): {
+  readonly sourceText: string;
+  readonly statements: readonly RealPreparedStatement[];
+} {
+  let sourceText = [
+    `资料名称：${draft.sourceTitle}`,
+    `来源类型：${draft.sourceType}`,
+    `作品：${draft.workTitle}`,
+    `作者：${draft.authorName}`,
+    draft.sourceLocator.length === 0 ? null : `资料定位：${draft.sourceLocator}`,
+  ]
+    .filter((item): item is string => item !== null)
+    .join('\n');
+  const prepared = draft.statements.map((input, index) => {
+    const classification = classifyStatement(input.statement).kind;
+    sourceText += `\n\n陈述 ${index + 1}：${input.statement}`;
+    let evidenceStartCodePoint: number | null = null;
+    let evidenceEndCodePoint: number | null = null;
+    if (input.evidenceExcerpt.length > 0) {
+      const prefix = `\n本地证据 ${index + 1}：`;
+      sourceText += prefix;
+      evidenceStartCodePoint = Array.from(sourceText).length;
+      sourceText += input.evidenceExcerpt;
+      evidenceEndCodePoint = Array.from(sourceText).length;
+    }
+    if (input.evidenceLocator.length > 0) {
+      sourceText += `\n定位说明 ${index + 1}：${input.evidenceLocator}`;
+    }
+    const claimEligible = classification === 'FACT' && input.claimTarget !== 'NONE';
+    return Object.freeze({
+      claimTarget: input.claimTarget,
+      classification,
+      disposition: claimEligible
+        ? input.evidenceExcerpt.length > 0
+          ? ('CLAIM_WITH_EVIDENCE' as const)
+          : ('CLAIM_WITHOUT_EVIDENCE' as const)
+        : ('SOURCE_ONLY_NON_FACT' as const),
+      evidenceEndCodePoint,
+      evidenceStartCodePoint,
+      input,
+    });
+  });
+  if (Buffer.byteLength(sourceText, 'utf8') > 32_768) {
+    throw new EvidenceError('EVIDENCE_INVALID_REQUEST');
+  }
+  return Object.freeze({ sourceText, statements: Object.freeze(prepared) });
+}
+
 function syntheticObservation(
   draft: SyntheticResearchIntakeDraft,
   key: string,
@@ -200,34 +268,20 @@ function syntheticObservation(
   });
 }
 
-function syntheticClaim(input: {
-  readonly authorAgentId: string;
+function workClaim(input: {
+  readonly claimId: string;
   readonly createdAt: string;
-  readonly draft: SyntheticResearchIntakeDraft;
-  readonly key: string;
-  readonly predicate: SyntheticLocator['predicate'];
+  readonly descriptor: Pick<AtomicClaimV1, 'predicate' | 'value' | 'valueType'>;
   readonly sourceId: string;
   readonly workId: string;
 }): AtomicClaimV1 {
-  const descriptor =
-    input.predicate === 'canonical_title'
-      ? ({ value: input.draft.workTitle, valueType: 'TEXT' } as const)
-      : input.predicate === 'author'
-        ? ({
-            value: { entityId: input.authorAgentId, entityType: 'AGENT' },
-            valueType: 'ENTITY_REF',
-          } as const)
-        : ({
-            value: { precision: 'DAY', value: input.draft.publicationDate },
-            valueType: 'DATE_WITH_PRECISION',
-          } as const);
   const base = {
-    claimId: `local-slice-claim-${input.predicate}-${input.key}`,
+    claimId: input.claimId,
     claimant: Object.freeze({ sourceId: input.sourceId, sourceRevision: 1 }),
     contractVersion: ATOMIC_CLAIM_CONTRACT_VERSION,
     createdAt: input.createdAt,
     keyFact: true,
-    predicate: input.predicate,
+    predicate: input.descriptor.predicate,
     predicateVersion: 1,
     provenance: Object.freeze({ kind: 'MANUAL' as const, runId: null }),
     revision: 1,
@@ -240,8 +294,8 @@ function syntheticClaim(input: {
     }),
     status: 'ACTIVE' as const,
     subject: Object.freeze({ id: input.workId, type: 'WORK' as const }),
-    value: descriptor.value,
-    valueType: descriptor.valueType,
+    value: input.descriptor.value,
+    valueType: input.descriptor.valueType,
   };
   return Object.freeze({
     ...base,
@@ -249,12 +303,50 @@ function syntheticClaim(input: {
   });
 }
 
+function realClaimDescriptor(input: {
+  readonly authorAgentId: string;
+  readonly draft: RealResearchIntakeDraft;
+  readonly target: Exclude<RealResearchClaimTarget, 'NONE'>;
+}): Pick<AtomicClaimV1, 'predicate' | 'value' | 'valueType'> {
+  const predicate =
+    input.target === 'WORK_TITLE'
+      ? ('canonical_title' as const)
+      : input.target === 'AUTHORSHIP'
+        ? ('author' as const)
+        : ('publication_date' as const);
+  const descriptor =
+    input.target === 'WORK_TITLE'
+      ? ({ value: input.draft.workTitle, valueType: 'TEXT' } as const)
+      : input.target === 'AUTHORSHIP'
+        ? ({
+            value: { entityId: input.authorAgentId, entityType: 'AGENT' },
+            valueType: 'ENTITY_REF',
+          } as const)
+        : ({
+            value: {
+              precision:
+                input.draft.publicationDate.length === 4
+                  ? ('YEAR' as const)
+                  : input.draft.publicationDate.length === 7
+                    ? ('MONTH' as const)
+                    : ('DAY' as const),
+              value: input.draft.publicationDate,
+            },
+            valueType: 'DATE_WITH_PRECISION',
+          } as const);
+  return Object.freeze({ predicate, value: descriptor.value, valueType: descriptor.valueType });
+}
+
 export class DesktopEvidenceRuntime {
+  readonly #authenticity: SqliteAuthenticityRepository;
   readonly #catalog: SqliteCatalogRepository;
   readonly #clock: () => Date;
   readonly #conflicts = new EvidenceConfirmationBroker<FactConflictPreviewV1>();
+  readonly #database: DatabaseSync;
   readonly #files: LocalFileRepository;
   readonly #processing = new EvidenceConfirmationBroker<ProcessingConfirmation>();
+  readonly #real: EvidenceConfirmationBroker<RealIntakeConfirmation>;
+  readonly #realReplays = new Map<string, RealIntakeReplay>();
   readonly #repository: SqliteEvidenceRepository;
   readonly #synthetic = new EvidenceConfirmationBroker<SyntheticIntakeConfirmation>();
 
@@ -263,10 +355,21 @@ export class DesktopEvidenceRuntime {
     root: ProjectDataRoot,
     clock: () => Date = () => new Date(),
   ) {
+    this.#authenticity = new SqliteAuthenticityRepository(database);
     this.#catalog = new SqliteCatalogRepository(database);
     this.#clock = clock;
+    this.#database = database;
     this.#files = new LocalFileRepository(root);
+    this.#real = new EvidenceConfirmationBroker(clock);
     this.#repository = new SqliteEvidenceRepository(database);
+  }
+
+  #profileId(): string {
+    const profile = this.#database
+      .prepare("SELECT id FROM account_profiles WHERE id = 'primary'")
+      .get() as { readonly id: string } | undefined;
+    if (profile === undefined) throw new EvidenceError('EVIDENCE_POLICY_BLOCKED');
+    return profile.id;
   }
 
   public getState(input: GetEvidenceStateInput): EvidenceSummaryViewV1 {
@@ -433,6 +536,293 @@ export class DesktopEvidenceRuntime {
     return this.#repository.getSummary();
   }
 
+  public previewRealIntake(
+    input: PreviewRealResearchIntakeInput,
+    senderId: number,
+    windowId: number,
+  ): RealResearchIntakePreview {
+    const draft = normalizeRealResearchIntakeDraft(input.draft);
+    if (draft === null) throw new EvidenceError('EVIDENCE_INVALID_REQUEST');
+    const prepared = prepareRealStatements(draft);
+    const entityResolution = this.#catalog.previewUserLocalEntityResolution(
+      draft.workTitle,
+      draft.authorName,
+    );
+    const profileId = this.#profileId();
+    const inputHash = evidenceSemanticHash({
+      contractVersion: 'authorized-real-research-intake-v1',
+      draft,
+      profileId,
+    });
+    const issued = this.#real.issue(
+      {
+        draft,
+        entityResolution,
+        inputHash,
+        preparedStatements: prepared.statements,
+        profileId,
+        sourceText: prepared.sourceText,
+      },
+      senderId,
+      windowId,
+    );
+    return Object.freeze({
+      canConfirm: entityResolution.outcome === 'CREATE_NEW',
+      entityResolution,
+      estimatedExternalRequests: 0,
+      estimatedModelRequests: 0,
+      expiresAt: issued.expiresAt,
+      feeState: 'NOT_INCURRED',
+      inputHash,
+      previewHash: issued.previewHash,
+      readingState: draft.readingState,
+      source: Object.freeze({
+        originKind: 'USER_LOCAL_INPUT' as const,
+        sourceLocator: draft.sourceLocator.length === 0 ? null : draft.sourceLocator,
+        sourceTitle: draft.sourceTitle,
+        sourceType: draft.sourceType,
+      }),
+      spoilerLevel: draft.spoilerLevel,
+      statements: Object.freeze(
+        prepared.statements.map((statement) =>
+          Object.freeze({
+            claimTarget: statement.claimTarget,
+            classification: statement.classification,
+            disposition: statement.disposition,
+            evidenceExcerpt:
+              statement.input.evidenceExcerpt.length === 0 ? null : statement.input.evidenceExcerpt,
+            evidenceLocator:
+              statement.input.evidenceLocator.length === 0 ? null : statement.input.evidenceLocator,
+            statement: statement.input.statement,
+          }),
+        ),
+      ),
+      token: issued.token,
+    });
+  }
+
+  public async confirmRealIntake(
+    input: ConfirmRealResearchIntakeInput,
+    senderId: number,
+    windowId: number,
+  ): Promise<RealResearchIntakeResult> {
+    if (input.confirmation !== 'CREATE_AUTHORIZED_REAL_RESEARCH') {
+      throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+    }
+    const replay = this.#realReplays.get(input.token);
+    if (replay !== undefined) {
+      if (
+        replay.inputHash !== input.inputHash ||
+        replay.previewHash !== input.previewHash ||
+        replay.senderId !== senderId ||
+        replay.windowId !== windowId
+      ) {
+        throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+      }
+      return replay.result;
+    }
+    const confirmation = this.#real.consume(input.token, input.previewHash, senderId, windowId);
+    if (
+      confirmation.inputHash !== input.inputHash ||
+      confirmation.entityResolution.outcome !== 'CREATE_NEW'
+    ) {
+      throw new EvidenceError('EVIDENCE_CONFIRMATION_INVALID');
+    }
+    const now = this.#clock().toISOString();
+    const key = confirmation.inputHash.slice(0, 32);
+    const workId = `user-local-work-${key}`;
+    const expressionId = `user-local-expression-${key}`;
+    const editionId = `user-local-edition-${key}`;
+    const authorAgentId = `user-local-author-${key}`;
+    const sourceId = `user-local-source-${key}`;
+    const textHash = textSha256(confirmation.sourceText);
+    const file = await this.#files.putBuffer(Buffer.from(confirmation.sourceText, 'utf8'), {
+      category: 'SOURCE_SNAPSHOT',
+      displayName: 'authorized-user-local-research.txt',
+      maxBytes: 32_768,
+    });
+    let result: RealResearchIntakeResult;
+    try {
+      result = runInCoordinatedTransaction(this.#database, () => {
+        this.#catalog.createUserLocalWork(
+          {
+            authorAgentId,
+            authorName: confirmation.draft.authorName,
+            editionId,
+            editionNote:
+              confirmation.draft.editionNote.length === 0 ? null : confirmation.draft.editionNote,
+            expressionId,
+            language: 'zh-CN',
+            publicationDate:
+              confirmation.draft.publicationDate.length === 0
+                ? null
+                : confirmation.draft.publicationDate,
+            workId,
+            workTitle: confirmation.draft.workTitle,
+          },
+          now,
+        );
+        this.#repository.registerSource({
+          classification: Object.freeze({
+            authorityTier: 'UNKNOWN' as const,
+            classifiedBy: 'USER' as const,
+            independenceState: 'UNKNOWN' as const,
+            lineageGroup: null,
+            reasonCode: 'AUTHORIZED_USER_LOCAL_INPUT_UNVERIFIED',
+            useClass: 'SUPPORTING_ONLY' as const,
+          }),
+          contentHash: textHash,
+          extractedTextHash: textHash,
+          extractedTextPath: file.managedPath,
+          language: 'zh-CN',
+          localSourceType: confirmation.draft.sourceType,
+          originKind: 'USER_LOCAL_INPUT',
+          originRecordId: `authorized-user-local-${key}`,
+          originRevision: 1,
+          publisherOrSite: '用户授权的本地资料',
+          publishedAt: null,
+          publishedAtPrecision: 'UNKNOWN',
+          retrievedAt: now,
+          sourceId,
+          title: confirmation.draft.sourceTitle,
+          url: `https://user-local-input.invalid/${key}`,
+          warnings: Object.freeze([
+            'AUTHORIZED_USER_LOCAL_INPUT',
+            'STATEMENTS_NOT_AUTOMATIC_FACT',
+            confirmation.draft.sourceType,
+          ]),
+        });
+        this.#repository.registerSubject('WORK', workId);
+        const statements = confirmation.preparedStatements.map((statement, index) => {
+          if (
+            statement.disposition === 'SOURCE_ONLY_NON_FACT' ||
+            statement.claimTarget === 'NONE'
+          ) {
+            return Object.freeze({
+              claimId: null,
+              classification: statement.classification,
+              evaluationId: null,
+              evidenceId: null,
+              status: 'SOURCE_ONLY_NON_FACT' as const,
+            });
+          }
+          const claimId = `user-local-claim-${index + 1}-${key}`;
+          const claim = workClaim({
+            claimId,
+            createdAt: now,
+            descriptor: realClaimDescriptor({
+              authorAgentId,
+              draft: confirmation.draft,
+              target: statement.claimTarget,
+            }),
+            sourceId,
+            workId,
+          });
+          this.#repository.createClaim(claim);
+          let evidenceId: string | null = null;
+          if (
+            statement.evidenceStartCodePoint !== null &&
+            statement.evidenceEndCodePoint !== null
+          ) {
+            evidenceId = `user-local-evidence-${index + 1}-${key}`;
+            this.#repository.addEvidence(
+              {
+                claimId,
+                evidenceId,
+                extractedText: confirmation.sourceText,
+                language: 'zh-CN',
+                locator: createEvidenceLocator(
+                  sourceId,
+                  1,
+                  confirmation.sourceText,
+                  statement.evidenceStartCodePoint,
+                  statement.evidenceEndCodePoint,
+                ),
+                relation: 'SUPPORTS',
+                summary: null,
+              },
+              now,
+            );
+          }
+          const evaluation = this.#repository.reconcileClaim(claimId, now);
+          return Object.freeze({
+            claimId,
+            classification: statement.classification,
+            evaluationId: evaluation.evaluationId,
+            evidenceId,
+            status: evaluation.status,
+          });
+        });
+        const memoryConfidence =
+          confirmation.draft.readingState === 'R1_READ_CLEAR'
+            ? ('CLEAR' as const)
+            : confirmation.draft.readingState === 'R2_READ_FUZZY'
+              ? ('PARTIAL' as const)
+              : ('NOT_APPLICABLE' as const);
+        this.#authenticity.applyStateChange(
+          {
+            confirmationKind: 'USER_EXPLICIT',
+            expectedRevision: 0,
+            finishedAt: null,
+            finishedAtPrecision: 'UNKNOWN',
+            lastReadAt: null,
+            lastReadAtPrecision: 'UNKNOWN',
+            memoryConfidence,
+            nextState: confirmation.draft.readingState,
+            profileId: confirmation.profileId,
+            provenance: 'USER_UI',
+            subject: { editionId, expressionId, workId },
+            userNote: null,
+          },
+          now,
+        );
+        if (confirmation.draft.spoilerLevel !== 'NO_SPOILER') {
+          this.#authenticity.applySpoiler(
+            {
+              expectedRevision: 1,
+              level: confirmation.draft.spoilerLevel,
+              profileId: confirmation.profileId,
+              userConfirmed: confirmation.draft.spoilerConfirmed,
+              warningIncluded: true,
+              workId,
+            },
+            now,
+          );
+        }
+        return Object.freeze({
+          externalRequestCount: 0 as const,
+          feeState: 'NOT_INCURRED' as const,
+          modelRequestCount: 0 as const,
+          readingState: confirmation.draft.readingState,
+          scoreRecordsCreated: 0 as const,
+          sourceOriginKind: 'USER_LOCAL_INPUT' as const,
+          sourceRevisionId: `${sourceId}:1`,
+          spoilerLevel: confirmation.draft.spoilerLevel,
+          statements: Object.freeze(statements),
+          workId,
+        });
+      });
+    } catch (error) {
+      if (error instanceof CatalogError) throw new EvidenceError('EVIDENCE_CONFLICT');
+      if (error instanceof AuthenticityError) {
+        throw new EvidenceError(
+          error.code === 'AUTHENTICITY_POLICY_BLOCKED'
+            ? 'EVIDENCE_POLICY_BLOCKED'
+            : 'EVIDENCE_INVALID_REQUEST',
+        );
+      }
+      throw error;
+    }
+    this.#realReplays.set(input.token, {
+      inputHash: input.inputHash,
+      previewHash: input.previewHash,
+      result,
+      senderId,
+      windowId,
+    });
+    return result;
+  }
+
   public previewSyntheticIntake(
     input: PreviewSyntheticResearchIntakeInput,
     senderId: number,
@@ -521,12 +911,28 @@ export class DesktopEvidenceRuntime {
     });
     this.#repository.registerSubject('WORK', resolution.workId);
     const results = confirmation.locators.map((located) => {
-      const claim = syntheticClaim({
-        authorAgentId: resolution.authorAgentId,
+      const descriptor =
+        located.predicate === 'canonical_title'
+          ? ({
+              predicate: located.predicate,
+              value: confirmation.draft.workTitle,
+              valueType: 'TEXT',
+            } as const)
+          : located.predicate === 'author'
+            ? ({
+                predicate: located.predicate,
+                value: { entityId: resolution.authorAgentId, entityType: 'AGENT' },
+                valueType: 'ENTITY_REF',
+              } as const)
+            : ({
+                predicate: located.predicate,
+                value: { precision: 'DAY', value: confirmation.draft.publicationDate },
+                valueType: 'DATE_WITH_PRECISION',
+              } as const);
+      const claim = workClaim({
+        claimId: `local-slice-claim-${located.predicate}-${key}`,
         createdAt: now,
-        draft: confirmation.draft,
-        key,
-        predicate: located.predicate,
+        descriptor,
         sourceId,
         workId: resolution.workId,
       });
@@ -571,6 +977,10 @@ export class DesktopEvidenceRuntime {
   public clearWindow(windowId: number): void {
     this.#conflicts.clearWindow(windowId);
     this.#processing.clearWindow(windowId);
+    this.#real.clearWindow(windowId);
+    for (const [token, replay] of this.#realReplays) {
+      if (replay.windowId === windowId) this.#realReplays.delete(token);
+    }
     this.#synthetic.clearWindow(windowId);
   }
 }

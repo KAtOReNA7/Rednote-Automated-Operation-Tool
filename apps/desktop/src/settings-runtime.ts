@@ -34,6 +34,7 @@ import type {
   CancelSourceProcessingInput,
   CancelDossierBuildInput,
   ConfirmEvidenceConflictInput,
+  ConfirmRealResearchIntakeInput,
   ConfirmSyntheticResearchIntakeInput,
   ConfirmSourceProcessingInput,
   ConfirmDossierBuildInput,
@@ -58,6 +59,7 @@ import type {
   PreviewCatalogWorkMergeInput,
   PreviewCatalogWorkSplitInput,
   PreviewEvidenceConflictInput,
+  PreviewRealResearchIntakeInput,
   PreviewSyntheticResearchIntakeInput,
   PreviewSourceProcessingInput,
   PreviewDossierBuildInput,
@@ -75,6 +77,8 @@ import type {
   EvidenceConflictView,
   EvidenceStateView,
   SourceProcessingPreview,
+  RealResearchIntakePreview,
+  RealResearchIntakeResult,
   SyntheticResearchIntakePreview,
   SyntheticResearchIntakeResult,
   DiffDossierVersionsInput,
@@ -855,6 +859,22 @@ export class DesktopSettingsRuntime {
 
   public cancelSourceProcessing(input: CancelSourceProcessingInput): EvidenceStateView {
     return this.#requireActive().evidence.cancelProcessing(input);
+  }
+
+  public previewRealResearchIntake(
+    input: PreviewRealResearchIntakeInput,
+    senderId: number,
+    windowId: number,
+  ): RealResearchIntakePreview {
+    return this.#requireActive().evidence.previewRealIntake(input, senderId, windowId);
+  }
+
+  public confirmRealResearchIntake(
+    input: ConfirmRealResearchIntakeInput,
+    senderId: number,
+    windowId: number,
+  ): Promise<RealResearchIntakeResult> {
+    return this.#requireActive().evidence.confirmRealIntake(input, senderId, windowId);
   }
 
   public previewSyntheticResearchIntake(
