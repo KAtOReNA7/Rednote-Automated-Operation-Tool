@@ -11,7 +11,8 @@ import {
   assertPortReleased,
   assertProcessesExited,
   assertSocketSnapshot,
-  inspectProcessTree,
+  createSmokeProcessCollector,
+  inspectControlledProcesses,
   recordObservationStage,
   waitForExit,
   waitForSmokeReport,
@@ -96,13 +97,16 @@ for (const mode of ['disabled', 'enabled']) {
   child.stderr.on('data', (chunk) => {
     stderr += chunk;
   });
+  const processCollector = createSmokeProcessCollector(child.pid);
+  const stdoutEnded = processCollector.attachStream(child.stdout);
   const exitPromise = waitForExit(child);
   try {
     const reportStartedAt = Date.now();
     const report = await waitForSmokeReport(outputPath);
     recordObservationStage('smoke-report-ready', reportStartedAt, { mode, packaged: true });
     assertIssue013CapabilityFixture(capabilityFixture, report);
-    const snapshot = await inspectProcessTree(child.pid);
+    const networkProcessIds = await processCollector.waitForStages();
+    const snapshot = await inspectControlledProcesses(networkProcessIds);
     const socketStartedAt = Date.now();
     const socketEvidence = assertSocketSnapshot(snapshot, mode, port, capabilityFixture.port);
     recordObservationStage('socket-policy-check', socketStartedAt, {
@@ -122,10 +126,18 @@ for (const mode of ['disabled', 'enabled']) {
         `Packaged executable smoke exited with ${String(exitCode)} and report ${JSON.stringify(report)}: ${stderr}`,
       );
     }
+    await stdoutEnded;
+    const finalProcessIds = processCollector.finish();
     assertCommonReport(report, true, mode, port);
-    await assertProcessesExited(snapshot.processIds);
+    await assertProcessesExited(finalProcessIds);
     await assertPortReleased(port);
-    results.push({ mode, ...socketEvidence, portReleased: true, processesExited: true });
+    results.push({
+      mode,
+      ...socketEvidence,
+      portReleased: true,
+      processCount: finalProcessIds.length,
+      processesExited: true,
+    });
   } finally {
     if (child.exitCode === null) {
       child.kill();

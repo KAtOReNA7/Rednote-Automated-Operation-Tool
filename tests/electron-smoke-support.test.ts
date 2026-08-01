@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { PassThrough } from 'node:stream';
 import { pathToFileURL } from 'node:url';
 
 import { describe, expect, it } from 'vitest';
@@ -17,9 +18,37 @@ interface SocketSnapshot {
   readonly processIds: readonly number[];
 }
 
+interface SmokeProcessCollector {
+  readonly acceptChunk: (chunk: string | Uint8Array) => void;
+  readonly attachStream: (stream: NodeJS.ReadableStream | null) => Promise<void>;
+  readonly finish: (requiredStages?: readonly string[]) => readonly number[];
+  readonly waitForStages: (
+    requiredStages?: readonly string[],
+    timeoutMilliseconds?: number,
+  ) => Promise<readonly number[]>;
+}
+
 interface SmokeSupport {
-  readonly inspectProcessTree: (
+  readonly assertProcessesExited: (
+    processIds: readonly number[],
+    options?: {
+      readonly deadlineMilliseconds?: number;
+      readonly isProcessAlive?: (processId: number) => boolean | Promise<boolean>;
+      readonly now?: () => number;
+      readonly pollMilliseconds?: number;
+      readonly wait?: (milliseconds: number) => Promise<void>;
+    },
+  ) => Promise<void>;
+  readonly createSmokeProcessCollector: (
     rootProcessId: number,
+    limits?: {
+      readonly maxProcessCount?: number;
+      readonly maxSampleBytes?: number;
+      readonly maxSamples?: number;
+    },
+  ) => SmokeProcessCollector;
+  readonly inspectControlledProcesses: (
+    processIds: readonly number[],
     commandRunner: (
       stage: string,
       executable: string,
@@ -28,7 +57,6 @@ interface SmokeSupport {
     ) => Promise<string>,
   ) => Promise<SocketSnapshot>;
   readonly parseNetstatTcpOutput: (output: string) => readonly SocketConnection[];
-  readonly parseProcessTreeOutput: (output: string, rootProcessId: number) => readonly number[];
   readonly assertSocketSnapshot: (
     snapshot: SocketSnapshot,
     mode: 'disabled' | 'enabled',
@@ -63,6 +91,14 @@ function connection(
   };
 }
 
+function processSample(
+  stage: 'before-exit' | 'capability-validated' | 'ready',
+  processes: ReadonlyArray<{ readonly pid: number; readonly type: string }>,
+  truncated = false,
+): string {
+  return `__REDNOTE_SMOKE_PROCESS_SAMPLE__:${JSON.stringify({ processes, stage, truncated })}\n`;
+}
+
 describe('Electron smoke socket evidence', () => {
   it('strictly parses active Windows netstat TCP rows including IPv6 without accepting malformed rows', async () => {
     const { parseNetstatTcpOutput } = await loadSmokeSupport();
@@ -95,33 +131,75 @@ describe('Electron smoke socket evidence', () => {
     expect(() => parseNetstatTcpOutput('TCP malformed')).toThrow(/unparseable TCP row/u);
   });
 
-  it('rejects invalid process-tree output instead of treating it as an empty observation', async () => {
-    const { parseProcessTreeOutput } = await loadSmokeSupport();
+  it('collects a deterministic PID union across required smoke stages and deduplicates repeats', async () => {
+    const { createSmokeProcessCollector } = await loadSmokeSupport();
+    const collector = createSmokeProcessCollector(42);
+    const stdout = new PassThrough();
+    const stdoutEnded = collector.attachStream(stdout);
 
-    expect(parseProcessTreeOutput('{"processIds":[42,43]}', 42)).toEqual([42, 43]);
-    expect(() => parseProcessTreeOutput('{"processIds":[43]}', 42)).toThrow(
-      /invalid process identifiers/u,
+    stdout.write(
+      processSample('ready', [
+        { pid: 42, type: 'Browser' },
+        { pid: 42, type: 'Browser' },
+      ]),
     );
-    expect(() => parseProcessTreeOutput('{"processIds":[]}', 42)).toThrow(
-      /invalid process identifiers/u,
+    stdout.write(
+      processSample('capability-validated', [
+        { pid: 42, type: 'Browser' },
+        { pid: 43, type: 'Tab' },
+      ]),
     );
+    await expect(collector.waitForStages()).resolves.toEqual([42, 43]);
+    stdout.end(
+      processSample('before-exit', [
+        { pid: 43, type: 'Tab' },
+        { pid: 44, type: 'GPU' },
+      ]),
+    );
+    await stdoutEnded;
+
+    expect(collector.finish()).toEqual([42, 43, 44]);
   });
 
-  it('uses independently bounded targeted process and netstat observations then filters by owned PID', async () => {
-    const { inspectProcessTree } = await loadSmokeSupport();
+  it('fails closed for invalid, truncated, conflicting, and over-limit PID samples', async () => {
+    const { createSmokeProcessCollector } = await loadSmokeSupport();
+
+    const invalid = createSmokeProcessCollector(42);
+    invalid.acceptChunk(processSample('ready', [{ pid: 0, type: 'Browser' }]));
+    expect(() => invalid.finish([])).toThrow(/invalid process entry/u);
+
+    const truncated = createSmokeProcessCollector(42);
+    truncated.acceptChunk(processSample('ready', [{ pid: 42, type: 'Browser' }], true));
+    expect(() => truncated.finish([])).toThrow(/invalid or truncated/u);
+
+    const conflicting = createSmokeProcessCollector(42);
+    conflicting.acceptChunk(processSample('ready', [{ pid: 42, type: 'Browser' }]));
+    conflicting.acceptChunk(processSample('capability-validated', [{ pid: 42, type: 'GPU' }]));
+    expect(() => conflicting.finish([])).toThrow(/changed the type/u);
+
+    const overLimit = createSmokeProcessCollector(42, { maxProcessCount: 2 });
+    overLimit.acceptChunk(
+      processSample('ready', [
+        { pid: 42, type: 'Browser' },
+        { pid: 43, type: 'Tab' },
+        { pid: 44, type: 'GPU' },
+      ]),
+    );
+    expect(() => overLimit.finish([])).toThrow(/invalid or truncated/u);
+  });
+
+  it('uses only bounded netstat observation and filters it by the controlled PID list', async () => {
+    const { inspectControlledProcesses } = await loadSmokeSupport();
     const calls: Array<{
       readonly arguments_: readonly string[];
       readonly executable: string;
       readonly stage: string;
       readonly timeoutMilliseconds: number;
     }> = [];
-    const snapshot = await inspectProcessTree(
-      42,
+    const snapshot = await inspectControlledProcesses(
+      [42, 43],
       async (stage, executable, arguments_, timeoutMilliseconds) => {
         calls.push({ arguments_, executable, stage, timeoutMilliseconds });
-        if (stage === 'process-tree-query') {
-          return '{"processIds":[42,43]}';
-        }
         return [
           'TCP 127.0.0.1:43119 0.0.0.0:0 LISTENING 43',
           'TCP 127.0.0.1:43120 0.0.0.0:0 LISTENING 99',
@@ -148,28 +226,62 @@ describe('Electron smoke socket evidence', () => {
         stage,
         timeoutMilliseconds,
       })),
-    ).toEqual([
-      {
-        executable: 'powershell.exe',
-        stage: 'process-tree-query',
-        timeoutMilliseconds: 3_000,
-      },
-      { executable: 'netstat.exe', stage: 'tcp-snapshot', timeoutMilliseconds: 2_000 },
-    ]);
-    expect(calls[0]?.arguments_.at(-1)).toMatch(/-Filter \$filter/u);
+    ).toEqual([{ executable: 'netstat.exe', stage: 'tcp-snapshot', timeoutMilliseconds: 2_000 }]);
+    expect(calls[0]?.arguments_).toEqual(['-ano', '-p', 'tcp']);
   });
 
-  it('fails closed when either observation command fails', async () => {
-    const { inspectProcessTree } = await loadSmokeSupport();
+  it('fails closed when the TCP observation command fails', async () => {
+    const { inspectControlledProcesses } = await loadSmokeSupport();
 
     await expect(
-      inspectProcessTree(42, async (stage) => {
-        if (stage === 'process-tree-query') {
-          return '{"processIds":[42]}';
-        }
+      inspectControlledProcesses([42], async () => {
         throw new Error('TCP_SNAPSHOT_FAILED');
       }),
     ).rejects.toThrow('TCP_SNAPSHOT_FAILED');
+  });
+
+  it('polls controlled PIDs to normal exit and rejects a PID that survives the deadline', async () => {
+    const { assertProcessesExited } = await loadSmokeSupport();
+    let clock = 0;
+
+    await expect(
+      assertProcessesExited([42, 43], {
+        deadlineMilliseconds: 30,
+        isProcessAlive: (processId) => processId === 43 && clock < 10,
+        now: () => clock,
+        pollMilliseconds: 10,
+        wait: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      }),
+    ).resolves.toBeUndefined();
+
+    clock = 0;
+    await expect(
+      assertProcessesExited([42], {
+        deadlineMilliseconds: 20,
+        isProcessAlive: () => true,
+        now: () => clock,
+        pollMilliseconds: 10,
+        wait: async (milliseconds) => {
+          clock += milliseconds;
+        },
+      }),
+    ).rejects.toThrow(/controlled residual process/u);
+  });
+
+  it('fails closed when controlled PID existence cannot be queried', async () => {
+    const { assertProcessesExited } = await loadSmokeSupport();
+
+    await expect(
+      assertProcessesExited([42], {
+        deadlineMilliseconds: 20,
+        isProcessAlive: () => {
+          throw new Error('PID_QUERY_FAILED');
+        },
+        pollMilliseconds: 10,
+      }),
+    ).rejects.toThrow(/existence query failed/u);
   });
 
   it('accepts both halves of an in-flight request on the exact configured local API port', async () => {

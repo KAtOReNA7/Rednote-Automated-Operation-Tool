@@ -2,10 +2,29 @@ import { execFile } from 'node:child_process';
 import { createServer } from 'node:net';
 import { readFile } from 'node:fs/promises';
 
-const PROCESS_TREE_TIMEOUT_MILLISECONDS = 3_000;
 const TCP_SNAPSHOT_TIMEOUT_MILLISECONDS = 2_000;
-const PROCESS_EXIT_TIMEOUT_MILLISECONDS = 3_000;
-const MAX_PROCESS_TREE_DEPTH = 8;
+const PROCESS_EXIT_DEADLINE_MILLISECONDS = 5_000;
+const PROCESS_EXIT_POLL_MILLISECONDS = 50;
+const PROCESS_SAMPLE_WAIT_MILLISECONDS = 1_000;
+const PROCESS_SAMPLE_POLL_MILLISECONDS = 10;
+const SMOKE_PROCESS_SAMPLE_PREFIX = '__REDNOTE_SMOKE_PROCESS_SAMPLE__:';
+const MAX_SMOKE_PROCESS_COUNT = 32;
+const MAX_SMOKE_PROCESS_SAMPLES = 6;
+const MAX_SMOKE_PROCESS_SAMPLE_BYTES = 4_096;
+const INITIAL_SMOKE_PROCESS_STAGES = ['ready', 'capability-validated'];
+const FINAL_SMOKE_PROCESS_STAGES = [...INITIAL_SMOKE_PROCESS_STAGES, 'before-exit'];
+const SMOKE_PROCESS_SAMPLE_STAGES = new Set(['before-exit', 'capability-validated', 'ready']);
+const SMOKE_PROCESS_TYPES = new Set([
+  'Browser',
+  'GPU',
+  'Pepper Plugin',
+  'Pepper Plugin Broker',
+  'Sandbox helper',
+  'Tab',
+  'Unknown',
+  'Utility',
+  'Zygote',
+]);
 const ACTIVE_NETSTAT_STATES = new Map([
   ['ESTABLISHED', 'Established'],
   ['LISTENING', 'Listen'],
@@ -113,22 +132,209 @@ export async function waitForSmokeReport(outputPath, timeoutMilliseconds = 25_00
   throw new Error('Electron smoke report was not created in time.');
 }
 
-export function parseProcessTreeOutput(output, rootProcessId) {
-  const parsed = JSON.parse(output);
-  if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    throw new Error('Electron smoke process-tree output was not an object.');
+function hasExactKeys(value, expectedKeys) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
   }
-  const rawProcessIds = Array.isArray(parsed.processIds) ? parsed.processIds : [parsed.processIds];
-  const processIds = rawProcessIds.map(Number);
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === expectedKeys.length && keys.every((key, index) => key === expectedKeys[index])
+  );
+}
+
+function normalizeControlledProcessIds(processIds) {
+  if (!Array.isArray(processIds) || processIds.length === 0) {
+    throw new Error('Electron smoke controlled process list was empty.');
+  }
+  const normalized = [...new Set(processIds.map(Number))].sort((left, right) => left - right);
   if (
-    processIds.length === 0 ||
-    processIds.some((value) => !Number.isSafeInteger(value) || value <= 0) ||
-    new Set(processIds).size !== processIds.length ||
-    !processIds.includes(rootProcessId)
+    normalized.length === 0 ||
+    normalized.length > MAX_SMOKE_PROCESS_COUNT ||
+    normalized.some((value) => !Number.isSafeInteger(value) || value <= 0)
   ) {
-    throw new Error('Electron smoke process-tree output contained invalid process identifiers.');
+    throw new Error('Electron smoke controlled process list was invalid or exceeded its limit.');
   }
-  return processIds;
+  return normalized;
+}
+
+export function createSmokeProcessCollector(rootProcessId, limits = {}) {
+  const collectorStartedAt = Date.now();
+  const normalizedRoot = normalizeControlledProcessIds([rootProcessId])[0];
+  const maxProcessCount = limits.maxProcessCount ?? MAX_SMOKE_PROCESS_COUNT;
+  const maxSamples = limits.maxSamples ?? MAX_SMOKE_PROCESS_SAMPLES;
+  const maxSampleBytes = limits.maxSampleBytes ?? MAX_SMOKE_PROCESS_SAMPLE_BYTES;
+  if (
+    !Number.isSafeInteger(maxProcessCount) ||
+    maxProcessCount <= 0 ||
+    !Number.isSafeInteger(maxSamples) ||
+    maxSamples <= 0 ||
+    !Number.isSafeInteger(maxSampleBytes) ||
+    maxSampleBytes <= 0
+  ) {
+    throw new Error('Electron smoke process collector limits were invalid.');
+  }
+
+  let buffered = '';
+  let failure = null;
+  let sampleCount = 0;
+  let processTypes = new Map();
+  const sampledStages = new Set();
+
+  function fail(message, cause) {
+    failure ??= new Error(message, cause === undefined ? undefined : { cause });
+  }
+
+  function parseSampleLine(line) {
+    if (!line.startsWith(SMOKE_PROCESS_SAMPLE_PREFIX)) {
+      return;
+    }
+    if (Buffer.byteLength(line, 'utf8') > maxSampleBytes) {
+      fail('Electron smoke process sample exceeded its byte limit.');
+      return;
+    }
+    let sample;
+    try {
+      sample = JSON.parse(line.slice(SMOKE_PROCESS_SAMPLE_PREFIX.length));
+    } catch (error) {
+      fail('Electron smoke process sample was not valid JSON.', error);
+      return;
+    }
+    if (
+      !hasExactKeys(sample, ['processes', 'stage', 'truncated']) ||
+      !SMOKE_PROCESS_SAMPLE_STAGES.has(sample.stage) ||
+      sample.truncated !== false ||
+      !Array.isArray(sample.processes) ||
+      sample.processes.length === 0 ||
+      sample.processes.length > maxProcessCount
+    ) {
+      fail('Electron smoke process sample shape was invalid or truncated.');
+      return;
+    }
+    sampleCount += 1;
+    if (sampleCount > maxSamples) {
+      fail('Electron smoke process sample count exceeded its limit.');
+      return;
+    }
+    const nextProcessTypes = new Map(processTypes);
+    for (const processEntry of sample.processes) {
+      if (
+        !hasExactKeys(processEntry, ['pid', 'type']) ||
+        !Number.isSafeInteger(processEntry.pid) ||
+        processEntry.pid <= 0 ||
+        !SMOKE_PROCESS_TYPES.has(processEntry.type)
+      ) {
+        fail('Electron smoke process sample contained an invalid process entry.');
+        return;
+      }
+      const existingType = nextProcessTypes.get(processEntry.pid);
+      if (existingType !== undefined && existingType !== processEntry.type) {
+        fail('Electron smoke process sample changed the type of an existing PID.');
+        return;
+      }
+      nextProcessTypes.set(processEntry.pid, processEntry.type);
+    }
+    if (nextProcessTypes.size > maxProcessCount) {
+      fail('Electron smoke process sample union exceeded its limit.');
+      return;
+    }
+    processTypes = nextProcessTypes;
+    sampledStages.add(sample.stage);
+  }
+
+  function acceptChunk(chunk) {
+    if (failure !== null) {
+      return;
+    }
+    buffered += typeof chunk === 'string' ? chunk : Buffer.from(chunk).toString('utf8');
+    if (Buffer.byteLength(buffered, 'utf8') > maxSampleBytes && !buffered.includes('\n')) {
+      fail('Electron smoke process sample stream exceeded its line limit.');
+      return;
+    }
+    let newlineIndex = buffered.indexOf('\n');
+    while (newlineIndex >= 0) {
+      const line = buffered.slice(0, newlineIndex).replace(/\r$/u, '');
+      buffered = buffered.slice(newlineIndex + 1);
+      parseSampleLine(line);
+      newlineIndex = buffered.indexOf('\n');
+    }
+  }
+
+  function attachStream(stream) {
+    if (stream === null) {
+      fail('Electron smoke stdout was unavailable.');
+      return Promise.resolve();
+    }
+    stream.setEncoding('utf8');
+    stream.on('data', acceptChunk);
+    return new Promise((resolveStream) => {
+      stream.once('error', (error) => {
+        fail('Electron smoke stdout observation failed.', error);
+        resolveStream();
+      });
+      stream.once('end', resolveStream);
+    });
+  }
+
+  function requireProcessIds(requiredStages) {
+    if (failure !== null) {
+      throw failure;
+    }
+    const missingStages = requiredStages.filter((stage) => !sampledStages.has(stage));
+    if (missingStages.length !== 0) {
+      throw new Error(
+        `Electron smoke process samples were missing stages: ${missingStages.join(',')}`,
+      );
+    }
+    if (!processTypes.has(normalizedRoot)) {
+      throw new Error('Electron smoke process samples did not include the runner root PID.');
+    }
+    return normalizeControlledProcessIds([...processTypes.keys()]);
+  }
+
+  async function waitForStages(
+    requiredStages = INITIAL_SMOKE_PROCESS_STAGES,
+    timeoutMilliseconds = PROCESS_SAMPLE_WAIT_MILLISECONDS,
+  ) {
+    const startedAt = Date.now();
+    const deadline = startedAt + timeoutMilliseconds;
+    while (Date.now() <= deadline) {
+      if (failure !== null) {
+        throw failure;
+      }
+      if (requiredStages.every((stage) => sampledStages.has(stage))) {
+        const processIds = requireProcessIds(requiredStages);
+        recordObservationStage('pid-sample-ready', startedAt, {
+          processCount: processIds.length,
+          sampleCount,
+          stageCount: requiredStages.length,
+        });
+        return processIds;
+      }
+      await delay(PROCESS_SAMPLE_POLL_MILLISECONDS);
+    }
+    recordObservationStage(
+      'pid-sample-ready',
+      startedAt,
+      { processCount: processTypes.size, sampleCount, stageCount: requiredStages.length },
+      'failed',
+    );
+    throw new Error('Electron smoke process samples were not received in time.');
+  }
+
+  function finish(requiredStages = FINAL_SMOKE_PROCESS_STAGES) {
+    if (buffered.startsWith(SMOKE_PROCESS_SAMPLE_PREFIX)) {
+      fail('Electron smoke process sample stream ended with a truncated sample.');
+    }
+    const processIds = requireProcessIds(requiredStages);
+    recordObservationStage('pid-sample-final', collectorStartedAt, {
+      processCount: processIds.length,
+      sampleCount,
+      stageCount: requiredStages.length,
+    });
+    return processIds;
+  }
+
+  return { acceptChunk, attachStream, finish, waitForStages };
 }
 
 function parseNetstatEndpoint(endpoint) {
@@ -179,69 +385,26 @@ export function parseNetstatTcpOutput(output) {
   return connections;
 }
 
-export async function inspectProcessTree(rootProcessId, commandRunner = runBoundedCommand) {
-  if (!Number.isSafeInteger(rootProcessId) || rootProcessId <= 0) {
-    throw new Error('Electron smoke root process identifier was invalid.');
-  }
-  const processTreeCommand = `
-    $ErrorActionPreference = 'Stop'
-    $processIds = [System.Collections.Generic.HashSet[int]]::new()
-    [void]$processIds.Add(${rootProcessId})
-    $frontier = @(${rootProcessId})
-    for ($depth = 0; $frontier.Count -gt 0; $depth++) {
-      if ($depth -ge ${MAX_PROCESS_TREE_DEPTH}) {
-        throw 'PROCESS_TREE_DEPTH_EXCEEDED'
-      }
-      $filter = @($frontier | ForEach-Object { "ParentProcessId = $($_)" }) -join ' OR '
-      $children = @(Get-CimInstance -ClassName Win32_Process -Filter $filter -Property ProcessId, ParentProcessId -OperationTimeoutSec 2 -ErrorAction Stop)
-      $next = [System.Collections.Generic.List[int]]::new()
-      foreach ($child in $children) {
-        $childId = [int]$child.ProcessId
-        if ($processIds.Add($childId)) {
-          $next.Add($childId)
-        }
-      }
-      $frontier = @($next.ToArray())
-    }
-    [pscustomobject]@{
-      processIds = @($processIds | Sort-Object)
-    } | ConvertTo-Json -Compress -Depth 3
-  `;
-  const observations = await Promise.allSettled([
-    commandRunner(
-      'process-tree-query',
-      'powershell.exe',
-      ['-NoProfile', '-NonInteractive', '-Command', processTreeCommand],
-      PROCESS_TREE_TIMEOUT_MILLISECONDS,
-    ),
-    commandRunner(
-      'tcp-snapshot',
-      'netstat.exe',
-      ['-ano', '-p', 'tcp'],
-      TCP_SNAPSHOT_TIMEOUT_MILLISECONDS,
-    ),
-  ]);
-  const failedObservation = observations.find((observation) => observation.status === 'rejected');
-  if (failedObservation?.status === 'rejected') {
-    throw failedObservation.reason;
-  }
-  const [processOutput, netstatOutput] = observations;
-  if (processOutput.status !== 'fulfilled' || netstatOutput.status !== 'fulfilled') {
-    throw new Error('Electron smoke observations did not complete.');
-  }
+export async function inspectControlledProcesses(processIds, commandRunner = runBoundedCommand) {
+  const normalizedProcessIds = normalizeControlledProcessIds(processIds);
+  const netstatOutput = await commandRunner(
+    'tcp-snapshot',
+    'netstat.exe',
+    ['-ano', '-p', 'tcp'],
+    TCP_SNAPSHOT_TIMEOUT_MILLISECONDS,
+  );
   const parseStartedAt = Date.now();
-  const processIds = parseProcessTreeOutput(processOutput.value, rootProcessId);
-  const processIdSet = new Set(processIds);
-  const connections = parseNetstatTcpOutput(netstatOutput.value).filter((connection) =>
+  const processIdSet = new Set(normalizedProcessIds);
+  const connections = parseNetstatTcpOutput(netstatOutput).filter((connection) =>
     processIdSet.has(connection.OwningProcess),
   );
   recordObservationStage('snapshot-parse', parseStartedAt, {
     connectionCount: connections.length,
-    processCount: processIds.length,
+    processCount: normalizedProcessIds.length,
   });
   return {
     connections,
-    processIds,
+    processIds: normalizedProcessIds,
   };
 }
 
@@ -304,27 +467,76 @@ export function assertSocketSnapshot(snapshot, mode, expectedPort, capabilityPor
   };
 }
 
-export async function assertProcessesExited(processIds) {
-  const ids = processIds.map((value) => Number(value)).filter(Number.isSafeInteger);
-  const startedAt = Date.now();
-  await delay(300);
-  const remaining = await runBoundedCommand(
-    'residual-process-query',
-    'powershell.exe',
-    [
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      `$ids = @(${ids.join(',')}); [Console]::Out.Write(@(Get-Process -Id $ids -ErrorAction SilentlyContinue).Count)`,
-    ],
-    PROCESS_EXIT_TIMEOUT_MILLISECONDS,
-  );
-  const remainingCount = Number.parseInt(remaining, 10);
-  if (!Number.isSafeInteger(remainingCount) || remainingCount !== 0) {
-    recordObservationStage('process-cleanup-check', startedAt, { remainingCount }, 'failed');
-    throw new Error('Electron smoke left a residual process.');
+function isProcessAlive(processId) {
+  try {
+    process.kill(processId, 0);
+    return true;
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === 'ESRCH') {
+      return false;
+    }
+    if (error instanceof Error && 'code' in error && error.code === 'EPERM') {
+      return true;
+    }
+    throw error;
   }
-  recordObservationStage('process-cleanup-check', startedAt, { remainingCount });
+}
+
+export async function assertProcessesExited(processIds, options = {}) {
+  const ids = normalizeControlledProcessIds(processIds);
+  const deadlineMilliseconds = options.deadlineMilliseconds ?? PROCESS_EXIT_DEADLINE_MILLISECONDS;
+  const pollMilliseconds = options.pollMilliseconds ?? PROCESS_EXIT_POLL_MILLISECONDS;
+  const now = options.now ?? Date.now;
+  const wait = options.wait ?? delay;
+  const queryProcess = options.isProcessAlive ?? isProcessAlive;
+  if (
+    !Number.isSafeInteger(deadlineMilliseconds) ||
+    deadlineMilliseconds <= 0 ||
+    !Number.isSafeInteger(pollMilliseconds) ||
+    pollMilliseconds <= 0
+  ) {
+    throw new Error('Electron smoke process cleanup polling options were invalid.');
+  }
+  const startedAt = Date.now();
+  const deadline = now() + deadlineMilliseconds;
+  let pollCount = 0;
+  while (true) {
+    pollCount += 1;
+    const remaining = [];
+    try {
+      for (const processId of ids) {
+        if (await queryProcess(processId)) {
+          remaining.push(processId);
+        }
+      }
+    } catch (error) {
+      recordObservationStage(
+        'process-cleanup-check',
+        startedAt,
+        { pollCount, queryFailed: true, remainingCount: null },
+        'failed',
+      );
+      throw new Error('Electron smoke controlled PID existence query failed.', { cause: error });
+    }
+    if (remaining.length === 0) {
+      recordObservationStage('process-cleanup-check', startedAt, {
+        pollCount,
+        queryFailed: false,
+        remainingCount: 0,
+      });
+      return;
+    }
+    if (now() >= deadline) {
+      recordObservationStage(
+        'process-cleanup-check',
+        startedAt,
+        { pollCount, queryFailed: false, remainingCount: remaining.length },
+        'failed',
+      );
+      throw new Error('Electron smoke left a controlled residual process after the deadline.');
+    }
+    await wait(Math.min(pollMilliseconds, Math.max(1, deadline - now())));
+  }
 }
 
 export async function assertPortReleased(port) {

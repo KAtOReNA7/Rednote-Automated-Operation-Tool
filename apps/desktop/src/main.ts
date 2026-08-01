@@ -25,6 +25,48 @@ const LOCAL_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
 const DEVELOPMENT_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d{1,5}(?:\/.*)?$/u;
 const isSmokeMode = process.argv.includes('--issue006-smoke');
 const smokeOutputPath = resolveSmokeOutputPath(process.argv);
+const SMOKE_PROCESS_SAMPLE_PREFIX = '__REDNOTE_SMOKE_PROCESS_SAMPLE__:';
+const MAX_SMOKE_PROCESS_COUNT = 32;
+const MAX_SMOKE_PROCESS_SAMPLE_BYTES = 4_096;
+
+type SmokeProcessSampleStage = 'before-exit' | 'capability-validated' | 'ready';
+
+async function emitSmokeProcessSample(stage: SmokeProcessSampleStage): Promise<void> {
+  if (!isSmokeMode) {
+    return;
+  }
+  const processesByPid = new Map<number, Electron.ProcessMetric['type']>([
+    [process.pid, 'Browser'],
+  ]);
+  for (const metric of app.getAppMetrics()) {
+    if (Number.isSafeInteger(metric.pid) && metric.pid > 0 && !processesByPid.has(metric.pid)) {
+      processesByPid.set(metric.pid, metric.type);
+    }
+  }
+  const processes = [...processesByPid]
+    .sort(([left], [right]) => left - right)
+    .map(([pid, type]) => ({ pid, type }));
+  if (processes.length === 0 || processes.length > MAX_SMOKE_PROCESS_COUNT) {
+    throw new Error('SMOKE_PROCESS_SAMPLE_LIMIT_EXCEEDED');
+  }
+  const line = `${SMOKE_PROCESS_SAMPLE_PREFIX}${JSON.stringify({
+    processes,
+    stage,
+    truncated: false,
+  })}`;
+  if (Buffer.byteLength(line, 'utf8') > MAX_SMOKE_PROCESS_SAMPLE_BYTES) {
+    throw new Error('SMOKE_PROCESS_SAMPLE_BYTES_EXCEEDED');
+  }
+  await new Promise<void>((resolveWrite, rejectWrite) => {
+    process.stdout.write(`${line}\n`, (error) => {
+      if (error !== null && error !== undefined) {
+        rejectWrite(error);
+        return;
+      }
+      resolveWrite();
+    });
+  });
+}
 
 function resolveLocalApiSmoke(argv: readonly string[]): {
   readonly mode: 'disabled' | 'enabled';
@@ -157,6 +199,7 @@ function registerLocalRendererProtocol(rendererRoot: string): void {
 }
 
 async function startApplication(): Promise<void> {
+  await emitSmokeProcessSample('ready');
   const expectedRendererUrl = rendererUrl();
   const rendererRoot = join(app.getAppPath(), '.vite', 'renderer');
   registerLocalRendererProtocol(rendererRoot);
@@ -318,6 +361,7 @@ async function startApplication(): Promise<void> {
             settingsSmoke.localApi.preflight &&
             renderer.windowState &&
             sessionSecurityAudit.externalRequestAttempts === 0;
+          await emitSmokeProcessSample('capability-validated');
           writeSmokeReport(smokeOutputPath, {
             main: true,
             ok,
@@ -340,6 +384,7 @@ async function startApplication(): Promise<void> {
           await new Promise<void>((resolveDelay) => {
             setTimeout(resolveDelay, 5_000);
           });
+          await emitSmokeProcessSample('before-exit');
           await closeRuntime();
           app.exit(ok ? 0 : 4);
         } catch (error: unknown) {
