@@ -23,7 +23,7 @@ afterEach(cleanTemporaryDatabases);
 
 describe('M3 Issue 026 migration and precise invalidation', () => {
   it('appends v19 and creates normalized STRICT fact-mapping tables and guards', async () => {
-    expect(MIGRATIONS.at(-1)).toMatchObject({
+    expect(MIGRATIONS[18]).toMatchObject({
       name: 'factual_claim_mapping',
       version: 19,
     });
@@ -97,7 +97,7 @@ describe('M3 Issue 026 migration and precise invalidation', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [19], schemaVersion: 19 });
+    expect(result).toMatchObject({ appliedVersions: [19, 20], schemaVersion: 20 });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {
