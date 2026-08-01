@@ -1,5 +1,6 @@
 import {
   BRIEF_ACTIONS,
+  BRIEF_AUDIENCE_KNOWLEDGE_LEVELS,
   BRIEF_DEPENDENCY_TYPES,
   BRIEF_EXPRESSION_MODES,
   BRIEF_FIELD_LOCKS,
@@ -18,6 +19,7 @@ import {
   CONTENT_BRIEF_SCHEMA_VERSION,
   SYSTEM_FORBIDDEN_EXPRESSIONS,
   type BriefAction,
+  type BriefAudienceKnowledgeLevel,
   type BriefDependencyType,
   type BriefExpressionMode,
   type BriefFieldLockState,
@@ -56,7 +58,7 @@ export interface BriefSubject {
 }
 
 export interface BriefAudience {
-  readonly knowledgeLevel: 'NEW_TO_WORK' | 'FAMILIAR_WITH_WORK' | 'MIXED' | null;
+  readonly knowledgeLevel: BriefAudienceKnowledgeLevel | null;
   readonly readerDescription: string | null;
   readonly selectionNeed: string | null;
 }
@@ -489,11 +491,7 @@ function audience(value: unknown): BriefAudience {
     knowledgeLevel:
       value.knowledgeLevel === null
         ? null
-        : enumeration(value.knowledgeLevel, [
-            'NEW_TO_WORK',
-            'FAMILIAR_WITH_WORK',
-            'MIXED',
-          ] as const),
+        : enumeration(value.knowledgeLevel, BRIEF_AUDIENCE_KNOWLEDGE_LEVELS),
     readerDescription: text(value.readerDescription, true),
     selectionNeed: text(value.selectionNeed, true),
   });

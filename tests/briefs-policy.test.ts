@@ -87,6 +87,27 @@ describe('M3 Issue 024 profile and readiness policy', () => {
     ).toBe('EXPERIMENT_MISMATCH');
   });
 
+  it('blocks only the missing knowledge level and returns to ready after a legal selection', () => {
+    const ready = readyBriefDraft('NON_SPOILER_SINGLE_BOOK_VERDICT');
+    const incomplete = assertContentBriefDraft({
+      ...ready,
+      targetAudience: { ...ready.targetAudience, knowledgeLevel: null },
+    });
+    expect(evaluateBriefReadiness(incomplete, readyBriefContext())).toMatchObject({
+      reasonCodes: ['TARGET_AUDIENCE_INCOMPLETE'],
+      status: 'DRAFT_INCOMPLETE',
+    });
+    expect(
+      evaluateBriefReadiness(
+        assertContentBriefDraft({
+          ...incomplete,
+          targetAudience: { ...incomplete.targetAudience, knowledgeLevel: 'NEW_TO_WORK' },
+        }),
+        readyBriefContext(),
+      ),
+    ).toMatchObject({ reasonCodes: [], status: 'READY_FOR_DRAFT_GENERATION' });
+  });
+
   it('requires both verified web and published forms for the form-comparison profile', () => {
     const valid = readyBriefDraft('WEB_VS_PUBLISHED_MYSTERY');
     const invalid = assertContentBriefDraft({

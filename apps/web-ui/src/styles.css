@@ -4104,6 +4104,23 @@ fieldset.wizard-step {
   padding: 0.3rem 0.48rem;
 }
 
+.brief-readiness-reasons__focus {
+  background: transparent;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 0.14rem;
+}
+
+.brief-readiness-reasons__focus:focus-visible {
+  border-radius: 3px;
+  outline: 2px solid currentcolor;
+  outline-offset: 2px;
+}
+
 .brief-constraint-grid {
   display: grid;
   gap: 0.7rem;

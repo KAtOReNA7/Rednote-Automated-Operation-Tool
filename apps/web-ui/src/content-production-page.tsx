@@ -1,12 +1,13 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import type {
-  BriefActionPreview,
-  BriefDetailView,
-  BriefListView,
-  ContentBriefDraft,
-  PreviewBriefActionInput,
-  TopicPoolItem,
+import {
+  type BriefAudienceKnowledgeLevel,
+  type BriefActionPreview,
+  type BriefDetailView,
+  type BriefListView,
+  type ContentBriefDraft,
+  type PreviewBriefActionInput,
+  type TopicPoolItem,
 } from '@mystery-operations/shared';
 
 import { CopyWorkbench } from './copy-workbench.js';
@@ -43,6 +44,12 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   UNDO: '恢复历史版本',
   UNLOCK_FIELD: '解锁字段',
 };
+
+const KNOWLEDGE_LEVEL_LABELS = {
+  NEW_TO_WORK: '首次接触：尚不了解作品',
+  FAMILIAR_WITH_WORK: '熟悉作品：已了解主要内容',
+  MIXED: '混合读者：同时兼顾新老读者',
+} satisfies Readonly<Record<BriefAudienceKnowledgeLevel, string>>;
 
 const PROFILE_ORDER = [
   'NON_SPOILER_SINGLE_BOOK_VERDICT',
@@ -91,6 +98,7 @@ export function ContentProductionPage(): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [preview, setPreview] = useState<BriefActionPreview | null>(null);
   const [scaffoldTopics, setScaffoldTopics] = useState<readonly TopicPoolItem[]>([]);
+  const knowledgeLevelRef = useRef<HTMLSelectElement>(null);
 
   const loadList = useCallback(async () => {
     const method = window.rednoteDesktop?.getBriefs;
@@ -264,6 +272,31 @@ export function ContentProductionPage(): React.JSX.Element {
     },
     [],
   );
+
+  const updateKnowledgeLevel = useCallback((value: string) => {
+    const knowledgeLevel = Object.hasOwn(KNOWLEDGE_LEVEL_LABELS, value)
+      ? (value as BriefAudienceKnowledgeLevel)
+      : null;
+    setDraft((current) =>
+      current === null
+        ? current
+        : {
+            ...current,
+            targetAudience: {
+              ...current.targetAudience,
+              knowledgeLevel,
+            },
+          },
+    );
+    setPreview(null);
+  }, []);
+
+  const focusKnowledgeLevel = useCallback(() => {
+    const control = knowledgeLevelRef.current;
+    if (control === null) return;
+    control.scrollIntoView?.({ block: 'center' });
+    control.focus();
+  }, []);
 
   const updateArgument = useCallback(
     (
@@ -789,6 +822,26 @@ export function ContentProductionPage(): React.JSX.Element {
                   />
                 </label>
                 <label>
+                  <span id="brief-knowledge-level-label">读者知识水平</span>
+                  <select
+                    aria-describedby="brief-knowledge-level-description"
+                    aria-labelledby="brief-knowledge-level-label"
+                    onChange={(event) => updateKnowledgeLevel(event.target.value)}
+                    ref={knowledgeLevelRef}
+                    value={draft.targetAudience.knowledgeLevel ?? ''}
+                  >
+                    <option value="">请选择（不会自动设置）</option>
+                    {Object.entries(KNOWLEDGE_LEVEL_LABELS).map(([knowledgeLevel, label]) => (
+                      <option key={knowledgeLevel} value={knowledgeLevel}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                  <small id="brief-knowledge-level-description">
+                    用于控制文案对作品背景与诡计知识的预设程度。
+                  </small>
+                </label>
+                <label>
                   <span>选择需求</span>
                   <textarea
                     onChange={(event) =>
@@ -1237,7 +1290,20 @@ export function ContentProductionPage(): React.JSX.Element {
                   </div>
                   <ul>
                     {detail.readinessReasonCodes.map((reason) => (
-                      <li key={reason}>{reason}</li>
+                      <li key={reason}>
+                        {reason === 'TARGET_AUDIENCE_INCOMPLETE' &&
+                        draft.targetAudience.knowledgeLevel === null ? (
+                          <button
+                            className="brief-readiness-reasons__focus"
+                            onClick={focusKnowledgeLevel}
+                            type="button"
+                          >
+                            读者知识水平未填写
+                          </button>
+                        ) : (
+                          reason
+                        )}
+                      </li>
                     ))}
                   </ul>
                   <p>低覆盖度、事实冲突或 stale 的简报不能进入未来正文生成。</p>

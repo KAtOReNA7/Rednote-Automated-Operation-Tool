@@ -1,5 +1,6 @@
 export {
   BRIEF_ACTIONS,
+  BRIEF_AUDIENCE_KNOWLEDGE_LEVELS,
   BRIEF_DEPENDENCY_TYPES,
   BRIEF_EXPRESSION_MODES,
   BRIEF_FIELD_LOCKS,
@@ -22,6 +23,7 @@ export {
   CONTENT_BRIEF_SCHEMA_VERSION,
   SYSTEM_FORBIDDEN_EXPRESSIONS,
   type BriefAction,
+  type BriefAudienceKnowledgeLevel,
   type BriefDependencyType,
   type BriefExpressionMode,
   type BriefFieldLockState,

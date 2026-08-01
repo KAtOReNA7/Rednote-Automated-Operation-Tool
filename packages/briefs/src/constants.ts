@@ -36,6 +36,13 @@ export type BriefReadinessStatus = (typeof BRIEF_READINESS_STATUSES)[number];
 export const BRIEF_SCORE_KINDS = ['NONE', 'PERSONAL_SCORE', 'RESEARCH_ANALYSIS_SCORE'] as const;
 export type BriefScoreKind = (typeof BRIEF_SCORE_KINDS)[number];
 
+export const BRIEF_AUDIENCE_KNOWLEDGE_LEVELS = [
+  'NEW_TO_WORK',
+  'FAMILIAR_WITH_WORK',
+  'MIXED',
+] as const;
+export type BriefAudienceKnowledgeLevel = (typeof BRIEF_AUDIENCE_KNOWLEDGE_LEVELS)[number];
+
 export const BRIEF_EXPRESSION_MODES = ['PERSONAL_EXPERIENCE', 'PUBLIC_RESEARCH_ANALYSIS'] as const;
 export type BriefExpressionMode = (typeof BRIEF_EXPRESSION_MODES)[number];
 

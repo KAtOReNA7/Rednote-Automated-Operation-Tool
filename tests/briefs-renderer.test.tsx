@@ -178,6 +178,8 @@ describe('M3 Issue 024 content production renderer', () => {
     expect(screen.getByText('个人评分、资料分析评分与内部预测严格隔离')).toBeInTheDocument();
     expect(screen.getByText('绑定只约束结构；不代表效果、显著性或 winner')).toBeInTheDocument();
     expect(screen.getByText('公开资料整理或资料分析评分不代表个人阅读体验。')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '读者知识水平' })).toHaveValue('MIXED');
+    expect(screen.getByRole('button', { name: '预览手工 Draft' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Undo 到此版本' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '克隆为新 Draft' })).toBeEnabled();
     expect(screen.getByRole('button', { name: '预览取消' })).toBeEnabled();
@@ -267,5 +269,122 @@ describe('M3 Issue 024 content production renderer', () => {
       }),
     );
     expect(await screen.findByRole('heading', { name: '创建纯本地 scaffold' })).toBeInTheDocument();
+  });
+
+  it('keeps knowledge level explicit, focuses its precise blocker, and persists a legal choice', async () => {
+    const ready = detail();
+    const blocked: BriefDetailView = {
+      ...ready,
+      draft: {
+        ...ready.draft,
+        targetAudience: { ...ready.draft.targetAudience, knowledgeLevel: null },
+      },
+      readiness: 'DRAFT_INCOMPLETE',
+      readinessReasonCodes: ['TARGET_AUDIENCE_INCOMPLETE'],
+    };
+    const saved: BriefDetailView = {
+      ...blocked,
+      draft: {
+        ...blocked.draft,
+        targetAudience: {
+          ...blocked.draft.targetAudience,
+          knowledgeLevel: 'FAMILIAR_WITH_WORK',
+        },
+      },
+      readiness: 'READY_FOR_DRAFT_GENERATION',
+      readinessReasonCodes: [],
+      revision: blocked.revision + 1,
+      versionNumber: blocked.versionNumber + 1,
+    };
+    const previewBriefAction = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        expiresAt: '2026-08-01T13:30:00.000Z',
+        kind: 'SAVE_EDIT' as const,
+        preview: {
+          briefId: blocked.briefId,
+          changedFieldCount: 1,
+          expectedRevision: blocked.revision,
+          kind: 'SAVE_EDIT' as const,
+          readiness: 'READY_FOR_DRAFT_GENERATION' as const,
+          readinessReasonCodes: [],
+        },
+        previewHash: 'b'.repeat(64),
+        token: 'b'.repeat(43),
+      },
+    }));
+    const confirmBriefAction = vi.fn(async () => ({
+      ok: true as const,
+      value: { detail: saved, kind: 'SAVE_EDIT' as const },
+    }));
+    Object.defineProperty(window, 'rednoteDesktop', {
+      configurable: true,
+      value: {
+        confirmBriefAction,
+        getBrief: vi.fn(async () => ({ ok: true, value: blocked })),
+        getBriefs: vi.fn(async () => ({
+          ok: true,
+          value: {
+            counts: counts(),
+            items: [
+              {
+                briefId: blocked.briefId,
+                experimentBound: false,
+                profileId: blocked.profileId,
+                readiness: blocked.readiness,
+                revision: blocked.revision,
+                stale: false,
+                state: blocked.state,
+                topicId: blocked.topicId,
+                updatedAt: blocked.updatedAt,
+                versionNumber: blocked.versionNumber,
+              },
+            ],
+            limit: 100,
+            offset: 0,
+            total: 1,
+          },
+        })),
+        previewBriefAction,
+      } as unknown as DesktopBridge,
+    });
+
+    render(<ContentProductionPage />);
+    const knowledgeLevel = (await screen.findByRole('combobox', {
+      name: '读者知识水平',
+    })) as HTMLSelectElement;
+    expect(knowledgeLevel).toHaveValue('');
+    expect(Array.from(knowledgeLevel.options, (option) => option.value)).toEqual([
+      '',
+      'NEW_TO_WORK',
+      'FAMILIAR_WITH_WORK',
+      'MIXED',
+    ]);
+    const blocker = screen.getByRole('button', { name: '读者知识水平未填写' });
+    blocker.focus();
+    expect(blocker).toHaveFocus();
+    fireEvent.click(blocker);
+    expect(knowledgeLevel).toHaveFocus();
+
+    fireEvent.change(knowledgeLevel, { target: { value: 'FAMILIAR_WITH_WORK' } });
+    fireEvent.click(screen.getByRole('button', { name: '预览保存' }));
+    await waitFor(() =>
+      expect(previewBriefAction).toHaveBeenCalledWith(
+        expect.objectContaining({
+          briefId: blocked.briefId,
+          draft: expect.objectContaining({
+            targetAudience: expect.objectContaining({ knowledgeLevel: 'FAMILIAR_WITH_WORK' }),
+          }),
+          expectedRevision: blocked.revision,
+          kind: 'SAVE_EDIT',
+        }),
+      ),
+    );
+    fireEvent.click(await screen.findByRole('button', { name: '确认执行' }));
+    await waitFor(() => expect(screen.getByRole('button', { name: '预览结构生成' })).toBeEnabled());
+    expect(screen.getByRole('combobox', { name: '读者知识水平' })).toHaveValue(
+      'FAMILIAR_WITH_WORK',
+    );
+    expect(confirmBriefAction).toHaveBeenCalledTimes(1);
   });
 });

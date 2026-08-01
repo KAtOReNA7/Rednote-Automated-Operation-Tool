@@ -8,7 +8,11 @@ import type {
   ContentBriefDraft,
 } from '@mystery-operations/briefs';
 
-export type { BriefReadinessContext, ContentBriefDraft } from '@mystery-operations/briefs';
+export type {
+  BriefAudienceKnowledgeLevel,
+  BriefReadinessContext,
+  ContentBriefDraft,
+} from '@mystery-operations/briefs';
 
 export interface GetBriefsInput {
   readonly limit: number;

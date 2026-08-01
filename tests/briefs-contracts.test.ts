@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  BRIEF_AUDIENCE_KNOWLEDGE_LEVELS,
   BRIEF_PROFILE_IDS,
   BRIEF_READINESS_STATUSES,
   BRIEF_SCORE_KINDS,
@@ -21,6 +22,23 @@ describe('M3 Issue 024 Content Brief contracts', () => {
     expect(BRIEF_READINESS_STATUSES).toHaveLength(9);
     expect(BRIEF_SCORE_KINDS).toEqual(['NONE', 'PERSONAL_SCORE', 'RESEARCH_ANALYSIS_SCORE']);
     expect(JSON.stringify({ BRIEF_SCORE_KINDS })).not.toContain('INTERNAL_PREDICTION');
+  });
+
+  it('keeps one authoritative audience knowledge-level set and rejects unknown values', () => {
+    expect(BRIEF_AUDIENCE_KNOWLEDGE_LEVELS).toEqual(['NEW_TO_WORK', 'FAMILIAR_WITH_WORK', 'MIXED']);
+    const draft = readyBriefDraft('NON_SPOILER_SINGLE_BOOK_VERDICT');
+    expect(
+      assertContentBriefDraft({
+        ...draft,
+        targetAudience: { ...draft.targetAudience, knowledgeLevel: 'FAMILIAR_WITH_WORK' },
+      }).targetAudience.knowledgeLevel,
+    ).toBe('FAMILIAR_WITH_WORK');
+    expect(() =>
+      assertContentBriefDraft({
+        ...draft,
+        targetAudience: { ...draft.targetAudience, knowledgeLevel: 'EXPERT' },
+      }),
+    ).toThrow(/BRIEF_INVALID_CONTRACT/iu);
   });
 
   it('rejects unknown DTO fields and references outside the evidence allowlist', () => {
