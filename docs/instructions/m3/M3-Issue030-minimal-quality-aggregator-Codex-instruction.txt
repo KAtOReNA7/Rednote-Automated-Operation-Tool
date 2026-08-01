@@ -1,0 +1,212 @@
+M3 Issue 030 正式增量指令
+任务：Minimal Quality Readiness Aggregator 与缩减范围 M3 收口
+
+一、唯一目标
+
+在当前绿色 main 基线上，实现一个纯读取、即时派生、无写副作用的极简质量聚合器：为当前精确 DraftVersion 汇总七类质量输入，显示状态、原因和人工下一步；完成后创建提交、普通 push，并以精确远端 HEAD 的 Windows 托管 CI 全绿作为 M3 收口门禁。
+
+不得实施 029B、正式审批、视觉、发布包、导出、发布或 M4 其他能力。
+
+先完整阅读仓库根 AGENTS.md。动态解析仓库根、分支、HEAD、远端、CI 和文件位置；不得使用本机绝对路径、预置 SHA、附件 hash、旧电脑目录或换行作为门禁。
+
+二、Phase 0：绿色基线核验
+
+1. 动态盘点 main、worktree、staging、tracking、origin/main、ahead/behind 和最近提交语义。
+2. 只允许在本地/tracking/实际远端 0/0、工作树干净、当前远端已包含 Issue 029A 且 required Windows CI 全绿的基线上开工。
+3. run 30696583832 仅为线索；必须动态确认当前远端 HEAD 的 normal、capacity、source/packaged Electron smoke、build、package、audit 和清理均成功。
+4. 若远端推进、分叉、未知提交、脏工作树、用户文件或 CI 非绿色，立即停止，不 pull、merge、rebase、reset、amend、push 或自行处理。
+5. Phase 0 不运行本地门禁。
+
+三、产品边界与诚实声明
+
+Issue 030 v1 只能声明：
+
+“已读取当前 DraftVersion 的已保存、exact-current 质量结果，并即时派生质量就绪建议和人工下一步。”
+
+不得声明：
+
+- 自动统一运行或重试全部检查；
+- 语义内部一致性已经检查或通过；
+- Draft 已审批、可导出、可发布；
+- 聚合结果是新的权威业务状态；
+- 快速/重点候选等于正式审批层级。
+
+029B 保持 `DEFERRED`。极简聚合器不能把其缺失伪装成 PASS，也不能让该缺口永久阻断人工重点审批候选。
+
+四、唯一允许的七类输入
+
+使用固定 allowlist：
+
+1. `STRUCTURED_OUTPUT`：Issue 025 当前结构事实。
+2. `FACT_MAPPING`：Issue 026 已保存 exact-current 结果。
+3. `READING_AUTHENTICITY`：Issue 027 已保存 exact-current 结果。
+4. `SPOILER`：Issue 028 已保存 exact-current 结果。
+5. `DUPLICATION`：Issue 029A 已保存 exact-current 结果。
+6. `TITLE_BODY_CONSISTENCY`：Issue 029A 已保存 exact-current 结果。
+7. `INTERNAL_CONSISTENCY`：capability=`DEFERRED_029B`，当前为 `NOT_RUN`。
+
+AI 标识、AI 参与程度、版权风险、版权判断、成本、预算、平台账号状态和隐藏优先级均不在聚合输入中。
+
+五、状态规范化
+
+统一 renderer-safe 子状态：`PASS / BLOCKED / REVIEW_REQUIRED / STALE / NOT_RUN`。
+
+1. Fact Mapping：`FACT_BLOCKED -> BLOCKED`；`AWAITING_REVIEW -> REVIEW_REQUIRED`；`UNCHECKED -> NOT_RUN`。
+2. Reading Authenticity、Spoiler、Duplication、Title/Body 使用各自已保存五态。
+3. Structure 从当前 DraftVersion、结构校验与 invalidation 派生，不写第二份摘要。
+4. `INTERNAL_CONSISTENCY=NOT_RUN` 只有 capability 明确为 `DEFERRED_029B` 时映射为重点人工复核；未来若 029B 启用但未运行，则必须是不完整。
+5. preview evaluation、未 confirm 的临时结果和 renderer 本地状态均不得提升为 saved PASS。
+6. checker/policy/version/input identity 不匹配或相关 invalidation 存在时，旧结果为 STALE。
+7. 未知枚举、读取错误或当前 Draft 身份不确定必须 fail closed，绝不能默认 PASS。
+
+六、四类聚合状态
+
+聚合状态只是即时建议，不写入 Draft/ContentStatus：
+
+1. `STALE_OR_INCOMPLETE`
+   - 当前 Draft 身份不可用；或任一已具备能力的必要检查为 STALE/NOT_RUN/UNCHECKED。
+   - 优先级最高；UI 仍保留其他 blocker/review 原因，不能吞掉。
+2. `BLOCKED_BY_QUALITY`
+   - 证据集合完整且至少一个当前、可证明的结果为 BLOCKED/FACT_BLOCKED。
+3. `REQUIRES_DETAILED_REVIEW`
+   - 无 blocker，但至少一个 REVIEW_REQUIRED；或 INTERNAL_CONSISTENCY 因 DEFERRED_029B 未运行；或当前内容带完整剧透/机关揭示等既有重点复核信号。
+4. `READY_FOR_FAST_APPROVAL`
+   - 所有必要输入 current、saved、PASS，且不存在任何重点复核信号。
+
+真实当前产品因 029B deferred 通常只能到 `REQUIRES_DETAILED_REVIEW`；可以用纯合成 policy fixture 证明 fast candidate 分支，但不得伪造产品中的 INTERNAL_CONSISTENCY PASS。
+
+七、严格只读架构
+
+推荐单向数据流：
+
+Copy Workbench refresh -> existing `copy:get` -> DesktopCopyRuntime.get -> current Draft detail -> QualityAggregateReadModel -> pure policy reducer -> renderer-safe DTO。
+
+必须：
+
+1. 复用唯一现有 `copy:get`；新增 IPC channel=0、preload 方法=0、route=0。
+2. 在 `CopyDraftDetailView` 增加只读 `qualityReadiness` 字段。
+3. main-process read model 直接读取各 repository 的 saved exact-current read model；不得调用 preview runtime、confirm、confirmation broker 或 token registry。
+4. 使用单次 SQLite 只读事务/一致快照，或读取前后 revision 二次校验；中途 Draft 改变则返回 stale/incomplete。
+5. 不保存 aggregate row、snapshot、hash 或 cache；每次 `copy:get` 即时派生。
+6. 不写 `quality_checks`、Draft、invalidations、jobs、approvals、post_packages、publications 或 audit 决策。
+7. 不调用模型、provider、Search、Fetch、图片、网络或文件写入。
+8. 不复用或扩写旧 core 二态 `applyQualityChecks`；它与当前五态/freshness/deferred capability 不兼容。
+
+八、最小 DTO 与 UI
+
+DTO 只包含：
+
+- schema version；
+- 当前 DraftVersion 的非秘密显示 identity、revision、状态；
+- 四选一 aggregate status；
+- 七个 source row：checkType、规范化状态、capability、有限 reason、用户摘要、nextAction；
+- blocker/review/stale/missing 数量；
+- advisory candidate：`FAST_CANDIDATE` 或 `FOCUSED_CANDIDATE`；
+- `canCreateApproval=false`、`canExport=false`、`canPublish=false`，或完全不提供动作。
+
+不得包含总分、概率、置信度、聚合 hash、子检查 input hash、digest、正文、raw payload、路径、token、SQL 或内部错误。
+
+在现有 Copy Workbench 增加一个质量总览卡，显示四类总状态、七项明细、原因和下一动作。只允许刷新/跳转到现有检查区域的提示；不得新增审批、跳过、导出、发布或“一键通过”按钮。
+
+文案必须使用：“可进入未来审批候选”“需要重点人工复核”“质量阻断”“结果陈旧或不完整”。禁止：“已审批”“全部质量通过”“可导出”“可发布”。
+
+九、错误与并发
+
+1. 数据库读取失败返回有限、脱敏的不可用 DTO；不泄漏 stack、SQL 或路径。
+2. 子检查 capability 不存在时：029B deferred 按设计进入 detailed review；其他必要能力缺失为 incomplete。
+3. renderer 断开不留下 token、lease、timer、listener 或待恢复写入。
+4. 聚合读取前后必须证明数据库相关表内容和行数不变。
+5. 不允许聚合器隐藏触发任何刷新、confirm、队列或模型 fallback。
+
+十、结构预算
+
+硬上限：
+
+- 生产源码新增不超过 650 LOC；
+- 测试新增不超过 500 LOC；
+- 变更文件不超过 16；
+- 新 IPC、preload method、route、package、dependency、table、trigger、migration、queue、worker、model、network、cost：全部 0。
+
+目标为生产 520—620 LOC、测试 400—480 LOC、14—16 文件。
+
+达到 80% 时停止可选文案、抽象和指标；达到 100% 只允许完成已写范围的根因修复。预计超过任一硬上限时停止并输出 `ISSUE030_SCOPE_BUDGET_BLOCKED`，不得提高预算、删测试或压缩语义伪装合规。
+
+十一、11 项验收
+
+I030-01 聚合绑定 current DraftVersion/revision，输入变化与 invalidation 后旧结果不参与 ready。
+I030-02 七类来源完整显示各自状态、原因和下一动作。
+I030-03 已具备能力的 STALE/NOT_RUN/UNCHECKED 永不映射 ready 或 review-pass。
+I030-04 blocker、review、缺失/陈旧按稳定优先级表驱动派生，并保留次级原因。
+I030-05 `INTERNAL_CONSISTENCY=NOT_RUN + DEFERRED_029B` 只进入 detailed review，不记 PASS，也不阻断聚合读取。
+I030-06 合成七项 current PASS 可证明 fast candidate；正式产品不伪造 internal PASS。
+I030-07 完整剧透即使 Spoiler PASS 仍映射 focused candidate，不自动快速审批。
+I030-08 聚合前后 quality_checks、Draft、invalidations、jobs、token registry、approvals、packages、publications 不变；模型/网络调用为 0。
+I030-09 继续使用 `copy:get`，新增 channel/preload=0；DTO 不泄漏 hash/raw payload/path/token。
+I030-10 UI 显示诚实状态与明细，无审批、导出、发布或绕过入口。
+I030-11 AI/版权变化不影响聚合；状态文档诚实记录 029B deferred、minimal 030 与 M4 边界。
+
+不得预填 PASS，不得用源码字符串搜索代替行为证据。
+
+十二、文件边界
+
+优先限制在设计报告列出的最多 16 个路径：
+
+- quality aggregate domain/index；
+- DB read model/index；
+- shared quality/copy contracts；
+- existing copy runtime；
+- existing Copy Workbench；
+- 三个测试文件；
+- 一个合并 ADR/验收文档；
+- README、AGENTS、Roadmap；
+- 本指令唯一归档。
+
+规范、架构决策、验收映射、最终证据与 M3 缩减收口说明合并至：
+
+`docs/adr/0026-quality-readiness-aggregator.md`
+
+不新增独立 contract、implementation plan、acceptance map、evidence、closeout 五份重复文件。不修复无关 docs 索引漂移，不修改历史指令。
+
+十三、验证策略
+
+1. 开发期只运行三个新测试文件或更小失败集合：policy、read-model/runtime、renderer。修复后精确复验，不设机械次数上限，不无修改盲跑。
+2. 稳定后运行一次静态 Issue 风险 normal：三项新测试，加直接相邻 Fact Mapping、Reading Authenticity、Spoiler、Copy Integrity、copy repository/runtime/renderer、hard constraints、forbidden architecture 和 repository documentation 测试。
+3. 首次风险集合失败后保存可观测身份；修复后只复验明确受影响文件，不盲目重跑整个集合。
+4. capacity=N/A；聚合无新容量路径，不新增计时型容量测试。
+5. 运行变更文件 format/lint、一次 typecheck、一次 build、一次 Electron source smoke 和 `git diff --check`。
+6. source smoke 验证现有 `copy:get` DTO、窗口安全、受控 PID、TCP、listener、端口和退出清理；外部业务连接=0。
+7. 本地不运行 npm ci、全仓 normal、独立 capacity、package、packaged smoke、Clipper/浏览器 smoke或 dependency audit。
+8. 聚合输出不可观测时，保存 stdout/stderr 与 JSON/JUnit 后，只允许对同一既定集合一次诊断重跑；之后精确修复。
+9. 不得 skip/todo/only、放宽 timeout/断言或删除失败测试。
+
+十四、Git、托管 CI 与 M3 收口
+
+1. 本地适用门禁通过后，检查 diff、预算、指令唯一性、敏感值、路径和零副作用。
+2. 创建恰好一个普通提交，建议：`feat(quality): add minimal readiness aggregator`。
+3. 普通 push main；禁止 force push、rebase、reset、amend、squash 或历史改写。
+4. 等待精确新远端 HEAD 的 required Windows CI；必须读取 normal、capacity、source/packaged smoke、build、desktop/clipper package、audit 和清理实际结果。
+5. CI 失败则停止并报告，不连续远端试错，不宣称 M3 收口。
+6. CI 全绿后确认本地/tracking/远端 0/0、工作树干净。
+7. 文档只允许诚实声明：
+   - Issues 022—028 complete；
+   - Issue 029A complete；
+   - original Issue 029 partial、029B deferred；
+   - minimal Issue 030 complete；
+   - M3 reduced-scope closeout；
+   - M4 未开始。
+8. 不创建 PR、不进入 M4、不实施 029B。
+
+十五、下一步固定为本地试运行
+
+Issue 030 与托管 CI PASS 后，下一步不是新增治理或直接开发 M4，而是单独授权一次受控本地内容试运行：
+
+- 使用合法、用户主动选择的本地内容；
+- 模型、真实 API、费用和平台动作保持 0；
+- 完成 Brief -> 手工 Draft -> 保存各检查 -> 聚合卡；
+- 验证修改 Draft 后旧结果 stale；
+- 记录 detailed review 实际耗时、029B 缺口和聚合器帮助程度；
+- 到 fast/focused candidate 即停止，不创建审批、发布包或发布。
+
+最终反馈必须报告：11/11 验收、预算、零副作用、Git/CI、M3 缩减收口、029B deferred、未进入 M4，以及下一步仅为受控本地试运行。
+
+现在开始：核验绿色基线，只实施极简 Issue 030；完成并通过精确托管 CI 后收口 M3。

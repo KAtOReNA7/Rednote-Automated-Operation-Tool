@@ -14,5 +14,6 @@ export * from './mapping.js';
 export * from './manual.js';
 export * from './rollup.js';
 export * from './reading-authenticity.js';
+export * from './quality-aggregate.js';
 export * from './spoiler.js';
 export * from './statements.js';

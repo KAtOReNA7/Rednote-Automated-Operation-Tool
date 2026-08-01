@@ -27,6 +27,13 @@ const STATUS_LABELS: Readonly<Record<string, string>> = {
   SUPERSEDED: '已有后续版本',
 };
 
+const QUALITY_STATUS_LABELS = {
+  BLOCKED_BY_QUALITY: '质量阻断',
+  READY_FOR_FAST_APPROVAL: '可进入未来审批候选',
+  REQUIRES_DETAILED_REVIEW: '需要重点人工复核',
+  STALE_OR_INCOMPLETE: '结果陈旧或不完整',
+} as const;
+
 function executionId(): string {
   return `copy-execution-${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
 }
@@ -440,7 +447,8 @@ export function CopyWorkbench(): React.JSX.Element {
 
       <div className="copy-boundaries">
         <strong>仍需后续检查</strong>
-        <span>事实、真实性、剧透、重复度与标题正文一致性尚未检查。</span>
+        <span>新 Draft 的事实、真实性、剧透、重复度与标题正文一致性尚未检查。</span>
+        <span>质量总览只读取当前 DraftVersion 已保存的检查结果，不会自动运行或确认检查。</span>
         <span>局部重写不会修改选择范围以外或已锁定的字段。</span>
         <span>公开资料整理或资料分析评分不是个人体验。</span>
         <span>完整剧透允许，但警告文本必须齐全。</span>
@@ -681,6 +689,54 @@ export function CopyWorkbench(): React.JSX.Element {
                   experiment：
                   {draft.brief.experimentBinding === null ? '未绑定' : '已绑定（不代表已有结果）'}
                 </span>
+              </section>
+
+              <section className="copy-lock-card" aria-label="质量就绪总览">
+                <strong>Minimal Quality Readiness · 只读总览</strong>
+                {detail.qualityReadiness === undefined ? (
+                  <>
+                    <span>结果陈旧或不完整</span>
+                    <small>当前响应尚无聚合结果；请刷新当前 Draft 详情。</small>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      {QUALITY_STATUS_LABELS[detail.qualityReadiness.status]} · 建议候选：
+                      {detail.qualityReadiness.advisoryCandidate ?? '暂无'}
+                    </span>
+                    <small>
+                      阻断 {detail.qualityReadiness.counts.blocker} · 复核{' '}
+                      {detail.qualityReadiness.counts.review} · 陈旧{' '}
+                      {detail.qualityReadiness.counts.stale} · 缺失{' '}
+                      {detail.qualityReadiness.counts.missing}
+                    </small>
+                    <ol>
+                      {detail.qualityReadiness.sources.map((source) => (
+                        <li key={source.checkType}>
+                          <strong>
+                            {source.checkType} · {source.status}
+                          </strong>
+                          <span>{source.summary}</span>
+                          <small>
+                            {source.reason} · {source.nextAction}
+                          </small>
+                        </li>
+                      ))}
+                    </ol>
+                    <small>
+                      这是即时建议，不是权威业务状态；不能创建审批、导出或发布。029B 保持 DEFERRED。
+                    </small>
+                  </>
+                )}
+                <div>
+                  <button
+                    disabled={busy}
+                    onClick={() => void loadDetail(detail.draftId)}
+                    type="button"
+                  >
+                    刷新质量总览
+                  </button>
+                </div>
               </section>
 
               <section className="copy-lock-card" aria-label="真实性与评分检查">

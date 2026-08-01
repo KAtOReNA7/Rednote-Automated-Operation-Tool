@@ -19,6 +19,7 @@ import {
   SqliteBriefRepository,
   SqliteCopyIntegrityRepository,
   SqliteCopyRepository,
+  SqliteQualityAggregateReadModel,
   type CopyIntegrityPreparedCheck,
 } from '@mystery-operations/db';
 import {
@@ -150,6 +151,7 @@ export class DesktopCopyRuntime {
   readonly #integrityConfirmations: CopyConfirmationBroker<CopyIntegrityRuntimePayload>;
   readonly #integrityRepository: SqliteCopyIntegrityRepository;
   readonly #queue: JobQueueService;
+  readonly #qualityReadiness: SqliteQualityAggregateReadModel;
   readonly #repository: SqliteCopyRepository;
   readonly #worker: JobWorker;
   #workerPromise: Promise<void> | null = null;
@@ -165,6 +167,7 @@ export class DesktopCopyRuntime {
     this.#briefs = new SqliteBriefRepository(database);
     this.#repository = new SqliteCopyRepository(database);
     this.#integrityRepository = new SqliteCopyIntegrityRepository(database);
+    this.#qualityReadiness = new SqliteQualityAggregateReadModel(database);
     this.#repository.recoverInterrupted(this.#clock().toISOString());
     const registry = new JobHandlerRegistry();
     registerCopyMutationJobs(
@@ -200,7 +203,14 @@ export class DesktopCopyRuntime {
   }
 
   public get(input: GetCopyDraftInput): CopyDraftDetailView {
-    return this.#repository.get(input.draftId, input);
+    const result = this.#qualityReadiness.get(input.draftId, {
+      now: this.#clock().toISOString(),
+      runLimit: input.runLimit,
+      runOffset: input.runOffset,
+      versionLimit: input.versionLimit,
+      versionOffset: input.versionOffset,
+    });
+    return Object.freeze({ ...result.detail, qualityReadiness: result.qualityReadiness });
   }
 
   public diff(input: DiffCopyDraftVersionsInput): CopyDraftVersionDiffView {

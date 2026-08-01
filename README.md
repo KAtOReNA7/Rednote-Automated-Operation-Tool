@@ -2,9 +2,9 @@
   <a href="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml">
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
-  <img alt="M3 in progress" src="https://img.shields.io/badge/M3-进行中-ff2442" />
-  <img alt="Issues 001–028 completed" src="https://img.shields.io/badge/已完成-Issues%20001--028-2ea44f" />
-  <img alt="Next M3 Issue 029B" src="https://img.shields.io/badge/下一步-M3%20Issue%20029B-ff8a00" />
+  <img alt="M3 reduced scope closeout" src="https://img.shields.io/badge/M3-缩减范围收口-2ea44f" />
+  <img alt="Minimal Issue 030 completed" src="https://img.shields.io/badge/已完成-029A%20%2B%20Minimal%20030-2ea44f" />
+  <img alt="Next controlled local trial" src="https://img.shields.io/badge/下一步-受控本地试运行-ff8a00" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
 </p>
@@ -31,16 +31,16 @@
 | 你想知道的                   | 当前答案                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------- |
 | **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认 |
-| **做到哪一步？**             | M0、M1、M2 已完成；M3 已完成 Issue 028 与 Issue 029A 确定性 Copy Integrity 子集 |
-| **下一步是什么？**           | M3 Issue 029（029B，需另行授权，尚未开始）                                      |
+| **做到哪一步？**             | M0—M2 已完成；M3 以 029A + Minimal Issue 030 完成缩减范围收口                   |
+| **下一步是什么？**           | 另行授权一次零模型、零平台动作的受控本地内容试运行                              |
 | **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                              |
 | **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                        |
 | **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                      |
 
 > [!TIP]
 > 里程碑快照：M1（Issue 006—011）与 M2（Issue 012—021）均已完成验收；M3 已完成
-> Issue 028；Issue 029A 确定性子集已完成，原 Issue 029 仍为部分完成，下一项仅规划
-> Issue 029（029B）。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
+> Issue 028；Issue 029A 确定性子集与 Minimal Issue 030 已完成。原 Issue 029 仍为部分完成，
+> 029B 保持 deferred；M3 只按缩减范围收口，M4 尚未开始。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
 > `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`，且外部请求数为 0。
 > Fetch 只处理研究流程明确选择的单个已持久化候选；结果仍是
 > `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`，不会自动入队或升级为事实。Issue 019
@@ -65,8 +65,9 @@
 > 有限规则未发现复核证据，仍不代表全文语义安全、整体质量通过或发布许可。Issue 029A 进一步
 > 增加 exact duplicate、有限 overlap 候选和标题/正文 authoritative lineage 检查，只追加
 > `DUPLICATION / TITLE_BODY_CONSISTENCY` 两类摘要；`INTERNAL_CONSISTENCY` 明确保持
-> `NOT_RUN`。语义矛盾、同质化与完整标题语义判断属于未实施的 029B；Issue 030、图片、审批、
-> 导出和发布也未实施。
+> `NOT_RUN`。语义矛盾、同质化与完整标题语义判断属于未实施的 029B。Minimal Issue 030 只经现有
+> `copy:get` 即时读取七项 saved exact-current 状态，显示质量建议与人工下一步；它不会自动运行检查、
+> 改写 Draft、创建审批、导出或发布。图片、正式审批、发布包与导出仍未实施。
 > 其后的治理专项只用完全合成材料接通
 > `Work → SourceRevision → Dossier → Topic → Brief → Draft → Fact Mapping` 最小本地闭环；
 > 每个下游步骤仍由用户在既有工作台分别预览、确认或手工填写，不是自动内容流水线。
@@ -81,9 +82,9 @@
 flowchart LR
     M0["M0<br/>Issue 001–005<br/>基础与硬约束"] --> M1["M1<br/>Issue 006–011<br/>本地应用基础设施"]
     M1 --> M2["M2<br/>Issue 012–021<br/>模型、搜索、书库与研究"]
-    M2 --> M3["M3<br/>Issue 022–028 + 029A<br/>Issue 029 部分完成"]
-    M3 --> NEXT["NEXT<br/>M3 Issue 029B<br/>需另行授权"]
-    NEXT -.-> FUTURE["M3–M6<br/>内容、视觉、运营与发布"]
+    M2 --> M3["M3<br/>022–028 + 029A + Minimal 030<br/>缩减范围收口"]
+    M3 --> NEXT["NEXT<br/>受控本地内容试运行<br/>需另行授权"]
+    NEXT -.-> FUTURE["M4–M6<br/>视觉、审批、运营与发布"]
 
     classDef done fill:#fff0f2,stroke:#ff2442,color:#111,stroke-width:2px;
     classDef active fill:#ff2442,stroke:#ff2442,color:#fff,stroke-width:2px;
@@ -91,45 +92,46 @@ flowchart LR
     classDef future fill:#f6f6f6,stroke:#b8b8b8,color:#666,stroke-dasharray:5 5;
 
     class M0,M1,M2 done;
-    class M3 active;
+    class M3 done;
     class NEXT next;
     class FUTURE future;
 ```
 
-| 里程碑 | Issue 范围 | 交付主题                               | 状态                    |
-| ------ | ---------: | -------------------------------------- | :---------------------- |
-| M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**              |
-| M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**              |
-| M2     |    012–021 | 模型接口、搜索、书库与研究             | **已完成 · 10/10**      |
-| M3     |    022–030 | 选题、实验、文案与质量门禁             | **进行中 · 7/9 + 029A** |
-| M4–M6  |       后续 | 视觉、审批、导出、运营与发布           | **未开始**              |
+| 里程碑 | Issue 范围 | 交付主题                               | 状态               |
+| ------ | ---------: | -------------------------------------- | :----------------- |
+| M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**         |
+| M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**         |
+| M2     |    012–021 | 模型接口、搜索、书库与研究             | **已完成 · 10/10** |
+| M3     |    022–030 | 选题、实验、文案与质量门禁             | **缩减范围已收口** |
+| M4–M6  |       后续 | 视觉、审批、导出、运营与发布           | **未开始**         |
 
 ### 最近完成
 
-| Issue | 能力                                                        |      状态      |
-| ----: | ----------------------------------------------------------- | :------------: |
-|   012 | 供应商无关的文本、结构化、视觉与图片模型接口                |     已完成     |
-|   013 | 用户显式预览、预算确认、串行无重试的 Provider 能力探测      |     已完成     |
-|   014 | 模型执行幂等、本地结果缓存、成本账本、预算预留与恢复语义    |     已完成     |
-|   015 | 统一 `SearchProvider`、候选归一化、持久限速与 SearchRun     |     已完成     |
-|   016 | 候选绑定、SSRF/DNS/robots/限速、HTML 净化与离线快照         |     已完成     |
-|   017 | Chrome / Edge MV3 公开页面样本收藏与本地只读查看            |   **已完成**   |
-|   018 | 三级书目、分层发现、保守实体消歧与可逆人工决策              |   **已完成**   |
-|   019 | 版本化来源、原子事实、精确证据、事实策略与冲突处理          |   **已完成**   |
-|   020 | 版本化研究档案、确定性覆盖度、精确失效与显式增量重建        |   **已完成**   |
-|   021 | 六态阅读真实性、R2 逐条确认、表达/评分权限与剧透政策        |   **已完成**   |
-|   022 | 五类 Topic Pool、可解释排序、状态控制与 First-30 配额       |   **已完成**   |
-|   023 | 可检验单变量实验、跨作品复现、确定性分配与版本状态          |   **已完成**   |
-|   024 | 五类结构化 Brief、证据映射、字段锁定、就绪门与受控生成      |   **已完成**   |
-|   025 | 五类版本化文案、实际剧透警告、局部重写、结构门与工作台      |   **已完成**   |
-|   026 | 原子 Statement、事实映射、证据回溯、人工复核与质量汇总      |   **已完成**   |
-|   027 | 阅读真实性、公开评分来源、五态摘要与文案工作台检查          |   **已完成**   |
-|   028 | 确定性剧透声明、警告 surface、窄候选定位与五态摘要          |   **已完成**   |
-|  029A | exact duplicate、有限 overlap、标题/正文 lineage 与两类摘要 | **子集已完成** |
+| Issue | 能力                                                        |       状态       |
+| ----: | ----------------------------------------------------------- | :--------------: |
+|   012 | 供应商无关的文本、结构化、视觉与图片模型接口                |      已完成      |
+|   013 | 用户显式预览、预算确认、串行无重试的 Provider 能力探测      |      已完成      |
+|   014 | 模型执行幂等、本地结果缓存、成本账本、预算预留与恢复语义    |      已完成      |
+|   015 | 统一 `SearchProvider`、候选归一化、持久限速与 SearchRun     |      已完成      |
+|   016 | 候选绑定、SSRF/DNS/robots/限速、HTML 净化与离线快照         |      已完成      |
+|   017 | Chrome / Edge MV3 公开页面样本收藏与本地只读查看            |    **已完成**    |
+|   018 | 三级书目、分层发现、保守实体消歧与可逆人工决策              |    **已完成**    |
+|   019 | 版本化来源、原子事实、精确证据、事实策略与冲突处理          |    **已完成**    |
+|   020 | 版本化研究档案、确定性覆盖度、精确失效与显式增量重建        |    **已完成**    |
+|   021 | 六态阅读真实性、R2 逐条确认、表达/评分权限与剧透政策        |    **已完成**    |
+|   022 | 五类 Topic Pool、可解释排序、状态控制与 First-30 配额       |    **已完成**    |
+|   023 | 可检验单变量实验、跨作品复现、确定性分配与版本状态          |    **已完成**    |
+|   024 | 五类结构化 Brief、证据映射、字段锁定、就绪门与受控生成      |    **已完成**    |
+|   025 | 五类版本化文案、实际剧透警告、局部重写、结构门与工作台      |    **已完成**    |
+|   026 | 原子 Statement、事实映射、证据回溯、人工复核与质量汇总      |    **已完成**    |
+|   027 | 阅读真实性、公开评分来源、五态摘要与文案工作台检查          |    **已完成**    |
+|   028 | 确定性剧透声明、警告 surface、窄候选定位与五态摘要          |    **已完成**    |
+|  029A | exact duplicate、有限 overlap、标题/正文 lineage 与两类摘要 |  **子集已完成**  |
+|   030 | 七项 saved exact-current 只读聚合、人工建议与零写副作用     | **极简版已完成** |
 
 > [!NOTE]
-> “下一步”只表示路线图顺序，不表示已经开始开发。原 Issue 029 仅部分完成；下一项仅规划
-> Issue 029（029B），需另行授权，仓库不会自动进入。Issue 030 未实施。
+> 原 Issue 029 仅部分完成，029B 保持 deferred。Minimal Issue 030 不补做语义内部一致性，也不
+> 推进 Draft/审批状态。下一步固定为另行授权的受控本地内容试运行，不自动进入 029B 或 M4。
 > 当前额外完成的是不新增业务表、trigger、package 或质量类型的最小垂直切片验证，不计作
 > Issue 027 业务范围。普通测试与容量测试现使用静态零重叠集合；长任务会持久记录 stdout/stderr、结构化结果、
 > 起止时间与真实 exit code，该治理收口同样不改变产品能力。
@@ -139,22 +141,22 @@ flowchart LR
 | 已经具备                                                                    | 尚未接通                                                  |
 | --------------------------------------------------------------------------- | --------------------------------------------------------- |
 | 安全的 Electron + React 中文桌面壳                                          | 内容工作流中的真实 Provider wiring                        |
-| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                          | 视觉内容生产与正式质量工作流                              |
+| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                          | 视觉内容生产与正式审批工作流                              |
 | 支持暂停、取消、租约和重启恢复的持久化任务队列                              | M3 的质量编排、人工审批与导出                             |
-| 受控 ProjectDataRoot、本地文件仓库、中文/空格/长路径                        | 质量编排、审批、排期、发布包与复盘                        |
+| 受控 ProjectDataRoot、本地文件仓库、中文/空格/长路径                        | 正式审批、排期、发布包与复盘                              |
 | 本机设置、凭据引用、脱敏诊断与默认关闭的 `127.0.0.1` 本地 API               | 面向最终用户的安装器、自动更新与正式发布版本              |
 | Provider-neutral 接口、显式能力探测、统一 usage、有限重试与 Scripted Mock   | 小红书自动登录、发布、评论、私信、验证码或风控处理        |
 | 模型执行幂等、本地结果缓存、singleflight、成本账本与预算控制                | 任何未经用户显式授权的真实模型、搜索、图片或付费 API 调用 |
 | 五类 SearchProvider、URL/domain 归一化、SearchRun、持久限速和被动本地输入   | Search API 生产 codec、浏览器插件业务                     |
 | 单候选受控 Fetch、DNS/socket 固定、robots、净化 HTML 与文本内容寻址快照     | 自动抓取、站点遍历、Source/Claim 或把抓取结果当作证据     |
-| Work / Expression / Edition 三级书目、分层 Coverage 与可逆实体决策          | 质量编排、审批、排期与发布                                |
-| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计   | 剧透、一致性与整体质量编排                                |
+| Work / Expression / Edition 三级书目、分层 Coverage 与可逆实体决策          | 正式审批、排期与发布                                      |
+| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计   | 029B 语义一致性与正式质量审批                             |
 | 版本化 Dossier、共识/争议/缺口、整数 coverage、readiness 与精确增量重建     | 封面、图片或自动质量结论                                  |
 | 六态阅读真实性、R2 逐条观点、三类评分隔离、剧透策略与书库权限矩阵           | 自动发布、运营数据回收或策略复盘                          |
 | 五类 Topic Pool、确定性资格/排序/去重、状态控制与 10/8/6/3/3 配额计划       | 图片或质量流程                                            |
 | 单变量 Experiment、跨三本 Work 复现、热度分层、确定性 assignment 与版本历史 | 真实指标回收、效果/显著性/winner 与实验执行               |
 | 五类 Content Brief、Evidence 映射、真实性/评分/剧透约束、字段锁与就绪门     | 图片、事实检查、审批或发布                                |
-| 五类版本化 Copy、标题/正文/标签/评论、实际警告、lineage、锁与局部重写       | Issue 029—030 的后续质量检查、图片、审批、导出与发布      |
+| 五类版本化 Copy 与七项 saved exact-current 极简质量聚合                     | 029B、图片、正式审批、导出与发布                          |
 | FACT_MAPPING Statement、类型化 Claim 映射、证据链、精确失效与人工复核       | 整体质量通过、审批、导出或发布                            |
 | 阅读亲历与公开评分的五态检查、精确定位、幂等摘要与现有工作台区块            | 自动修文、评分预测公开、质量总分或流程推进                |
 | 剧透声明/警告确定性子集、FULL 放行、窄候选定位与精确 stale                  | 全文剧情理解、自动补警告、质量总分或流程推进              |
@@ -296,7 +298,7 @@ flowchart LR
 | `packages/experiments`  | 单变量合同、结构复现、热度分层、确定性 assignment 与状态 |
 | `packages/briefs`       | 五类 Brief、证据映射、真实性约束、字段锁、readiness      |
 | `packages/copy`         | 五类版本化文案、lineage、结构验证、字段锁与局部重写      |
-| `packages/quality`      | 事实映射与阅读真实性/公开评分的确定性质量检查            |
+| `packages/quality`      | 确定性质量检查与只读 Quality Readiness 聚合策略          |
 | `packages/shared`       | renderer / preload / main 共享 DTO                       |
 | `docs`                  | ADR、稳定合同、验收映射和安全证据                        |
 | `tests`                 | 领域、架构、SQLite、Electron、安全与回归测试             |
@@ -485,6 +487,8 @@ token、临时 SQLite 和本机 loopback；不读取真实密钥，
 - [Issue 028 V2 执行指令](./docs/instructions/m3/M3-Issue028-deterministic-spoiler-quality-subset-Codex-instruction-v2.txt)
 - [ADR 0025：Copy Integrity 确定性子集](./docs/adr/0025-copy-integrity-deterministic-subset.md)
 - [Issue 029A 执行指令](./docs/instructions/m3/M3-Issue029A-deterministic-copy-integrity-Codex-instruction.txt)
+- [ADR 0026：Minimal Quality Readiness Aggregator](./docs/adr/0026-quality-readiness-aggregator.md)
+- [Minimal Issue 030 执行指令](./docs/instructions/m3/M3-Issue030-minimal-quality-aggregator-Codex-instruction.txt)
 - [最小本地垂直切片验收证据](./docs/evidence/m3-minimal-local-vertical-slice-evidence.md)
 - [Issue 027 前验证可靠性盘点](./docs/reviews/m3-validation-reliability-plan.md)
 
@@ -504,5 +508,5 @@ token、临时 SQLite 和本机 loopback；不读取真实密钥，
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  M3 Issue 022–028 与 Issue 029A 已完成；原 Issue 029 仍为部分完成，029B 与 Issue 030 未实施。
+  M3 已按 Issue 022–028、029A 与 Minimal 030 缩减范围收口；原 Issue 029 仍部分完成，029B deferred，M4 未开始。
 </p>

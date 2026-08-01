@@ -50,13 +50,18 @@ function projectProgress(content: string): ProjectProgress | null {
 }
 
 describe('repository-facing documentation', () => {
-  it('keeps README, AGENTS and Roadmap on one continuous current/next Issue state', () => {
+  it('keeps README, AGENTS and Roadmap on the same reduced-scope M3 closeout state', () => {
     for (const [path, content] of [
       ['README.md', readme],
       ['AGENTS.md', agents],
       ['docs/product/xiaohongshu-development-roadmap-v1.md', roadmap],
     ] as const) {
-      expect(projectProgress(content), path).toEqual({ completedThrough: 28, nextIssue: 29 });
+      expect(content, path).toMatch(/Issue 022[—–-]028/u);
+      expect(content, path).toMatch(/Issue 029A/u);
+      expect(content, path).toMatch(/Minimal\s+Issue 030/u);
+      expect(content, path).toMatch(/029B[\s\S]{0,100}?deferred/iu);
+      expect(content, path).toMatch(/M4[\s\S]{0,100}?未开始/u);
+      expect(content, path).toMatch(/下一步[\s\S]{0,120}?受控本地(?:内容)?试运行/u);
     }
     expect(readme).toContain('M1（Issue 006—011）');
     expect(readme).toContain('M2（Issue 012—021）均已完成验收');
@@ -134,7 +139,9 @@ describe('repository-facing documentation', () => {
       'docs/instructions/m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue029A-deterministic-copy-integrity-Codex-instruction.txt',
+      'docs/instructions/m3/M3-Issue030-minimal-quality-aggregator-Codex-instruction.txt',
       'docs/adr/0025-copy-integrity-deterministic-subset.md',
+      'docs/adr/0026-quality-readiness-aggregator.md',
       'docs/instructions/governance/Project-health-audit-after-Issue026-Codex-instruction.txt',
       'docs/instructions/governance/M3-project-control-recovery-phase1-Codex-instruction.txt',
       'docs/governance/validation-gate-matrix.md',

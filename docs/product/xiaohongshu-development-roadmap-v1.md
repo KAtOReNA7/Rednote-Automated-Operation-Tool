@@ -439,8 +439,9 @@ flowchart TD
 
 ## M3：选题、文案和质量门禁
 
-状态：**进行中**。Issue 022—028 与 Issue 029A 已完成；原 Issue 029 仍为部分完成。下一项仅规划需另行授权的 **M3 Issue 029（029B）**；
-Issue 030 未实施，未收到明确任务时不得自动开始。
+状态：**缩减范围已收口**。Issue 022—028、Issue 029A 与 Minimal Issue 030 已完成；原 Issue 029
+仍为部分完成，029B 保持 deferred。Minimal 030 不实现语义内部一致性或正式审批；M4 未开始。
+下一步固定为需另行授权的受控本地内容试运行，不得自动进入 029B 或 M4。
 
 ### Issue 022：实现选题池与首批 30 篇配额
 
@@ -598,7 +599,7 @@ Issue 030 未实施，未收到明确任务时不得自动开始。
 状态：部分完成。Issue 029A 已完成 exact duplicate、有限 Unicode overlap 候选、
 authoritative lineage/title-body surface、五态只读预览与两类 append-only 摘要；0 migration。
 `INTERNAL_CONSISTENCY` 始终为 `NOT_RUN`。语义矛盾、语义同质化、完整标题语义判断、模型或
-人工工作流属于未实施的 029B，需另行授权；不得据此进入 Issue 030。
+人工工作流属于未实施的 029B，需另行授权；Minimal Issue 030 不得把该缺口伪装为 PASS。
 
 ### Issue 030：实现质量编排器
 
@@ -616,6 +617,14 @@ authoritative lineage/title-body surface、五态只读预览与两类 append-on
 - 通过后进入审批队列。
 
 依赖：026、027、028、029、003。
+
+状态：极简版已完成。只经现有 `copy:get` 即时读取当前 DraftVersion 的结构、事实映射、阅读真实性、
+剧透、重复、标题正文与内部一致性七项状态，统一为五态并派生
+`STALE_OR_INCOMPLETE / BLOCKED_BY_QUALITY / REQUIRES_DETAILED_REVIEW /
+READY_FOR_FAST_APPROVAL` 建议。聚合不落库、不自动执行检查、不推进 Draft/审批状态；
+`INTERNAL_CONSISTENCY` 保持 `NOT_RUN + DEFERRED_029B` 并路由重点人工复核。0 新 IPC、preload、
+route、Schema、migration、queue、model、network 与 cost。此项只构成 M3 缩减范围收口，不代表
+原 Issue 029 完成，也不包含 M4 的视觉、正式审批、发布包、导出或发布。
 
 ---
 

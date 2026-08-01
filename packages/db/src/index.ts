@@ -8,6 +8,7 @@ export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteFactMappingRepository } from './fact-mapping-repository.js';
 export { SqliteReadingAuthenticityRepository } from './reading-authenticity-repository.js';
 export { SqliteSpoilerQualityRepository } from './spoiler-quality-repository.js';
+export { SqliteQualityAggregateReadModel } from './quality-aggregate-read-model.js';
 export { SqliteEvidenceRepository } from './evidence-repository.js';
 export { SqliteExperimentRepository } from './experiment-repository.js';
 export { SqliteDossierRepository } from './dossier-repository.js';
@@ -102,6 +103,7 @@ export type {
 } from './fact-mapping-repository.js';
 export type { ReadingAuthenticityPreparedCheck } from './reading-authenticity-repository.js';
 export type { SpoilerQualityPreparedCheck } from './spoiler-quality-repository.js';
+export type { QualityAggregateDetailView } from './quality-aggregate-read-model.js';
 export type {
   ExperimentActionPreview,
   ExperimentAssignmentPreview,

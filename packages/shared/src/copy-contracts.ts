@@ -6,6 +6,7 @@ import type {
   CopyRewriteScopeV1,
   DraftStructuralValidationV1,
 } from '@mystery-operations/copy';
+import type { QualityReadinessResult } from '@mystery-operations/quality';
 
 export type {
   ContentDraftPayloadV1,
@@ -56,6 +57,8 @@ export interface CopyDraftListView {
 export interface CopyDraftDetailView extends CopyDraftListItemView {
   readonly invalidationReasons: readonly string[];
   readonly payload: ContentDraftPayloadV1;
+  /** Guaranteed by copy:get; mutation responses remain backward-compatible until refreshed. */
+  readonly qualityReadiness?: QualityReadinessResult;
   readonly runs: readonly CopyMutationRunV1[];
   readonly validation: DraftStructuralValidationV1;
   readonly versionHistory: {
