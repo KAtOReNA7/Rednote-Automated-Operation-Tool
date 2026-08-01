@@ -121,6 +121,10 @@ import type {
   GetCopyDraftInput,
   GetCopyDraftsInput,
   PreviewCopyActionInput,
+  ConfirmCopyIntegrityInput,
+  CopyIntegrityPreview,
+  CopyIntegrityResult,
+  PreviewCopyIntegrityInput,
   ConfirmFactMappingActionInput,
   ConfirmFactMappingDecisionInput,
   ConfirmReadingAuthenticityInput,
@@ -779,6 +783,22 @@ export class DesktopSettingsRuntime {
     windowId: number,
   ): SpoilerQualityResult {
     return this.#requireActive().spoilerQuality.confirm(input, senderId, windowId);
+  }
+
+  public previewCopyIntegrity(
+    input: PreviewCopyIntegrityInput,
+    senderId: number,
+    windowId: number,
+  ): CopyIntegrityPreview {
+    return this.#requireActive().copy.previewIntegrity(input, senderId, windowId);
+  }
+
+  public confirmCopyIntegrity(
+    input: ConfirmCopyIntegrityInput,
+    senderId: number,
+    windowId: number,
+  ): CopyIntegrityResult {
+    return this.#requireActive().copy.confirmIntegrity(input, senderId, windowId);
   }
 
   public previewBriefAction(

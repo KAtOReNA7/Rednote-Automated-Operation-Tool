@@ -439,8 +439,8 @@ flowchart TD
 
 ## M3：选题、文案和质量门禁
 
-状态：**进行中**。Issue 022—028 已完成；下一项仅规划 **M3 Issue 029**，未收到明确任务时不得
-自动开始。
+状态：**进行中**。Issue 022—028 与 Issue 029A 已完成；原 Issue 029 仍为部分完成。下一项仅规划需另行授权的 **M3 Issue 029（029B）**；
+Issue 030 未实施，未收到明确任务时不得自动开始。
 
 ### Issue 022：实现选题池与首批 30 篇配额
 
@@ -594,6 +594,11 @@ flowchart TD
 - 失败返回明确修改建议。
 
 依赖：025。
+
+状态：部分完成。Issue 029A 已完成 exact duplicate、有限 Unicode overlap 候选、
+authoritative lineage/title-body surface、五态只读预览与两类 append-only 摘要；0 migration。
+`INTERNAL_CONSISTENCY` 始终为 `NOT_RUN`。语义矛盾、语义同质化、完整标题语义判断、模型或
+人工工作流属于未实施的 029B，需另行授权；不得据此进入 Issue 030。
 
 ### Issue 030：实现质量编排器
 

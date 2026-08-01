@@ -17,9 +17,17 @@ import {
 import {
   JobQueueRepository,
   SqliteBriefRepository,
+  SqliteCopyIntegrityRepository,
   SqliteCopyRepository,
+  type CopyIntegrityPreparedCheck,
 } from '@mystery-operations/db';
+import {
+  COPY_INTEGRITY_CONFIRMATION_LITERAL,
+  CopyIntegrityError,
+  type CopyIntegrityEvaluation,
+} from '@mystery-operations/quality';
 import type {
+  ConfirmCopyIntegrityInput,
   ConfirmCopyActionInput,
   CopyActionPreview,
   CopyActionPreviewView,
@@ -27,10 +35,14 @@ import type {
   CopyDraftDetailView,
   CopyDraftListView,
   CopyDraftVersionDiffView,
+  CopyIntegrityPreview,
+  CopyIntegrityReadModel,
+  CopyIntegrityResult,
   DiffCopyDraftVersionsInput,
   GetCopyDraftInput,
   GetCopyDraftsInput,
   PreviewCopyActionInput,
+  PreviewCopyIntegrityInput,
 } from '@mystery-operations/shared';
 import {
   CopyGenerationService,
@@ -84,6 +96,25 @@ type CopyRuntimePayload =
       readonly kind: 'CANCEL_MUTATION';
     };
 
+type CopyIntegrityRuntimePayload = Pick<
+  CopyIntegrityEvaluation,
+  'draftId' | 'draftRevision' | 'draftVersionId' | 'inputHash'
+>;
+
+function copyIntegrityReadModel(prepared: CopyIntegrityPreparedCheck): CopyIntegrityReadModel {
+  const { checkerVersion, inputHash, policyVersion, ...evaluation } = prepared.evaluation;
+  void [checkerVersion, inputHash, policyVersion];
+  const checks = Object.freeze(
+    evaluation.checks.map(({ status, ...check }) =>
+      Object.freeze({
+        ...check,
+        evaluationStatus: status,
+        savedStatus: prepared.savedStatuses[check.checkType],
+      }),
+    ),
+  ) as CopyIntegrityReadModel['checks'];
+  return Object.freeze({ ...evaluation, checks });
+}
 function changedFields(left: ContentDraftPayloadV1, right: ContentDraftPayloadV1) {
   return Object.freeze(
     [
@@ -116,6 +147,8 @@ export class DesktopCopyRuntime {
   readonly #capabilityState: () => CopyMutationPlanV1['capabilityState'];
   readonly #clock: () => Date;
   readonly #confirmations: CopyConfirmationBroker<CopyRuntimePayload>;
+  readonly #integrityConfirmations: CopyConfirmationBroker<CopyIntegrityRuntimePayload>;
+  readonly #integrityRepository: SqliteCopyIntegrityRepository;
   readonly #queue: JobQueueService;
   readonly #repository: SqliteCopyRepository;
   readonly #worker: JobWorker;
@@ -126,8 +159,12 @@ export class DesktopCopyRuntime {
     this.#budgetState = options.budgetState ?? (() => 'UNKNOWN');
     this.#capabilityState = options.capabilityState ?? (() => 'UNKNOWN');
     this.#confirmations = new CopyConfirmationBroker({ now: () => this.#clock().getTime() });
+    this.#integrityConfirmations = new CopyConfirmationBroker({
+      now: () => this.#clock().getTime(),
+    });
     this.#briefs = new SqliteBriefRepository(database);
     this.#repository = new SqliteCopyRepository(database);
+    this.#integrityRepository = new SqliteCopyIntegrityRepository(database);
     this.#repository.recoverInterrupted(this.#clock().toISOString());
     const registry = new JobHandlerRegistry();
     registerCopyMutationJobs(
@@ -303,8 +340,71 @@ export class DesktopCopyRuntime {
     }
   }
 
+  public previewIntegrity(
+    input: PreviewCopyIntegrityInput,
+    senderId: number,
+    windowId: number,
+  ): CopyIntegrityPreview {
+    const prepared = this.#integrityRepository.prepare(
+      input.draftId,
+      input.expectedRevision,
+      this.#clock().toISOString(),
+    );
+    const payload = Object.freeze({
+      draftId: prepared.evaluation.draftId,
+      draftRevision: prepared.evaluation.draftRevision,
+      draftVersionId: prepared.evaluation.draftVersionId,
+      inputHash: prepared.evaluation.inputHash,
+    });
+    const issued = this.#integrityConfirmations.issue(payload, senderId, windowId);
+    return Object.freeze({
+      expiresAt: issued.expiresAt,
+      preview: Object.freeze({
+        costState: 'NOT_APPLICABLE' as const,
+        externalRequestCount: 0 as const,
+        readModel: copyIntegrityReadModel(prepared),
+        writes: Object.freeze([
+          'APPEND_DUPLICATION_QUALITY_CHECK',
+          'APPEND_TITLE_BODY_CONSISTENCY_QUALITY_CHECK',
+        ] as const),
+      }),
+      previewHash: issued.previewHash,
+      token: issued.token,
+    });
+  }
+
+  public confirmIntegrity(
+    input: ConfirmCopyIntegrityInput,
+    senderId: number,
+    windowId: number,
+  ): CopyIntegrityResult {
+    if (input.confirmation !== COPY_INTEGRITY_CONFIRMATION_LITERAL) {
+      throw new CopyIntegrityError('COPY_INTEGRITY_CONFIRMATION_INVALID');
+    }
+    let payload: CopyIntegrityRuntimePayload;
+    try {
+      payload = this.#integrityConfirmations.consume(
+        input.token,
+        input.previewHash,
+        senderId,
+        windowId,
+      );
+    } catch {
+      throw new CopyIntegrityError('COPY_INTEGRITY_CONFIRMATION_INVALID');
+    }
+    if (payload.draftRevision !== input.expectedRevision) {
+      throw new CopyIntegrityError('COPY_INTEGRITY_CONFIRMATION_INVALID');
+    }
+    return Object.freeze({
+      readModel: copyIntegrityReadModel(
+        this.#integrityRepository.confirm(payload, this.#clock().toISOString()),
+      ),
+    });
+  }
+
   public clearWindow(windowId: number): void {
     this.#confirmations.clearWindow(windowId);
+    this.#integrityConfirmations.clearWindow(windowId);
   }
 
   public async close(): Promise<void> {

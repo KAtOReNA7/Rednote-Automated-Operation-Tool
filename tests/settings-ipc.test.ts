@@ -490,6 +490,20 @@ const validRequests: Readonly<Record<DesktopIpcOperation, readonly unknown[]>> =
       token: 'a'.repeat(43),
     },
   ],
+  previewCopyIntegrity: [
+    {
+      draftId: 'draft-fixture-000001',
+      expectedRevision: 1,
+    },
+  ],
+  confirmCopyIntegrity: [
+    {
+      confirmation: 'SAVE_COPY_INTEGRITY_CHECKS',
+      expectedRevision: 1,
+      previewHash: 'a'.repeat(64),
+      token: 'a'.repeat(43),
+    },
+  ],
   updateLocalApiSettings: [{ enabled: true, expectedRevision: 0, port: 43_119 }],
   updateNonSecretSettings: [
     {

@@ -11,6 +11,7 @@ import { ExperimentError } from '@mystery-operations/experiments';
 import { BriefError } from '@mystery-operations/briefs';
 import { CopyError } from '@mystery-operations/copy';
 import {
+  CopyIntegrityError,
   FactMappingError,
   ReadingAuthenticityError,
   SpoilerQualityError,
@@ -87,6 +88,8 @@ import {
   type PreviewReadingAuthenticityInput,
   type ConfirmSpoilerQualityInput,
   type PreviewSpoilerQualityInput,
+  type ConfirmCopyIntegrityInput,
+  type PreviewCopyIntegrityInput,
   type DiffDossierVersionsInput,
   type RevokeLocalApiClientRequest,
   type RuntimeCapabilities,
@@ -130,6 +133,9 @@ function failure(
 }
 
 function safeFailure(error: unknown): DesktopResult<never> {
+  if (error instanceof CopyIntegrityError) {
+    return failure(error.code, error.message, error.retryable);
+  }
   if (error instanceof SpoilerQualityError) {
     return failure(error.code, error.message, error.retryable);
   }
@@ -540,6 +546,28 @@ export function registerDesktopIpc(options: RegisterDesktopIpcOptions): () => vo
     }
     return options.settingsRuntime.confirmSpoilerQuality(
       args[0] as ConfirmSpoilerQualityInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('previewCopyIntegrity', DESKTOP_IPC_CHANNELS.previewCopyIntegrity, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new CopyIntegrityError('COPY_INTEGRITY_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.previewCopyIntegrity(
+      args[0] as PreviewCopyIntegrityInput,
+      event.sender.id,
+      window.id,
+    );
+  });
+  register('confirmCopyIntegrity', DESKTOP_IPC_CHANNELS.confirmCopyIntegrity, (event, args) => {
+    const window = options.getWindow();
+    if (window === null || window.webContents.id !== event.sender.id) {
+      throw new CopyIntegrityError('COPY_INTEGRITY_CONFIRMATION_INVALID');
+    }
+    return options.settingsRuntime.confirmCopyIntegrity(
+      args[0] as ConfirmCopyIntegrityInput,
       event.sender.id,
       window.id,
     );

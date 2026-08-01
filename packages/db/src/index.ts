@@ -2,6 +2,7 @@ export { connectDatabase, resolveDatabasePath } from './connection.js';
 export { SqliteAuthenticityRepository } from './authenticity-repository.js';
 export { SqliteBriefRepository } from './brief-repository.js';
 export { SqliteCopyRepository } from './copy-repository.js';
+export { SqliteCopyIntegrityRepository } from './copy-integrity-repository.js';
 export { SqliteCatalogRepository } from './catalog-repository.js';
 export { SqliteFetchRepository } from './fetch-repository.js';
 export { SqliteFactMappingRepository } from './fact-mapping-repository.js';
@@ -26,6 +27,7 @@ export type {
   CopyMutationExecution,
   CopyVersionDiff,
 } from './copy-repository.js';
+export type { CopyIntegrityPreparedCheck } from './copy-integrity-repository.js';
 export type {
   BrowserClipScreenshotRecordV1,
   BrowserClipViewV1,

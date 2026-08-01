@@ -6,6 +6,8 @@ import type {
   CopyActionPreview,
   CopyDraftDetailView,
   CopyDraftListView,
+  CopyIntegrityPreview,
+  CopyIntegrityReadModel,
   CopyRewriteScopeV1,
   PreviewCopyActionInput,
   ReadingAuthenticityPreview,
@@ -118,6 +120,8 @@ export function CopyWorkbench(): React.JSX.Element {
   const [readingCheck, setReadingCheck] = useState<ReadingAuthenticityReadModel | null>(null);
   const [spoilerPreview, setSpoilerPreview] = useState<SpoilerQualityPreview | null>(null);
   const [spoilerCheck, setSpoilerCheck] = useState<SpoilerQualityReadModel | null>(null);
+  const [integrityPreview, setIntegrityPreview] = useState<CopyIntegrityPreview | null>(null);
+  const [integrityCheck, setIntegrityCheck] = useState<CopyIntegrityReadModel | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('正在读取本地文案 Draft…');
   const [rewriteInstruction, setRewriteInstruction] = useState('');
@@ -189,6 +193,8 @@ export function CopyWorkbench(): React.JSX.Element {
     setReadingCheck(null);
     setSpoilerPreview(null);
     setSpoilerCheck(null);
+    setIntegrityPreview(null);
+    setIntegrityCheck(null);
   }, []);
 
   useEffect(() => {
@@ -242,6 +248,8 @@ export function CopyWorkbench(): React.JSX.Element {
         setReadingCheck(null);
         setSpoilerPreview(null);
         setSpoilerCheck(null);
+        setIntegrityPreview(null);
+        setIntegrityCheck(null);
       }
       setMessage(mutation ? 'mutation 已进入本地队列。' : '已保存新的不可变 DraftVersion。');
       await loadList();
@@ -341,6 +349,52 @@ export function CopyWorkbench(): React.JSX.Element {
       setBusy(false);
     }
   }, [spoilerPreview]);
+
+  const previewCopyIntegrity = useCallback(async () => {
+    if (detail === null) return;
+    const method = window.rednoteDesktop?.previewCopyIntegrity;
+    if (method === undefined) return;
+    setBusy(true);
+    try {
+      const result = await method({
+        draftId: detail.draftId,
+        expectedRevision: detail.revision,
+      });
+      if (!result.ok) {
+        setMessage('Copy Integrity 预览失败：' + result.error.code);
+        return;
+      }
+      setIntegrityPreview(result.value);
+      setIntegrityCheck(result.value.preview.readModel);
+      setMessage('Copy Integrity 预览只读完成；未写摘要、未改文案，也未运行内部一致性语义检查。');
+    } finally {
+      setBusy(false);
+    }
+  }, [detail]);
+
+  const confirmCopyIntegrity = useCallback(async () => {
+    if (integrityPreview === null) return;
+    const method = window.rednoteDesktop?.confirmCopyIntegrity;
+    if (method === undefined) return;
+    setBusy(true);
+    try {
+      const result = await method({
+        confirmation: 'SAVE_COPY_INTEGRITY_CHECKS',
+        expectedRevision: integrityPreview.preview.readModel.draftRevision,
+        previewHash: integrityPreview.previewHash,
+        token: integrityPreview.token,
+      });
+      if (!result.ok) {
+        setMessage('Copy Integrity 确认失败：' + result.error.code);
+        return;
+      }
+      setIntegrityCheck(result.value.readModel);
+      setIntegrityPreview(null);
+      setMessage('两类确定性 Copy Integrity 摘要已追加；Draft 内容与流程状态均未改变。');
+    } finally {
+      setBusy(false);
+    }
+  }, [integrityPreview]);
 
   const rewriteScope = useMemo<CopyRewriteScopeV1>(() => {
     if (rewriteKind === 'BODY_BLOCK' || rewriteKind === 'BODY_BLOCK_RANGE') {
@@ -725,6 +779,41 @@ export function CopyWorkbench(): React.JSX.Element {
               <section className="copy-lock-card">
                 <strong>字段 provenance / lock</strong>
                 <div>
+                  <section className="copy-lock-card" aria-label="Copy Integrity 确定性子集">
+                    <strong>Copy Integrity · 029A 确定性子集</strong>
+                    <span>
+                      STRUCTURED_OUTPUT：{integrityCheck?.structuralOutputStatus ?? 'NOT_RUN'} ·
+                      INTERNAL_CONSISTENCY：{integrityCheck?.internalConsistencyStatus ?? 'NOT_RUN'}
+                    </span>
+                    <span>PASS 只代表有限规则；不判断语义，不代表质量通过或可发布。</span>
+                    {integrityCheck?.checks.map((check) => (
+                      <div key={check.checkType}>
+                        <strong>{check.checkType}</strong>
+                        <span>
+                          已保存 {check.savedStatus} · 本次 {check.evaluationStatus} · 阻断
+                          {check.counts.blocked} · 复核 {check.counts.reviewRequired}
+                        </span>
+                        <small>{check.reasonCodes.join(' / ') || '有限规则未返回定位项'}</small>
+                        {check.truncated ? <small>结果已截断，需人工判断。</small> : null}
+                      </div>
+                    )) ?? <small>尚未预览当前不可变 DraftVersion。</small>}
+                    <div>
+                      <button
+                        disabled={busy || dirty || detail.status !== 'READY_FOR_QUALITY_PIPELINE'}
+                        onClick={() => void previewCopyIntegrity()}
+                        type="button"
+                      >
+                        预览 Copy Integrity
+                      </button>
+                      <button
+                        disabled={busy || integrityPreview === null}
+                        onClick={() => void confirmCopyIntegrity()}
+                        type="button"
+                      >
+                        确认保存两类摘要
+                      </button>
+                    </div>
+                  </section>
                   {draft.fieldStates
                     .filter(({ path }) =>
                       ['selectedTitle', 'tags', 'pinnedComment', 'spoilerWarnings'].includes(path),

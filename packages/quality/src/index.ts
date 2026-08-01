@@ -4,6 +4,7 @@ export * from './candidates.js';
 export * from './compatibility.js';
 export * from './confirmation.js';
 export * from './constants.js';
+export * from './copy-integrity.js';
 export * from './contracts.js';
 export * from './errors.js';
 export * from './engine.js';

@@ -11,6 +11,9 @@ import type {
   StatementKind,
   FactDomain,
   FactMateriality,
+  CopyIntegrityCheckEvaluation,
+  CopyIntegrityEvaluation,
+  CopyIntegrityStatus,
   ReadingAuthenticityReasonCode,
   ReadingAuthenticityStatus,
   SpoilerQualityReasonCode,
@@ -123,6 +126,49 @@ export interface ConfirmSpoilerQualityInput {
 
 export interface SpoilerQualityResult {
   readonly readModel: SpoilerQualityReadModel;
+}
+
+export interface PreviewCopyIntegrityInput {
+  readonly draftId: string;
+  readonly expectedRevision: number;
+}
+
+export interface CopyIntegrityCheckView extends Omit<CopyIntegrityCheckEvaluation, 'status'> {
+  readonly evaluationStatus: Exclude<CopyIntegrityStatus, 'STALE' | 'NOT_RUN'>;
+  readonly savedStatus: CopyIntegrityStatus;
+}
+
+export type CopyIntegrityReadModel = Omit<
+  CopyIntegrityEvaluation,
+  'checkerVersion' | 'checks' | 'inputHash' | 'policyVersion'
+> & {
+  readonly checks: readonly [CopyIntegrityCheckView, CopyIntegrityCheckView];
+};
+
+export interface CopyIntegrityPreview {
+  readonly expiresAt: string;
+  readonly preview: {
+    readonly costState: 'NOT_APPLICABLE';
+    readonly externalRequestCount: 0;
+    readonly readModel: CopyIntegrityReadModel;
+    readonly writes: readonly [
+      'APPEND_DUPLICATION_QUALITY_CHECK',
+      'APPEND_TITLE_BODY_CONSISTENCY_QUALITY_CHECK',
+    ];
+  };
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface ConfirmCopyIntegrityInput {
+  readonly confirmation: 'SAVE_COPY_INTEGRITY_CHECKS';
+  readonly expectedRevision: number;
+  readonly previewHash: string;
+  readonly token: string;
+}
+
+export interface CopyIntegrityResult {
+  readonly readModel: CopyIntegrityReadModel;
 }
 
 export interface GetFactMappingChecksInput {

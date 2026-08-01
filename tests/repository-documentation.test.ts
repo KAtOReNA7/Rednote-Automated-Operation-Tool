@@ -28,7 +28,7 @@ function coversIssue(content: string, issueNumber: number): boolean {
 function projectProgress(content: string): ProjectProgress | null {
   const completedEnds = [
     ...content.matchAll(
-      /\bIssues?\s+0*(\d{1,4})(?:\s*[—–-]\s*0*(\d{1,4}))?(?=[^\r\n。；;]{0,80}(?:已完成|完成|completed))/giu,
+      /\bIssues?\s+0*(\d{1,4})(?:\s*[–—-]\s*0*(\d{1,4}))?\b(?=[^\r\n。；;]{0,80}(?:(?<!部分)(?<!未)已?完成|(?<!partially )(?<!not )completed))/giu,
     ),
   ].map((match) => Number.parseInt(match[2] ?? match[1] ?? '', 10));
   const nextIssues = new Set(
@@ -98,6 +98,9 @@ describe('repository-facing documentation', () => {
       completedThrough: 28,
       nextIssue: 29,
     });
+    expect(
+      projectProgress('Issue 028 已完成；Issue 029A 已完成；Issue 029 部分完成；下一项 Issue 029'),
+    ).toEqual({ completedThrough: 28, nextIssue: 29 });
   });
 
   it('keeps every repository-local README link resolvable', () => {
@@ -130,6 +133,8 @@ describe('repository-facing documentation', () => {
       'docs/instructions/m3/M3-Issue024-structured-content-brief-generator-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt',
+      'docs/instructions/m3/M3-Issue029A-deterministic-copy-integrity-Codex-instruction.txt',
+      'docs/adr/0025-copy-integrity-deterministic-subset.md',
       'docs/instructions/governance/Project-health-audit-after-Issue026-Codex-instruction.txt',
       'docs/instructions/governance/M3-project-control-recovery-phase1-Codex-instruction.txt',
       'docs/governance/validation-gate-matrix.md',

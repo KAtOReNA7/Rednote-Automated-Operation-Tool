@@ -23,6 +23,7 @@ import type { ExperimentErrorCode } from '@mystery-operations/experiments';
 import type { BriefErrorCode } from '@mystery-operations/briefs';
 import type { CopyErrorCode } from '@mystery-operations/copy';
 import type {
+  CopyIntegrityErrorCode,
   FactMappingErrorCode,
   ReadingAuthenticityErrorCode,
   SpoilerQualityErrorCode,
@@ -159,6 +160,10 @@ import type {
   PreviewSpoilerQualityInput,
   SpoilerQualityPreview,
   SpoilerQualityResult,
+  ConfirmCopyIntegrityInput,
+  CopyIntegrityPreview,
+  CopyIntegrityResult,
+  PreviewCopyIntegrityInput,
 } from './quality-contracts.js';
 
 export const DESKTOP_BRIDGE_KEY = 'rednoteDesktop' as const;
@@ -208,6 +213,8 @@ export const DESKTOP_IPC_CHANNELS = Object.freeze({
   confirmReadingAuthenticity: 'quality:reading-authenticity:confirm',
   previewSpoilerQuality: 'quality:spoiler:preview',
   confirmSpoilerQuality: 'quality:spoiler:confirm',
+  previewCopyIntegrity: 'quality:copy-integrity:preview',
+  confirmCopyIntegrity: 'quality:copy-integrity:confirm',
   getEvidenceState: 'evidence:get-state',
   previewEvidenceConflict: 'evidence:preview-conflict',
   confirmEvidenceConflict: 'evidence:confirm-conflict',
@@ -304,6 +311,7 @@ export interface DesktopError {
     | FactMappingErrorCode
     | ReadingAuthenticityErrorCode
     | SpoilerQualityErrorCode
+    | CopyIntegrityErrorCode
     | 'EVIDENCE_CONFIRMATION_EXPIRED'
     | 'EVIDENCE_CONFIRMATION_INVALID'
     | 'EVIDENCE_CONFLICT'
@@ -838,6 +846,12 @@ export interface DesktopBridge {
   confirmSpoilerQuality?(
     input: ConfirmSpoilerQualityInput,
   ): Promise<DesktopResult<SpoilerQualityResult>>;
+  previewCopyIntegrity?(
+    input: PreviewCopyIntegrityInput,
+  ): Promise<DesktopResult<CopyIntegrityPreview>>;
+  confirmCopyIntegrity?(
+    input: ConfirmCopyIntegrityInput,
+  ): Promise<DesktopResult<CopyIntegrityResult>>;
   getEvidenceState?(input: GetEvidenceStateInput): Promise<DesktopResult<EvidenceStateView>>;
   previewEvidenceConflict?(
     input: PreviewEvidenceConflictInput,
