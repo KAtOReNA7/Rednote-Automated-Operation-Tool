@@ -113,7 +113,7 @@ describe('M3 Issue 024 Content Brief architecture and governance', () => {
     expect(source('vite.main.config.ts')).toContain("'@mystery-operations/briefs'");
   });
 
-  it('tracks all contracts, ADR, plan, acceptance, evidence and factual progress', () => {
+  it('tracks all contracts, ADR, plan, acceptance and evidence', () => {
     for (const path of [
       'docs/contracts/content-brief-v1.md',
       'docs/contracts/content-brief-generation-v1.md',
@@ -124,19 +124,6 @@ describe('M3 Issue 024 Content Brief architecture and governance', () => {
       'docs/evidence/m3-issue024-local-evidence.md',
     ]) {
       expect(existsSync(join(ROOT, path)), path).toBe(true);
-    }
-    for (const path of [
-      'README.md',
-      'AGENTS.md',
-      'docs/README.md',
-      'docs/product/xiaohongshu-development-roadmap-v1.md',
-      'docs/instructions/README.md',
-    ]) {
-      const progress = source(path);
-      expect(progress, path).toMatch(
-        /Issue 024.*(?:已完成|完成)|已完成.*Issue 024|Issue 022—026 已完成/isu,
-      );
-      expect(progress, path).toMatch(/Issue 025|Issue 022—026/iu);
     }
   });
 });

@@ -105,7 +105,7 @@ describe('M3 Issue 023 experiment architecture and governance', () => {
     expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
   });
 
-  it('tracks all contracts, ADR, plan, acceptance, evidence, and factual progress', () => {
+  it('tracks all contracts, ADR, plan, acceptance and evidence', () => {
     for (const path of [
       'docs/contracts/experiment-design-v1.md',
       'docs/contracts/experiment-assignment-v1.md',
@@ -116,19 +116,6 @@ describe('M3 Issue 023 experiment architecture and governance', () => {
       'docs/evidence/m3-issue023-local-evidence.md',
     ]) {
       expect(existsSync(join(ROOT, path)), path).toBe(true);
-    }
-    for (const path of [
-      'README.md',
-      'AGENTS.md',
-      'docs/README.md',
-      'docs/product/xiaohongshu-development-roadmap-v1.md',
-      'docs/instructions/README.md',
-    ]) {
-      const progress = source(path);
-      expect(progress, path).toMatch(
-        /Issue 023.*(?:已完成|完成)|已完成.*Issue 023|Issue 022—026 已完成/isu,
-      );
-      expect(progress, path).toMatch(/Issue 024|Issue 022—026/iu);
     }
   });
 });

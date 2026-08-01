@@ -91,7 +91,7 @@ describe('Issue 021 authenticity architecture and governance', () => {
     expect(packageJson.scripts.test).toBe('node scripts/run-portable-vitest.mjs run');
   });
 
-  it('tracks contracts, ADR, plan, acceptance map, M2 closeout and current indexes', () => {
+  it('tracks contracts, ADR, plan, acceptance map and M2 closeout', () => {
     for (const path of [
       'docs/contracts/reading-authenticity-policy-v1.md',
       'docs/contracts/expression-permission-v1.md',
@@ -102,17 +102,6 @@ describe('Issue 021 authenticity architecture and governance', () => {
       'docs/m2-closeout.md',
     ]) {
       expect(existsSync(join(ROOT, path)), path).toBe(true);
-    }
-    for (const path of [
-      'README.md',
-      'AGENTS.md',
-      'docs/product/xiaohongshu-development-roadmap-v1.md',
-      'docs/instructions/README.md',
-    ]) {
-      const progress = source(path);
-      expect(progress, path).toMatch(/M2[\s\S]{0,120}(?:完成|已完成)/iu);
-      expect(progress, path).toMatch(/Issue 022/u);
-      expect(progress, path).toMatch(/Issue 023|Issue 022—026/u);
     }
   });
 });

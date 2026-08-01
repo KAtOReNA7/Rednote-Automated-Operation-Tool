@@ -116,7 +116,7 @@ describe('M3 Issue 025 Copy architecture and governance', () => {
     expect(source('vite.main.config.ts')).toContain("'@mystery-operations/copy'");
   });
 
-  it('tracks every required contract, ADR, plan, acceptance and factual progress file', () => {
+  it('tracks every required contract, ADR, plan, acceptance and evidence file', () => {
     for (const path of [
       'docs/contracts/copy-generation-v1.md',
       'docs/contracts/copy-rewrite-v1.md',
@@ -127,19 +127,6 @@ describe('M3 Issue 025 Copy architecture and governance', () => {
       'docs/evidence/m3-issue025-local-evidence.md',
     ]) {
       expect(existsSync(join(ROOT, path)), path).toBe(true);
-    }
-    for (const path of [
-      'README.md',
-      'AGENTS.md',
-      'docs/README.md',
-      'docs/product/xiaohongshu-development-roadmap-v1.md',
-      'docs/instructions/README.md',
-    ]) {
-      const progress = source(path);
-      expect(progress, path).toMatch(
-        /Issue 025.*(?:已完成|完成)|已完成.*Issue 025|Issue 022—026 已完成/isu,
-      );
-      expect(progress, path).toMatch(/Issue 026|Issue 022—026/iu);
     }
   });
 });

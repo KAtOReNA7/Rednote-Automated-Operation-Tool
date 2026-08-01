@@ -94,7 +94,7 @@ describe('M3 Issue 022 Topic architecture and governance', () => {
     expect(ci.match(/^\s*run:\s+npm run test\s*$/gmu)).toHaveLength(1);
   });
 
-  it('tracks contracts, ADR, plan, acceptance map, instruction index, and M3 progress', () => {
+  it('tracks contracts, ADR, plan and acceptance map', () => {
     for (const path of [
       'docs/contracts/topic-pool-v1.md',
       'docs/contracts/topic-ranking-quota-v1.md',
@@ -103,17 +103,6 @@ describe('M3 Issue 022 Topic architecture and governance', () => {
       'docs/m3-issue022-acceptance-map.md',
     ]) {
       expect(existsSync(join(ROOT, path)), path).toBe(true);
-    }
-    for (const path of [
-      'README.md',
-      'AGENTS.md',
-      'docs/README.md',
-      'docs/product/xiaohongshu-development-roadmap-v1.md',
-      'docs/instructions/README.md',
-    ]) {
-      const progress = source(path);
-      expect(progress, path).toMatch(/Issue 022.*(?:已完成|完成)|已完成.*Issue 022/isu);
-      expect(progress, path).toMatch(/Issue 023|Issue 022—026/iu);
     }
   });
 });

@@ -27,6 +27,25 @@ async function combined(files: readonly string[]): Promise<string> {
   );
 }
 
+function channelReferences(source: string): readonly string[] {
+  return [...source.matchAll(/\bDESKTOP_IPC_CHANNELS\.([A-Za-z][A-Za-z0-9]*)/gu)]
+    .map((match) => match[1] ?? '')
+    .filter((value) => value.length > 0)
+    .sort()
+    .filter((value, index, values) => index === 0 || value !== values[index - 1]);
+}
+
+function policyOperations(source: string): readonly string[] {
+  const start = source.indexOf('export type DesktopIpcOperation');
+  const end = source.indexOf('const MAX_IPC_BYTES', start);
+  expect(start).toBeGreaterThanOrEqual(0);
+  expect(end).toBeGreaterThan(start);
+  return [...source.slice(start, end).matchAll(/'([A-Za-z][A-Za-z0-9]*)'/gu)]
+    .map((match) => match[1] ?? '')
+    .filter((value) => value.length > 0)
+    .sort();
+}
+
 describe('Issue 010 architecture boundaries', () => {
   it('keeps settings and storage Electron-independent and safeStorage out of renderer/preload', async () => {
     const settings = await combined(await sourceFiles('packages/settings'));
@@ -56,19 +75,23 @@ describe('Issue 010 architecture boundaries', () => {
 
   it('exposes one fixed preload method per fixed channel without raw IPC primitives', async () => {
     const preload = await readFile(join(projectRoot, 'apps/desktop/src/preload.ts'), 'utf8');
+    const mainIpc = await readFile(join(projectRoot, 'apps/desktop/src/ipc.ts'), 'utf8');
+    const policy = await readFile(join(projectRoot, 'apps/desktop/src/ipc-policy.ts'), 'utf8');
     const contract = await readFile(
       join(projectRoot, 'packages/shared/src/desktop-api.ts'),
       'utf8',
     );
+    const registryKeys = Object.keys(DESKTOP_IPC_CHANNELS).sort();
     const channels = Object.values(DESKTOP_IPC_CHANNELS);
 
     expect(DESKTOP_BRIDGE_KEY).toBe('rednoteDesktop');
     expect(new Set(channels).size).toBe(channels.length);
-    expect(channels).toHaveLength(89);
-    for (const key of Object.keys(DESKTOP_IPC_CHANNELS)) {
-      expect(preload).toContain(`${key}:`);
-      expect(preload).toContain(`DESKTOP_IPC_CHANNELS.${key}`);
-    }
+    expect(channelReferences(preload)).toEqual(registryKeys);
+    expect(channelReferences(mainIpc)).toEqual(registryKeys);
+    expect(policyOperations(policy)).toEqual(registryKeys);
+    expect(
+      channels.filter((channel) => channel.startsWith('quality:reading-authenticity:')),
+    ).toEqual(['quality:reading-authenticity:preview', 'quality:reading-authenticity:confirm']);
     expect(preload).not.toMatch(
       /ipcRenderer\.(?:send|sendSync|on|once|postMessage)|exposeInMainWorld\([^,]+,\s*ipcRenderer/u,
     );

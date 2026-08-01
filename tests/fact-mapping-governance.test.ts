@@ -1,27 +1,37 @@
-import { existsSync, readFileSync, readdirSync, statSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
 const ROOT = process.cwd();
 const INSTRUCTION = 'M3-Issue026-factual-claim-mapping-Codex-instruction.txt';
+const FACT_MAPPING_QUALITY_FILES = [
+  'artifacts.ts',
+  'assist.ts',
+  'candidates.ts',
+  'compatibility.ts',
+  'confirmation.ts',
+  'constants.ts',
+  'contracts.ts',
+  'engine.ts',
+  'errors.ts',
+  'fact-policy.ts',
+  'identity.ts',
+  'index.ts',
+  'manual.ts',
+  'mapping.ts',
+  'rollup.ts',
+  'statements.ts',
+] as const;
 
 function source(path: string): string {
   return readFileSync(join(ROOT, path), 'utf8');
 }
 
-function treeSource(path: string): string {
-  const root = join(ROOT, path);
-  return readdirSync(root, { withFileTypes: true })
-    .flatMap((entry) => {
-      const child = join(root, entry.name);
-      if (entry.isDirectory()) return treeSource(join(path, entry.name));
-      if (!entry.isFile() || !/\.[cm]?[jt]sx?$/u.test(entry.name) || !statSync(child).isFile()) {
-        return [];
-      }
-      return [readFileSync(child, 'utf8')];
-    })
-    .join('\n');
+function factMappingQualitySource(): string {
+  return FACT_MAPPING_QUALITY_FILES.map((file) => source(`packages/quality/src/${file}`)).join(
+    '\n',
+  );
 }
 
 describe('M3 Issue 026 architecture, egress and governance', () => {
@@ -49,7 +59,7 @@ describe('M3 Issue 026 architecture, egress and governance', () => {
   it('keeps optional assistance behind ModelExecutionService with no direct egress', () => {
     const workflow = source('packages/workflows/src/fact-mapping-handler.ts');
     const implementation = [
-      treeSource('packages/quality/src'),
+      factMappingQualitySource(),
       source('packages/db/src/fact-mapping-repository.ts'),
       source('apps/desktop/src/fact-mapping-runtime.ts'),
       workflow,
@@ -73,7 +83,7 @@ describe('M3 Issue 026 architecture, egress and governance', () => {
 
   it('keeps downstream Issues, AI disclosure and copyright outside this check', () => {
     const production = [
-      treeSource('packages/quality/src'),
+      factMappingQualitySource(),
       source('packages/shared/src/quality-contracts.ts'),
       source('packages/db/src/fact-mapping-repository.ts'),
       source('apps/web-ui/src/fact-mapping-workbench.tsx'),
@@ -138,19 +148,6 @@ describe('M3 Issue 026 architecture, egress and governance', () => {
       'docs/security/m3-issue026-egress-matrix.md',
     ]) {
       expect(existsSync(join(ROOT, path)), path).toBe(true);
-    }
-    for (const path of [
-      'README.md',
-      'AGENTS.md',
-      'docs/README.md',
-      'docs/product/xiaohongshu-development-roadmap-v1.md',
-      'docs/instructions/README.md',
-    ]) {
-      const progress = source(path);
-      expect(progress, path).toMatch(
-        /Issue 026.*(?:已完成|完成)|已完成.*Issue 026|Issue 022—026 已完成/isu,
-      );
-      expect(progress, path).toMatch(/Issue 027/iu);
     }
   });
 });

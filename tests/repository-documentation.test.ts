@@ -6,12 +6,60 @@ import { describe, expect, it } from 'vitest';
 const projectRoot = resolve(import.meta.dirname, '..');
 const readme = readFileSync(resolve(projectRoot, 'README.md'), 'utf8');
 const agents = readFileSync(resolve(projectRoot, 'AGENTS.md'), 'utf8');
+const roadmap = readFileSync(
+  resolve(projectRoot, 'docs/product/xiaohongshu-development-roadmap-v1.md'),
+  'utf8',
+);
+
+interface ProjectProgress {
+  readonly completedThrough: number;
+  readonly nextIssue: number;
+}
+
+function coversIssue(content: string, issueNumber: number): boolean {
+  for (const match of content.matchAll(/\bIssues?\s+0*(\d{1,4})(?:\s*[—–-]\s*0*(\d{1,4}))?\b/giu)) {
+    const start = Number.parseInt(match[1] ?? '', 10);
+    const end = Number.parseInt(match[2] ?? match[1] ?? '', 10);
+    if (start <= issueNumber && issueNumber <= end) return true;
+  }
+  return false;
+}
+
+function projectProgress(content: string): ProjectProgress | null {
+  const completedEnds = [
+    ...content.matchAll(
+      /\bIssues?\s+0*(\d{1,4})(?:\s*[—–-]\s*0*(\d{1,4}))?(?=[^\r\n。；;]{0,80}(?:已完成|完成|completed))/giu,
+    ),
+  ].map((match) => Number.parseInt(match[2] ?? match[1] ?? '', 10));
+  const nextIssues = new Set(
+    [
+      ...content.matchAll(/(?:下一(?:项|步)|Next)[^\r\n。；;]{0,100}?\bIssues?\s+0*(\d{1,4})\b/giu),
+    ].map((match) => Number.parseInt(match[1] ?? '', 10)),
+  );
+  const completedThrough = Math.max(...completedEnds);
+  const [nextIssue] = nextIssues;
+  if (
+    completedEnds.length === 0 ||
+    nextIssues.size !== 1 ||
+    nextIssue === undefined ||
+    nextIssue !== completedThrough + 1
+  ) {
+    return null;
+  }
+  return { completedThrough, nextIssue };
+}
 
 describe('repository-facing documentation', () => {
-  it('reports completed M2 and Issue 022–026 while keeping Issue 027 bounded', () => {
+  it('keeps README, AGENTS and Roadmap on one continuous current/next Issue state', () => {
+    for (const [path, content] of [
+      ['README.md', readme],
+      ['AGENTS.md', agents],
+      ['docs/product/xiaohongshu-development-roadmap-v1.md', roadmap],
+    ] as const) {
+      expect(projectProgress(content), path).toEqual({ completedThrough: 27, nextIssue: 28 });
+    }
     expect(readme).toContain('M1（Issue 006—011）');
     expect(readme).toContain('M2（Issue 012—021）均已完成验收');
-    expect(readme).toContain('M3 Issue 027（真实性与评分检查，仅规划，尚未授权或开始）');
     expect(readme).toContain('五类 Topic Pool、可解释排序、状态控制与 First-30 配额');
     expect(readme).toContain('可检验单变量实验、跨作品复现、确定性分配与版本状态');
     expect(readme).toContain(
@@ -31,6 +79,20 @@ describe('repository-facing documentation', () => {
     expect(readme).not.toContain('下一步仅规划 Issue 018');
     expect(readme).not.toContain('Issue 021（阅读状态与真实性规则，仅规划）');
     expect(readme).not.toContain('M0 仅保留包边界');
+  });
+
+  it('parses only explicit Issue references and rejects gaps or contradictory next states', () => {
+    expect(coversIssue('Issue 027 已完成', 27)).toBe(true);
+    expect(coversIssue('Issue 022—027 已完成', 27)).toBe(true);
+    expect(coversIssue('Issues 022–028 completed', 27)).toBe(true);
+    expect(coversIssue('完成范围 022—027', 27)).toBe(false);
+    expect(coversIssue('Issue 022—026 已完成', 27)).toBe(false);
+    expect(projectProgress('Issue 022—027 已完成；下一项是 Issue 028')).toEqual({
+      completedThrough: 27,
+      nextIssue: 28,
+    });
+    expect(projectProgress('Issue 022—026 已完成；下一项是 Issue 028')).toBeNull();
+    expect(projectProgress('Issue 022—028 已完成；Next Issue 028')).toBeNull();
   });
 
   it('keeps every repository-local README link resolvable', () => {
@@ -129,8 +191,6 @@ describe('repository-facing documentation', () => {
       '### B. Issue 完成门禁',
       '### C. 里程碑 / Release 门禁',
       '未获明确授权不得 fetch、pull、push',
-      'M3 Issue 022—026 已完成',
-      'Issue 027 尚未开始',
     ]) {
       expect(agents).toContain(required);
     }
