@@ -40,6 +40,7 @@ import {
 import { createMemoryV2Bridge } from './support/v2-test-runtime.js';
 
 const databases: DatabaseSync[] = [];
+const PERSISTED_PACKAGE_ID = 'R04-PACKAGE-1';
 
 class MemoryInteractionFiles implements V2InteractionFilePort {
   readonly #values = new Map<string, string>();
@@ -80,9 +81,14 @@ async function harness() {
       `INSERT INTO v2_content_packages(
          workspace_id, package_id, week_key, candidate_id, plan_revision,
          current_version, revision, created_at, updated_at
-       ) VALUES ('v2-local-workspace', 'r04-package-1', ?, 'mon-1', 0, 1, 0, ?, ?)`,
+       ) VALUES ('v2-local-workspace', ?, ?, 'mon-1', 0, 1, 0, ?, ?)`,
     )
-    .run(V2_DEFAULT_WEEK_KEY, '2026-08-02T12:00:00.000Z', '2026-08-02T12:00:00.000Z');
+    .run(
+      PERSISTED_PACKAGE_ID,
+      V2_DEFAULT_WEEK_KEY,
+      '2026-08-02T12:00:00.000Z',
+      '2026-08-02T12:00:00.000Z',
+    );
   const files = new MemoryInteractionFiles();
   return {
     app: new V2InteractionApplication(repository, files),
@@ -135,7 +141,13 @@ describe('V2-R05 interaction contracts and local persistence', () => {
     expect(parseInteractionMutationRequest(createInput('COMMENT', '一条评论'))).toMatchObject({
       action: 'CREATE_INTERACTION',
       kind: 'COMMENT',
+      relatedContentPackageId: null,
     });
+    for (const kind of ['COMMENT', 'DIRECT_MESSAGE'] as const) {
+      expect(
+        parseInteractionMutationRequest(createInput(kind, '关联内容', PERSISTED_PACKAGE_ID)),
+      ).toMatchObject({ kind, relatedContentPackageId: PERSISTED_PACKAGE_ID });
+    }
     const privateText = '不应进入错误消息的正文';
     for (const invalid of [
       createInput('EMAIL' as InteractionKind, privateText),
@@ -154,7 +166,7 @@ describe('V2-R05 interaction contracts and local persistence', () => {
 
   it('creates both kinds, validates a stable R04 ID, deduplicates before writing, and restores', async () => {
     const { app, database, files, repository } = await harness();
-    const commentInput = createInput('COMMENT', '  评论内容\r\n第二行  ', 'r04-package-1');
+    const commentInput = createInput('COMMENT', '  评论内容\r\n第二行  ', PERSISTED_PACKAGE_ID);
     const comment = (await app.mutate(
       commentInput,
       DEFAULT_ACCOUNT_PERSONA,
@@ -164,7 +176,7 @@ describe('V2-R05 interaction contracts and local persistence', () => {
       DEFAULT_ACCOUNT_PERSONA,
     )) as InteractionCreateResult;
     const direct = (await app.mutate(
-      createInput('DIRECT_MESSAGE', '私信内容'),
+      createInput('DIRECT_MESSAGE', '私信内容', PERSISTED_PACKAGE_ID),
       DEFAULT_ACCOUNT_PERSONA,
     )) as InteractionCreateResult;
 
@@ -173,7 +185,10 @@ describe('V2-R05 interaction contracts and local persistence', () => {
       item: { kind: 'COMMENT', userText: '评论内容\n第二行' },
     });
     expect(replay).toMatchObject({ duplicate: true, item: { itemId: comment.item.itemId } });
-    expect(direct.item.kind).toBe('DIRECT_MESSAGE');
+    expect(direct.item).toMatchObject({
+      kind: 'DIRECT_MESSAGE',
+      relatedContentPackageId: PERSISTED_PACKAGE_ID,
+    });
     expect(files.writes).toBe(2);
     expect(database.prepare('SELECT count(*) AS count FROM v2_interaction_items').get()).toEqual({
       count: 2,
@@ -183,9 +198,20 @@ describe('V2-R05 interaction contracts and local persistence', () => {
     ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
 
     const restored = new V2InteractionApplication(repository, files);
-    await expect(restored.read()).resolves.toMatchObject({
-      items: [{ kind: 'COMMENT' }, { kind: 'DIRECT_MESSAGE' }],
-    });
+    const restoredItems = (await restored.read()).items;
+    expect(restoredItems).toHaveLength(2);
+    expect(restoredItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'COMMENT',
+          relatedContentPackageId: PERSISTED_PACKAGE_ID,
+        }),
+        expect.objectContaining({
+          kind: 'DIRECT_MESSAGE',
+          relatedContentPackageId: PERSISTED_PACKAGE_ID,
+        }),
+      ]),
+    );
     const metadata = JSON.stringify(
       database.prepare('SELECT * FROM v2_interaction_items ORDER BY item_id').all(),
     );
@@ -387,7 +413,7 @@ describe('V2-R05 interaction contracts and local persistence', () => {
     await expect(app.previewDelete(first.itemId)).rejects.toMatchObject({
       code: 'INVALID_REQUEST',
     });
-    expect(repository.contentPackageExists('r04-package-1')).toBe(true);
+    expect(repository.contentPackageExists(PERSISTED_PACKAGE_ID)).toBe(true);
     expect(
       database
         .prepare('SELECT status FROM v2_interaction_items WHERE item_id = ?')
@@ -422,7 +448,7 @@ function interactionBridge(app: V2InteractionApplication): V2Bridge {
       run(
         () =>
           app.mutate(
-            { action: 'CREATE_INTERACTION', ...input },
+            parseInteractionMutationRequest({ action: 'CREATE_INTERACTION', ...input }),
             DEFAULT_ACCOUNT_PERSONA,
           ) as Promise<InteractionCreateResult>,
       ),
@@ -547,14 +573,40 @@ describe('V2-R05 interaction renderer and managed files', () => {
     expect(screen.getByRole('combobox', { name: '关联内容包（可选）' })).toHaveValue('');
     restoreContent({
       ok: true,
-      value: { packages: [], schemaVersion: 1, weekKey: V2_DEFAULT_WEEK_KEY },
+      value: {
+        packages: [
+          {
+            candidateId: 'mon-1',
+            fields: {
+              body: '合成正文',
+              coverKey: 'morgue',
+              materialNotes: '合成素材说明',
+              suggestedTime: '2026-07-27T10:00',
+              tags: ['合成标签'],
+              title: '合成内容包',
+            },
+            id: PERSISTED_PACKAGE_ID,
+            revision: 0,
+            schemaVersion: 1,
+            status: 'APPROVED',
+            version: 1,
+            versionId: `${PERSISTED_PACKAGE_ID}-v1`,
+            weekKey: V2_DEFAULT_WEEK_KEY,
+          },
+        ],
+        schemaVersion: 1,
+        weekKey: V2_DEFAULT_WEEK_KEY,
+      },
     });
-    await waitFor(() => expect(screen.getByText('尚无本地互动')).toBeVisible());
+    await user.selectOptions(
+      await screen.findByRole('combobox', { name: '关联内容包（可选）' }),
+      PERSISTED_PACKAGE_ID,
+    );
     await user.type(screen.getByLabelText('粘贴一条评论或私信'), '恢复后的评论');
     await user.click(screen.getByRole('button', { name: '保存本地互动' }));
 
     expect(await screen.findByText('恢复后的评论', { selector: 'small' })).toBeVisible();
-    expect(submitted?.relatedContentPackageId).toBeNull();
+    expect(submitted?.relatedContentPackageId).toBe(PERSISTED_PACKAGE_ID);
   });
 
   it('uses bounded content-addressed IMPORT files and stable dedup hashes', async () => {

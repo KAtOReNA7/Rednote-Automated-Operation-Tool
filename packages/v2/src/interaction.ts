@@ -180,7 +180,7 @@ function token(value: unknown, field: string, maximum = 112): string {
     typeof value !== 'string' ||
     value.length < 1 ||
     value.length > maximum ||
-    !/^[a-z0-9_-]+$/u.test(value)
+    !/^[a-z0-9_-]+$/iu.test(value)
   )
     throw new V2InteractionError('INVALID_REQUEST', [field]);
   return value;
