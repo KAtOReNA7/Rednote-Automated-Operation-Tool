@@ -1,23 +1,50 @@
 import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
-import type { V2Session } from '../mock-provider.js';
 
 export function SettingsPage(): React.JSX.Element {
   const { notify, session, setSession } = useV2Controller();
-  const update = (field: keyof V2Session['persona'], value: string): void =>
+  const update = (field: 'audience' | 'boundary' | 'name' | 'tone', value: string): void =>
     setSession((current) => ({ ...current, persona: { ...current.persona, [field]: value } }));
+  const save = (): void => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) {
+      notify('账号人设已保存到当前模拟会话；关闭后重置。');
+      return;
+    }
+    void bridge
+      .updatePersona({
+        expectedRevision: session.persona.revision,
+        persona: {
+          audience: session.persona.audience,
+          boundary: session.persona.boundary,
+          name: session.persona.name,
+          tone: session.persona.tone,
+        },
+      })
+      .then((result) => {
+        if (!result.ok) {
+          notify(result.error.message);
+          if (result.error.code === 'REVISION_CONFLICT') {
+            void bridge.readPersona().then((latest) => {
+              if (latest.ok) {
+                setSession((current) => ({ ...current, persona: { ...latest.value } }));
+              }
+            });
+          }
+          return;
+        }
+        setSession((current) => ({ ...current, persona: { ...result.value } }));
+        notify(`账号人设已保存到本机 · revision ${result.value.revision}`);
+      });
+  };
   return (
     <div className="v2-page">
       <PageHeader
         actions={
-          <Button
-            icon="check"
-            onClick={() => notify('账号人设已保存到当前模拟会话；关闭后重置。')}
-            tone="primary"
-          >
+          <Button icon="check" onClick={save} tone="primary">
             保存设置
           </Button>
         }
-        description="普通设置表达业务含义；所有改动只保存在当前模拟会话。"
+        description="普通设置表达业务含义；保存后会在重新启动 V2 时恢复。"
         eyebrow="账号人设与本地运行"
         title="设置"
       />
@@ -69,7 +96,7 @@ export function SettingsPage(): React.JSX.Element {
             <Icon name="books" />
             <div>
               <h2>本地数据</h2>
-              <p>不读取项目数据库，也不保存真实内容。</p>
+              <p>人设与周计划保存到本机；内容正文仍为模拟数据。</p>
             </div>
             <button onClick={() => notify('高级本地设置尚未接入。')} type="button">
               高级设置（未接入）

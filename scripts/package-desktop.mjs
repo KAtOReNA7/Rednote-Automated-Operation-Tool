@@ -50,24 +50,22 @@ async function writeExperienceFiles(packageDirectory) {
     writeFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), command(' --v2-shell'), 'utf8'),
     writeFile(join(packageDirectory, '返回当前绿色版本.cmd'), command(''), 'utf8'),
     writeFile(
-      join(packageDirectory, 'V2-R01-体验清单.txt'),
+      join(packageDirectory, 'V2-R02-体验清单.txt'),
       [
-        'Rednote V2-R01 用户体验清单',
+        'Rednote V2-R02 用户体验清单',
         `精确提交：${commit}`,
         '',
-        '边界：确定性模拟数据；无数据库、IPC、模型、业务网络、真实导出或平台操作。',
-        '1. 启动 V2，确认无系统错误弹窗且顶部显示“模拟数据”。',
-        '2. 核对七项导航顺序与各页标题。',
-        '3. 总览切换“只看异常”、展开普通内容、打开重点复核。',
-        '4. 本周计划选择 3 条待审批，改期到周日 14:00，再批量确认。',
-        '5. 确认时间冲突项未被误选。',
-        '6. 内容页切换三包、修改一句正文、批量通过。',
-        '7. 确认六字段齐全且没有置顶评论。',
-        '8. 互动页切换评论/私信、编辑建议、确认后标记已在官方端手动发送。',
-        '9. 确认程序没有真正发送评论或私信。',
-        '10. 搜索一本书、采纳一条复盘建议、修改并保存账号人设。',
-        '11. 关闭 V2，用旧版启动器确认旧 UI 未被模拟会话改变。',
-        '12. 反馈：接受 / 阻塞问题 / 建议问题，并附主观操作体验。',
+        '边界：仅账号人设和确定性周计划保存到本机；其他页面仍为模拟数据。',
+        '1. 启动 V2。',
+        '2. 修改设置页现有 4 个人设字段并保存。',
+        '3. 在周历选择待确认项、改期并确认。',
+        '4. 记录当前 persona 与 plan revision。',
+        '5. 完全关闭 V2。',
+        '6. 重新启动 V2。',
+        '7. 确认 4 个字段、计划动作和 revision 正确恢复。',
+        '8. 确认内容、互动、书库和数据复盘仍清楚标识为模拟。',
+        '9. 启动 legacy，确认旧 UI 正常且忽略 v2_ 表。',
+        '10. 反馈“接受 V2-R02”或列出阻塞问题。',
         '',
         '等待用户本人验收，禁止合并。',
         '',
@@ -243,7 +241,7 @@ try {
   await writeExperienceFiles(packagePaths[0]);
 
   process.stdout.write(
-    'Packaged Windows desktop directory, V2 launchers, checklist, and verified Electron fuses.\n',
+    'Packaged Windows desktop directory, V2-R02 launchers, checklist, and verified Electron fuses.\n',
   );
 } finally {
   await rm(packagingScratchDirectory, { force: true, recursive: true });

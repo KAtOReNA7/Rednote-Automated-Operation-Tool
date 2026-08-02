@@ -20,6 +20,7 @@ import {
 import { createSecureWebPreferences } from './window-factory.js';
 import { createWindowStateStore } from './window-state.js';
 import { DesktopSettingsRuntime } from './settings-runtime.js';
+import { registerV2Ipc, V2DesktopRuntime } from './v2-runtime.js';
 
 const APP_PROTOCOL = 'rednote';
 const LEGACY_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
@@ -207,21 +208,39 @@ async function startV2Application(
   expectedRendererUrl: string,
   sessionSecurityAudit: ReturnType<typeof installSessionSecurity>,
 ): Promise<void> {
+  const runtime = await V2DesktopRuntime.open(app.getPath('userData'));
+  let runtimeClosed = false;
+  let removeIpcHandlers = (): void => undefined;
+  const closeRuntime = (): void => {
+    if (runtimeClosed) return;
+    removeIpcHandlers();
+    runtime.close();
+    runtimeClosed = true;
+  };
   let mainWindow: BrowserWindow | null = new BrowserWindow({
     backgroundColor: '#fbfaf7',
     height: 820,
     minHeight: 640,
     minWidth: 960,
     show: false,
-    title: 'Rednote V2 · 模拟体验',
-    webPreferences: createSecureWebPreferences(undefined, app.isPackaged),
+    title: 'Rednote V2 · 本机工作台',
+    webPreferences: createSecureWebPreferences(
+      join(app.getAppPath(), '.vite', 'build', 'v2-preload.cjs'),
+      app.isPackaged,
+    ),
     width: 1360,
   });
   attachWebContentsSecurity(mainWindow.webContents, expectedRendererUrl);
+  removeIpcHandlers = registerV2Ipc({
+    expectedRendererUrl,
+    getWindow: () => mainWindow,
+    runtime,
+  });
   mainWindow.once('ready-to-show', () => {
     if (!isSmokeMode) mainWindow?.show();
   });
   mainWindow.on('closed', () => {
+    closeRuntime();
     mainWindow = null;
   });
 
@@ -232,6 +251,7 @@ async function startV2Application(
     }
     const timeout = setTimeout(() => {
       writeSmokeReport(smokeOutputPath, { error: 'V2_SMOKE_TIMEOUT', ok: false });
+      closeRuntime();
       app.exit(3);
     }, 20_000);
     let reported = false;
@@ -242,11 +262,15 @@ async function startV2Application(
       event.preventDefault();
       clearTimeout(timeout);
       void (async () => {
+        const persistence = runtime.smokeSummary();
         const ok =
           renderer.marker &&
           renderer.mockMode &&
           renderer.navigationCount === 7 &&
-          !renderer.preload &&
+          renderer.preload &&
+          persistence.personaRevision === 1 &&
+          persistence.planRevision === 2 &&
+          persistence.v2TableCount === 2 &&
           sessionSecurityAudit.externalRequestAttempts === 0;
         await emitSmokeProcessSample('capability-validated');
         writeSmokeReport(smokeOutputPath, {
@@ -256,9 +280,10 @@ async function startV2Application(
           packaged: app.isPackaged,
           renderer,
           runtime: {
-            ipcRegistered: false,
-            projectDataRootInitialized: false,
-            sqliteInitialized: false,
+            ipcRegistered: true,
+            ...persistence,
+            projectDataRootInitialized: true,
+            sqliteInitialized: true,
           },
           runtimeVersion: process.versions.electron ?? 'unknown',
           security: {
@@ -267,13 +292,14 @@ async function startV2Application(
             navigationDenied: true,
             networkDenied: true,
             nodeIntegration: false,
-            preload: false,
+            preload: true,
             sandbox: true,
             webviewDenied: true,
           },
         });
         await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 5_000));
         await emitSmokeProcessSample('before-exit');
+        closeRuntime();
         app.exit(ok ? 0 : 4);
       })().catch(() => app.exit(5));
     });

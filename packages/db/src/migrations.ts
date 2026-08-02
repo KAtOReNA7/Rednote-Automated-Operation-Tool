@@ -11643,6 +11643,48 @@ AFTER UPDATE ON source_revisions BEGIN
 END;
 `;
 
+const V2_PERSONA_AND_WEEKLY_PLAN_PERSISTENCE = `
+CREATE TABLE v2_workspaces (
+  workspace_id TEXT PRIMARY KEY NOT NULL
+    CHECK (length(workspace_id) BETWEEN 1 AND 64),
+  persona_name TEXT NOT NULL
+    CHECK (length(CAST(persona_name AS BLOB)) BETWEEN 1 AND 80),
+  persona_audience TEXT NOT NULL
+    CHECK (length(CAST(persona_audience AS BLOB)) BETWEEN 1 AND 500),
+  persona_tone TEXT NOT NULL
+    CHECK (length(CAST(persona_tone AS BLOB)) BETWEEN 1 AND 500),
+  persona_boundary TEXT NOT NULL
+    CHECK (length(CAST(persona_boundary AS BLOB)) BETWEEN 1 AND 1000),
+  schema_version INTEGER NOT NULL DEFAULT 1
+    CHECK (typeof(schema_version) = 'integer' AND schema_version = 1),
+  revision INTEGER NOT NULL DEFAULT 0
+    CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED})
+) STRICT;
+
+CREATE TABLE v2_weekly_plan_snapshots (
+  workspace_id TEXT NOT NULL,
+  week_key TEXT NOT NULL
+    CHECK (length(week_key) = 8 AND week_key GLOB '????-W??'),
+  plan_status TEXT NOT NULL CHECK (plan_status IN ('DRAFT', 'CONFIRMED')),
+  candidates_json TEXT NOT NULL
+    CHECK (json_valid(candidates_json)
+      AND json_type(candidates_json) = 'array'
+      AND json_array_length(candidates_json) BETWEEN 1 AND 40
+      AND length(CAST(candidates_json AS BLOB)) BETWEEN 2 AND 32768),
+  schema_version INTEGER NOT NULL DEFAULT 1
+    CHECK (typeof(schema_version) = 'integer' AND schema_version = 1),
+  revision INTEGER NOT NULL DEFAULT 0
+    CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, week_key),
+  FOREIGN KEY (workspace_id) REFERENCES v2_workspaces(workspace_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -11752,5 +11794,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'authorized_user_local_source_origin',
     sql: AUTHORIZED_USER_LOCAL_SOURCE_ORIGIN,
     version: 20,
+  }),
+  Object.freeze({
+    name: 'v2_persona_and_weekly_plan_persistence',
+    sql: V2_PERSONA_AND_WEEKLY_PLAN_PERSISTENCE,
+    version: 21,
   }),
 ]);
