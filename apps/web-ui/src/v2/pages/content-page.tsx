@@ -59,8 +59,17 @@ export function ContentPage(): React.JSX.Element {
     setError(message);
     window.requestAnimationFrame(() => errorRef.current?.focus());
   };
-  const updateDraft = (field: keyof EditableFields, value: string): void =>
+  const updateDraft = (field: keyof EditableFields, value: string): void => {
     setDraft((current) => ({ ...current, [field]: value }));
+    if (window.rednoteV2 !== undefined || active === undefined) return;
+    if (field !== 'body' && field !== 'title') return;
+    setSession((current) => ({
+      ...current,
+      content: current.content.map((item) =>
+        item.id === active.id ? { ...item, [field]: value } : item,
+      ),
+    }));
+  };
   const applyWorkspace = (workspace: V2ContentWorkspaceContract): void => {
     setSession((current) => withPersistedContentPackages(current, workspace));
     setUi((current) => ({
@@ -133,7 +142,17 @@ export function ContentPage(): React.JSX.Element {
   const approve = (ids: readonly string[]): void => {
     void run(async () => {
       const bridge = window.rednoteV2;
-      if (bridge === undefined) return fail('本机内容桥接不可用，未批准。');
+      if (bridge === undefined) {
+        if (ids.length === 0) return fail('请先选择内容包。');
+        setSession((current) => ({
+          ...current,
+          content: current.content.map((item) =>
+            ids.includes(item.id) ? { ...item, status: '已通过' } : item,
+          ),
+        }));
+        setUi((current) => ({ ...current, contentSelectedIds: [] }));
+        return notify(`已通过 ${ids.length} 个模拟内容包；未导出、未发布。`);
+      }
       const items = approvalRefs(session.content, ids);
       if (items.length === 0 || items.length !== ids.length) return fail('请选择当前内容包。');
       const result = await bridge.approveContentPackages({ items });
@@ -199,7 +218,8 @@ export function ContentPage(): React.JSX.Element {
                 onClick={() => approve(selectedIds)}
                 tone="primary"
               >
-                批量批准 {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
+                {window.rednoteV2 === undefined ? '批量通过' : '批量批准'}{' '}
+                {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
               </Button>
             </>
           )

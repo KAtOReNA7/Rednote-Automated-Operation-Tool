@@ -79,7 +79,7 @@ describe('V2 renderer shell', () => {
     );
     for (const label of ['标题', '正文', '建议日期时间', '标签（逗号分隔）', '素材说明'])
       expect(screen.getByLabelText(label)).toBeVisible();
-    expect(screen.getByRole('button', { name: /批量批准/u })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /批量通过/u })).toBeEnabled();
     expect(screen.getByRole('button', { name: /导出所选/u })).toBeEnabled();
     const selection = screen.getByRole('button', { name: /取消选择.*莫格街凶杀案/u });
     selection.focus();

@@ -41,6 +41,7 @@
 - 最后一次内容安全增量复验：1 file，5/5 通过。
 - 受影响的 V2/DB/desktop/web TypeScript 项目编译通过；变更文件定向 ESLint 与 smoke 脚本语法检查通过。
 - 最终候选门禁依次通过：`format-check`、`lint`、`typecheck`、`build` 均为 `exit 0`；持久日志位于本轮受控验证目录。
+- 首次托管 CI 暴露的无桥接 mock 兼容回归已精确修复；`v2-workflow` 4/4 通过，随后 `v2-renderer` 3/3 通过。
 - 本地未运行 normal 全量、capacity、Electron smoke、packaged smoke、package 或 audit；按任务要求交由精确 PR HEAD 的 Windows required CI。
 
 ## 数据、预算与副作用
