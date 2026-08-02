@@ -14,7 +14,6 @@ import {
   v2MockProvider,
   withPersistedWeeklyPlan,
   type PersistedWeeklyPlan,
-  type RendererV2Bridge,
   type RendererPlanRescheduleFields,
   type RendererPlanReschedulePreview,
   type V2Session,
@@ -30,12 +29,6 @@ import { WeeklyPlanPage } from './pages/weekly-plan-page.js';
 
 const V2_SMOKE_PREFIX = '__V2_R03_SMOKE__:';
 const V2_DEFAULT_WEEK_KEY = '2026-W31';
-
-declare global {
-  interface Window {
-    readonly rednoteV2?: RendererV2Bridge;
-  }
-}
 
 function restoreSession(
   session: V2Session,

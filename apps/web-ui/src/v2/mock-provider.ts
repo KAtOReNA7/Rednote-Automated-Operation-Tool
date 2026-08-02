@@ -1,13 +1,3 @@
-import type {
-  PlanCandidateStatus,
-  PlanRescheduleFields,
-  PlanRescheduleMode,
-  PlanReschedulePreview,
-  V2Bridge,
-  V2Result,
-  WeeklyPlan,
-} from '@mystery-operations/v2';
-
 const cover = (name: string): string => new URL(`./assets/content/${name}`, import.meta.url).href;
 type BookRow = readonly [string, string, string, string, number, string];
 type ContentRow = readonly [
@@ -32,8 +22,8 @@ type InteractionRow = readonly [
   '可直接确认' | '需要追问',
 ];
 type PlanRow = readonly [string, string, string, string, string, string, string];
-type PersistedPlanStatus = PlanCandidateStatus;
-export type PersistedWeeklyPlan = WeeklyPlan;
+type PersistedPlanStatus = V2PlanCandidateContract;
+export type PersistedWeeklyPlan = V2WeeklyPlanContract;
 
 // One deterministic fixture record per line is easier to audit.
 // prettier-ignore
@@ -122,11 +112,9 @@ function createFixture() {
 
 export type V2Session = ReturnType<typeof createFixture>;
 export type InteractionItem = V2Session['interactions'][number];
-export type RendererPlanRescheduleMode = PlanRescheduleMode;
-export type RendererPlanRescheduleFields = PlanRescheduleFields;
-export type RendererPlanReschedulePreview = PlanReschedulePreview;
-export type V2BridgeResult<T> = V2Result<T>;
-export type RendererV2Bridge = V2Bridge;
+export type RendererPlanRescheduleMode = V2PlanModeContract;
+export type RendererPlanRescheduleFields = V2PlanFieldsContract;
+export type RendererPlanReschedulePreview = V2PlanPreviewContract;
 
 export function planDateWeekKey(date: string, fallback = ''): string {
   if (!date.includes('-')) return fallback;
