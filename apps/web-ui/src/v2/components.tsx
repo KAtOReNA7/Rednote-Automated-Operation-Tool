@@ -3,13 +3,20 @@ import {
   useContext,
   useEffect,
   useRef,
+  useState,
   type Dispatch,
   type ReactNode,
   type SetStateAction,
 } from 'react';
 
 import iconSpriteUrl from './assets/icons/phosphor-v2-subset.svg';
-import type { V2Session } from './mock-provider.js';
+import {
+  planDateWeekKey,
+  type RendererPlanRescheduleFields,
+  type RendererPlanRescheduleMode,
+  type RendererPlanReschedulePreview,
+  type V2Session,
+} from './mock-provider.js';
 import { V2_ROUTES, toV2Hash, type V2RouteId } from './routes.js';
 
 export type PlanFilter = 'all' | 'pending' | 'conflict';
@@ -21,14 +28,15 @@ export interface ReviewItem {
 export interface V2UiState {
   readonly activeContentId: string;
   readonly activeInteractionId: string;
-  readonly batchMode: boolean;
   readonly contentSelectedIds: readonly string[];
   readonly interactionSelectedIds: readonly string[];
   readonly interactionTab: '评论' | '私信';
   readonly normalExpanded: boolean;
   readonly onlyExceptions: boolean;
   readonly planFilter: PlanFilter;
+  readonly planSelectionAnchorId: string;
   readonly planSelectedIds: readonly string[];
+  readonly personaErrors: readonly string[];
   readonly savedOpportunityIds: readonly string[];
 }
 export interface V2Controller {
@@ -118,6 +126,7 @@ export function AppFrame({
   readonly children: ReactNode;
   readonly notify: (message: string) => void;
 }): React.JSX.Element {
+  const { session } = useV2Controller();
   return (
     <div className="v2-shell" data-v2-mock="true" data-v2-shell>
       <header className="v2-window-bar">
@@ -125,7 +134,7 @@ export function AppFrame({
           <Icon name="bookmark-simple" size={21} />
           <span>Rednote V2</span>
         </div>
-        <strong className="v2-mock-label">模拟数据 · 未连接真实服务</strong>
+        <strong className="v2-mock-label">周计划已连接本机 · 其他页面模拟</strong>
       </header>
       <div className="v2-app-body">
         <aside aria-label="主导航" className="v2-sidebar">
@@ -151,7 +160,7 @@ export function AppFrame({
           >
             <Icon name="user-circle" size={29} />
             <span>
-              <strong>雾灯书页</strong>
+              <strong>{session.persona.name}</strong>
               <small>个人悬疑推理图书账号</small>
             </span>
             <Icon name="caret-down" size={15} />
@@ -188,7 +197,7 @@ export function PageHeader({
 
 export function StatusPill({ status }: { readonly status: string }): React.JSX.Element {
   const tone =
-    status === '已确认' || status === '已导出' || status === '已通过'
+    status === '已确认' || status === '已导出' || status === '已通过' || status === '已锁定'
       ? 'success'
       : status === '时间冲突'
         ? 'danger'
@@ -311,56 +320,240 @@ export function DetailDrawer({
 export function DateModal({
   count,
   onClose,
-  onConfirm,
+  onApply,
+  onPreview,
   returnFocus,
 }: {
   readonly count: number;
   readonly onClose: () => void;
-  readonly onConfirm: (value: string) => void;
+  readonly onApply: (
+    fields: Omit<RendererPlanRescheduleFields, 'candidateIds' | 'expectedRevision' | 'weekKey'>,
+    allowConflicts: boolean,
+    preview: RendererPlanReschedulePreview,
+  ) => Promise<boolean>;
+  readonly onPreview: (
+    fields: Omit<RendererPlanRescheduleFields, 'candidateIds' | 'expectedRevision' | 'weekKey'>,
+  ) => Promise<RendererPlanReschedulePreview | null>;
   readonly returnFocus: HTMLElement | null;
 }): React.JSX.Element {
   const ref = useDialog(true, onClose, returnFocus);
-  const selectRef = useRef<HTMLSelectElement>(null);
+  const [date, setDate] = useState('2026-08-05');
+  const [mode, setMode] = useState<RendererPlanRescheduleMode>('DATE_TIME');
+  const [preview, setPreview] = useState<RendererPlanReschedulePreview | null>(null);
+  const [stagger, setStagger] = useState(count > 1);
+  const [submitting, setSubmitting] = useState(false);
+  const [time, setTime] = useState('19:30');
+  const fields = (): Omit<
+    RendererPlanRescheduleFields,
+    'candidateIds' | 'expectedRevision' | 'weekKey'
+  > => ({
+    date: mode === 'TIME_ONLY' ? null : date,
+    mode,
+    staggerMinutes: stagger && mode !== 'DATE_ONLY' ? 30 : 0,
+    time: mode === 'DATE_ONLY' ? null : time,
+  });
+  const inspect = async (): Promise<void> => {
+    setSubmitting(true);
+    try {
+      const result = await onPreview(fields());
+      if (result === null) return;
+      if (result.conflictCount > 0) {
+        setPreview(result);
+        return;
+      }
+      await onApply(fields(), false, result);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+  const targetWeek = date === '' ? '待选择' : planDateWeekKey(date);
   return (
-    <div className="v2-overlay" onMouseDown={onClose} role="presentation">
+    <div className="v2-overlay v2-overlay--end" onMouseDown={onClose} role="presentation">
       <div
         aria-labelledby="v2-date-title"
         aria-modal="true"
-        className="v2-modal"
+        className="v2-drawer v2-schedule-drawer"
         onMouseDown={(event) => event.stopPropagation()}
         ref={ref}
         role="dialog"
       >
         <div className="v2-overlay-head">
           <div>
-            <p className="v2-kicker">批量操作</p>
-            <h2 id="v2-date-title">调整 {count} 篇内容日期</h2>
+            <p className="v2-kicker">{preview === null ? '批量调整' : '冲突复核'}</p>
+            <h2 id="v2-date-title">
+              {preview === null ? `调整 ${count} 篇内容的日期和时间` : '发现时间冲突'}
+            </h2>
           </div>
           <button aria-label="关闭改期" className="v2-icon-button" onClick={onClose} type="button">
             <Icon name="x" />
           </button>
         </div>
-        <label className="v2-field">
-          <span>新的发布时间</span>
-          <select defaultValue="周日 14:00" ref={selectRef}>
-            <option>周六 18:30</option>
-            <option>周日 10:00</option>
-            <option>周日 14:00</option>
-            <option>周日 20:00</option>
-          </select>
-        </label>
-        <p className="v2-help">确认后会在当前模拟会话中更新，并重新标记状态。</p>
-        <div className="v2-overlay-actions">
-          <Button onClick={onClose}>取消</Button>
-          <Button
-            onClick={() => onConfirm(selectRef.current?.value ?? '周日 14:00')}
-            tone="primary"
-          >
-            确认调整
-          </Button>
-        </div>
+        {preview === null ? (
+          <>
+            <div aria-label="调整模式" className="v2-segments v2-schedule-modes">
+              {(
+                [
+                  ['DATE_TIME', '日期和时间'],
+                  ['DATE_ONLY', '仅日期'],
+                  ['TIME_ONLY', '仅时间'],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  aria-pressed={mode === value}
+                  data-active={mode === value}
+                  key={value}
+                  onClick={() => setMode(value)}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="v2-schedule-inputs">
+              {mode === 'TIME_ONLY' ? null : (
+                <label className="v2-field">
+                  <span>日期</span>
+                  <input
+                    aria-describedby="v2-timezone-help"
+                    onChange={(event) => setDate(event.target.value)}
+                    type="date"
+                    value={date}
+                  />
+                </label>
+              )}
+              {mode === 'DATE_ONLY' ? null : (
+                <label className="v2-field">
+                  <span>时间（24 小时制）</span>
+                  <input
+                    aria-describedby="v2-timezone-help"
+                    onChange={(event) => setTime(event.target.value)}
+                    type="time"
+                    value={time}
+                  />
+                </label>
+              )}
+            </div>
+            <p className="v2-help" id="v2-timezone-help">
+              时区：Asia/Shanghai (UTC+8)。日期可直接输入，也可使用日期选择器。
+            </p>
+            <label className="v2-stagger-toggle">
+              <input
+                checked={stagger}
+                disabled={count < 2}
+                onChange={(event) => setStagger(event.target.checked)}
+                type="checkbox"
+              />
+              <span>
+                <strong>每篇间隔 30 分钟</strong>
+                <small>按当前选择顺序，从起始时间依次排开。</small>
+              </span>
+            </label>
+            <section aria-label="影响预览" className="v2-impact-preview">
+              <strong>应用前影响预览</strong>
+              <dl>
+                <div>
+                  <dt>影响内容</dt>
+                  <dd>{count} 篇</dd>
+                </div>
+                <div>
+                  <dt>目标周</dt>
+                  <dd>{mode === 'TIME_ONLY' ? '保留原日期' : targetWeek}</dd>
+                </div>
+                <div>
+                  <dt>冲突处理</dt>
+                  <dd>先检查，不自动解决</dd>
+                </div>
+              </dl>
+            </section>
+            <div className="v2-overlay-actions">
+              <Button
+                onClick={() => {
+                  setDate('2026-08-05');
+                  setTime('19:30');
+                }}
+                tone="quiet"
+              >
+                重置
+              </Button>
+              <Button onClick={onClose}>取消</Button>
+              <Button disabled={submitting} onClick={() => void inspect()} tone="primary">
+                检查冲突并应用
+              </Button>
+            </div>
+          </>
+        ) : (
+          <>
+            <section className="v2-conflict-summary">
+              <div>
+                <Icon name="warning-circle" />
+                <p>发现 {preview.conflictCount} 处冲突。系统不会自动顺延、交换、覆盖或删除内容。</p>
+              </div>
+              {preview.conflicts.map((conflict) => (
+                <article key={`${conflict.existing.candidateId}-${conflict.incoming.candidateId}`}>
+                  <div>
+                    <span>已有计划</span>
+                    <strong>{conflict.existing.title}</strong>
+                    <small>
+                      {conflict.existing.date} · {conflict.existing.time}
+                    </small>
+                  </div>
+                  <div>
+                    <span>本次调整</span>
+                    <strong>{conflict.incoming.title}</strong>
+                    <small>
+                      {conflict.incoming.date} · {conflict.incoming.time}
+                    </small>
+                  </div>
+                </article>
+              ))}
+            </section>
+            <p className="v2-help">返回修改不会写入任何计划；仍然应用会保留相同时间并记录冲突。</p>
+            <div className="v2-overlay-actions">
+              <Button onClick={onClose} tone="quiet">
+                取消调整
+              </Button>
+              <Button onClick={() => setPreview(null)}>返回修改时间</Button>
+              <Button
+                disabled={submitting}
+                onClick={() => {
+                  setSubmitting(true);
+                  void onApply(fields(), true, preview).finally(() => setSubmitting(false));
+                }}
+                tone="primary"
+              >
+                仍然应用
+              </Button>
+            </div>
+          </>
+        )}
       </div>
     </div>
+  );
+}
+
+export function ScheduleSuccess({
+  message,
+  onDismiss,
+}: {
+  readonly message: string;
+  readonly onDismiss: () => void;
+}): React.JSX.Element {
+  return (
+    <section aria-live="polite" className="v2-schedule-success" role="status">
+      <Icon name="check-circle" size={24} />
+      <div>
+        <strong>计划已更新</strong>
+        <p>{message}</p>
+      </div>
+      <button
+        aria-label="关闭成功提示"
+        className="v2-icon-button"
+        onClick={onDismiss}
+        type="button"
+      >
+        <Icon name="x" size={16} />
+      </button>
+    </section>
   );
 }
 

@@ -2,11 +2,12 @@
 
 import '@testing-library/jest-dom/vitest';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { V2App } from '../apps/web-ui/src/v2/app.js';
+import { createMemoryV2Bridge } from './support/v2-test-runtime.js';
 
 beforeEach(() => {
   window.history.replaceState(null, '', '#/v2/overview');
@@ -21,24 +22,76 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(window, 'rednoteDesktop');
+  Reflect.deleteProperty(window, 'rednoteV2');
 });
 
 describe('V2 deterministic session workflows', () => {
-  it('selects exactly three pending posts, excludes conflict, reschedules, and confirms', async () => {
+  it('selects exactly three pending posts, uses arbitrary date/time, reschedules, and confirms', async () => {
     const user = userEvent.setup();
+    Object.defineProperty(window, 'rednoteV2', {
+      configurable: true,
+      value: createMemoryV2Bridge(),
+    });
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '本周计划' }));
+    await user.click(screen.getByRole('button', { name: '生成下周计划' }));
+    expect(await screen.findByText(/按保存的人设生成 21 篇/u)).toBeVisible();
     await user.click(screen.getByRole('button', { name: '选择待确认' }));
-    expect(screen.getAllByRole('button', { name: '已选择' })).toHaveLength(3);
+    expect(document.querySelectorAll('.v2-post[data-selected="true"]')).toHaveLength(3);
 
-    const conflict = screen.getByText('红发会的幕后主谋').closest('article');
-    expect(conflict).not.toHaveAttribute('data-selected', 'true');
+    expect(
+      document.querySelectorAll('.v2-post[data-danger="true"][data-selected="true"]'),
+    ).toHaveLength(0);
     await user.click(screen.getByRole('button', { name: '调整日期' }));
-    expect(screen.getByRole('dialog', { name: '调整 3 篇内容日期' })).toBeVisible();
-    await user.click(screen.getByRole('button', { name: '确认调整' }));
-    expect(await screen.findByText(/调整到周日 14:00/u)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: '确认所选 (3)' }));
+    expect(screen.getByRole('dialog', { name: '调整 3 篇内容的日期和时间' })).toBeVisible();
+    expect(screen.getAllByText('Asia/Shanghai (UTC+8)', { exact: false })).toHaveLength(2);
+    const date = screen.getByLabelText('日期');
+    await user.clear(date);
+    await user.type(date, '2027-01-07');
+    expect(screen.getByText('2027-W01')).toBeVisible();
+    await user.clear(date);
+    await user.type(date, '2026-08-06');
+    await user.clear(screen.getByLabelText('时间（24 小时制）'));
+    await user.type(screen.getByLabelText('时间（24 小时制）'), '18:30');
+    await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
+    expect(await screen.findByText('计划已更新')).toBeVisible();
+    await user.click(screen.getByRole('link', { name: '总览' }));
+    expect(screen.getByText('18 篇 · 0 处冲突 · 5 个空位')).toBeVisible();
+    await user.click(screen.getByRole('link', { name: '本周计划' }));
+    await user.click(screen.getByRole('button', { name: '确认所选' }));
     await waitFor(() => expect(screen.getAllByText('已确认').length).toBeGreaterThanOrEqual(3));
+  });
+
+  it('supports Shift selection and keeps conflict review write-free until explicit apply', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(window, 'rednoteV2', {
+      configurable: true,
+      value: createMemoryV2Bridge(),
+    });
+    render(<V2App />);
+    await user.click(screen.getByRole('link', { name: '本周计划' }));
+    const first = screen.getByRole('button', { name: '选择 密室诞生之前' });
+    const third = screen.getByRole('button', { name: '选择 猎犬真的存在吗' });
+    await user.click(first);
+    fireEvent.click(third, { shiftKey: true });
+    expect(document.querySelectorAll('.v2-post[data-selected="true"]')).toHaveLength(3);
+    await user.click(screen.getByRole('button', { name: '取消选择' }));
+
+    await user.click(screen.getByRole('button', { name: '选择 密室诞生之前' }));
+    await user.click(screen.getByRole('button', { name: '调整日期' }));
+    fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-07-27' } });
+    fireEvent.change(screen.getByLabelText('时间（24 小时制）'), {
+      target: { value: '14:00' },
+    });
+    await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
+    expect(await screen.findByRole('heading', { name: '发现时间冲突' })).toBeVisible();
+    expect(screen.getByText('已有计划')).toBeVisible();
+    expect(screen.getByText('本次调整')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '返回修改时间' }));
+    expect(screen.getByLabelText('时间（24 小时制）')).toHaveValue('14:00');
+    await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
+    await user.click(await screen.findByRole('button', { name: '仍然应用' }));
+    expect(await screen.findByText('计划已更新')).toBeVisible();
   });
 
   it('edits and approves content, then confirms before recording a manual reply', async () => {
@@ -82,6 +135,8 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getAllByRole('textbox')).toHaveLength(4);
     const name = screen.getByDisplayValue('雾灯书页');
     await user.clear(name);
+    await user.click(screen.getByRole('button', { name: '保存设置' }));
+    expect(screen.getByText(/账号名称未填写/u)).toBeVisible();
     await user.type(name, '雾灯书页·模拟');
     await user.click(screen.getByRole('button', { name: '保存设置' }));
     expect(await screen.findByText(/保存到当前模拟会话/u)).toBeVisible();

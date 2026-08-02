@@ -46,30 +46,15 @@ async function writeExperienceFiles(packageDirectory) {
   }
   const command = (args) =>
     `@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\nstart "" "%~dp0RednoteMysteryOperations.exe"${args}\r\n`;
+  const checklist = (
+    await readFile(join(projectRoot, 'scripts', 'v2-r03-experience-checklist.txt'), 'utf8')
+  ).replace('{{EXACT_HEAD}}', commit);
   await Promise.all([
     writeFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), command(' --v2-shell'), 'utf8'),
     writeFile(join(packageDirectory, '返回当前绿色版本.cmd'), command(''), 'utf8'),
     writeFile(
-      join(packageDirectory, 'V2-R02-体验清单.txt'),
-      [
-        'Rednote V2-R02 用户体验清单',
-        `精确提交：${commit}`,
-        '',
-        '边界：仅账号人设和确定性周计划保存到本机；其他页面仍为模拟数据。',
-        '1. 启动 V2。',
-        '2. 修改设置页现有 4 个人设字段并保存。',
-        '3. 在周历选择待确认项、改期并确认。',
-        '4. 记录当前 persona 与 plan revision。',
-        '5. 完全关闭 V2。',
-        '6. 重新启动 V2。',
-        '7. 确认 4 个字段、计划动作和 revision 正确恢复。',
-        '8. 确认内容、互动、书库和数据复盘仍清楚标识为模拟。',
-        '9. 启动 legacy，确认旧 UI 正常且忽略 v2_ 表。',
-        '10. 反馈“接受 V2-R02”或列出阻塞问题。',
-        '',
-        '等待用户本人验收，禁止合并。',
-        '',
-      ].join('\r\n'),
+      join(packageDirectory, 'V2-R03-体验清单.txt'),
+      checklist.replace(/\r?\n/gu, '\r\n'),
       'utf8',
     ),
   ]);
@@ -241,7 +226,7 @@ try {
   await writeExperienceFiles(packagePaths[0]);
 
   process.stdout.write(
-    'Packaged Windows desktop directory, V2-R02 launchers, checklist, and verified Electron fuses.\n',
+    'Packaged Windows desktop directory, V2-R03 launchers, checklist, and verified Electron fuses.\n',
   );
 } finally {
   await rm(packagingScratchDirectory, { force: true, recursive: true });

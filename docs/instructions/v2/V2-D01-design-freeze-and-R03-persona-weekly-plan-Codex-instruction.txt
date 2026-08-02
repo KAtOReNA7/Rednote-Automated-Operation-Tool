@@ -1,0 +1,252 @@
+Rednote V2 — D01 设计冻结与 V2-R03 账号人设驱动周计划
+
+任务性质：V2 生产开发增量
+目标状态：R03_AWAITING_USER_ACCEPTANCE
+停止点：Draft PR、精确 HEAD 托管 Windows CI、Windows 体验包均准备完成；不得合并，不得进入 R04
+
+完整遵守仓库根级及作用域内 AGENTS.md。本指令只定义本轮增量；不要复制、改写或扩张公共治理规则。
+
+一、已经由用户确认的事实
+
+1. V2-R02 已被用户接受并合并；开工仍须动态核验当前 main、origin/main、实际远端 main 和精确 HEAD 托管 CI，禁止把本文中的历史 SHA 当作门禁。
+2. 用户已在 2026-08-02 将 D01 六个画面导入 Figma，并明确回复“显示正常”。这是正式设计验收，不得再次要求用户证明同一事实。
+3. Figma 文件：
+   https://www.figma.com/design/ZHNeFF0kn9F5ZTdqc96voy
+   产品画面页：02 Product Screens
+   已知页面 node：1:89
+   节点链接：
+   https://www.figma.com/design/ZHNeFF0kn9F5ZTdqc96voy?node-id=1-89
+4. 六个已批准画面依次为：
+   01 总览；
+   02 周计划默认态；
+   03 批量选择态；
+   04 任意日期时间；
+   05 冲突复核；
+   06 应用成功反馈。
+5. D01 的核心产品决定：
+   - 总览以结果、异常和下一步行动为先；
+   - 周计划使用七日周历，但拖拽不是必要操作；
+   - 支持单篇或批量自由设置日期、24 小时时间、仅日期、仅时间和跨周调整；
+   - 应用前展示影响与冲突；系统不得自动顺延、交换、删除或替用户解决冲突；
+   - 本地计划不代表自动发布；
+   - 不含置顶评论；
+   - 评论与私信只产生回复建议，最终由用户在官方端手动发送。
+
+二、获准的任务输入与工作树处理
+
+以下两类未跟踪文件属于本任务获准输入，不得因为它们存在而停止：
+
+1. 本 TXT。将其唯一归档到 docs/instructions/v2/，文件名保持不变并纳入本任务提交；原输入位置不再保留第二份。
+2. 可选设计包 Rednote-V2-D01-Figma-manual-import-v1.zip，或其解压目录 v2-d01-manual-import。它只作只读设计参考，不纳入 Git；原件不得删除或覆盖。需要解压时使用本轮受控、ignored、仓库卷临时目录。
+
+除上述输入外，如存在未知 tracked、staged 或 untracked 用户改动，按 AGENTS.md 停止，不得 stash、reset、删除或顺手提交。
+
+三、Phase 0：动态基线与设计来源可用性
+
+1. 动态发现仓库根、当前分支、HEAD、tracking、实际远端 main、ahead/behind、工作树和适用 AGENTS.md。
+2. 确认当前 main 包含已合并的 R02 能力：
+   - V2 application facade/DTO；
+   - v2_workspaces 与 v2_weekly_plan_snapshots；
+   - 独立 window.rednoteV2；
+   - 仅 v2:workspace:read 与 v2:workspace:mutate 两个底层 channel；
+   - 修改—关闭—重启—恢复已具备。
+3. 核验精确 main HEAD 的 Windows required CI 为 success，且没有开放的阻塞 review/finding。
+4. 从绿色 main 新建分支：codex/v2-r03-persona-weekly-plan。不得在 main 直接开发。
+
+设计读取按以下优先级执行：
+
+A. 如果当前环境提供 Figma get_design_context：
+   - 先完整加载 figma-design-to-code 规则；
+   - 可用 get_metadata 在页面 node 1:89 下发现六个实际子节点，不得猜 nodeId；
+   - 对本轮涉及的总览、周计划、批量日期时间、冲突、成功反馈节点分别调用 get_design_context；
+   - 返回的代码只作参考，必须适配现有 React/TypeScript/CSS 和组件，不得原样粘贴。
+
+B. 如果 Figma 工具仍不可用，但设计 ZIP/解压目录存在：
+   - 读取 START-HERE.txt 与 QA-REPORT.txt；
+   - 在受控临时目录渲染并检查六个 SVG；
+   - 把它们当作用户从 Figma 批准并导出的视觉真相；
+   - 这不是 Codex 自行设计，也不是允许重新生成画面。
+
+C. 如果 A、B 均不可用：
+   在修改生产代码前停止为 R03_BLOCKED_BY_D01_REFERENCE_UNAVAILABLE，只报告缺少哪一种输入；不得用 ImageGen、Sites、临时 HTML、旧 UI 截图、模型想象或计算机控制代替。
+
+不得修改 Figma 文件；不得再做视觉方向探索。不得把 SVG/PNG 当成整页图片嵌入生产应用。
+
+四、D01 冻结记录
+
+在仓库现有 V2 产品文档中记录 D01；若没有合适文件，只新增一个不超过 120 行的 docs/product/v2-d01-design-baseline.md。内容仅包括：
+
+- Figma URL、page node 和六个画面名称；
+- 用户“已导入、显示正常”的验收事实与日期；
+- 视觉真相优先级；
+- 本轮实现范围和明确延期范围；
+- 后续 UI 修改必须先经过新的 Figma 设计关卡。
+
+不要创建大型设计报告、逐像素验收映射、截图仓库或第二套设计系统文档。
+
+五、V2-R03 唯一用户结果
+
+用户可以用已经保存的账号人设生成一份确定性周计划，并完成：
+
+生成 → 批量选择 → 任意日期/时间调整 → 冲突复核 → 确认或跳过 → 锁定 → 重启恢复 → 总览同步
+
+这轮是业务闭环与持久化行为升级，不是七页 UI 重做。
+
+六、必须实现
+
+1. AccountPersona 与生成前校验
+   - 复用 R02 已冻结的人设 DTO、repository 和设置页，不新增第二套人设模型；
+   - 以实际 R02 合同为准验证必填字段、长度、受控枚举和 expectedRevision；
+   - 人设不完整时给出明确字段级提示，不生成计划、不伪装成功。
+
+2. ScriptedPlanningProvider
+   - 只用确定性 Scripted provider；真实模型、Search、Fetch、图片和业务网络均为 0；
+   - 输入为已保存人设快照、weekKey 和现有计划 revision；
+   - 输出最多 40 个候选，固定 ID、固定排序、固定映射；禁止随机数、Date.now() 和环境依赖结果；
+   - 相同输入重复生成得到相同语义结果，不重复追加候选；
+   - 普通界面只显示产品信息，不出现 Dossier、Brief、Claim、Evidence、Job、Capability 或 Ledger。
+
+3. 周计划状态与动作
+   - 复用 v2_weekly_plan_snapshots，不新增表、migration、trigger 或任意 JSON；
+   - 支持生成、选择、Shift 连续选择、确认、跳过、改期和锁定；
+   - 所有 mutation 使用 expectedRevision；陈旧 revision 必须无副作用地失败并提示刷新；
+   - LOCKED 后普通 mutation 被拒绝，UI 必须显示真实只读状态；
+   - 不实现内容包生成、审批、导出或发布。
+
+4. 任意日期与时间
+   - 单篇和批量均可进入；
+   - 三种模式：日期和时间、仅日期、仅时间；
+   - 日期既可直接输入也可通过日期选择器选择；
+   - 时间使用 24 小时格式；明确显示 Asia/Shanghai (UTC+8)；
+   - 允许跨周移动，并在应用前说明影响篇数和目标周；
+   - 批量模式支持从起点按 30 分钟依次排开；
+   - 对无效日期、无效时间、空选择、超过 40 项和越界输入返回有限、可读错误。
+
+5. 冲突处理
+   - 应用前检测目标时间与已有内容、以及批量内容之间的冲突；
+   - 展示“已有计划”和“本次调整”双方；
+   - 默认不修改任何计划；
+   - 用户只能返回修改，或明确选择“仍然应用”；
+   - 不自动顺延、交换、覆盖、删除、跳过或选择所谓最佳时间；
+   - 明确应用后可保留相同时间，并保存可追溯的有限冲突摘要。
+
+6. 反馈与同步
+   - 成功后显示影响篇数、日期、起始时间和间隔；
+   - 如实现 D01 的“撤销”，只允许撤销当前会话中最后一次日期时间调整，使用 expectedRevision，不增加历史表，也不得宣称重启后仍可撤销；
+   - OverviewReadModel 必须同步待确认数量、空位、异常和下一步行动；
+   - 关闭并重启 V2 后，已确认、跳过、改期和锁定状态保持一致。
+
+七、视觉实现边界
+
+1. D01 六屏是总览和周计划本轮唯一视觉依据；现有 R01/R02 只用于未被 D01 改动的页面与基础组件。
+2. Codex 只实现设计，不得自行重做信息架构、颜色、导航、卡片或另一套日期组件。
+3. 优先复用现有 V2 组件和 tokens；不得新增 UI 依赖或复制 Figma 生成代码。
+4. 图标优先复用当前已批准图标资产；不得临时手绘不同 glyph。
+5. 不改变内容、互动、书库、数据复盘和设置的整体视觉；设置页只做完成本轮校验所需的最小行为调整。
+6. 保留键盘焦点、可访问标签和 reduced-motion；批量改期不能只靠拖拽。
+7. 不使用计算机控制逐字段录入作为自动化测试。交互验证使用组件测试与 Electron smoke；最终体验由用户本人完成。
+
+八、硬预算
+
+以下是本轮相对公共预算的明确上限：
+
+- 生产源码新增不超过 1,300 LOC；
+- 测试新增不超过 1,000 LOC；
+- tracked 变更文件不超过 22 个，包含归档指令和 D01 冻结记录；
+- 新测试文件不超过 6 个，优先表驱动测试；
+- 新 dependency、package、业务表、trigger、migration、IPC channel：全部为 0；
+- 真实模型、真实 Search/Fetch、真实图片、业务 API、平台操作和费用：全部为 0。
+
+编码前先输出文件级计划和预测预算。预测超限时停止并缩减，不得边写边申请扩大，也不得复制旧领域实现。
+
+九、明确不做
+
+- 不实施 R04 内容包、批量审批或导出；
+- 不接入真实 Provider、Search、Fetch、OCR 或图片生成；
+- 不启用旧 Dossier/Brief/Topic/Experiment/Quality 主流程；
+- 不新增平台登录、发布、评论发送、私信发送、验证码或风控代码；
+- 不修改旧 194 张业务表或历史 migration；
+- 不修改 AI 标识与版权固定规则；
+- 不删除旧 UI、不把 V2 设为默认入口；
+- 不借机重构整个 renderer、main process、CSS 或测试体系；
+- 不新建逐项 100+ 验收映射、重复 ADR 或大篇幅过程报告。
+
+十、核心验收（15 项）
+
+R03-01  D01 URL、node、六屏和用户验收被正确记录。
+R03-02  不完整人设被字段级阻止，完整人设可生成。
+R03-03  相同人设与 weekKey 生成稳定候选，最多 40 项且无重复追加。
+R03-04  生成结果可批量选择、确认和跳过。
+R03-05  单篇与批量均支持日期和时间、仅日期、仅时间。
+R03-06  日期输入、日期选择器、24 小时时间和 Asia/Shanghai 语义一致。
+R03-07  跨周影响在应用前准确预览。
+R03-08  30 分钟依次排开结果确定且受输入上限保护。
+R03-09  冲突检测默认零写入，不自动解决。
+R03-10  返回修改与明确仍然应用两条路径均正确。
+R03-11  expectedRevision 竞争无部分写入；重复命令幂等。
+R03-12  LOCKED 状态拒绝普通 mutation。
+R03-13  重启后计划、候选状态、时间和 lock 保持。
+R03-14  总览待办、异常与节奏随计划事实同步。
+R03-15  0 新 Schema/migration/IPC/dependency，0 真实网络/模型/费用/平台动作，且没有 pinned comment。
+
+验收使用少量参数化测试覆盖正常、失败、边界和 revision，不得为每个排列复制测试文件。
+
+十一、验证策略
+
+本轮明确采用“本地聚焦 + 托管完整”策略，覆盖旧公共规则中可能要求本地全量的部分：
+
+1. 本地只运行：
+   - R03 新增/直接受影响的 persona、planning、repository、runtime/IPC adapter 和 renderer 聚焦测试；
+   - 与 R02 持久化恢复直接相邻的精确测试；
+   - format-check、lint、typecheck、build、git diff --check。
+2. 本地不得运行 normal/full Vitest、capacity、npm ci、desktop package、packaged smoke、全仓依赖审计或真实浏览器测试；这些由精确 PR HEAD 的 Windows required CI 单次承担。
+3. 聚焦测试失败后，只修复根因并重跑失败集合及直接相邻集合；不得无修改盲目重跑全量。
+4. 推送 Draft PR 后等待精确 HEAD 托管 CI：normal、capacity、Electron source/packaged smoke、build、desktop/clipper package、audit 和 cleanup。
+5. 若 CI 是确定性 R03 回归，可追加一个最小修复提交并等待新 HEAD；不得 amend、rebase 或弱化测试。
+6. 若 CI 是基础设施瞬时问题，先证据化诊断；不得为使其变绿而修改产品语义，也不得连续远端试错。
+
+十二、Git、PR 与体验包
+
+1. 实现提交信息：feat(v2): add persona-driven weekly planning
+2. 默认一个实现提交；只有精确托管 CI 揭示的最小兼容修复才允许第二个普通提交。
+3. 普通 push 当前 V2-R03 分支并创建 Draft PR；不得 force push、merge、amend、rebase 或 squash。
+4. PR 描述记录：D01 用户验收、实际范围、预算、聚焦验证、外部副作用和延期能力。不要新增一份重复 tracked 验收报告。
+5. 托管 CI 全绿后下载精确 HEAD 的 Windows V2 artifact 到受控 ignored 目录并静态核验。
+6. 体验包必须包含“V2-R03-体验清单.txt”，开头明确写：
+   “本轮主要验证真实持久化周计划行为，不是新的视觉改版。”
+7. 体验清单要求用户亲自完成：
+   - 在设置中保存完整人设；
+   - 生成一周计划；
+   - 选择 3 项并批量移动到任意日期和时间；
+   - 至少制造并检查 1 个冲突，确认系统未自动解决；
+   - 确认若干项、跳过 1 项并锁定计划；
+   - 关闭并重启，核对持久化；
+   - 返回总览，核对待办和节奏同步。
+8. Codex 不得替用户启动应用或使用计算机控制完成验收。
+
+十三、最终反馈与停止条件
+
+成功状态只能是：R03_AWAITING_USER_ACCEPTANCE。
+
+最终反馈必须简明列出：
+
+- D01 冻结记录及实际采用的设计读取路径（Figma 或用户批准 SVG）；
+- 动态基线、分支、提交、Draft PR 和精确 HEAD CI；
+- 用户真正新增的行为；
+- 预算实际值；
+- 本地聚焦验证与托管完整验证；
+- Windows artifact、启动入口和体验清单；
+- 0 真实密钥、模型、业务网络、费用与平台动作；
+- 未实施 R04，PR 未合并。
+
+任一以下情况须在生产修改前或当前安全点停止：
+
+- 设计来源 A、B 均不可用；
+- 当前 main/R02 能力或精确 HEAD CI 不成立；
+- 未知用户改动与本任务重叠；
+- 预计或实际超过硬预算；
+- 需要新表、migration、IPC、dependency 或真实外部调用；
+- Figma 与冻结产品规则存在无法解释的冲突；
+- 托管 CI 未通过且最小根因修复不在授权范围。
+
+开始执行。先完成动态基线和 D01 设计来源读取，再提交文件级计划；确认不超预算后实施 R03。完成 Draft PR、精确 HEAD CI 与体验包后停止，等待用户明确“接受 V2-R03”或列出问题。

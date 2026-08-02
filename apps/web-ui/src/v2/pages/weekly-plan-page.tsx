@@ -1,99 +1,171 @@
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
 import { withPersistedWeeklyPlan } from '../mock-provider.js';
-const days = [
-  ['周一', '7/27'],
-  ['周二', '7/28'],
-  ['周三', '7/29'],
-  ['周四', '7/30'],
-  ['周五', '7/31'],
-  ['周六', '8/1'],
-  ['周日', '8/2'],
-] as const;
+
+const dayOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const;
+
+function shortDate(value: string): string {
+  if (!value.includes('-')) return value;
+  const [, month = '', day = ''] = value.split('-');
+  return `${String(Number(month))}/${String(Number(day))}`;
+}
 
 export function WeeklyPlanPage(): React.JSX.Element {
   const { notify, openDate, session, setSession, setUi, ui } = useV2Controller();
-  const { batchMode, planFilter: filter, planSelectedIds: selectedIds } = ui;
+  const { planFilter: filter, planSelectedIds: selectedIds } = ui;
+  const locked = session.planStatus === 'CONFIRMED';
+  const pending = session.plan.filter(({ status }) => status === '待审批');
+  const conflicts = session.plan.filter(({ status }) => status === '时间冲突');
+  const skipped = session.plan.filter(({ status }) => status === '已跳过');
+  const clearSelection = (): void =>
+    setUi((current) => ({
+      ...current,
+      planSelectedIds: [],
+      planSelectionAnchorId: '',
+    }));
+  const reloadAfterConflict = (): void => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) return;
+    void bridge.readWeeklyPlan({ weekKey: session.weekKey }).then((latest) => {
+      if (latest.ok) setSession((current) => withPersistedWeeklyPlan(current, latest.value));
+    });
+  };
   const selectPending = (): void => {
     setUi((current) => ({
       ...current,
-      batchMode: true,
-      planSelectedIds: session.plan.filter(({ status }) => status === '待审批').map(({ id }) => id),
+      planSelectedIds: pending.map(({ id }) => id),
+      planSelectionAnchorId: pending.at(-1)?.id ?? '',
     }));
-    notify('已严格选中 3 篇待审批内容，时间冲突项未选择。');
+    notify(`已选中 ${pending.length} 篇待确认内容，未自动选择时间冲突项。`);
+  };
+  const toggleCandidate = (candidateId: string, shiftKey: boolean): void => {
+    setUi((current) => {
+      const visibleIds = session.plan.filter(({ status }) => visible(status)).map(({ id }) => id);
+      if (shiftKey && current.planSelectionAnchorId !== '') {
+        const from = visibleIds.indexOf(current.planSelectionAnchorId);
+        const to = visibleIds.indexOf(candidateId);
+        if (from >= 0 && to >= 0) {
+          const range = visibleIds.slice(Math.min(from, to), Math.max(from, to) + 1);
+          return {
+            ...current,
+            planSelectedIds: [...new Set([...current.planSelectedIds, ...range])],
+          };
+        }
+      }
+      const selected = current.planSelectedIds.includes(candidateId);
+      return {
+        ...current,
+        planSelectedIds: selected
+          ? current.planSelectedIds.filter((id) => id !== candidateId)
+          : [...current.planSelectedIds, candidateId],
+        planSelectionAnchorId: candidateId,
+      };
+    });
   };
   const visible = (status: string): boolean =>
     filter === 'all' || (filter === 'pending' ? status === '待审批' : status === '时间冲突');
-  const confirm = (): void => {
+  const mutateSelection = (action: 'confirm' | 'skip'): void => {
     if (selectedIds.length === 0) {
-      notify('请先选择内容。');
+      notify('请先选择至少一篇内容。');
       return;
     }
     const bridge = window.rednoteV2;
     if (bridge === undefined) {
-      setSession((current) => ({
-        ...current,
-        plan: current.plan.map((item) =>
-          selectedIds.includes(item.id) ? { ...item, status: '已确认' } : item,
-        ),
-      }));
-      notify(`已确认 ${selectedIds.length} 篇内容（仅模拟会话）。`);
-      setUi((current) => ({ ...current, planSelectedIds: [] }));
+      notify('本机周计划桥接不可用，未修改计划。');
+      return;
+    }
+    const request = {
+      candidateIds: selectedIds,
+      expectedRevision: session.planRevision,
+      weekKey: session.weekKey,
+    };
+    const operation =
+      action === 'confirm'
+        ? bridge.confirmPlanCandidates(request)
+        : bridge.skipPlanCandidates(request);
+    void operation.then((result) => {
+      if (!result.ok) {
+        notify(result.error.message);
+        if (result.error.code === 'REVISION_CONFLICT') reloadAfterConflict();
+        return;
+      }
+      setSession((current) => withPersistedWeeklyPlan(current, result.value));
+      notify(`已${action === 'confirm' ? '确认' : '跳过'} ${selectedIds.length} 篇并保存到本机。`);
+      clearSelection();
+    });
+  };
+  const generate = (): void => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) {
+      notify('本机周计划桥接不可用，未生成计划。');
       return;
     }
     void bridge
-      .confirmPlanCandidates({
-        candidateIds: selectedIds,
-        expectedRevision: session.planRevision,
-        weekKey: session.weekKey,
-      })
+      .generateWeeklyPlan({ expectedRevision: session.planRevision, weekKey: session.weekKey })
       .then((result) => {
         if (!result.ok) {
           notify(result.error.message);
-          if (result.error.code === 'REVISION_CONFLICT') {
-            void bridge.readWeeklyPlan({ weekKey: session.weekKey }).then((latest) => {
-              if (latest.ok)
-                setSession((current) => withPersistedWeeklyPlan(current, latest.value));
-            });
-          }
+          if (result.error.code === 'REVISION_CONFLICT') reloadAfterConflict();
           return;
         }
         setSession((current) => withPersistedWeeklyPlan(current, result.value));
-        notify(`已确认 ${selectedIds.length} 篇内容并保存到本机。`);
-        setUi((current) => ({ ...current, planSelectedIds: [] }));
+        notify(`已按保存的人设生成 ${result.value.candidates.length} 篇确定性计划，模型调用为 0。`);
       });
   };
+  const lock = (): void => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) {
+      notify('本机周计划桥接不可用，未锁定计划。');
+      return;
+    }
+    void bridge
+      .lockWeeklyPlan({ expectedRevision: session.planRevision, weekKey: session.weekKey })
+      .then((result) => {
+        if (!result.ok) {
+          notify(result.error.message);
+          return;
+        }
+        setSession((current) => withPersistedWeeklyPlan(current, result.value));
+        notify('计划已锁定并保存到本机。');
+        clearSelection();
+      });
+  };
+  const openScheduler = (event: React.MouseEvent<HTMLButtonElement>): void => {
+    if (selectedIds.length === 0) {
+      notify('请先选择至少一篇内容。');
+      return;
+    }
+    openDate(event.currentTarget);
+  };
+
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-weekly-page">
       <PageHeader
         actions={
-          <>
-            <Button
-              aria-pressed={batchMode}
-              icon="check-square"
-              onClick={() => setUi((current) => ({ ...current, batchMode: !current.batchMode }))}
-            >
-              {batchMode ? '退出批量' : '批量选择'}
-            </Button>
-            <Button
-              icon="sparkle"
-              onClick={() => notify('下周计划草案已生成（模拟数据，未调用模型）。')}
-              tone="primary"
-            >
-              生成下周计划
-            </Button>
-          </>
+          <Button disabled={locked} icon="sparkle" onClick={generate} tone="primary">
+            生成下周计划
+          </Button>
         }
-        description={`21 篇 · 已完成 8 · 待审批 3。周历负责排程，批量工具负责高效调整。 · 本机 revision ${session.planRevision}`}
+        description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
         eyebrow="7月27日—8月2日"
         title="本周计划"
       />
+      <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
+      {locked ? (
+        <section className="v2-locked-banner" role="status">
+          <Icon name="check-circle" />
+          <div>
+            <strong>本周计划已锁定</strong>
+            <p>当前为真实只读状态；重启后仍保持锁定。</p>
+          </div>
+        </section>
+      ) : null}
       <div className="v2-plan-toolbar">
         <div aria-label="筛选计划" className="v2-segments">
           {(
             [
-              ['all', '全部'],
-              ['pending', '待审批'],
-              ['conflict', '时间冲突'],
+              ['all', `全部 ${session.plan.length}`],
+              ['pending', `待确认 ${pending.length}`],
+              ['conflict', `时间冲突 ${conflicts.length}`],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -107,122 +179,152 @@ export function WeeklyPlanPage(): React.JSX.Element {
           ))}
         </div>
         <div>
-          <Button icon="check-square" onClick={selectPending} tone="quiet">
-            选择待确认
-          </Button>
           <Button
-            disabled={selectedIds.length === 0}
-            icon="calendar-blank"
-            onClick={(event) => openDate(event.currentTarget)}
+            disabled={locked || pending.length === 0}
+            icon="check-square"
+            onClick={selectPending}
+            tone="quiet"
           >
-            调整日期
-          </Button>
-          <Button disabled={selectedIds.length === 0} icon="check" onClick={confirm} tone="primary">
-            确认所选 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
+            选择待确认
           </Button>
         </div>
       </div>
       <div className="v2-plan-grid">
         <section aria-label="一周内容排程" className="v2-calendar">
-          {days.map(([day, date]) => (
-            <section className="v2-day" data-today={day === '周日'} key={day}>
-              <header>
-                <strong>{day}</strong>
-                <span>{date}</span>
-                {day === '周日' ? <b>今天</b> : null}
-              </header>
-              <div>
-                {session.plan
-                  .filter((item) => item.day === day && visible(item.status))
-                  .map((item) => {
-                    const selected = selectedIds.includes(item.id);
-                    return (
-                      <article
-                        className="v2-post"
-                        data-danger={item.status === '时间冲突'}
-                        data-selected={selected}
-                        key={item.id}
-                      >
-                        <div>
-                          <span>{item.time}</span>
-                          <StatusPill status={item.status} />
-                        </div>
-                        <button
-                          onClick={() => notify(`${item.title}详情为模拟数据。`)}
-                          type="button"
+          {dayOrder.map((day) => {
+            const dayItems = session.plan.filter((item) => item.day === day);
+            const date = shortDate(dayItems[0]?.date ?? '');
+            return (
+              <section className="v2-day" data-today={day === '周日'} key={day}>
+                <header>
+                  <strong>{day}</strong>
+                  <span>{date}</span>
+                  {day === '周日' ? <b>今天</b> : null}
+                </header>
+                <div>
+                  {dayItems
+                    .filter((item) => visible(item.status))
+                    .map((item) => {
+                      const selected = selectedIds.includes(item.id);
+                      return (
+                        <article
+                          className="v2-post"
+                          data-danger={item.status === '时间冲突'}
+                          data-selected={selected}
+                          key={item.id}
                         >
-                          {item.title}
-                        </button>
-                        <p>{item.book}</p>
-                        {batchMode ? (
+                          <div>
+                            <span>{item.time}</span>
+                            <StatusPill status={item.status} />
+                          </div>
                           <button
+                            onClick={() => notify(`${item.title}详情尚未进入 R03。`)}
+                            type="button"
+                          >
+                            {item.title}
+                          </button>
+                          <p>{item.book}</p>
+                          <button
+                            aria-label={`${selected ? '取消选择' : '选择'} ${item.title}`}
                             aria-pressed={selected}
                             className="v2-select-post"
-                            onClick={() =>
-                              setUi((current) => ({
-                                ...current,
-                                planSelectedIds: selected
-                                  ? current.planSelectedIds.filter((id) => id !== item.id)
-                                  : [...current.planSelectedIds, item.id],
-                              }))
-                            }
+                            disabled={locked || item.status === '已跳过'}
+                            onClick={(event) => toggleCandidate(item.id, event.shiftKey)}
                             type="button"
                           >
                             <Icon name={selected ? 'check-square' : 'square'} size={17} />
                             {selected ? '已选择' : '选择'}
                           </button>
-                        ) : null}
-                      </article>
-                    );
-                  })}
+                        </article>
+                      );
+                    })}
+                </div>
+                <button className="v2-add-slot" disabled type="button">
+                  <Icon name="plus" size={16} />
+                  空闲时段
+                </button>
+              </section>
+            );
+          })}
+        </section>
+        <aside className="v2-stack">
+          <section className="v2-card v2-side-card">
+            <p className="v2-kicker">保持全局视角</p>
+            <h2>本周节奏</h2>
+            <dl className="v2-facts">
+              <div>
+                <dt>计划</dt>
+                <dd>{session.plan.length} 篇</dd>
               </div>
+              <div>
+                <dt>待确认</dt>
+                <dd className="v2-accent">{pending.length} 篇</dd>
+              </div>
+              <div>
+                <dt>已跳过</dt>
+                <dd>{skipped.length} 篇</dd>
+              </div>
+              <div>
+                <dt>空位</dt>
+                <dd>{Math.max(0, 23 - session.plan.length + skipped.length)} 个</dd>
+              </div>
+            </dl>
+            {conflicts.length === 0 ? null : (
               <button
-                className="v2-add-slot"
-                onClick={() => notify(`${day}新增内容入口仅作模拟展示。`)}
+                className="v2-conflict"
+                onClick={() => setUi((current) => ({ ...current, planFilter: 'conflict' }))}
                 type="button"
               >
-                <Icon name="plus" size={16} />
-                添加内容
+                <Icon name="warning-circle" />
+                <span>
+                  <strong>{conflicts.length} 处时间冲突</strong>
+                  <small>需要你明确决定</small>
+                </span>
+                <b>查看</b>
               </button>
-              {day === '周日' ? <small>仍有 2 个空位</small> : null}
-            </section>
-          ))}
-        </section>
-        <aside className="v2-card v2-side-card">
-          <p className="v2-kicker">保持全局视角</p>
-          <h2>本周节奏</h2>
-          <dl className="v2-facts">
-            <div>
-              <dt>计划</dt>
-              <dd>21 篇</dd>
-            </div>
-            <div>
-              <dt>已完成</dt>
-              <dd>8 篇</dd>
-            </div>
-            <div>
-              <dt>待审批</dt>
-              <dd className="v2-accent">3 篇</dd>
-            </div>
-            <div>
-              <dt>空位</dt>
-              <dd>周日 2 个</dd>
-            </div>
-          </dl>
-          <button
-            className="v2-conflict"
-            onClick={() => setUi((current) => ({ ...current, planFilter: 'conflict' }))}
-            type="button"
-          >
-            <Icon name="warning-circle" />
-            <span>
-              <strong>周五 20:00</strong>
-              <small>1 处时间冲突</small>
-            </span>
-            <b>查看</b>
-          </button>
+            )}
+          </section>
+          <section className="v2-card v2-side-card v2-quick-actions">
+            <p className="v2-kicker">不依赖拖拽</p>
+            <h2>快速操作</h2>
+            <Button
+              disabled={locked || selectedIds.length === 0}
+              icon="calendar-blank"
+              onClick={openScheduler}
+            >
+              自由选择日期时间
+            </Button>
+            <Button disabled={locked} onClick={lock} tone="primary">
+              锁定本周计划
+            </Button>
+          </section>
         </aside>
       </div>
+      {selectedIds.length === 0 || locked ? null : (
+        <section aria-label="批量操作" className="v2-batch-bar">
+          <div>
+            <Icon name="check-square" />
+            <span>
+              <strong>已选择 {selectedIds.length} 篇</strong>
+              <small>支持 Shift 连续选择</small>
+            </span>
+          </div>
+          <Button icon="calendar-blank" onClick={openScheduler}>
+            调整日期
+          </Button>
+          <Button icon="clock" onClick={openScheduler}>
+            调整时间
+          </Button>
+          <Button onClick={openScheduler}>移动到其他周</Button>
+          <Button onClick={() => mutateSelection('skip')}>跳过所选</Button>
+          <Button onClick={() => mutateSelection('confirm')} tone="primary">
+            确认所选
+          </Button>
+          <Button onClick={clearSelection} tone="quiet">
+            取消选择
+          </Button>
+        </section>
+      )}
     </div>
   );
 }

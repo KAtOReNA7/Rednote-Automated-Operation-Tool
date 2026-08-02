@@ -4,6 +4,7 @@ import {
   AppFrame,
   DateModal,
   DetailDrawer,
+  ScheduleSuccess,
   Toast,
   V2ControllerContext,
   type ReviewItem,
@@ -13,7 +14,8 @@ import {
   v2MockProvider,
   withPersistedWeeklyPlan,
   type PersistedWeeklyPlan,
-  type RendererV2Bridge,
+  type RendererPlanRescheduleFields,
+  type RendererPlanReschedulePreview,
   type V2Session,
 } from './mock-provider.js';
 import { resolveV2Route, toV2Hash, type V2RouteId } from './routes.js';
@@ -27,12 +29,6 @@ import { WeeklyPlanPage } from './pages/weekly-plan-page.js';
 
 const V2_SMOKE_PREFIX = '__V2_R01_SMOKE__:';
 const V2_DEFAULT_WEEK_KEY = '2026-W31';
-
-declare global {
-  interface Window {
-    readonly rednoteV2?: RendererV2Bridge;
-  }
-}
 
 function restoreSession(
   session: V2Session,
@@ -48,19 +44,21 @@ export function V2App(): React.JSX.Element {
   const [ui, setUi] = useState<V2UiState>(() => ({
     activeContentId: session.content[0]?.id ?? '',
     activeInteractionId: session.interactions[0]?.id ?? '',
-    batchMode: false,
     contentSelectedIds: session.content.map(({ id }) => id),
     interactionSelectedIds: [],
     interactionTab: '评论',
     normalExpanded: false,
     onlyExceptions: false,
     planFilter: 'all',
+    planSelectionAnchorId: '',
     planSelectedIds: [],
+    personaErrors: [],
     savedOpportunityIds: [],
   }));
   const [toast, setToast] = useState('');
   const [drawerItem, setDrawerItem] = useState<ReviewItem | null>(null);
   const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [scheduleSuccess, setScheduleSuccess] = useState('');
   const returnFocus = useRef<HTMLElement | null>(null);
   const smokeStarted = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
@@ -134,11 +132,13 @@ export function V2App(): React.JSX.Element {
             },
           });
           const rescheduled = await bridge.reschedulePlanCandidates({
+            allowConflicts: false,
             candidateIds: ['thu-1'],
-            date: '8/2',
-            day: '周日',
+            date: '2026-08-03',
             expectedRevision: 0,
-            time: '14:00',
+            mode: 'DATE_TIME',
+            staggerMinutes: 0,
+            time: '18:30',
             weekKey: V2_DEFAULT_WEEK_KEY,
           });
           const confirmed = rescheduled.ok
@@ -201,43 +201,58 @@ export function V2App(): React.JSX.Element {
           <DateModal
             count={ui.planSelectedIds.length}
             onClose={() => setDateModalOpen(false)}
-            onConfirm={(value) => {
-              const [day = '周日', time = '14:00'] = value.split(' ');
-              setDateModalOpen(false);
+            onApply={async (fields, allowConflicts, preview) => {
               const bridge = window.rednoteV2;
               if (bridge === undefined) {
-                setSession((current) => ({
-                  ...current,
-                  plan: current.plan.map((item) =>
-                    ui.planSelectedIds.includes(item.id)
-                      ? { ...item, date: day === '周日' ? '8/2' : item.date, day, time }
-                      : item,
-                  ),
-                }));
-                notify(`已将 ${ui.planSelectedIds.length} 篇内容调整到${value}（仅模拟会话）。`);
-                return;
+                notify('本机周计划桥接不可用，未修改计划。');
+                return false;
               }
-              void bridge
-                .reschedulePlanCandidates({
-                  candidateIds: ui.planSelectedIds,
-                  date: day === '周日' ? '8/2' : '8/1',
-                  day,
-                  expectedRevision: session.planRevision,
-                  time,
-                  weekKey: session.weekKey,
-                })
-                .then((result) => {
-                  if (!result.ok) {
-                    notify(result.error.message);
-                    return;
-                  }
-                  setSession((current) => withPersistedWeeklyPlan(current, result.value));
-                  notify(`已将 ${ui.planSelectedIds.length} 篇内容调整到${value}并保存到本机。`);
-                });
+              const result = await bridge.reschedulePlanCandidates({
+                allowConflicts,
+                candidateIds: ui.planSelectedIds,
+                expectedRevision: session.planRevision,
+                ...fields,
+                weekKey: session.weekKey,
+              });
+              if (!result.ok) {
+                notify(result.error.message);
+                return false;
+              }
+              setSession((current) => withPersistedWeeklyPlan(current, result.value));
+              setDateModalOpen(false);
+              const first = preview.items[0];
+              setScheduleSuccess(
+                `${preview.affectedCount} 篇 · ${first?.targetDate ?? ''} · ${
+                  first?.targetTime ?? ''
+                } 起${fields.staggerMinutes === 30 ? '，每篇间隔 30 分钟' : ''}`,
+              );
+              return true;
+            }}
+            onPreview={async (fields) => {
+              const input: RendererPlanRescheduleFields = {
+                candidateIds: ui.planSelectedIds,
+                expectedRevision: session.planRevision,
+                ...fields,
+                weekKey: session.weekKey,
+              };
+              const bridge = window.rednoteV2;
+              if (bridge === undefined) {
+                notify('本机周计划桥接不可用，未修改计划。');
+                return null;
+              }
+              const result = await bridge.previewPlanReschedule(input);
+              if (!result.ok) {
+                notify(result.error.message);
+                return null;
+              }
+              return result.value as RendererPlanReschedulePreview;
             }}
             returnFocus={returnFocus.current}
           />
         ) : null}
+        {scheduleSuccess === '' ? null : (
+          <ScheduleSuccess message={scheduleSuccess} onDismiss={() => setScheduleSuccess('')} />
+        )}
         <Toast message={toast} />
       </AppFrame>
     </V2ControllerContext.Provider>

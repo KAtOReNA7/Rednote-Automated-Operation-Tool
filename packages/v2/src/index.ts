@@ -8,6 +8,7 @@ export const V2_LIMITS = Object.freeze({
   candidateCount: 40,
   candidateId: 64,
   candidateText: 200,
+  conflictCount: 40,
   personaBoundary: 1_000,
   personaText: 500,
   requestBytes: 32_768,
@@ -25,10 +26,12 @@ export interface AccountPersona extends AccountPersonaFields {
   readonly schemaVersion: typeof V2_SCHEMA_VERSION;
 }
 
-export type PlanCandidateStatus = 'CONFLICT' | 'CONFIRMED' | 'EXPORTED' | 'PENDING' | 'PLANNED';
+export type PlanCandidateStatus =
+  'CONFLICT' | 'CONFIRMED' | 'EXPORTED' | 'PENDING' | 'PLANNED' | 'SKIPPED';
 
 export interface PlanCandidate {
   readonly book: string;
+  readonly conflictWithIds: readonly string[];
   readonly date: string;
   readonly day: string;
   readonly id: string;
@@ -53,8 +56,53 @@ export interface V2WorkspaceSummary {
   readonly planRevision: number;
 }
 
+export type PlanRescheduleMode = 'DATE_ONLY' | 'DATE_TIME' | 'TIME_ONLY';
+
+export interface PlanRescheduleFields {
+  readonly candidateIds: readonly string[];
+  readonly date: string | null;
+  readonly expectedRevision: number;
+  readonly mode: PlanRescheduleMode;
+  readonly staggerMinutes: 0 | 30;
+  readonly time: string | null;
+  readonly weekKey: string;
+}
+
+export interface PlanRescheduleConflictSide {
+  readonly candidateId: string;
+  readonly date: string;
+  readonly time: string;
+  readonly title: string;
+}
+
+export interface PlanRescheduleConflict {
+  readonly existing: PlanRescheduleConflictSide;
+  readonly incoming: PlanRescheduleConflictSide;
+}
+
+export interface PlanReschedulePreviewItem {
+  readonly candidateId: string;
+  readonly fromDate: string;
+  readonly fromTime: string;
+  readonly targetDate: string;
+  readonly targetDay: string;
+  readonly targetTime: string;
+  readonly targetWeekKey: string;
+  readonly title: string;
+}
+
+export interface PlanReschedulePreview {
+  readonly affectedCount: number;
+  readonly conflictCount: number;
+  readonly conflicts: readonly PlanRescheduleConflict[];
+  readonly crossWeekCount: number;
+  readonly items: readonly PlanReschedulePreviewItem[];
+}
+
 export type V2ReadRequest =
-  { readonly view: 'ACCOUNT_PERSONA' } | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string };
+  | { readonly view: 'ACCOUNT_PERSONA' }
+  | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
+  | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields);
 
 export type V2MutationRequest =
   | {
@@ -63,24 +111,40 @@ export type V2MutationRequest =
       readonly persona: AccountPersonaFields;
     }
   | {
+      readonly action: 'GENERATE_WEEKLY_PLAN';
+      readonly expectedRevision: number;
+      readonly weekKey: string;
+    }
+  | {
       readonly action: 'CONFIRM_PLAN_CANDIDATES';
       readonly candidateIds: readonly string[];
       readonly expectedRevision: number;
       readonly weekKey: string;
     }
   | {
-      readonly action: 'RESCHEDULE_PLAN_CANDIDATES';
+      readonly action: 'SKIP_PLAN_CANDIDATES';
       readonly candidateIds: readonly string[];
-      readonly date: string;
-      readonly day: string;
       readonly expectedRevision: number;
-      readonly time: string;
+      readonly weekKey: string;
+    }
+  | ({
+      readonly action: 'RESCHEDULE_PLAN_CANDIDATES';
+      readonly allowConflicts: boolean;
+    } & PlanRescheduleFields)
+  | {
+      readonly action: 'LOCK_WEEKLY_PLAN';
+      readonly expectedRevision: number;
       readonly weekKey: string;
     };
 
 export interface V2ExceptionSummary {
   readonly affectedFields: readonly string[];
-  readonly code: 'INVALID_REQUEST' | 'PERSISTENCE_UNAVAILABLE' | 'REVISION_CONFLICT';
+  readonly code:
+    | 'INVALID_REQUEST'
+    | 'PERSISTENCE_UNAVAILABLE'
+    | 'PLAN_CONFLICT'
+    | 'PLAN_LOCKED'
+    | 'REVISION_CONFLICT';
   readonly message: string;
   readonly severity: 'ERROR' | 'WARNING';
   readonly suggestedAction: string;
@@ -96,14 +160,25 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
+  readonly generateWeeklyPlan: (input: {
+    readonly expectedRevision: number;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
+  readonly lockWeeklyPlan: (input: {
+    readonly expectedRevision: number;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
+  readonly previewPlanReschedule: (
+    input: PlanRescheduleFields,
+  ) => Promise<V2Result<PlanReschedulePreview>>;
   readonly readPersona: () => Promise<V2Result<AccountPersona>>;
   readonly readWeeklyPlan: (input: { readonly weekKey: string }) => Promise<V2Result<WeeklyPlan>>;
-  readonly reschedulePlanCandidates: (input: {
+  readonly reschedulePlanCandidates: (
+    input: PlanRescheduleFields & { readonly allowConflicts: boolean },
+  ) => Promise<V2Result<WeeklyPlan>>;
+  readonly skipPlanCandidates: (input: {
     readonly candidateIds: readonly string[];
-    readonly date: string;
-    readonly day: string;
     readonly expectedRevision: number;
-    readonly time: string;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
   readonly updatePersona: (input: {
@@ -185,11 +260,26 @@ export function parseAccountPersonaFields(value: unknown): AccountPersonaFields 
   if (!isRecord(value) || !exactKeys(value, ['audience', 'boundary', 'name', 'tone'])) {
     throw new V2ContractError('INVALID_REQUEST', ['persona']);
   }
+  const affectedFields: string[] = [];
+  const readField = (field: keyof AccountPersonaFields, maximum: number): string => {
+    try {
+      return boundedText(value[field], maximum, field);
+    } catch {
+      affectedFields.push(field);
+      return '';
+    }
+  };
+  const persona = {
+    audience: readField('audience', V2_LIMITS.personaText),
+    boundary: readField('boundary', V2_LIMITS.personaBoundary),
+    name: readField('name', 80),
+    tone: readField('tone', V2_LIMITS.personaText),
+  };
+  if (affectedFields.length > 0) {
+    throw new V2ContractError('INVALID_REQUEST', affectedFields);
+  }
   return {
-    audience: boundedText(value.audience, V2_LIMITS.personaText, 'audience'),
-    boundary: boundedText(value.boundary, V2_LIMITS.personaBoundary, 'boundary'),
-    name: boundedText(value.name, 80, 'name'),
-    tone: boundedText(value.tone, V2_LIMITS.personaText, 'tone'),
+    ...persona,
   };
 }
 
@@ -219,30 +309,63 @@ const candidateStatuses = new Set<PlanCandidateStatus>([
   'EXPORTED',
   'PENDING',
   'PLANNED',
+  'SKIPPED',
 ]);
 const days = new Set(['周一', '周二', '周三', '周四', '周五', '周六', '周日']);
+const dayLabels = Object.freeze([...days]);
+
+function clockTime(value: unknown, field = 'time'): string {
+  if (typeof value !== 'string' || !/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value)) {
+    throw new V2ContractError('INVALID_REQUEST', [field]);
+  }
+  return value;
+}
+
+function isoDate(value: unknown): string {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/u.test(value)) {
+    throw new V2ContractError('INVALID_REQUEST', ['date']);
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new V2ContractError('INVALID_REQUEST', ['date']);
+  }
+  return value;
+}
+
+function conflictIds(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length > V2_LIMITS.conflictCount) {
+    throw new V2ContractError('INVALID_REQUEST', ['conflictWithIds']);
+  }
+  const ids = value.map((id) => boundedText(id, V2_LIMITS.candidateId, 'conflictWithIds'));
+  if (new Set(ids).size !== ids.length) {
+    throw new V2ContractError('INVALID_REQUEST', ['conflictWithIds']);
+  }
+  return ids;
+}
 
 function parseCandidate(value: unknown): PlanCandidate {
+  const legacyKeys = ['book', 'date', 'day', 'id', 'status', 'time', 'title'] as const;
+  const currentKeys = [...legacyKeys, 'conflictWithIds'] as const;
   if (
     !isRecord(value) ||
-    !exactKeys(value, ['book', 'date', 'day', 'id', 'status', 'time', 'title']) ||
+    (!exactKeys(value, legacyKeys) && !exactKeys(value, currentKeys)) ||
     !candidateStatuses.has(value.status as PlanCandidateStatus) ||
     typeof value.day !== 'string' ||
     !days.has(value.day) ||
     typeof value.date !== 'string' ||
-    !/^(?:[1-9]|1[0-2])\/(?:[1-9]|[12]\d|3[01])$/u.test(value.date) ||
-    typeof value.time !== 'string' ||
-    !/^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.time)
+    !/^(?:(?:[1-9]|1[0-2])\/(?:[1-9]|[12]\d|3[01])|\d{4}-\d{2}-\d{2})$/u.test(value.date)
   ) {
     throw new V2ContractError('INVALID_REQUEST', ['candidates']);
   }
+  if (value.date.includes('-')) isoDate(value.date);
   return {
     book: boundedText(value.book, V2_LIMITS.candidateText, 'book'),
+    conflictWithIds: conflictIds(value.conflictWithIds ?? []),
     date: value.date,
     day: value.day,
     id: boundedText(value.id, V2_LIMITS.candidateId, 'id'),
     status: value.status as PlanCandidateStatus,
-    time: value.time,
+    time: clockTime(value.time),
     title: boundedText(value.title, V2_LIMITS.candidateText, 'title'),
   };
 }
@@ -263,11 +386,60 @@ export function parseWeeklyPlan(value: unknown): WeeklyPlan {
   if (new Set(candidates.map(({ id }) => id)).size !== candidates.length) {
     throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
   }
+  const ids = new Set(candidates.map(({ id }) => id));
+  if (
+    candidates.some(
+      (candidate) =>
+        candidate.conflictWithIds.includes(candidate.id) ||
+        candidate.conflictWithIds.some((id) => !ids.has(id)),
+    )
+  ) {
+    throw new V2ContractError('INVALID_REQUEST', ['conflictWithIds']);
+  }
   return {
     candidates,
     revision: revision(value.revision),
     schemaVersion: V2_SCHEMA_VERSION,
     status: value.status,
+    weekKey: weekKey(value.weekKey),
+  };
+}
+
+function candidateIds(value: unknown): readonly string[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > V2_LIMITS.candidateCount) {
+    throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
+  }
+  const ids = value.map((id) => boundedText(id, V2_LIMITS.candidateId, 'candidateIds'));
+  if (new Set(ids).size !== ids.length) {
+    throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
+  }
+  return ids;
+}
+
+function parseRescheduleFields(value: Readonly<Record<string, unknown>>): PlanRescheduleFields {
+  const mode = value.mode;
+  if (mode !== 'DATE_TIME' && mode !== 'DATE_ONLY' && mode !== 'TIME_ONLY') {
+    throw new V2ContractError('INVALID_REQUEST', ['mode']);
+  }
+  const date = value.date === null ? null : isoDate(value.date);
+  const time = value.time === null ? null : clockTime(value.time);
+  if (
+    (mode === 'DATE_TIME' && (date === null || time === null)) ||
+    (mode === 'DATE_ONLY' && (date === null || time !== null)) ||
+    (mode === 'TIME_ONLY' && (date !== null || time === null))
+  ) {
+    throw new V2ContractError('INVALID_REQUEST', ['date', 'time']);
+  }
+  if (value.staggerMinutes !== 0 && (value.staggerMinutes !== 30 || mode === 'DATE_ONLY')) {
+    throw new V2ContractError('INVALID_REQUEST', ['staggerMinutes']);
+  }
+  return {
+    candidateIds: candidateIds(value.candidateIds),
+    date,
+    expectedRevision: revision(value.expectedRevision),
+    mode,
+    staggerMinutes: value.staggerMinutes,
+    time,
     weekKey: weekKey(value.weekKey),
   };
 }
@@ -281,18 +453,22 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   if (value.view === 'WEEKLY_PLAN' && exactKeys(value, ['view', 'weekKey'])) {
     return { view: 'WEEKLY_PLAN', weekKey: weekKey(value.weekKey) };
   }
+  if (
+    value.view === 'PLAN_RESCHEDULE_PREVIEW' &&
+    exactKeys(value, [
+      'candidateIds',
+      'date',
+      'expectedRevision',
+      'mode',
+      'staggerMinutes',
+      'time',
+      'view',
+      'weekKey',
+    ])
+  ) {
+    return { view: 'PLAN_RESCHEDULE_PREVIEW', ...parseRescheduleFields(value) };
+  }
   throw new V2ContractError('INVALID_REQUEST');
-}
-
-function candidateIds(value: unknown): readonly string[] {
-  if (!Array.isArray(value) || value.length === 0 || value.length > V2_LIMITS.candidateCount) {
-    throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
-  }
-  const ids = value.map((id) => boundedText(id, V2_LIMITS.candidateId, 'candidateIds'));
-  if (new Set(ids).size !== ids.length) {
-    throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
-  }
-  return ids;
 }
 
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
@@ -309,11 +485,21 @@ export function parseV2MutationRequest(value: unknown): V2MutationRequest {
     };
   }
   if (
-    value.action === 'CONFIRM_PLAN_CANDIDATES' &&
+    (value.action === 'GENERATE_WEEKLY_PLAN' || value.action === 'LOCK_WEEKLY_PLAN') &&
+    exactKeys(value, ['action', 'expectedRevision', 'weekKey'])
+  ) {
+    return {
+      action: value.action,
+      expectedRevision: revision(value.expectedRevision),
+      weekKey: weekKey(value.weekKey),
+    };
+  }
+  if (
+    (value.action === 'CONFIRM_PLAN_CANDIDATES' || value.action === 'SKIP_PLAN_CANDIDATES') &&
     exactKeys(value, ['action', 'candidateIds', 'expectedRevision', 'weekKey'])
   ) {
     return {
-      action: 'CONFIRM_PLAN_CANDIDATES',
+      action: value.action,
       candidateIds: candidateIds(value.candidateIds),
       expectedRevision: revision(value.expectedRevision),
       weekKey: weekKey(value.weekKey),
@@ -323,28 +509,21 @@ export function parseV2MutationRequest(value: unknown): V2MutationRequest {
     value.action === 'RESCHEDULE_PLAN_CANDIDATES' &&
     exactKeys(value, [
       'action',
+      'allowConflicts',
       'candidateIds',
       'date',
-      'day',
       'expectedRevision',
+      'mode',
+      'staggerMinutes',
       'time',
       'weekKey',
     ]) &&
-    typeof value.day === 'string' &&
-    days.has(value.day) &&
-    typeof value.date === 'string' &&
-    /^(?:[1-9]|1[0-2])\/(?:[1-9]|[12]\d|3[01])$/u.test(value.date) &&
-    typeof value.time === 'string' &&
-    /^(?:[01]\d|2[0-3]):[0-5]\d$/u.test(value.time)
+    typeof value.allowConflicts === 'boolean'
   ) {
     return {
       action: 'RESCHEDULE_PLAN_CANDIDATES',
-      candidateIds: candidateIds(value.candidateIds),
-      date: value.date,
-      day: value.day,
-      expectedRevision: revision(value.expectedRevision),
-      time: value.time,
-      weekKey: weekKey(value.weekKey),
+      allowConflicts: value.allowConflicts,
+      ...parseRescheduleFields(value),
     };
   }
   throw new V2ContractError('INVALID_REQUEST');
@@ -373,7 +552,16 @@ export const DEFAULT_ACCOUNT_PERSONA: AccountPersona = Object.freeze({
 export const DEFAULT_WEEKLY_PLAN: WeeklyPlan = Object.freeze({
   candidates: Object.freeze(
     defaultPlanRows.map(([id, day, date, time, title, book, status]) =>
-      Object.freeze({ book, date, day, id, status, time, title }),
+      Object.freeze({
+        book,
+        conflictWithIds: Object.freeze([]),
+        date,
+        day,
+        id,
+        status,
+        time,
+        title,
+      }),
     ),
   ),
   revision: 0,
@@ -382,6 +570,207 @@ export const DEFAULT_WEEKLY_PLAN: WeeklyPlan = Object.freeze({
   weekKey: V2_DEFAULT_WEEK_KEY,
 });
 
+function dateText(date: Date): string {
+  return date.toISOString().slice(0, 10);
+}
+
+function mondayOfIsoWeek(value: string): Date {
+  const validated = weekKey(value);
+  const year = Number(validated.slice(0, 4));
+  const week = Number(validated.slice(6));
+  const januaryFourth = new Date(Date.UTC(year, 0, 4));
+  const januaryFourthOffset = (januaryFourth.getUTCDay() + 6) % 7;
+  januaryFourth.setUTCDate(januaryFourth.getUTCDate() - januaryFourthOffset + (week - 1) * 7);
+  if (isoWeekKey(januaryFourth) !== validated) {
+    throw new V2ContractError('INVALID_REQUEST', ['weekKey']);
+  }
+  return januaryFourth;
+}
+
+function isoWeekKey(date: Date): string {
+  const thursday = new Date(date.getTime());
+  thursday.setUTCDate(thursday.getUTCDate() + 3 - ((thursday.getUTCDay() + 6) % 7));
+  const firstThursday = new Date(Date.UTC(thursday.getUTCFullYear(), 0, 4));
+  firstThursday.setUTCDate(firstThursday.getUTCDate() + 3 - ((firstThursday.getUTCDay() + 6) % 7));
+  const number = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / 604_800_000);
+  return `${String(thursday.getUTCFullYear())}-W${String(number).padStart(2, '0')}`;
+}
+
+function candidateIsoDate(candidate: PlanCandidate, planWeekKey: string): string {
+  if (candidate.date.includes('-')) return isoDate(candidate.date);
+  const monday = mondayOfIsoWeek(planWeekKey);
+  for (let offset = 0; offset < 7; offset += 1) {
+    const date = new Date(monday.getTime() + offset * 86_400_000);
+    const shortDate = `${String(date.getUTCMonth() + 1)}/${String(date.getUTCDate())}`;
+    if (shortDate === candidate.date) return dateText(date);
+  }
+  throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+}
+
+function shiftedSchedule(
+  date: string,
+  time: string,
+  minutes: number,
+): {
+  readonly date: string;
+  readonly day: string;
+  readonly time: string;
+  readonly weekKey: string;
+} {
+  const [hours, minute] = time.split(':').map(Number);
+  const instant = new Date(`${date}T00:00:00.000Z`);
+  instant.setUTCMinutes((hours ?? 0) * 60 + (minute ?? 0) + minutes);
+  return {
+    date: dateText(instant),
+    day: dayLabels[(instant.getUTCDay() + 6) % 7] ?? '周一',
+    time: `${String(instant.getUTCHours()).padStart(2, '0')}:${String(
+      instant.getUTCMinutes(),
+    ).padStart(2, '0')}`,
+    weekKey: isoWeekKey(instant),
+  };
+}
+
+export function previewPlanReschedule(
+  plan: WeeklyPlan,
+  input: PlanRescheduleFields,
+): PlanReschedulePreview {
+  const current = parseWeeklyPlan(plan);
+  const request = parseRescheduleFields({ ...input });
+  if (current.weekKey !== request.weekKey || current.revision !== request.expectedRevision) {
+    throw new V2ContractError('REVISION_CONFLICT', ['weeklyPlan']);
+  }
+  const byId = new Map(current.candidates.map((candidate) => [candidate.id, candidate]));
+  const selected = request.candidateIds.map((id) => {
+    const candidate = byId.get(id);
+    if (candidate === undefined || candidate.status === 'SKIPPED') {
+      throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
+    }
+    return candidate;
+  });
+  const items = selected.map((candidate, index): PlanReschedulePreviewItem => {
+    const fromDate = candidateIsoDate(candidate, current.weekKey);
+    const schedule = shiftedSchedule(
+      request.date ?? fromDate,
+      request.time ?? candidate.time,
+      index * request.staggerMinutes,
+    );
+    return {
+      candidateId: candidate.id,
+      fromDate,
+      fromTime: candidate.time,
+      targetDate: schedule.date,
+      targetDay: schedule.day,
+      targetTime: schedule.time,
+      targetWeekKey: schedule.weekKey,
+      title: candidate.title,
+    };
+  });
+  const selectedIds = new Set(request.candidateIds);
+  const conflicts: PlanRescheduleConflict[] = [];
+  let conflictCount = 0;
+  for (let incomingIndex = 0; incomingIndex < items.length; incomingIndex += 1) {
+    const incoming = items[incomingIndex];
+    if (incoming === undefined) continue;
+    for (const existingCandidate of current.candidates) {
+      if (existingCandidate.status === 'SKIPPED' || selectedIds.has(existingCandidate.id)) continue;
+      const existingDate = candidateIsoDate(existingCandidate, current.weekKey);
+      if (existingDate !== incoming.targetDate || existingCandidate.time !== incoming.targetTime)
+        continue;
+      conflictCount += 1;
+      if (conflicts.length < V2_LIMITS.conflictCount) {
+        conflicts.push({
+          existing: {
+            candidateId: existingCandidate.id,
+            date: existingDate,
+            time: existingCandidate.time,
+            title: existingCandidate.title,
+          },
+          incoming: {
+            candidateId: incoming.candidateId,
+            date: incoming.targetDate,
+            time: incoming.targetTime,
+            title: incoming.title,
+          },
+        });
+      }
+    }
+    for (let otherIndex = incomingIndex + 1; otherIndex < items.length; otherIndex += 1) {
+      const other = items[otherIndex];
+      if (
+        other === undefined ||
+        other.targetDate !== incoming.targetDate ||
+        other.targetTime !== incoming.targetTime
+      )
+        continue;
+      conflictCount += 1;
+      if (conflicts.length < V2_LIMITS.conflictCount) {
+        conflicts.push({
+          existing: {
+            candidateId: incoming.candidateId,
+            date: incoming.targetDate,
+            time: incoming.targetTime,
+            title: incoming.title,
+          },
+          incoming: {
+            candidateId: other.candidateId,
+            date: other.targetDate,
+            time: other.targetTime,
+            title: other.title,
+          },
+        });
+      }
+    }
+  }
+  return Object.freeze({
+    affectedCount: items.length,
+    conflictCount,
+    conflicts: Object.freeze(conflicts),
+    crossWeekCount: items.filter(({ targetWeekKey }) => targetWeekKey !== current.weekKey).length,
+    items: Object.freeze(items),
+  });
+}
+
+function personaSeed(persona: AccountPersona): number {
+  let seed = 0;
+  for (const character of `${persona.name}\n${persona.audience}\n${persona.tone}\n${persona.boundary}`) {
+    seed = (seed + (character.codePointAt(0) ?? 0)) % defaultPlanRows.length;
+  }
+  return seed;
+}
+
+export class ScriptedPlanningProvider {
+  public generate(input: {
+    readonly persona: AccountPersona;
+    readonly planRevision: number;
+    readonly weekKey: string;
+  }): readonly PlanCandidate[] {
+    const persona = parseAccountPersona(input.persona);
+    const targetWeekKey = weekKey(input.weekKey);
+    revision(input.planRevision);
+    const monday = mondayOfIsoWeek(targetWeekKey);
+    const seed = personaSeed(persona);
+    return Object.freeze(
+      defaultPlanRows.map((_, index) => {
+        const source = defaultPlanRows[(index + seed) % defaultPlanRows.length];
+        if (source === undefined) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+        const dayIndex = Math.floor(index / 3);
+        const slotIndex = index % 3;
+        const date = new Date(monday.getTime() + dayIndex * 86_400_000);
+        return Object.freeze({
+          book: source[5],
+          conflictWithIds: Object.freeze([]),
+          date: dateText(date),
+          day: dayLabels[dayIndex] ?? '周一',
+          id: `${targetWeekKey}-slot-${String(index + 1).padStart(2, '0')}`,
+          status: ([9, 19, 20] as readonly number[]).includes(index) ? 'PENDING' : 'PLANNED',
+          time: ['10:00', '14:00', '20:00'][slotIndex] ?? '10:00',
+          title: source[4],
+        });
+      }),
+    );
+  }
+}
+
 export function summarizeV2Workspace(
   persona: AccountPersona,
   plan: WeeklyPlan,
@@ -389,7 +778,9 @@ export function summarizeV2Workspace(
   const validatedPersona = parseAccountPersona(persona);
   const validatedPlan = parseWeeklyPlan(plan);
   return Object.freeze({
-    conflictCount: validatedPlan.candidates.filter(({ status }) => status === 'CONFLICT').length,
+    conflictCount: validatedPlan.candidates.filter(
+      ({ conflictWithIds: conflicts, status }) => status === 'CONFLICT' || conflicts.length > 0,
+    ).length,
     confirmedCount: validatedPlan.candidates.filter(({ status }) => status === 'CONFIRMED').length,
     pendingCount: validatedPlan.candidates.filter(({ status }) => status === 'PENDING').length,
     personaRevision: validatedPersona.revision,
@@ -404,21 +795,44 @@ export interface V2RepositoryPort {
   readonly saveWeeklyPlan: (plan: WeeklyPlan, expectedRevision: number) => WeeklyPlan;
 }
 
+function clearConflictLinks(
+  candidates: readonly PlanCandidate[],
+  removedIds: ReadonlySet<string>,
+): readonly PlanCandidate[] {
+  return candidates.map((candidate) => {
+    const links = removedIds.has(candidate.id)
+      ? []
+      : candidate.conflictWithIds.filter((id) => !removedIds.has(id));
+    return {
+      ...candidate,
+      conflictWithIds: links,
+      status:
+        candidate.status === 'CONFLICT' && links.length === 0
+          ? ('PLANNED' as const)
+          : candidate.status,
+    };
+  });
+}
+
 export class V2ApplicationFacade {
+  readonly #planningProvider: ScriptedPlanningProvider;
   readonly #repository: V2RepositoryPort;
 
-  public constructor(repository: V2RepositoryPort) {
+  public constructor(
+    repository: V2RepositoryPort,
+    planningProvider = new ScriptedPlanningProvider(),
+  ) {
+    this.#planningProvider = planningProvider;
     this.#repository = repository;
   }
 
-  public read(value: unknown): AccountPersona | WeeklyPlan {
+  public read(value: unknown): AccountPersona | PlanReschedulePreview | WeeklyPlan {
     const request = parseV2ReadRequest(value);
-    return request.view === 'ACCOUNT_PERSONA'
-      ? this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA)
-      : this.#repository.getOrCreateWeeklyPlan(
-          { ...DEFAULT_WEEKLY_PLAN, weekKey: request.weekKey },
-          DEFAULT_ACCOUNT_PERSONA,
-        );
+    if (request.view === 'ACCOUNT_PERSONA') {
+      return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
+    }
+    const current = this.#readPlan(request.weekKey);
+    return request.view === 'WEEKLY_PLAN' ? current : previewPlanReschedule(current, request);
   }
 
   public mutate(value: unknown): AccountPersona | WeeklyPlan {
@@ -427,51 +841,152 @@ export class V2ApplicationFacade {
       this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
       return this.#repository.savePersona(request.persona, request.expectedRevision);
     }
-    const current = this.#repository.getOrCreateWeeklyPlan(
-      { ...DEFAULT_WEEKLY_PLAN, weekKey: request.weekKey },
-      DEFAULT_ACCOUNT_PERSONA,
-    );
+    const current = this.#readPlan(request.weekKey);
+    this.#assertRevision(current, request.expectedRevision);
+    if (request.action === 'GENERATE_WEEKLY_PLAN') {
+      this.#assertDraft(current);
+      const persona = parseAccountPersona(
+        this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA),
+      );
+      const candidates = this.#planningProvider.generate({
+        persona,
+        planRevision: current.revision,
+        weekKey: current.weekKey,
+      });
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({ ...current, candidates, status: 'DRAFT' }),
+        request.expectedRevision,
+      );
+    }
+    if (request.action === 'LOCK_WEEKLY_PLAN') {
+      if (current.status === 'CONFIRMED') return current;
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({ ...current, status: 'CONFIRMED' }),
+        request.expectedRevision,
+      );
+    }
+    this.#assertDraft(current);
     const selected = new Set(request.candidateIds);
     if (request.candidateIds.some((id) => !current.candidates.some((item) => item.id === id))) {
       throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
     }
-    const candidates = current.candidates.map((item) =>
-      !selected.has(item.id)
-        ? item
-        : request.action === 'CONFIRM_PLAN_CANDIDATES'
-          ? { ...item, status: 'CONFIRMED' as const }
-          : { ...item, date: request.date, day: request.day, time: request.time },
-    );
-    const status = candidates.some(({ status: itemStatus }) =>
-      itemStatus === 'PENDING' || itemStatus === 'CONFLICT' ? true : false,
-    )
-      ? 'DRAFT'
-      : 'CONFIRMED';
+    if (request.action === 'CONFIRM_PLAN_CANDIDATES') {
+      const candidates = current.candidates.map((item) =>
+        selected.has(item.id) ? { ...item, status: 'CONFIRMED' as const } : item,
+      );
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({ ...current, candidates }),
+        request.expectedRevision,
+      );
+    }
+    if (request.action === 'SKIP_PLAN_CANDIDATES') {
+      const candidates = clearConflictLinks(current.candidates, selected).map((item) =>
+        selected.has(item.id) ? { ...item, conflictWithIds: [], status: 'SKIPPED' as const } : item,
+      );
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({ ...current, candidates }),
+        request.expectedRevision,
+      );
+    }
+    const preview = previewPlanReschedule(current, request);
+    if (preview.conflictCount > 0 && !request.allowConflicts) {
+      throw new V2ContractError('PLAN_CONFLICT', ['conflicts']);
+    }
+    const proposed = new Map(preview.items.map((item) => [item.candidateId, item]));
+    const links = new Map<string, Set<string>>();
+    for (const conflict of preview.conflicts) {
+      const existing = links.get(conflict.existing.candidateId) ?? new Set<string>();
+      existing.add(conflict.incoming.candidateId);
+      links.set(conflict.existing.candidateId, existing);
+      const incoming = links.get(conflict.incoming.candidateId) ?? new Set<string>();
+      incoming.add(conflict.existing.candidateId);
+      links.set(conflict.incoming.candidateId, incoming);
+    }
+    const candidates = clearConflictLinks(current.candidates, selected).map((item) => {
+      const schedule = proposed.get(item.id);
+      const conflictWithIds = [
+        ...new Set([...(item.conflictWithIds ?? []), ...(links.get(item.id) ?? [])]),
+      ].sort();
+      const status =
+        conflictWithIds.length > 0 && item.status !== 'CONFIRMED' && item.status !== 'EXPORTED'
+          ? ('CONFLICT' as const)
+          : item.status;
+      return schedule === undefined
+        ? { ...item, conflictWithIds, status }
+        : {
+            ...item,
+            conflictWithIds,
+            date: schedule.targetDate,
+            day: schedule.targetDay,
+            status,
+            time: schedule.targetTime,
+          };
+    });
     return this.#repository.saveWeeklyPlan(
-      parseWeeklyPlan({ ...current, candidates, status }),
+      parseWeeklyPlan({ ...current, candidates }),
       request.expectedRevision,
+    );
+  }
+
+  #assertDraft(plan: WeeklyPlan): void {
+    if (plan.status === 'CONFIRMED') {
+      throw new V2ContractError('PLAN_LOCKED', ['weeklyPlan']);
+    }
+  }
+
+  #assertRevision(plan: WeeklyPlan, expectedRevision: number): void {
+    if (plan.revision !== expectedRevision) {
+      throw new V2ContractError('REVISION_CONFLICT', ['weeklyPlan']);
+    }
+  }
+
+  #readPlan(requestedWeekKey: string): WeeklyPlan {
+    return this.#repository.getOrCreateWeeklyPlan(
+      { ...DEFAULT_WEEKLY_PLAN, weekKey: requestedWeekKey },
+      DEFAULT_ACCOUNT_PERSONA,
     );
   }
 }
 
 export function toV2Exception(error: unknown): V2ExceptionSummary {
   if (error instanceof V2ContractError) {
-    const conflict = error.code === 'REVISION_CONFLICT';
+    const revisionConflict = error.code === 'REVISION_CONFLICT';
+    const planConflict = error.code === 'PLAN_CONFLICT';
+    const locked = error.code === 'PLAN_LOCKED';
     const unavailable = error.code === 'PERSISTENCE_UNAVAILABLE';
+    const fieldLabels: Readonly<Record<string, string>> = Object.freeze({
+      audience: '目标受众',
+      boundary: '内容边界',
+      name: '账号名称',
+      tone: '表达语气',
+    });
+    const personaFields = error.affectedFields
+      .map((field) => fieldLabels[field])
+      .filter((field): field is string => field !== undefined);
     return {
       affectedFields: error.affectedFields,
       code: error.code,
-      message: conflict
+      message: revisionConflict
         ? '本机数据已更新，请重新载入后再试。'
-        : unavailable
-          ? '本机保存暂时不可用。'
-          : '请求内容不符合本地合同。',
-      severity: conflict ? 'WARNING' : 'ERROR',
-      suggestedAction: conflict
+        : planConflict
+          ? '检测到时间冲突；尚未修改计划，请复核后再决定。'
+          : locked
+            ? '周计划已锁定，只能查看，不能继续修改。'
+            : unavailable
+              ? '本机保存暂时不可用。'
+              : personaFields.length > 0
+                ? `请填写或修正：${personaFields.join('、')}。`
+                : '请求内容不符合本地合同。',
+      severity: revisionConflict || planConflict || locked ? 'WARNING' : 'ERROR',
+      suggestedAction: revisionConflict
         ? '重新载入当前页面'
-        : unavailable
-          ? '关闭后重新启动应用'
-          : '检查字段后重试',
+        : planConflict
+          ? '返回修改时间，或明确选择仍然应用'
+          : locked
+            ? '保留当前只读计划'
+            : unavailable
+              ? '关闭后重新启动应用'
+              : '检查字段后重试',
     };
   }
   return {
