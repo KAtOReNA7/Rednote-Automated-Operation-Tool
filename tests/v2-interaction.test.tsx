@@ -517,6 +517,46 @@ describe('V2-R05 interaction renderer and managed files', () => {
     expect(record).toBeEnabled();
   });
 
+  it('never exposes prototype content IDs while persisted content is restoring', async () => {
+    const { app } = await harness();
+    const bridge = interactionBridge(app);
+    let submitted: Parameters<V2Bridge['createInteraction']>[0] | undefined;
+    let restoreContent!: (value: Awaited<ReturnType<V2Bridge['readContentPackages']>>) => void;
+    const contentRead = new Promise<Awaited<ReturnType<V2Bridge['readContentPackages']>>>(
+      (resolve) => {
+        restoreContent = resolve;
+      },
+    );
+    Object.defineProperty(window, 'rednoteV2', {
+      configurable: true,
+      value: {
+        ...bridge,
+        createInteraction: (input: Parameters<V2Bridge['createInteraction']>[0]) => {
+          submitted = input;
+          return bridge.createInteraction(input);
+        },
+        readContentPackages: () => contentRead,
+      },
+    });
+    Object.defineProperty(window, 'scrollTo', { configurable: true, value: () => undefined });
+    window.history.replaceState(null, '', '/v2.html#/v2/interaction');
+    const user = userEvent.setup();
+    render(<V2App />);
+
+    expect(screen.queryByRole('option', { name: '《莫格街凶杀案》' })).not.toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: '关联内容包（可选）' })).toHaveValue('');
+    restoreContent({
+      ok: true,
+      value: { packages: [], schemaVersion: 1, weekKey: V2_DEFAULT_WEEK_KEY },
+    });
+    await waitFor(() => expect(screen.getByText('尚无本地互动')).toBeVisible());
+    await user.type(screen.getByLabelText('粘贴一条评论或私信'), '恢复后的评论');
+    await user.click(screen.getByRole('button', { name: '保存本地互动' }));
+
+    expect(await screen.findByText('恢复后的评论', { selector: 'small' })).toBeVisible();
+    expect(submitted?.relatedContentPackageId).toBeNull();
+  });
+
   it('uses bounded content-addressed IMPORT files and stable dedup hashes', async () => {
     const { root, rootPath } = await createStorageTestContext();
     const files = new V2LocalInteractionFiles(root);

@@ -101,7 +101,7 @@ export function InteractionPage(): React.JSX.Element {
       const result = await window.rednoteV2?.createInteraction({
         expectedRevision: 0,
         kind: tab === '评论' ? 'COMMENT' : 'DIRECT_MESSAGE',
-        relatedContentPackageId: relatedId === '' ? null : relatedId,
+        relatedContentPackageId: session.content.find(({ id }) => id === relatedId)?.id ?? null,
         userText: newText,
       });
       if (result === undefined) return fail('本机互动桥接不可用，未导入。');

@@ -49,7 +49,7 @@ function restoreSession(
 
 export function V2App(): React.JSX.Element {
   const [route, setRoute] = useState(() => resolveV2Route(window.location.hash).route);
-  const [session, setSession] = useState<V2Session>(() => v2MockProvider.loadSession());
+  const [session, setSession] = useState(() => v2MockProvider.loadSession(!!window.rednoteV2));
   const [ui, setUi] = useState<V2UiState>(() => ({
     activeContentId: session.content[0]?.id ?? '',
     activeInteractionId: session.interactions[0]?.id ?? '',

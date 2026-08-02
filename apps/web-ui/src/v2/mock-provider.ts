@@ -206,6 +206,6 @@ function deepFreeze<T>(value: T): T {
 const fixture = deepFreeze(createFixture());
 export const v2MockProvider = Object.freeze({
   fixtureIsFrozen: (): boolean => Object.isFrozen(fixture) && Object.isFrozen(fixture.plan),
-  loadSession: (): V2Session => structuredClone(fixture),
+  loadSession: (v = false): V2Session => structuredClone(v ? { ...fixture, content: [] } : fixture),
   mode: 'DETERMINISTIC_MOCK' as const,
 });

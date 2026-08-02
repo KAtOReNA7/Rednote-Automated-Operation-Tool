@@ -6,6 +6,7 @@
 - PR #6 通过普通 merge 形成 `11f2a0f1a0a806808007300a14cb81c759694498`。合并提交的 Windows required CI run `30749815992` / job `91501733026` 为 success。
 - R05 从上述提交创建 `codex/v2-r05-interaction-replies`；开工时本地 `main`、`origin/main` 与实际远端 main 一致，ahead/behind 为 `0/0`，tracked/staged clean。
 - 只实施本地 COMMENT / DIRECT_MESSAGE 主动粘贴、确定性 Scripted 建议、版本编辑、确认/跳过/重开、手动发送事实记录与撤销、精确 tombstone 删除。未实施平台连接、真实模型、自动发送、R06 或视觉改版。
+- 初次体验候选 `f234a2eb18f72f1364085dabb84411c0997a2774` 的 Windows required CI 已成功；用户体验随后发现启动恢复期间选择的原型内容包 ID 会在视觉回到“不关联”后仍被提交，触发 `INVALID_REQUEST`。修复只从当前持久化内容包集合解析关联 ID，未放宽后端合同。
 
 ## 数据、边界与删除语义
 
@@ -21,10 +22,10 @@
 
 | ID     | 已验证事实                                                                                                     | 证据                                                                      |
 | ------ | -------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| R05-01 | COMMENT、DIRECT_MESSAGE 可创建并经新 application 实例恢复                                                      | `tests/v2-interaction.test.tsx`，专项 8/8                                 |
+| R05-01 | COMMENT、DIRECT_MESSAGE 可创建并经新 application 实例恢复                                                      | `tests/v2-interaction.test.tsx`，专项 9/9                                 |
 | R05-02 | exact-object、类型、空值、NUL、枚举和 8,000/4,000 字节上限 fail closed；错误 DTO 不含正文                      | `tests/v2-interaction.test.tsx`                                           |
 | R05-03 | 重放返回相同 item，且数据库行与 managed file 数不增加                                                          | `tests/v2-interaction.test.tsx`                                           |
-| R05-04 | 可选关联只接受当前 workspace 的 R04 package ID                                                                 | `tests/v2-interaction.test.tsx`                                           |
+| R05-04 | 可选关联只接受当前 workspace 的 R04 package ID；异步恢复后不会提交已消失的原型 ID                              | `tests/v2-interaction.test.tsx`                                           |
 | R05-05 | Scripted 建议确定、幂等，UI 明示“非模型、未发送”                                                               | `tests/v2-interaction.test.tsx`、互动页                                   |
 | R05-06 | 实质编辑升版、no-op 不升版，确认绑定当前版本                                                                   | `tests/v2-interaction.test.tsx`                                           |
 | R05-07 | 已确认建议再编辑回到 SUGGESTED；旧确认不能标记 MANUAL_SENT                                                     | `tests/v2-interaction.test.tsx`                                           |
@@ -42,11 +43,11 @@
 ## 本地验证与预算
 
 - 基线聚焦集合：6 个文件、29 项测试通过。
-- 最终互动/持久化/R04 内容/renderer 集合：4 个文件、23 项测试通过；结构化结果位于受控 ignored validation 目录。
+- 最终互动/持久化/R04 内容/renderer 集合：4 个文件、24 项测试通过；结果位于受控 ignored validation 目录。
 - migration/存储架构集合：2 个静态 normal 文件、19 项测试通过。请求的 `storage-repository` 属于 capacity 静态集合，依指令交给托管 CI，未在本地重复运行。
-- `npm run format-check`、`npm run lint`、`npm run typecheck`、`npm run build` 与 `git diff --check` 通过；变更增量 secret/egress、skip/todo/only、V2 IPC 数和依赖文件检查均通过。UTF-8 package build 修正后的互动专项再次 8/8 通过。
+- `npm run format-check`、`npm run lint`、`npm run typecheck`、`npm run build` 与 `git diff --check` 通过；变更增量 secret/egress、skip/todo/only、V2 IPC 数和依赖文件检查均通过。用户验收修复新增延迟持久化恢复回归，互动专项 9/9 通过。
 - 首次 R05 PR Windows run `30751879832` 的 207 个 normal 文件中 205 个通过；失败仅为两项陈旧强断言。`tests/storage-db-paths.test.ts` 精确加入两个新 managed path，`tests/v2-workflow.test.tsx` 改为断言 R05 显式录入前的真实空状态；两项本地精确复验通过，未修改产品或降低断言。
-- 产品源码净新增 `1,400 LOC`（新增 1,537、删除 137）；测试净新增 `672 LOC`（新增 686、删除 14）。
+- 产品源码净新增 `1,400 LOC`（新增 1,539、删除 139）；测试净新增 `712 LOC`（新增 726、删除 14）。
 - 主体文件为 25 个，包含本文件、归档指令与 `tests/v2-workflow.test.tsx`；migration-tail 例外为 `tests/db-migrations.test.ts`、`tests/storage-db-paths.test.ts` 2 个文件，只追加 2 张 V2 表与 2 个 managed path 的强断言，不删除既有项；总文件为 27。
 - 1 个 migration、2 张新表、0 trigger、0 新 IPC、0 新 package/dependency/route/queue/worker/top-level navigation。
 
