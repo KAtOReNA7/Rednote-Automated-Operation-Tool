@@ -9,7 +9,13 @@ import {
   type ReviewItem,
   type V2UiState,
 } from './components.js';
-import { v2MockProvider, type V2Session } from './mock-provider.js';
+import {
+  v2MockProvider,
+  withPersistedWeeklyPlan,
+  type PersistedWeeklyPlan,
+  type RendererV2Bridge,
+  type V2Session,
+} from './mock-provider.js';
 import { resolveV2Route, toV2Hash, type V2RouteId } from './routes.js';
 import { ContentPage } from './pages/content-page.js';
 import { InteractionPage } from './pages/interaction-page.js';
@@ -20,6 +26,21 @@ import { SettingsPage } from './pages/settings-page.js';
 import { WeeklyPlanPage } from './pages/weekly-plan-page.js';
 
 const V2_SMOKE_PREFIX = '__V2_R01_SMOKE__:';
+const V2_DEFAULT_WEEK_KEY = '2026-W31';
+
+declare global {
+  interface Window {
+    readonly rednoteV2?: RendererV2Bridge;
+  }
+}
+
+function restoreSession(
+  session: V2Session,
+  persona: V2Session['persona'],
+  plan: PersistedWeeklyPlan,
+): V2Session {
+  return withPersistedWeeklyPlan({ ...session, persona: { ...persona } }, plan);
+}
 
 export function V2App(): React.JSX.Element {
   const [route, setRoute] = useState(() => resolveV2Route(window.location.hash).route);
@@ -41,6 +62,7 @@ export function V2App(): React.JSX.Element {
   const [drawerItem, setDrawerItem] = useState<ReviewItem | null>(null);
   const [dateModalOpen, setDateModalOpen] = useState(false);
   const returnFocus = useRef<HTMLElement | null>(null);
+  const smokeStarted = useRef(false);
   const toastTimer = useRef<number | undefined>(undefined);
 
   const notify = useCallback((message: string): void => {
@@ -75,15 +97,77 @@ export function V2App(): React.JSX.Element {
   }, []);
   useEffect(() => () => window.clearTimeout(toastTimer.current), []);
   useEffect(() => {
-    if (window.location.search !== '?smoke=1') return;
-    queueMicrotask(() => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) return;
+    let cancelled = false;
+    void Promise.all([
+      bridge.readPersona(),
+      bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
+    ]).then(([persona, plan]) => {
+      if (cancelled || !persona.ok || !plan.ok) return;
+      setSession((current) => restoreSession(current, persona.value, plan.value));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  useEffect(() => {
+    if (window.location.search !== '?smoke=1' || smokeStarted.current) return;
+    smokeStarted.current = true;
+    const bridge = window.rednoteV2;
+    void (async () => {
+      let valid = bridge !== undefined;
+      if (bridge !== undefined) {
+        const [personaRead, planRead] = await Promise.all([
+          bridge.readPersona(),
+          bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
+        ]);
+        valid = personaRead.ok && planRead.ok;
+        if (personaRead.ok && planRead.ok && personaRead.value.revision === 0) {
+          const persona = await bridge.updatePersona({
+            expectedRevision: 0,
+            persona: {
+              audience: personaRead.value.audience,
+              boundary: personaRead.value.boundary,
+              name: '雾灯书页（持久化验证）',
+              tone: personaRead.value.tone,
+            },
+          });
+          const rescheduled = await bridge.reschedulePlanCandidates({
+            candidateIds: ['thu-1'],
+            date: '8/2',
+            day: '周日',
+            expectedRevision: 0,
+            time: '14:00',
+            weekKey: V2_DEFAULT_WEEK_KEY,
+          });
+          const confirmed = rescheduled.ok
+            ? await bridge.confirmPlanCandidates({
+                candidateIds: ['thu-1'],
+                expectedRevision: rescheduled.value.revision,
+                weekKey: V2_DEFAULT_WEEK_KEY,
+              })
+            : rescheduled;
+          valid = persona.ok && rescheduled.ok && confirmed.ok;
+        } else if (personaRead.ok && planRead.ok) {
+          valid =
+            personaRead.value.name === '雾灯书页（持久化验证）' &&
+            personaRead.value.revision === 1 &&
+            planRead.value.revision === 2 &&
+            planRead.value.candidates.find(({ id }) => id === 'thu-1')?.status === 'CONFIRMED';
+        }
+      }
       const report = {
-        marker: document.querySelector('[data-v2-shell]') !== null,
+        marker: valid && document.querySelector('[data-v2-shell]') !== null,
         mockMode: document.querySelector('[data-v2-mock="true"]') !== null,
         navigationCount: document.querySelectorAll('[data-v2-navigation-item]').length,
-        preload: false,
+        preload: bridge !== undefined,
       };
       document.title = `${V2_SMOKE_PREFIX}${encodeURIComponent(JSON.stringify(report))}`;
+    })().catch(() => {
+      document.title = `${V2_SMOKE_PREFIX}${encodeURIComponent(
+        JSON.stringify({ marker: false, mockMode: true, navigationCount: 7, preload: true }),
+      )}`;
     });
   }, []);
 
@@ -119,16 +203,37 @@ export function V2App(): React.JSX.Element {
             onClose={() => setDateModalOpen(false)}
             onConfirm={(value) => {
               const [day = '周日', time = '14:00'] = value.split(' ');
-              setSession((current) => ({
-                ...current,
-                plan: current.plan.map((item) =>
-                  ui.planSelectedIds.includes(item.id)
-                    ? { ...item, date: day === '周日' ? '8/2' : item.date, day, time }
-                    : item,
-                ),
-              }));
               setDateModalOpen(false);
-              notify(`已将 ${ui.planSelectedIds.length} 篇内容调整到${value}（仅模拟会话）。`);
+              const bridge = window.rednoteV2;
+              if (bridge === undefined) {
+                setSession((current) => ({
+                  ...current,
+                  plan: current.plan.map((item) =>
+                    ui.planSelectedIds.includes(item.id)
+                      ? { ...item, date: day === '周日' ? '8/2' : item.date, day, time }
+                      : item,
+                  ),
+                }));
+                notify(`已将 ${ui.planSelectedIds.length} 篇内容调整到${value}（仅模拟会话）。`);
+                return;
+              }
+              void bridge
+                .reschedulePlanCandidates({
+                  candidateIds: ui.planSelectedIds,
+                  date: day === '周日' ? '8/2' : '8/1',
+                  day,
+                  expectedRevision: session.planRevision,
+                  time,
+                  weekKey: session.weekKey,
+                })
+                .then((result) => {
+                  if (!result.ok) {
+                    notify(result.error.message);
+                    return;
+                  }
+                  setSession((current) => withPersistedWeeklyPlan(current, result.value));
+                  notify(`已将 ${ui.planSelectedIds.length} 篇内容调整到${value}并保存到本机。`);
+                });
             }}
             returnFocus={returnFocus.current}
           />

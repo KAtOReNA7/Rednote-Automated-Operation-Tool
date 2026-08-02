@@ -1,4 +1,5 @@
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
+import { withPersistedWeeklyPlan } from '../mock-provider.js';
 const days = [
   ['周一', '7/27'],
   ['周二', '7/28'],
@@ -27,14 +28,39 @@ export function WeeklyPlanPage(): React.JSX.Element {
       notify('请先选择内容。');
       return;
     }
-    setSession((current) => ({
-      ...current,
-      plan: current.plan.map((item) =>
-        selectedIds.includes(item.id) ? { ...item, status: '已确认' } : item,
-      ),
-    }));
-    notify(`已确认 ${selectedIds.length} 篇内容（仅模拟会话）。`);
-    setUi((current) => ({ ...current, planSelectedIds: [] }));
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) {
+      setSession((current) => ({
+        ...current,
+        plan: current.plan.map((item) =>
+          selectedIds.includes(item.id) ? { ...item, status: '已确认' } : item,
+        ),
+      }));
+      notify(`已确认 ${selectedIds.length} 篇内容（仅模拟会话）。`);
+      setUi((current) => ({ ...current, planSelectedIds: [] }));
+      return;
+    }
+    void bridge
+      .confirmPlanCandidates({
+        candidateIds: selectedIds,
+        expectedRevision: session.planRevision,
+        weekKey: session.weekKey,
+      })
+      .then((result) => {
+        if (!result.ok) {
+          notify(result.error.message);
+          if (result.error.code === 'REVISION_CONFLICT') {
+            void bridge.readWeeklyPlan({ weekKey: session.weekKey }).then((latest) => {
+              if (latest.ok)
+                setSession((current) => withPersistedWeeklyPlan(current, latest.value));
+            });
+          }
+          return;
+        }
+        setSession((current) => withPersistedWeeklyPlan(current, result.value));
+        notify(`已确认 ${selectedIds.length} 篇内容并保存到本机。`);
+        setUi((current) => ({ ...current, planSelectedIds: [] }));
+      });
   };
   return (
     <div className="v2-page">
@@ -57,7 +83,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
             </Button>
           </>
         }
-        description="21 篇 · 已完成 8 · 待审批 3。周历负责排程，批量工具负责高效调整。"
+        description={`21 篇 · 已完成 8 · 待审批 3。周历负责排程，批量工具负责高效调整。 · 本机 revision ${session.planRevision}`}
         eyebrow="7月27日—8月2日"
         title="本周计划"
       />

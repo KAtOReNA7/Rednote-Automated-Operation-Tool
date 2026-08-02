@@ -6,8 +6,11 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     lib: {
-      entry: fileURLToPath(new URL('./apps/desktop/src/preload.ts', import.meta.url)),
-      fileName: () => 'preload.cjs',
+      entry: {
+        preload: fileURLToPath(new URL('./apps/desktop/src/preload.ts', import.meta.url)),
+        'v2-preload': fileURLToPath(new URL('./apps/desktop/src/v2-preload.ts', import.meta.url)),
+      },
+      fileName: (_format, entryName) => `${entryName}.cjs`,
       formats: ['cjs'],
     },
     minify: false,
@@ -27,6 +30,9 @@ export default defineConfig({
       ),
       '@mystery-operations/settings': fileURLToPath(
         new URL('./packages/settings/src/index.ts', import.meta.url),
+      ),
+      '@mystery-operations/v2': fileURLToPath(
+        new URL('./packages/v2/src/index.ts', import.meta.url),
       ),
     },
   },

@@ -43,6 +43,7 @@ export { SqliteSettingsRepository } from './settings-repository.js';
 export { SqliteProviderCapabilityRepository } from './provider-capability-repository.js';
 export { SqliteSearchRepository } from './search-repository.js';
 export { SqliteTopicRepository } from './topic-repository.js';
+export { SqliteV2Repository } from './v2-repository.js';
 export { runInCoordinatedTransaction, runInTransaction } from './transaction.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';

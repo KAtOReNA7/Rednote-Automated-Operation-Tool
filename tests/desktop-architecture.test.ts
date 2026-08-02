@@ -116,7 +116,10 @@ describe('Issue 006 architecture boundaries', () => {
     expect(main).toContain("process.argv.includes('--v2-shell')");
     expect(main).toContain('const LEGACY_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`');
     expect(main).toContain('const V2_RENDERER_URL = `${APP_PROTOCOL}://app/v2.html`');
-    expect(main).toContain('createSecureWebPreferences(undefined, app.isPackaged)');
+    expect(main).toContain("join(app.getAppPath(), '.vite', 'build', 'v2-preload.cjs')");
+    expect(main).toContain('const runtime = await V2DesktopRuntime.open');
+    expect(main).toContain('removeIpcHandlers = registerV2Ipc');
+    expect(main).toContain('if (isV2ShellMode)');
   });
 
   it('flips every required Electron fuse explicitly', () => {

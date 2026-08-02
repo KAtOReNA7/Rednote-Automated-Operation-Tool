@@ -249,7 +249,7 @@ describe('authorized user-local source migration v20', () => {
     database.close();
 
     const migrated = await initializeDatabase({ databasePath });
-    expect(migrated.appliedVersions).toEqual([20]);
+    expect(migrated.appliedVersions).toEqual(MIGRATIONS.slice(19).map(({ version }) => version));
     expect(migrated.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

@@ -22,6 +22,23 @@ type InteractionRow = readonly [
   '可直接确认' | '需要追问',
 ];
 type PlanRow = readonly [string, string, string, string, string, string, string];
+type PersistedPlanStatus = 'CONFLICT' | 'CONFIRMED' | 'EXPORTED' | 'PENDING' | 'PLANNED';
+
+export interface PersistedWeeklyPlan {
+  readonly candidates: readonly {
+    readonly book: string;
+    readonly date: string;
+    readonly day: string;
+    readonly id: string;
+    readonly status: PersistedPlanStatus;
+    readonly time: string;
+    readonly title: string;
+  }[];
+  readonly revision: number;
+  readonly schemaVersion: 1;
+  readonly status: 'CONFIRMED' | 'DRAFT';
+  readonly weekKey: string;
+}
 
 // One deterministic fixture record per line is easier to audit.
 // prettier-ignore
@@ -81,6 +98,14 @@ const planRows: readonly PlanRow[] = [
   ['sun-3','周日','8/2','20:00','侦探小说的冷幽默','《红发会》','待审批'],
 ];
 
+const statusLabels: Readonly<Record<PersistedPlanStatus, string>> = Object.freeze({
+  CONFLICT: '时间冲突',
+  CONFIRMED: '已确认',
+  EXPORTED: '已导出',
+  PENDING: '待审批',
+  PLANNED: '已计划',
+});
+
 function createFixture() {
   // The row-to-object projection is intentionally kept aligned for auditability.
   // prettier-ignore
@@ -90,14 +115,61 @@ function createFixture() {
     interactions: interactionRows.map(([id, type, author, source, original, suggestion, confidence]) => ({ id, type, author, source, original, suggestion, confidence, status: String('PENDING') })),
     metrics: ([['浏览', '12.8万', '+18%'], ['点赞', '8,640', '+12%'], ['收藏', '3,120', '+21%'], ['评论', '486', '+9%'], ['新增关注', '732', '+16%']] as const).map(([label, value, change]) => ({ label, value, change })),
     opportunities: ([['rain-room', '雨夜密室讨论升温', '《黄色房间的秘密》', '相关内容收藏增长明显，适合强化氛围与诡计拆解。'], ['public-domain', '公版侦探经典适合系列解读', '《莫格街凶杀案》', '长尾搜索稳定，可连续三篇建立专业判断。'], ['unreliable', '反套路叙述者收藏表现突出', '《月亮宝石》', '收藏率高于账号均值，适合做反套路短评。']] as const).map(([id, title, book, reason]) => ({ id, title, book, reason })),
-    persona: { audience: '喜欢悬疑、推理与文化内容的普通读者', boundary: '不提前揭示关键凶手；完整诡计前给醒目剧透警告', name: '雾灯书页', tone: '理性、短句、观点鲜明、少量冷幽默' },
+    persona: { audience: '喜欢悬疑、推理与文化内容的普通读者', boundary: '不提前揭示关键凶手；完整诡计前给醒目剧透警告', name: '雾灯书页', revision: 0, schemaVersion: 1 as const, tone: '理性、短句、观点鲜明、少量冷幽默' },
     plan: planRows.map(([id, day, date, time, title, book, status]) => ({ id, day, date, time, title, book, status })),
+    planRevision: 0,
+    planStatus: 'DRAFT' as 'CONFIRMED' | 'DRAFT',
     recommendations: ([['locked-room', '增加密室主题', '密室相关内容收藏率比账号均值高 23%。', '下周增加 2 篇'], ['timing', '减少晚间重复排程', '周五 20:00 的两篇内容分散了互动。', '错开至少 90 分钟'], ['classics', '保留公版经典系列', '连续解读带来的关注转化更稳定。', '保持每周 3 篇']] as const).map(([id, title, reason, action]) => ({ id, title, reason, action, status: String('PENDING') })),
+    weekKey: '2026-W31',
   };
 }
 
 export type V2Session = ReturnType<typeof createFixture>;
 export type InteractionItem = V2Session['interactions'][number];
+
+export type V2BridgeResult<T> =
+  | {
+      readonly error: {
+        readonly code: 'INVALID_REQUEST' | 'PERSISTENCE_UNAVAILABLE' | 'REVISION_CONFLICT';
+        readonly message: string;
+      };
+      readonly ok: false;
+    }
+  | { readonly ok: true; readonly value: T };
+
+export interface RendererV2Bridge {
+  readonly confirmPlanCandidates: (input: {
+    readonly candidateIds: readonly string[];
+    readonly expectedRevision: number;
+    readonly weekKey: string;
+  }) => Promise<V2BridgeResult<PersistedWeeklyPlan>>;
+  readonly readPersona: () => Promise<V2BridgeResult<V2Session['persona']>>;
+  readonly readWeeklyPlan: (input: {
+    readonly weekKey: string;
+  }) => Promise<V2BridgeResult<PersistedWeeklyPlan>>;
+  readonly reschedulePlanCandidates: (input: {
+    readonly candidateIds: readonly string[];
+    readonly date: string;
+    readonly day: string;
+    readonly expectedRevision: number;
+    readonly time: string;
+    readonly weekKey: string;
+  }) => Promise<V2BridgeResult<PersistedWeeklyPlan>>;
+  readonly updatePersona: (input: {
+    readonly expectedRevision: number;
+    readonly persona: Pick<V2Session['persona'], 'audience' | 'boundary' | 'name' | 'tone'>;
+  }) => Promise<V2BridgeResult<V2Session['persona']>>;
+}
+
+export function withPersistedWeeklyPlan(session: V2Session, plan: PersistedWeeklyPlan): V2Session {
+  return {
+    ...session,
+    plan: plan.candidates.map((item) => ({ ...item, status: statusLabels[item.status] })),
+    planRevision: plan.revision,
+    planStatus: plan.status,
+    weekKey: plan.weekKey,
+  };
+}
 
 function deepFreeze<T>(value: T): T {
   if (typeof value === 'object' && value !== null && !Object.isFrozen(value)) {

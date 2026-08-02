@@ -58,9 +58,9 @@ describe('Issue 011 migration v5', () => {
     if (migrationV5 === undefined) {
       throw new Error('Migration v5 is missing.');
     }
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    ]);
+    expect(MIGRATIONS.map(({ version }) => version)).toEqual(
+      Array.from({ length: MIGRATIONS.at(-1)?.version ?? 0 }, (_, index) => index + 1),
+    );
     expect(migrationV5.name).toBe('local_loopback_api_and_plugin_clients');
     expect(MIGRATIONS.slice(0, 4).map(migrationChecksum)).toEqual(KNOWN_MIGRATION_HASHES);
     expect(migrationChecksum(migrationV5)).toBe(

@@ -125,66 +125,75 @@ for (const mode of ['disabled', 'enabled']) {
 
 {
   const temporary = await createPortableTemp(projectRoot, 'source-smoke-v2');
-  const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
   const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
-  const child = spawn(
-    electron,
-    [
-      '.',
-      '--issue006-smoke',
-      '--v2-shell',
-      `--issue006-smoke-output=${outputPath}`,
-      `--issue010-smoke-workspace=${smokeWorkspace}`,
-    ],
-    {
-      cwd: projectRoot,
-      env: { ...childEnvironment, ...temporary.env },
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    },
-  );
-  const processCollector = createSmokeProcessCollector(child.pid);
-  const stdoutEnded = processCollector.attachStream(child.stdout);
-  const exitPromise = waitForExit(child);
   try {
-    const report = await waitForSmokeReport(outputPath);
-    const processIds = await processCollector.waitForStages();
-    const socketEvidence = assertSocketSnapshot(
-      await inspectControlledProcesses(processIds),
-      'disabled',
-      43_119,
-      43_120,
-    );
-    const exitCode = await exitPromise;
-    await stdoutEnded;
-    const finalProcessIds = processCollector.finish();
-    if (
-      exitCode !== 0 ||
-      report.ok !== true ||
-      report.packaged !== false ||
-      report.mode !== 'v2' ||
-      report.renderer?.navigationCount !== 7 ||
-      report.renderer?.mockMode !== true ||
-      report.security?.preload !== false ||
-      report.runtime?.ipcRegistered !== false ||
-      report.runtime?.projectDataRootInitialized !== false ||
-      report.runtime?.sqliteInitialized !== false ||
-      report.security?.externalRequestAttempts !== 0
-    )
-      throw new Error(`V2 source smoke failed: ${JSON.stringify(report)}`);
-    await assertProcessesExited(finalProcessIds);
-    results.push({
-      mode: 'v2',
-      ...socketEvidence,
-      processCount: finalProcessIds.length,
-      processesExited: true,
-    });
-  } finally {
-    if (child.exitCode === null) {
-      child.kill();
-      await exitPromise.catch(() => undefined);
+    for (const attempt of [1, 2]) {
+      const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
+      const child = spawn(
+        electron,
+        [
+          '.',
+          '--issue006-smoke',
+          '--v2-shell',
+          `--issue006-smoke-output=${outputPath}`,
+          `--issue010-smoke-workspace=${smokeWorkspace}`,
+        ],
+        {
+          cwd: projectRoot,
+          env: { ...childEnvironment, ...temporary.env },
+          stdio: ['ignore', 'pipe', 'pipe'],
+          windowsHide: true,
+        },
+      );
+      const processCollector = createSmokeProcessCollector(child.pid);
+      const stdoutEnded = processCollector.attachStream(child.stdout);
+      const exitPromise = waitForExit(child);
+      try {
+        const report = await waitForSmokeReport(outputPath);
+        const processIds = await processCollector.waitForStages();
+        const socketEvidence = assertSocketSnapshot(
+          await inspectControlledProcesses(processIds),
+          'disabled',
+          43_119,
+          43_120,
+        );
+        const exitCode = await exitPromise;
+        await stdoutEnded;
+        const finalProcessIds = processCollector.finish();
+        if (
+          exitCode !== 0 ||
+          report.ok !== true ||
+          report.packaged !== false ||
+          report.mode !== 'v2' ||
+          report.renderer?.navigationCount !== 7 ||
+          report.renderer?.mockMode !== true ||
+          report.security?.preload !== true ||
+          report.runtime?.ipcRegistered !== true ||
+          report.runtime?.projectDataRootInitialized !== true ||
+          report.runtime?.sqliteInitialized !== true ||
+          report.runtime?.v2TableCount !== 2 ||
+          report.runtime?.personaRevision !== 1 ||
+          report.runtime?.planRevision !== 2 ||
+          report.security?.externalRequestAttempts !== 0
+        )
+          throw new Error(`V2 source smoke failed: ${JSON.stringify(report)}`);
+        await assertProcessesExited(finalProcessIds);
+        results.push({
+          attempt,
+          mode: 'v2',
+          ...socketEvidence,
+          processCount: finalProcessIds.length,
+          processesExited: true,
+        });
+      } finally {
+        if (child.exitCode === null) {
+          child.kill();
+          await exitPromise.catch(() => undefined);
+        }
+        await rm(outputPath, { force: true });
+      }
     }
-    await rm(outputPath, { force: true });
+  } finally {
     await rm(smokeWorkspace, { force: true, maxRetries: 20, recursive: true, retryDelay: 100 });
     await temporary.cleanup();
   }
