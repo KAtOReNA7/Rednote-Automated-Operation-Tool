@@ -171,9 +171,9 @@ for (const mode of ['disabled', 'enabled']) {
           report.runtime?.ipcRegistered !== true ||
           report.runtime?.projectDataRootInitialized !== true ||
           report.runtime?.sqliteInitialized !== true ||
-          report.runtime?.v2TableCount !== 2 ||
-          report.runtime?.personaRevision !== 1 ||
-          report.runtime?.planRevision !== 2 ||
+          report.runtime?.v2TableCount !== 4 ||
+          report.runtime?.personaRevision !== 0 ||
+          report.runtime?.planRevision !== 1 ||
           report.security?.externalRequestAttempts !== 0
         )
           throw new Error(`V2 source smoke failed: ${JSON.stringify(report)}`);

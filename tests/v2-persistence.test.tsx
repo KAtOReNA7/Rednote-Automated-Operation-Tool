@@ -21,12 +21,14 @@ import {
   DEFAULT_WEEKLY_PLAN,
   V2ApplicationFacade,
   V2ContractError,
+  V2ContentError,
   V2_DEFAULT_WEEK_KEY,
   V2_IPC_CHANNELS,
   parseV2ReadRequest,
   parseV2MutationRequest,
   parseWeeklyPlan,
   summarizeV2Workspace,
+  toV2Exception,
   type AccountPersona,
   type AccountPersonaFields,
   type PlanReschedulePreview,
@@ -75,19 +77,41 @@ function success<T>(value: T): V2Result<T> {
 
 function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
   return {
+    approveContentPackages: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
     confirmPlanCandidates: async (input) =>
       success(facade.mutate({ action: 'CONFIRM_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     generateWeeklyPlan: async (input) =>
       success(facade.mutate({ action: 'GENERATE_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    generateContentPackages: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
     lockWeeklyPlan: async (input) =>
       success(facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     previewPlanReschedule: async (input) =>
       success(facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview),
+    exportContentPackages: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_APPROVED')),
+      ok: false,
+    }),
+    openContentExport: async () => ({
+      error: toV2Exception(new V2ContentError('EXPORT_FAILED')),
+      ok: false,
+    }),
+    readContentPackages: async (input) =>
+      success({ packages: [], schemaVersion: 1 as const, weekKey: input.weekKey }),
     readPersona: async () => success(facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: async (input) =>
       success(facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: async (input) =>
       success(facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    saveContentPackage: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
     skipPlanCandidates: async (input) =>
       success(facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     updatePersona: async (input) =>
@@ -183,11 +207,11 @@ describe('V2 pure contracts', () => {
 });
 
 describe('V2 migration and repository', () => {
-  it('appends one migration with exactly two STRICT v2_ tables and no triggers', async () => {
+  it('appends the R04 migration with two additional STRICT v2_ tables and no triggers', async () => {
     const previous = MIGRATIONS.at(-2);
     const current = MIGRATIONS.at(-1);
     expect(current).toMatchObject({
-      name: 'v2_persona_and_weekly_plan_persistence',
+      name: 'v2_content_packages_and_versions',
       version: (previous?.version ?? 0) + 1,
     });
     const databasePath = createTemporaryDatabasePath('v2 new database');
@@ -202,6 +226,8 @@ describe('V2 migration and repository', () => {
         .all();
       expect(result.appliedVersions.at(-1)).toBe(current?.version);
       expect(tables).toEqual([
+        { name: 'v2_content_package_versions', strict: 1 },
+        { name: 'v2_content_packages', strict: 1 },
         { name: 'v2_weekly_plan_snapshots', strict: 1 },
         { name: 'v2_workspaces', strict: 1 },
       ]);
@@ -270,7 +296,7 @@ describe('V2 migration and repository', () => {
              WHERE type = 'table' AND name LIKE 'v2\\_%' ESCAPE '\\'`,
           )
           .get(),
-      ).toEqual({ count: 0 });
+      ).toEqual({ count: 2 });
       expect(
         database.prepare(`SELECT working_name FROM account_profiles WHERE id = 'keep'`).get(),
       ).toEqual({ working_name: '回滚后仍在' });
@@ -393,19 +419,25 @@ describe('V2 Electron boundary', () => {
     const read = electron.handlers.get(V2_IPC_CHANNELS.read);
     if (read === undefined) throw new Error('missing V2 read handler');
     const trustedEvent = { sender, senderFrame };
-    expect(read(trustedEvent, { view: 'ACCOUNT_PERSONA' })).toMatchObject({ ok: true });
-    expect(
+    await expect(read(trustedEvent, { view: 'ACCOUNT_PERSONA' })).resolves.toMatchObject({
+      ok: true,
+    });
+    await expect(
       read(
         { sender, senderFrame: { url: 'https://example.invalid/v2.html' } },
         {
           view: 'ACCOUNT_PERSONA',
         },
       ),
-    ).toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
-    expect(read(trustedEvent, { extra: true, view: 'ACCOUNT_PERSONA' })).toMatchObject({
+    ).resolves.toMatchObject({ error: { code: 'INVALID_REQUEST' }, ok: false });
+    await expect(
+      read(trustedEvent, { extra: true, view: 'ACCOUNT_PERSONA' }),
+    ).resolves.toMatchObject({
       ok: false,
     });
-    expect(read(trustedEvent, { view: 'ACCOUNT_PERSONA' }, 'extra-argument')).toMatchObject({
+    await expect(
+      read(trustedEvent, { view: 'ACCOUNT_PERSONA' }, 'extra-argument'),
+    ).resolves.toMatchObject({
       ok: false,
     });
     remove();
@@ -419,13 +451,19 @@ describe('V2 Electron boundary', () => {
     const [key, exposed] = electron.exposed.mock.calls[0] as [string, V2Bridge];
     expect(key).toBe('rednoteV2');
     expect(Object.keys(exposed).sort()).toEqual([
+      'approveContentPackages',
       'confirmPlanCandidates',
+      'exportContentPackages',
+      'generateContentPackages',
       'generateWeeklyPlan',
       'lockWeeklyPlan',
+      'openContentExport',
       'previewPlanReschedule',
+      'readContentPackages',
       'readPersona',
       'readWeeklyPlan',
       'reschedulePlanCandidates',
+      'saveContentPackage',
       'skipPlanCandidates',
       'updatePersona',
     ]);
@@ -523,7 +561,12 @@ describe('V2 renderer persistence wiring', () => {
            ORDER BY name`,
         )
         .all(),
-    ).toEqual([{ name: 'v2_weekly_plan_snapshots' }, { name: 'v2_workspaces' }]);
+    ).toEqual([
+      { name: 'v2_content_package_versions' },
+      { name: 'v2_content_packages' },
+      { name: 'v2_weekly_plan_snapshots' },
+      { name: 'v2_workspaces' },
+    ]);
     database.close();
   });
 });

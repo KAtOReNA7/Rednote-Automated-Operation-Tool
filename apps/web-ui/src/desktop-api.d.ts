@@ -7,6 +7,8 @@ declare global {
   type V2PlanModeContract = V2.PlanRescheduleMode;
   type V2PlanPreviewContract = V2.PlanReschedulePreview;
   type V2WeeklyPlanContract = V2.WeeklyPlan;
+  type V2ContentPackageFieldsContract = V2.ContentPackageFields;
+  type V2ContentWorkspaceContract = V2.ContentWorkspace;
 
   interface Window {
     readonly rednoteDesktop?: DesktopBridge;

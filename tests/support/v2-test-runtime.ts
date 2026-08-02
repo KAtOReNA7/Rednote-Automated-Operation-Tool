@@ -1,6 +1,7 @@
 import {
   V2ApplicationFacade,
   V2ContractError,
+  V2ContentError,
   V2_SCHEMA_VERSION,
   parseAccountPersona,
   parseWeeklyPlan,
@@ -80,21 +81,45 @@ export function createMemoryV2Bridge(): V2Bridge {
     }
   };
   return {
+    approveContentPackages: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
     confirmPlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'CONFIRM_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     generateWeeklyPlan: (input) =>
       run(() => facade.mutate({ action: 'GENERATE_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    generateContentPackages: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
     lockWeeklyPlan: (input) =>
       run(() => facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     previewPlanReschedule: (input) =>
       run(
         () => facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview,
       ),
+    exportContentPackages: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_APPROVED')),
+      ok: false,
+    }),
+    openContentExport: async () => ({
+      error: toV2Exception(new V2ContentError('EXPORT_FAILED')),
+      ok: false,
+    }),
+    readContentPackages: async (input) => ({
+      ok: true,
+      value: { packages: [], schemaVersion: 1, weekKey: input.weekKey },
+    }),
     readPersona: () => run(() => facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: (input) =>
       run(() => facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    saveContentPackage: async () => ({
+      error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
     skipPlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     updatePersona: (input) =>

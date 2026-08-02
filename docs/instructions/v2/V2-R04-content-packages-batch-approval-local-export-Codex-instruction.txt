@@ -1,0 +1,268 @@
+Rednote V2-R04 正式增量指令
+主题：功能优先的内容包、批量审批与本地导出
+
+完整遵守仓库根级及作用域内 AGENTS.md。本指令只定义 V2-R04 的增量规则；
+不复制、替换或弱化仓库公共规则、三层验证门禁和永久硬约束。
+
+一、授权目标与最终停止点
+
+在已经用户验收并合并的 V2-R03 基础上，完成一个真正可使用、完全本地的内容生产闭环：
+
+已锁定周计划
+→ 由 Scripted provider 生成 3 个确定性内容包
+→ 用户在“内容”页同屏编辑六类字段
+→ 单篇或批量批准当前版本
+→ 把所选已批准内容导出为一个可直接查看的本地发布目录
+→ 关闭并重启后恢复内容、版本和审批状态。
+
+完成后创建 Draft PR、等待 Windows required CI、准备 Windows 体验包，并停止在
+R04_AWAITING_USER_ACCEPTANCE。未经用户明确回复“接受 V2-R04”，不得合并，不得进入
+V2-R05、R06、R07、R08、029B、Issue 031 或 M4。
+
+二、本轮新增的产品决策：视觉设计统一延期
+
+1. V2-R04—R07 不再设置逐任务 Figma 设计关卡，也不购买或调用 Figma。
+2. 不得调用 ImageGen、Sites、HTML 原型、计算机控制或其他工具代替 Figma 重新设计界面。
+3. 不得自行重做导航、信息架构、页面布局、颜色、字体、图标、卡片、间距或设计系统。
+4. “内容”页必须复用当前绿色 V2 的壳层、tokens、组件、列表/详情结构和交互语言。
+5. 本轮只允许增加完成内容生成、编辑、审批、导出所必需的控件、状态、错误反馈和无障碍语义；
+   不做视觉美化或跨页面 CSS 重构。
+6. 新增样式必须局部作用于现有 V2 内容页，不得修改“总览”“本周计划”以及 D01 冻结画面。
+7. 如发现视觉问题，只记录到产品文档的“V2 最终视觉债务”清单，不在本轮顺手修复。
+8. 在 R07 完成后、R08 之前必须设置独立的 V2-D-FINAL 关卡：届时再根据需要购买一个月
+   Figma Professional Full，参考成熟商业产品，统一完成七页设计、设计系统和用户验收。
+9. 没有完成 V2-D-FINAL 及其生产实现，不得把 V2 设为默认上线入口。
+
+将上述决定写入一个简短、可持续引用的 tracked 产品决策文档，例如：
+docs/product/v2-final-visual-convergence-policy.md。
+只需更新与当前/下一阶段直接相关的 README 或 Roadmap 状态；不要修改 AGENTS.md，
+不要为该文档新增治理框架或大批字符串测试。
+
+三、Phase 0：动态基线与开工资格
+
+1. 通过 git rev-parse --show-toplevel 动态发现仓库根，完整读取适用 AGENTS.md、当前 V2 文档、
+   R02/R03 合同、migration 尾部、现有两个 V2 IPC、CI 工作流和本指令。
+2. 运行 git status --short --branch，确认当前工作树和暂存区干净；未知用户文件或修改出现时立即停止。
+3. 允许执行只读远端核验和 git fetch origin main；禁止 pull、rebase、reset、amend、squash、force push。
+4. 动态确认本地 main、tracking main 和实际远端 main 一致，且远端 main 已包含用户接受的 R03
+   普通合并结果。不得用本指令编写时的 SHA、盘符、绝对路径或文件 SHA-256 作为门禁。
+5. 核验该动态 main 的 Windows required CI 为成功；如果不成功，停止并报告，不在 R04 中修 CI。
+6. 从绿色 main 新建分支：codex/v2-r04-content-package-export。
+7. 把本 TXT 唯一归档为：
+   docs/instructions/v2/V2-R04-content-packages-batch-approval-local-export-Codex-instruction.txt。
+   不在仓库根目录、桌面或其他 tracked 位置保留第二份。
+8. 编码前先给出文件级实施计划、预计预算和风险测试选择。若预计明显超过本指令预算，先停止，
+   不通过压缩代码、合并无关职责或削弱测试规避预算。
+
+四、必须复用的事实与基础设施
+
+1. 复用 R02 冻结的 packages/v2 facade、DTO/codec、V2 repository、独立 preload/runtime，
+   以及仅有的两条底层 workspace read/mutate IPC channel。
+2. 复用 R03 的 AccountPersona、WeeklyPlan、PlanCandidate、日期时间、revision、锁定和恢复语义。
+3. 复用既有本地 SQLite migration runner、ProjectDataRoot、managed local file repository、
+   Windows 安全 Electron 壳和原子文件写入能力。
+4. 只有状态为 LOCKED 的周计划才可生成正式 R04 内容包；不得恢复旧 Dossier、Brief、Topic、
+   Experiment、Copy/Quality 页面作为前置门槛。
+5. R04 的 ContentPackage 必须只包含六类用户字段：
+   - 封面；
+   - 标题；
+   - 正文；
+   - 标签；
+   - 建议日期时间；
+   - 素材说明。
+6. 不存在置顶评论字段、控件、文件、检查或导出项。
+
+五、允许实现的功能
+
+A. 确定性内容生成
+
+1. 新增窄的 ScriptedContentProvider port/实现；输入只来自当前账号人设快照和已锁定计划项。
+2. 默认从锁定计划中明确选择 3 项生成 3 个内容包；同一输入与同一幂等键不得重复创建包或版本。
+3. 结果必须固定、有界、可测试，并在 UI 清楚标注“本地 Scripted 内容，不是模型生成”。
+4. 不调用真实模型、Search、Fetch、图片生成、网页、业务 API 或外部网络，费用为 0。
+5. 本轮封面只使用仓库现有、已批准的三张演示封面资产，并通过受控文件仓库管理；
+   不新增图片生成，不下载图片，不增加任意本地图片导入器。
+
+B. 内容包、版本与审批
+
+1. ContentPackage ID 稳定绑定 Workspace、WeeklyPlan 和 PlanCandidate；不得仅靠标题关联。
+2. 每次实质编辑创建或保存一个可追溯的新版本；相同内容的 no-op 保存不得制造新版本。
+3. 当前版本至少支持 DRAFT、APPROVED 两种产品状态；如现有合同确需中间状态，可增加一个
+   REVIEW_REQUIRED，但不得复制旧质量状态机。
+4. 批准只针对精确当前版本。已批准版本再次发生实质编辑时，当前版本必须回到待复核状态，
+   旧批准记录不得错误沿用。
+5. 支持单篇批准、选择多篇、全选当前可批准项、批量批准；失败必须原子化，不允许一半成功。
+6. revision 冲突、已过期页面、缺失文件、损坏内容和重复命令返回有限用户错误；不得覆盖较新修改。
+7. 关闭并重启应用后，内容、版本、当前状态、所关联计划项及批准结果均应正确恢复。
+
+C. 内容页的最小功能 UI
+
+1. 保留现有“内容”页整体结构，在同一工作区完成包列表、详情编辑、选择、批量批准和导出。
+2. 六类字段必须可见；标题、正文、标签、建议时间、素材说明可编辑，封面可预览。
+3. 页面明确区分：未生成、草稿、待复核、已批准、已过期/冲突、导出成功/失败。
+4. 不新增独立审批页，不新增一级导航，不恢复旧研究或质量术语。
+5. 所有按钮有真实可观察结果；不得保留假按钮、模拟成功 toast 或尚未接线的入口。
+6. 键盘、focus、错误摘要、加载/空状态须可用；只做功能性无障碍，不进行视觉改版。
+
+D. 本地导出
+
+1. 只有当前版本已批准的内容包可以导出；未批准、已被编辑失效或文件损坏的包必须明确拒绝。
+2. 支持选择一个或多个已批准包，导出为 ProjectDataRoot 受控 exports/v2/ 下的一个发布目录。
+3. 每个内容包使用 Windows 安全、确定性、不会覆盖其他包的子目录；支持中文、空格和长路径。
+4. 每个子目录至少包含：
+   - cover.png；
+   - title.txt；
+   - body.txt；
+   - tags.txt；
+   - suggested-time.txt；
+   - material-notes.txt。
+5. 导出根目录包含版本化 manifest.json 和简短 START-HERE.txt。START-HERE 必须写明：
+   “这是本地发布包，最终需由用户在小红书官方端手动发布；系统未登录或操作平台。”
+6. manifest 只保存有界元数据、相对路径、内容 hash、ContentPackage/Version ID、建议时间、
+   导出 schema 版本和 aiDisclosure:false；不保存绝对路径、secret、SQL、内部 lease 或原始请求。
+7. 导出使用受控临时目录、原子发布和内容校验；失败不得留下被误认为成功的半成品目录。
+8. 相同版本集合和相同导出请求的重放必须幂等：不得静默覆盖不同内容或制造重复成功记录。
+9. 导出成功后可通过现有两条 V2 workspace channel 的受控 action 打开精确导出目录；
+   renderer 不接收任意绝对路径，也不得提供任意路径浏览器。
+10. 导出不等于发布，不改变“平台动作必须手动”的边界。
+
+六、数据、migration、IPC 与规模预算
+
+1. 最多新增 2 张 STRICT v2_ 表和 1 条运行时发现的连续 migration；不得修改任何历史 migration。
+2. 推荐语义为内容包 aggregate 与版本/审批元数据；具体表名以现有代码一致性为准。
+3. SQLite 只保存有限元数据、hash、revision、状态和 ManagedRelativePath；标题、正文、素材说明、
+   封面文件及导出内容放入受控文件仓库，不把完整正文写入 SQLite。
+4. 最多 4 个必要 trigger；优先使用明确约束和 repository 事务，若 0 trigger 足够则不要新增。
+5. 新 IPC channel：0。只能扩展既有 v2:workspace:read/mutate 的受控判别联合和 preload 具名方法。
+6. 新 package：0；新 npm dependency：0；新 queue/worker：0；新 route/一级导航：0。
+7. 产品源码净新增硬上限 1,500 LOC；测试净新增硬上限 1,100 LOC；R04 主体变更文件硬上限 25。
+8. 已知仓库可能把 migration 尾部期望散布在多个历史测试中。只有运行时实际发现、且必须随连续
+   migration 机械更新的既有 tail 断言，可作为单独文件数例外：逐文件列出修改前后断言，保持数量
+   和强度，最多额外 12 个文件；因此总文件绝对上限为 37。该例外不得用于产品代码、文档、重构、
+   新测试或其他兼容修改，也不得成为后续任务先例。
+9. 指令归档、合同/ADR、视觉延期政策和最终证据计入主体 25 文件；不得用拆分文档规避预算。
+10. 不为追求验收数量创建大规模逐条 acceptance map；核心验收保持 12—18 项、表驱动覆盖排列。
+
+七、明确禁止范围
+
+- Figma、视觉重新设计、Design QA、商业范例调研和跨页面样式重构；
+- 真实文案或图片模型、能力探测、搜索、抓取、OCR、Batch、费用调用；
+- 自动登录、发布、定时发布、评论、私信、验证码或风控处理；
+- 置顶评论；
+- 旧 Dossier/Brief/Topic/Experiment/Quality 主流程；
+- R05 互动导入、回复建议和手动发送状态；
+- R06 表现数据与策略复盘；
+- R07 真实 adapter；
+- R08 默认入口或旧产品归档；
+- 修改 AGENTS.md、整仓重构、删除旧表或历史 migration；
+- 新云服务、云存储、远程队列或安装器。
+
+AI 标识与版权的永久规则直接服从 AGENTS.md。本轮不得增加相关字段、检查或门禁；
+若 manifest 需要该字段，只能保存字面量 aiDisclosure:false，且不得影响生成、审批或导出。
+
+八、核心验收（必须有行为证据）
+
+R04-01  非 LOCKED 周计划不能生成正式内容包。
+R04-02  锁定计划中明确选择 3 项后得到 3 个稳定、互不混淆的内容包。
+R04-03  同一幂等命令重放不重复创建包、版本或文件。
+R04-04  六类字段完整，且任何 DTO、UI、数据库、文件和 manifest 均无置顶评论。
+R04-05  实质编辑产生新当前版本；no-op 保存不产生新版本。
+R04-06  批准绑定精确版本；批准后再编辑会失效，不能导出旧批准状态冒充当前批准。
+R04-07  单篇及批量批准正确；revision 冲突不会覆盖较新数据；批量失败原子回滚。
+R04-08  重启后内容、版本、批准状态与计划关联保持。
+R04-09  仅当前已批准版本可导出；选择多个包时生成一个根目录和完整子目录。
+R04-10  导出六个用户文件、manifest 和 START-HERE 内容正确，无绝对路径、secret 或内部对象泄漏。
+R04-11  导出具有内容校验、Windows 安全路径、原子失败与幂等重放证据。
+R04-12  打开导出目录只能针对系统刚生成且位于受控 exports/v2 内的目标。
+R04-13  renderer 仍无 Node/Electron/DB/文件系统直连，且 V2 IPC channel 总数没有增加。
+R04-14  UI 使用现有内容页结构，三包切换、编辑、选择、批量批准和导出均可键盘完成。
+R04-15  全流程外部业务连接、真实密钥读取、真实模型/API 调用、费用和平台操作均为 0。
+R04-16  legacy 入口和 R03 人设/计划行为保持，不修改 D01 六个冻结画面。
+
+九、经济型验证策略
+
+遵守仓库当前 validation gate matrix；本轮明确采用“本地聚焦验证 + 托管完整门禁”模式，
+不要恢复过去反复本地跑全量门禁的做法。
+
+本地允许且要求：
+
+1. 编码前不跑全量；只运行与 content、V2 repository/migration、storage/export、V2 IPC、renderer
+   和硬约束直接相关的现有测试，建立精确失败基线。
+2. 实现后运行 R04 新增专项及直接相邻测试；一个逻辑修复只精确复跑受影响集合。
+3. format-check、lint、typecheck、build 各完成一次最终通过；失败后修复并只重跑相应门禁。
+4. git diff --check、secret/egress、变更预算和无 skip/todo/only 检查必须通过。
+5. 本地 normal 全量、capacity、package、packaged smoke、dependency audit 默认不重复运行，
+   交给远端 Windows required CI。若当前 AGENTS 明确要求更严格，以其三层门禁矩阵为准，
+   但不得无修改盲目重跑。
+
+远端要求：
+
+1. 创建 Draft PR 后，让精确 PR HEAD 的 Windows required CI 完整运行一次；它应覆盖 normal、
+   capacity（若适用）、Electron source/packaged smoke、build、desktop/clipper package、audit 和 cleanup。
+2. packaged smoke 在隔离临时 ProjectDataRoot 中完成：锁定计划 fixture → 生成 3 包 → 编辑 →
+   批量批准 → 导出 → 校验 manifest/文件 → 重启恢复；外部连接必须为 0。
+3. CI 若失败，先读取完整日志和定位根因。只有代码或测试发生针对性修改后才重新触发；
+   不无修改连续 rerun，不通过降低断言、增加宽泛 timeout 或跳过步骤取得绿色。
+4. CI 基础设施若出现明确瞬时故障，可按当前治理规则做至多一次有记录的重跑；仍失败则停止。
+
+十、Git、PR、体验包与用户验收
+
+1. 实现完成后使用普通提交；建议主提交信息：
+   feat(v2): add local content packages and export
+2. 不要求“唯一提交”。CI 暴露的当前范围兼容修复可以追加普通小提交；禁止改写已推送历史。
+3. 普通 push 当前 R04 分支，创建 Draft PR；不得直接推 main，不得合并。
+4. PR 描述必须列出：用户结果、六字段合同、两表/migration、0 新 IPC、导出结构、视觉延期政策、
+   预算、测试、外部副作用和明确未做范围。
+5. 精确 PR HEAD CI 全绿后下载并静态核验 Windows artifact。体验包必须包含：
+   - 启动 Rednote V2 体验.cmd；
+   - 返回当前绿色版本.cmd；
+   - V2-R04-体验清单.txt；
+   - 精确 commit 标识，但不得依赖固定电脑路径。
+6. 不替用户启动应用，不使用计算机控制代替用户验收。
+
+体验清单至少要求用户亲自完成：
+
+1. 打开 V2，确认已有一个 LOCKED 周计划；
+2. 选择 3 个计划项，生成 3 个本地 Scripted 内容包；
+3. 在三个包之间切换，修改其中一个标题或正文、标签、建议时间和素材说明并保存；
+4. 批量批准三个当前版本；
+5. 再次编辑其中一个已批准包，确认它退出已批准状态且无法作为当前版本导出；
+6. 重新批准后，选择三个包导出并打开本地目录；
+7. 核对每包六个文件、根 manifest、START-HERE、无置顶评论，并看到“官方端手动发布”提示；
+8. 关闭并重启，核对内容、版本和审批状态保持；
+9. 启动旧版，确认 legacy 仍可打开；
+10. 回复“接受 V2-R04”或列出阻塞问题。
+
+十一、失败与停止条件
+
+遇到以下任一情况立即停止并保留现场，不扩大范围：
+
+- Phase 0 发现未知工作树修改、远端分叉或 main CI 非绿色；
+- 必须新增第三条 V2 IPC、新 package、新 dependency、超过 2 表/1 migration，或突破主体 25 文件、
+  migration-tail 例外 12 文件、总计 37 文件及 LOC 预算；
+- 必须重新设计界面或修改 D01 冻结画面才能继续；
+- 需要真实模型、真实图片、网络、密钥、费用、任意用户路径或平台动作；
+- migration 不能安全升级/回滚、导出可能越出 ProjectDataRoot、或批量审批无法保证原子性；
+- Windows required CI 在允许的诊断/修复次数后仍不绿；
+- 无法生成可供用户本人验证的 Windows 体验包。
+
+停止报告必须区分：已完成、未验证、失败、被明确延期；不得把 scripted 结果写成真实 AI 生成，
+不得把导出写成发布。
+
+十二、最终报告格式
+
+最终只报告以下内容，避免逐命令流水账：
+
+1. 状态：R04_AWAITING_USER_ACCEPTANCE / BLOCKED；
+2. 动态 main 基线、分支、PR、最终 HEAD、ahead/behind、工作树；
+3. 用户可见结果及六字段/无置顶评论事实；
+4. migration、表、trigger、IPC、dependency、LOC 和文件预算实际值；
+5. 本地聚焦验证和精确 PR HEAD 的 Windows required CI；
+6. 导出结构、原子/幂等/重启恢复证据；
+7. 真实密钥、模型/API、业务网络、费用和平台操作实际值；
+8. Windows 体验包与清单位置；
+9. 明确未进入 R05—R08、029B、Issue 031 或 M4；
+10. 等待用户回复“接受 V2-R04”，不得自动合并。
+
+现在开始执行 V2-R04。先完成 Phase 0 和文件级实施计划；若开工资格满足，直接实施，不再向用户
+重复确认已明确的产品边界。
