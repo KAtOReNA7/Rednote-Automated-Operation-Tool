@@ -268,9 +268,9 @@ async function startV2Application(
           renderer.mockMode &&
           renderer.navigationCount === 7 &&
           renderer.preload &&
-          persistence.personaRevision === 1 &&
-          persistence.planRevision === 2 &&
-          persistence.v2TableCount === 2 &&
+          persistence.personaRevision === 0 &&
+          persistence.planRevision === 1 &&
+          persistence.v2TableCount === 4 &&
           sessionSecurityAudit.externalRequestAttempts === 0;
         await emitSmokeProcessSample('capability-validated');
         writeSmokeReport(smokeOutputPath, {

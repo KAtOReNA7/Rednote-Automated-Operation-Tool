@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
-import { randomUUID } from 'node:crypto';
-import { join, resolve } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { isAbsolute, join, resolve } from 'node:path';
 
 import { FuseState, FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 
@@ -24,6 +24,67 @@ import {
 import { createPortableTemp } from './portable-temp.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '..');
+
+async function assertV2R04Export(smokeWorkspace) {
+  const exportRoot = join(smokeWorkspace, 'userData 中文 空格', 'v2-project-data', 'exports', 'v2');
+  const exportNames = await readdir(exportRoot);
+  if (exportNames.length !== 1 || !/^r04-[a-f0-9]{24}$/u.test(exportNames[0]))
+    throw new Error('V2-R04 smoke must produce one opaque export directory.');
+  const directory = join(exportRoot, exportNames[0]);
+  const manifestText = await readFile(join(directory, 'manifest.json'), 'utf8');
+  const manifest = JSON.parse(manifestText);
+  if (
+    manifest.schemaVersion !== 1 ||
+    manifest.aiDisclosure !== false ||
+    manifest.packages?.length !== 3 ||
+    manifestText.includes(smokeWorkspace) ||
+    /secret|pinnedComment|置顶评论/iu.test(manifestText)
+  )
+    throw new Error('V2-R04 export manifest is invalid.');
+  const expectedNames = [
+    'body.txt',
+    'cover.png',
+    'material-notes.txt',
+    'suggested-time.txt',
+    'tags.txt',
+    'title.txt',
+  ];
+  for (const item of manifest.packages) {
+    const files = Object.values(item.files ?? {});
+    const child = String(files[0]?.path ?? '').split('/')[0];
+    if (
+      files.length !== 6 ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/u.test(item.suggestedTime) ||
+      (await readdir(join(directory, child))).sort().join('\n') !== expectedNames.join('\n')
+    )
+      throw new Error('V2-R04 package shape is invalid.');
+    for (const file of files) {
+      if (
+        typeof file.path !== 'string' ||
+        isAbsolute(file.path) ||
+        file.path.includes('..') ||
+        file.path.includes('\\') ||
+        !/^[a-f0-9]{64}$/u.test(file.sha256)
+      )
+        throw new Error('V2-R04 export contains an unsafe file reference.');
+      const bytes = await readFile(join(directory, file.path));
+      if (
+        bytes.length === 0 ||
+        createHash('sha256').update(bytes).digest('hex') !== file.sha256 ||
+        !(await stat(join(directory, file.path))).isFile()
+      )
+        throw new Error('V2-R04 exported file failed verification.');
+    }
+  }
+  const startHere = await readFile(join(directory, 'START-HERE.txt'), 'utf8');
+  if (
+    !startHere.includes(
+      '这是本地发布包，最终需由用户在小红书官方端手动发布；系统未登录或操作平台。',
+    )
+  )
+    throw new Error('V2-R04 manual-publishing boundary is missing.');
+  return { exportId: exportNames[0], packageCount: manifest.packages.length };
+}
 const outputDirectory = join(projectRoot, 'out');
 const packageNames = (await readdir(outputDirectory)).filter((name) => name.endsWith('-win32-x64'));
 if (packageNames.length !== 1) {
@@ -41,13 +102,13 @@ await stat(appAsar);
 const [v2Launcher, legacyLauncher, checklist] = await Promise.all([
   readFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), 'utf8'),
   readFile(join(packageDirectory, '返回当前绿色版本.cmd'), 'utf8'),
-  readFile(join(packageDirectory, 'V2-R03-体验清单.txt'), 'utf8'),
+  readFile(join(packageDirectory, 'V2-R04-体验清单.txt'), 'utf8'),
 ]);
 if (
   !v2Launcher.includes('%~dp0RednoteMysteryOperations.exe') ||
   (v2Launcher.match(/--v2-shell/gu) ?? []).length !== 1 ||
   legacyLauncher.includes('--v2-shell') ||
-  !checklist.startsWith('本轮主要验证真实持久化周计划行为，不是新的视觉改版。') ||
+  !checklist.startsWith('本轮验证完全本地的内容包、批量批准与导出，不是视觉改版。') ||
   !checklist.includes('等待用户本人验收，禁止合并。') ||
   (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
     !checklist.includes(process.env.REDNOTE_EXACT_HEAD_SHA))
@@ -218,15 +279,17 @@ for (const mode of ['disabled', 'enabled']) {
           report.runtime?.ipcRegistered !== true ||
           report.runtime?.projectDataRootInitialized !== true ||
           report.runtime?.sqliteInitialized !== true ||
-          report.runtime?.v2TableCount !== 2 ||
-          report.runtime?.personaRevision !== 1 ||
-          report.runtime?.planRevision !== 2 ||
+          report.runtime?.v2TableCount !== 4 ||
+          report.runtime?.personaRevision !== 0 ||
+          report.runtime?.planRevision !== 1 ||
           report.security?.externalRequestAttempts !== 0
         )
           throw new Error(`V2 packaged smoke failed: ${JSON.stringify(report)}`);
         await assertProcessesExited(finalProcessIds);
+        const exportEvidence = await assertV2R04Export(smokeWorkspace);
         results.push({
           attempt,
+          ...exportEvidence,
           mode: 'v2',
           ...socketEvidence,
           processCount: finalProcessIds.length,

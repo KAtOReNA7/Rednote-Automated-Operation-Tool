@@ -12,6 +12,7 @@ import {
 } from './components.js';
 import {
   v2MockProvider,
+  withPersistedContentPackages,
   withPersistedWeeklyPlan,
   type PersistedWeeklyPlan,
   type RendererPlanRescheduleFields,
@@ -34,8 +35,10 @@ function restoreSession(
   session: V2Session,
   persona: V2Session['persona'],
   plan: PersistedWeeklyPlan,
+  content?: V2ContentWorkspaceContract,
 ): V2Session {
-  return withPersistedWeeklyPlan({ ...session, persona: { ...persona } }, plan);
+  const restored = withPersistedWeeklyPlan({ ...session, persona: { ...persona } }, plan);
+  return content === undefined ? restored : withPersistedContentPackages(restored, content);
 }
 
 export function V2App(): React.JSX.Element {
@@ -101,9 +104,15 @@ export function V2App(): React.JSX.Element {
     void Promise.all([
       bridge.readPersona(),
       bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
-    ]).then(([persona, plan]) => {
-      if (cancelled || !persona.ok || !plan.ok) return;
-      setSession((current) => restoreSession(current, persona.value, plan.value));
+      bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY }),
+    ]).then(([persona, plan, content]) => {
+      if (cancelled || !persona.ok || !plan.ok || !content.ok) return;
+      setSession((current) => restoreSession(current, persona.value, plan.value, content.value));
+      setUi((current) => ({
+        ...current,
+        activeContentId: content.value.packages[0]?.id ?? '',
+        contentSelectedIds: [],
+      }));
     });
     return () => {
       cancelled = true;
@@ -114,49 +123,59 @@ export function V2App(): React.JSX.Element {
     smokeStarted.current = true;
     const bridge = window.rednoteV2;
     void (async () => {
-      let valid = bridge !== undefined;
-      if (bridge !== undefined) {
-        const [personaRead, planRead] = await Promise.all([
-          bridge.readPersona(),
-          bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
-        ]);
-        valid = personaRead.ok && planRead.ok;
-        if (personaRead.ok && planRead.ok && personaRead.value.revision === 0) {
-          const persona = await bridge.updatePersona({
-            expectedRevision: 0,
-            persona: {
-              audience: personaRead.value.audience,
-              boundary: personaRead.value.boundary,
-              name: '雾灯书页（持久化验证）',
-              tone: personaRead.value.tone,
-            },
-          });
-          const rescheduled = await bridge.reschedulePlanCandidates({
-            allowConflicts: false,
-            candidateIds: ['thu-1'],
-            date: '2026-08-03',
-            expectedRevision: 0,
-            mode: 'DATE_TIME',
-            staggerMinutes: 0,
-            time: '18:30',
-            weekKey: V2_DEFAULT_WEEK_KEY,
-          });
-          const confirmed = rescheduled.ok
-            ? await bridge.confirmPlanCandidates({
-                candidateIds: ['thu-1'],
-                expectedRevision: rescheduled.value.revision,
-                weekKey: V2_DEFAULT_WEEK_KEY,
-              })
-            : rescheduled;
-          valid = persona.ok && rescheduled.ok && confirmed.ok;
-        } else if (personaRead.ok && planRead.ok) {
-          valid =
-            personaRead.value.name === '雾灯书页（持久化验证）' &&
-            personaRead.value.revision === 1 &&
-            planRead.value.revision === 2 &&
-            planRead.value.candidates.find(({ id }) => id === 'thu-1')?.status === 'CONFIRMED';
-        }
+      if (bridge === undefined) throw new Error('V2 bridge unavailable');
+      const [planRead, contentRead] = await Promise.all([
+        bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
+        bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY }),
+      ]);
+      if (!planRead.ok || !contentRead.ok) throw new Error('V2 read failed');
+      let packages = contentRead.value.packages;
+      if (packages.length === 0) {
+        const locked = await bridge.lockWeeklyPlan({
+          expectedRevision: planRead.value.revision,
+          weekKey: V2_DEFAULT_WEEK_KEY,
+        });
+        if (!locked.ok) throw new Error('V2 setup failed');
+        const generated = await bridge.generateContentPackages({
+          candidateIds: ['mon-1', 'tue-2', 'sun-2'],
+          expectedPlanRevision: locked.value.revision,
+          idempotencyKey: 'content-r04-smoke',
+          weekKey: V2_DEFAULT_WEEK_KEY,
+        });
+        if (!generated.ok || generated.value.packages[0] === undefined)
+          throw new Error('V2 generation failed');
+        const first = generated.value.packages[0];
+        const saved = await bridge.saveContentPackage({
+          expectedRevision: first.revision,
+          expectedVersionId: first.versionId,
+          fields: { ...first.fields, title: `${first.fields.title}（smoke 修订）` },
+          packageId: first.id,
+        });
+        const refreshed = await bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY });
+        if (!saved.ok || !refreshed.ok) throw new Error('V2 edit failed');
+        packages = refreshed.value.packages;
       }
+      const refs = () =>
+        packages.map((item) => ({
+          expectedRevision: item.revision,
+          expectedVersionId: item.versionId,
+          packageId: item.id,
+        }));
+      if (!packages.every(({ status }) => status === 'APPROVED')) {
+        const approved = await bridge.approveContentPackages({ items: refs() });
+        if (!approved.ok) throw new Error('V2 approval failed');
+        packages = approved.value.packages;
+      }
+      const exported = await bridge.exportContentPackages({
+        idempotencyKey: 'export-r04-smoke',
+        items: refs(),
+      });
+      if (!exported.ok) throw new Error('V2 export failed');
+      const valid =
+        packages.length === 3 &&
+        packages.every(({ status }) => status === 'APPROVED') &&
+        Math.max(...packages.map(({ version }) => version)) === 2 &&
+        /^r04-[a-f0-9]{24}$/u.test(exported.value.exportId);
       const report = {
         marker: valid && document.querySelector('[data-v2-shell]') !== null,
         mockMode: document.querySelector('[data-v2-mock="true"]') !== null,

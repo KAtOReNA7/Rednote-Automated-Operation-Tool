@@ -67,20 +67,24 @@ describe('V2 renderer shell', () => {
     expect(review).toHaveFocus();
   });
 
-  it('shows six content fields, approved covers, and no pinned-comment surface', async () => {
+  it('shows six editable content fields, keyboard batch actions, and no pinned-comment surface', async () => {
     const user = userEvent.setup();
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '内容' }));
     expect(screen.getByRole('heading', { level: 1, name: '内容' })).toBeVisible();
+    expect(screen.getByText(/本地 Scripted 内容，不是模型生成/u)).toBeVisible();
     expect(screen.getByRole('img', { name: /封面建议/u })).toHaveAttribute(
       'src',
       expect.stringContaining('morgue-cover.png'),
     );
-    expect(screen.getByLabelText('标题')).toBeVisible();
-    expect(screen.getByLabelText('正文')).toBeVisible();
-    for (const label of ['建议发布时间', '标签', '素材说明']) {
-      expect(screen.getByText(label)).toBeVisible();
-    }
+    for (const label of ['标题', '正文', '建议日期时间', '标签（逗号分隔）', '素材说明'])
+      expect(screen.getByLabelText(label)).toBeVisible();
+    expect(screen.getByRole('button', { name: /批量批准/u })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /导出所选/u })).toBeEnabled();
+    const selection = screen.getByRole('button', { name: /取消选择.*莫格街凶杀案/u });
+    selection.focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: /选择.*莫格街凶杀案/u })).toHaveFocus();
     expect(document.body).not.toHaveTextContent('置顶评论');
   });
 });

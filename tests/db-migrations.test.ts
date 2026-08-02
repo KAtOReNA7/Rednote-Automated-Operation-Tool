@@ -1179,6 +1179,8 @@ describe('SQLite initialization and migrations', () => {
           'source_processing_plans',
           'source_processing_runs',
           'source_revisions',
+          'v2_content_package_versions',
+          'v2_content_packages',
           'v2_weekly_plan_snapshots',
           'v2_workspaces',
         ].sort(),

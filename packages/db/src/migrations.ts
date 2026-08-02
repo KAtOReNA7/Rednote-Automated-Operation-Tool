@@ -11685,6 +11685,46 @@ CREATE TABLE v2_weekly_plan_snapshots (
 ) STRICT, WITHOUT ROWID;
 `;
 
+const V2_CONTENT_PACKAGES_AND_VERSIONS = `
+CREATE TABLE v2_content_packages (
+  workspace_id TEXT NOT NULL,
+  package_id TEXT NOT NULL CHECK (length(package_id) BETWEEN 1 AND 96),
+  week_key TEXT NOT NULL CHECK (length(week_key) = 8 AND week_key GLOB '????-W??'),
+  candidate_id TEXT NOT NULL CHECK (length(candidate_id) BETWEEN 1 AND 64),
+  plan_revision INTEGER NOT NULL CHECK (typeof(plan_revision) = 'integer' AND plan_revision >= 0),
+  current_version INTEGER NOT NULL CHECK (typeof(current_version) = 'integer' AND current_version > 0),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, package_id),
+  UNIQUE (workspace_id, week_key, candidate_id),
+  FOREIGN KEY (workspace_id) REFERENCES v2_workspaces(workspace_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (workspace_id, week_key) REFERENCES v2_weekly_plan_snapshots(workspace_id, week_key)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE v2_content_package_versions (
+  workspace_id TEXT NOT NULL,
+  package_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+  version_id TEXT NOT NULL CHECK (length(version_id) BETWEEN 1 AND 112),
+  status TEXT NOT NULL CHECK (status IN ('DRAFT', 'REVIEW_REQUIRED', 'APPROVED')),
+  cover_key TEXT NOT NULL CHECK (cover_key IN ('moonstone', 'morgue', 'yellow-room')),
+  files_json TEXT NOT NULL CHECK (
+    length(files_json) BETWEEN 1 AND 4096 AND json_valid(files_json)
+    AND json_type(files_json) = 'array' AND json_array_length(files_json) = 6
+  ),
+  approved_at TEXT CHECK (approved_at IS NULL OR approved_at ${UTC_REQUIRED}),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, package_id, version),
+  UNIQUE (workspace_id, version_id),
+  FOREIGN KEY (workspace_id, package_id) REFERENCES v2_content_packages(workspace_id, package_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK ((status = 'APPROVED') = (approved_at IS NOT NULL))
+) STRICT, WITHOUT ROWID;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -11799,5 +11839,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'v2_persona_and_weekly_plan_persistence',
     sql: V2_PERSONA_AND_WEEKLY_PLAN_PERSISTENCE,
     version: 21,
+  }),
+  Object.freeze({
+    name: 'v2_content_packages_and_versions',
+    sql: V2_CONTENT_PACKAGES_AND_VERSIONS,
+    version: 22,
   }),
 ]);

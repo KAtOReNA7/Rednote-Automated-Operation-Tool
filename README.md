@@ -2,9 +2,9 @@
   <a href="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml">
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
-  <img alt="M3 reduced scope closeout" src="https://img.shields.io/badge/M3-缩减范围收口-2ea44f" />
-  <img alt="Minimal Issue 030 completed" src="https://img.shields.io/badge/已完成-029A%20%2B%20Minimal%20030-2ea44f" />
-  <img alt="Next controlled local trial" src="https://img.shields.io/badge/下一步-受控本地试运行-ff8a00" />
+  <img alt="V2 R03 accepted" src="https://img.shields.io/badge/V2--R03-已验收-2ea44f" />
+  <img alt="V2 R04 acceptance pending" src="https://img.shields.io/badge/V2--R04-等待用户验收-ff8a00" />
+  <img alt="Next user acceptance" src="https://img.shields.io/badge/下一步-R04%20体验验收-ff8a00" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
 </p>
@@ -28,14 +28,14 @@
 
 ## 十秒了解项目
 
-| 你想知道的                   | 当前答案                                                                        |
-| ---------------------------- | ------------------------------------------------------------------------------- |
-| **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认 |
-| **做到哪一步？**             | M0—M2 已完成；M3 以 029A + Minimal Issue 030 完成缩减范围收口                   |
-| **下一步是什么？**           | 另行授权一次零模型、零平台动作的受控本地内容试运行                              |
-| **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                              |
-| **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                        |
-| **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                      |
+| 你想知道的                   | 当前答案                                                                               |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认        |
+| **做到哪一步？**             | V2-R03 已验收；V2-R04 已实现本地内容包、版本、批量批准与受控目录导出，等待用户体验验收 |
+| **下一步是什么？**           | 用户亲自验证 R04 Windows 体验包；明确接受前不合并，也不进入 R05                        |
+| **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                                     |
+| **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                               |
+| **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                             |
 
 > [!TIP]
 > 里程碑快照：M1（Issue 006—011）与 M2（Issue 012—021）均已完成验收；M3 已完成
@@ -67,14 +67,15 @@
 > `DUPLICATION / TITLE_BODY_CONSISTENCY` 两类摘要；`INTERNAL_CONSISTENCY` 明确保持
 > `NOT_RUN`。语义矛盾、同质化与完整标题语义判断属于未实施的 029B。Minimal Issue 030 只经现有
 > `copy:get` 即时读取七项 saved exact-current 状态，显示质量建议与人工下一步；它不会自动运行检查、
-> 改写 Draft、创建审批、导出或发布。图片、正式审批、发布包与导出仍未实施。
+> 改写 Draft、创建审批、导出或发布。独立 V2 路线当前已到 R04：只用本地 Scripted provider、
+> 三张批准的演示封面、当前版本批准和受控目录导出；它不是模型生成，也不等于平台发布。
 > 其后的治理专项只用完全合成材料接通
 > `Work → SourceRevision → Dossier → Topic → Brief → Draft → Fact Mapping` 最小本地闭环；
 > 每个下游步骤仍由用户在既有工作台分别预览、确认或手工填写，不是自动内容流水线。
 
 > [!IMPORTANT]
-> 本项目是**非官方开发项目**，不代表小红书或任何平台立场。当前版本没有接通真实内容工作流、
-> 真实搜索服务、发布包或平台自动化；最终平台发布动作始终由用户手动完成。
+> 本项目是**非官方开发项目**，不代表小红书或任何平台立场。V2-R04 仅能生成并导出确定性的本地
+> Scripted 内容包，没有接通真实模型、搜索服务或平台自动化；最终平台发布动作始终由用户手动完成。
 
 ## 开发进度
 

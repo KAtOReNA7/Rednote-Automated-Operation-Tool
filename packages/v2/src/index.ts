@@ -1,3 +1,16 @@
+import {
+  V2ContentError,
+  parseContentPackageFields,
+  type ContentApprovalRef,
+  type ContentExportResult,
+  type ContentMutationRequest,
+  type ContentPackage,
+  type V2ContentErrorCode,
+  type ContentWorkspace,
+} from './content.js';
+
+export * from './content.js';
+
 export const V2_SCHEMA_VERSION = 1 as const;
 export const V2_DEFAULT_WEEK_KEY = '2026-W31' as const;
 export const V2_IPC_CHANNELS = Object.freeze({
@@ -102,7 +115,8 @@ export interface PlanReschedulePreview {
 export type V2ReadRequest =
   | { readonly view: 'ACCOUNT_PERSONA' }
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
-  | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields);
+  | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
+  | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string };
 
 export type V2MutationRequest =
   | {
@@ -135,16 +149,12 @@ export type V2MutationRequest =
       readonly action: 'LOCK_WEEKLY_PLAN';
       readonly expectedRevision: number;
       readonly weekKey: string;
-    };
+    }
+  | ContentMutationRequest;
 
 export interface V2ExceptionSummary {
   readonly affectedFields: readonly string[];
-  readonly code:
-    | 'INVALID_REQUEST'
-    | 'PERSISTENCE_UNAVAILABLE'
-    | 'PLAN_CONFLICT'
-    | 'PLAN_LOCKED'
-    | 'REVISION_CONFLICT';
+  readonly code: V2ContentErrorCode | 'PERSISTENCE_UNAVAILABLE' | 'PLAN_CONFLICT' | 'PLAN_LOCKED';
   readonly message: string;
   readonly severity: 'ERROR' | 'WARNING';
   readonly suggestedAction: string;
@@ -154,7 +164,15 @@ export type V2Result<T> =
   | { readonly error: V2ExceptionSummary; readonly ok: false }
   | { readonly ok: true; readonly value: T };
 
+type ContentInput<Action extends ContentMutationRequest['action']> = Omit<
+  Extract<ContentMutationRequest, { action: Action }>,
+  'action'
+>;
+
 export interface V2Bridge {
+  readonly approveContentPackages: (
+    input: ContentInput<'APPROVE_CONTENT_PACKAGES'>,
+  ) => Promise<V2Result<ContentWorkspace>>;
   readonly confirmPlanCandidates: (input: {
     readonly candidateIds: readonly string[];
     readonly expectedRevision: number;
@@ -164,6 +182,9 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
+  readonly generateContentPackages: (
+    input: ContentInput<'GENERATE_CONTENT_PACKAGES'>,
+  ) => Promise<V2Result<ContentWorkspace>>;
   readonly lockWeeklyPlan: (input: {
     readonly expectedRevision: number;
     readonly weekKey: string;
@@ -171,11 +192,23 @@ export interface V2Bridge {
   readonly previewPlanReschedule: (
     input: PlanRescheduleFields,
   ) => Promise<V2Result<PlanReschedulePreview>>;
+  readonly exportContentPackages: (
+    input: ContentInput<'EXPORT_CONTENT_PACKAGES'>,
+  ) => Promise<V2Result<ContentExportResult>>;
+  readonly openContentExport: (
+    input: ContentInput<'OPEN_CONTENT_EXPORT'>,
+  ) => Promise<V2Result<{ readonly opened: true }>>;
+  readonly readContentPackages: (input: {
+    readonly weekKey: string;
+  }) => Promise<V2Result<ContentWorkspace>>;
   readonly readPersona: () => Promise<V2Result<AccountPersona>>;
   readonly readWeeklyPlan: (input: { readonly weekKey: string }) => Promise<V2Result<WeeklyPlan>>;
   readonly reschedulePlanCandidates: (
     input: PlanRescheduleFields & { readonly allowConflicts: boolean },
   ) => Promise<V2Result<WeeklyPlan>>;
+  readonly saveContentPackage: (
+    input: ContentInput<'SAVE_CONTENT_PACKAGE'>,
+  ) => Promise<V2Result<ContentPackage>>;
   readonly skipPlanCandidates: (input: {
     readonly candidateIds: readonly string[];
     readonly expectedRevision: number;
@@ -444,6 +477,91 @@ function parseRescheduleFields(value: Readonly<Record<string, unknown>>): PlanRe
   };
 }
 
+function contentToken(value: unknown, field: string, maximum = 128): string {
+  if (
+    typeof value !== 'string' ||
+    utf8Bytes(value) > maximum ||
+    !/^[a-z0-9][a-z0-9_-]*$/iu.test(value)
+  ) {
+    throw new V2ContentError('INVALID_REQUEST', [field]);
+  }
+  return value;
+}
+
+function contentApprovals(value: unknown): readonly ContentApprovalRef[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > V2_LIMITS.candidateCount)
+    throw new V2ContentError('INVALID_REQUEST', ['items']);
+  const items = value.map((item): ContentApprovalRef => {
+    if (!isRecord(item) || !exactKeys(item, ['expectedRevision', 'expectedVersionId', 'packageId']))
+      throw new V2ContentError('INVALID_REQUEST', ['items']);
+    return {
+      expectedRevision: revision(item.expectedRevision),
+      expectedVersionId: contentToken(item.expectedVersionId, 'expectedVersionId', 112),
+      packageId: contentToken(item.packageId, 'packageId', 96),
+    };
+  });
+  if (new Set(items.map(({ packageId }) => packageId)).size !== items.length)
+    throw new V2ContentError('INVALID_REQUEST', ['items']);
+  return items;
+}
+
+export function parseContentMutationRequest(value: unknown): ContentMutationRequest {
+  if (!isRecord(value)) throw new V2ContentError('INVALID_REQUEST');
+  if (
+    value.action === 'GENERATE_CONTENT_PACKAGES' &&
+    exactKeys(value, [
+      'action',
+      'candidateIds',
+      'expectedPlanRevision',
+      'idempotencyKey',
+      'weekKey',
+    ])
+  ) {
+    const ids = candidateIds(value.candidateIds).map((id) => contentToken(id, 'candidateIds', 64));
+    if (ids.length !== 3) throw new V2ContentError('INVALID_REQUEST', ['candidateIds']);
+    return {
+      action: value.action,
+      candidateIds: ids,
+      expectedPlanRevision: revision(value.expectedPlanRevision),
+      idempotencyKey: contentToken(value.idempotencyKey, 'idempotencyKey'),
+      weekKey: weekKey(value.weekKey),
+    };
+  }
+  if (
+    value.action === 'SAVE_CONTENT_PACKAGE' &&
+    exactKeys(value, ['action', 'expectedRevision', 'expectedVersionId', 'fields', 'packageId'])
+  ) {
+    return {
+      action: value.action,
+      expectedRevision: revision(value.expectedRevision),
+      expectedVersionId: contentToken(value.expectedVersionId, 'expectedVersionId', 112),
+      fields: parseContentPackageFields(value.fields),
+      packageId: contentToken(value.packageId, 'packageId', 96),
+    };
+  }
+  if (value.action === 'APPROVE_CONTENT_PACKAGES' && exactKeys(value, ['action', 'items']))
+    return { action: value.action, items: contentApprovals(value.items) };
+  if (
+    value.action === 'EXPORT_CONTENT_PACKAGES' &&
+    exactKeys(value, ['action', 'idempotencyKey', 'items'])
+  ) {
+    return {
+      action: value.action,
+      idempotencyKey: contentToken(value.idempotencyKey, 'idempotencyKey'),
+      items: contentApprovals(value.items),
+    };
+  }
+  if (
+    value.action === 'OPEN_CONTENT_EXPORT' &&
+    exactKeys(value, ['action', 'exportId']) &&
+    typeof value.exportId === 'string' &&
+    /^r04-[a-f0-9]{24}$/u.test(value.exportId)
+  ) {
+    return { action: value.action, exportId: value.exportId };
+  }
+  throw new V2ContentError('INVALID_REQUEST');
+}
+
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
@@ -453,6 +571,8 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   if (value.view === 'WEEKLY_PLAN' && exactKeys(value, ['view', 'weekKey'])) {
     return { view: 'WEEKLY_PLAN', weekKey: weekKey(value.weekKey) };
   }
+  if (value.view === 'CONTENT_PACKAGES' && exactKeys(value, ['view', 'weekKey']))
+    return { view: value.view, weekKey: weekKey(value.weekKey) };
   if (
     value.view === 'PLAN_RESCHEDULE_PREVIEW' &&
     exactKeys(value, [
@@ -474,6 +594,18 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (
+    typeof value.action === 'string' &&
+    [
+      'APPROVE_CONTENT_PACKAGES',
+      'EXPORT_CONTENT_PACKAGES',
+      'GENERATE_CONTENT_PACKAGES',
+      'OPEN_CONTENT_EXPORT',
+      'SAVE_CONTENT_PACKAGE',
+    ].includes(value.action)
+  ) {
+    return parseContentMutationRequest(value);
+  }
   if (
     value.action === 'UPDATE_PERSONA' &&
     exactKeys(value, ['action', 'expectedRevision', 'persona'])
@@ -831,6 +963,7 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
+    if (request.view === 'CONTENT_PACKAGES') throw new V2ContractError('INVALID_REQUEST');
     const current = this.#readPlan(request.weekKey);
     return request.view === 'WEEKLY_PLAN' ? current : previewPlanReschedule(current, request);
   }
@@ -840,6 +973,15 @@ export class V2ApplicationFacade {
     if (request.action === 'UPDATE_PERSONA') {
       this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
       return this.#repository.savePersona(request.persona, request.expectedRevision);
+    }
+    if (
+      request.action === 'GENERATE_CONTENT_PACKAGES' ||
+      request.action === 'SAVE_CONTENT_PACKAGE' ||
+      request.action === 'APPROVE_CONTENT_PACKAGES' ||
+      request.action === 'EXPORT_CONTENT_PACKAGES' ||
+      request.action === 'OPEN_CONTENT_EXPORT'
+    ) {
+      throw new V2ContractError('INVALID_REQUEST');
     }
     const current = this.#readPlan(request.weekKey);
     this.#assertRevision(current, request.expectedRevision);
@@ -949,6 +1091,23 @@ export class V2ApplicationFacade {
 }
 
 export function toV2Exception(error: unknown): V2ExceptionSummary {
+  if (error instanceof V2ContentError) {
+    const messages = Object.freeze({
+      CONTENT_CORRUPT: '内容文件缺失或校验失败，未执行操作。',
+      CONTENT_NOT_APPROVED: '只能导出当前已批准版本。',
+      CONTENT_NOT_READY: '请先锁定周计划，再生成内容包。',
+      EXPORT_FAILED: '本地发布包导出失败，未留下成功目录。',
+      INVALID_REQUEST: '内容请求不符合本地合同。',
+      REVISION_CONFLICT: '内容已更新，请重新载入后再试。',
+    } satisfies Readonly<Record<string, string>>);
+    return {
+      affectedFields: error.affectedFields,
+      code: error.code,
+      message: messages[error.code],
+      severity: error.code === 'REVISION_CONFLICT' ? 'WARNING' : 'ERROR',
+      suggestedAction: error.code === 'REVISION_CONFLICT' ? '重新载入内容页' : '检查内容状态后重试',
+    };
+  }
   if (error instanceof V2ContractError) {
     const revisionConflict = error.code === 'REVISION_CONFLICT';
     const planConflict = error.code === 'PLAN_CONFLICT';
