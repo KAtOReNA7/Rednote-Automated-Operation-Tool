@@ -9,7 +9,9 @@ import {
   V2ApplicationFacade,
   V2ContentApplication,
   V2ContractError,
+  V2InteractionApplication,
   V2_IPC_CHANNELS,
+  isInteractionMutationRequest,
   parseV2MutationRequest,
   parseV2ReadRequest,
   toV2Exception,
@@ -19,6 +21,7 @@ import {
 } from '@mystery-operations/v2';
 
 import { discoverApprovedV2Covers, V2LocalContentFiles } from './v2-content-files.js';
+import { V2LocalInteractionFiles } from './v2-interaction-files.js';
 
 const V2_DATA_ROOT_DIRECTORY = 'v2-project-data';
 const PROJECT_DATABASE_FILE = 'rednote.sqlite';
@@ -27,14 +30,20 @@ export class V2DesktopRuntime {
   readonly #database: DatabaseSync;
   readonly #content: V2ContentApplication;
   readonly #facade: V2ApplicationFacade;
+  readonly #interaction: V2InteractionApplication;
   readonly #repository: SqliteV2Repository;
   #closed = false;
 
-  private constructor(database: DatabaseSync, contentFiles: V2LocalContentFiles) {
+  private constructor(
+    database: DatabaseSync,
+    contentFiles: V2LocalContentFiles,
+    interactionFiles: V2LocalInteractionFiles,
+  ) {
     this.#database = database;
     this.#repository = new SqliteV2Repository(database);
     this.#facade = new V2ApplicationFacade(this.#repository);
     this.#content = new V2ContentApplication(this.#repository, contentFiles);
+    this.#interaction = new V2InteractionApplication(this.#repository, interactionFiles);
   }
 
   public static async open(
@@ -57,20 +66,30 @@ export class V2DesktopRuntime {
       await discoverApprovedV2Covers(assetsDirectory),
       { openDirectory: options.openDirectory ?? ((path) => shell.openPath(path)) },
     );
-    return new V2DesktopRuntime(connectDatabase(databasePath), contentFiles);
+    return new V2DesktopRuntime(
+      connectDatabase(databasePath),
+      contentFiles,
+      new V2LocalInteractionFiles(root),
+    );
   }
 
   public async read(input: unknown) {
     this.#assertOpen();
     const request = parseV2ReadRequest(input);
-    return request.view === 'CONTENT_PACKAGES'
-      ? this.#content.read(request.weekKey)
-      : this.#facade.read(request);
+    if (request.view === 'CONTENT_PACKAGES') return this.#content.read(request.weekKey);
+    if (request.view === 'INTERACTIONS') return this.#interaction.read();
+    if (request.view === 'INTERACTION_DELETE_PREVIEW')
+      return this.#interaction.previewDelete(request.itemId);
+    return this.#facade.read(request);
   }
 
   public async mutate(input: unknown) {
     this.#assertOpen();
     const request = parseV2MutationRequest(input);
+    if (isInteractionMutationRequest(request)) {
+      const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
+      return this.#interaction.mutate(request, persona);
+    }
     if (request.action === 'GENERATE_CONTENT_PACKAGES') {
       const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
       const plan = this.#facade.read({

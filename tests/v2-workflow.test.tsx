@@ -94,7 +94,7 @@ describe('V2 deterministic session workflows', () => {
     expect(await screen.findByText('计划已更新')).toBeVisible();
   });
 
-  it('edits and approves content, then confirms before recording a manual reply', async () => {
+  it('edits and approves content, then keeps interaction empty until explicit local import', async () => {
     const user = userEvent.setup();
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '内容' }));
@@ -106,15 +106,10 @@ describe('V2 deterministic session workflows', () => {
     expect(await screen.findByText(/已通过 3 个模拟内容包/u)).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '互动' }));
-    const manual = screen.getByRole('button', { name: '标记已在官方端手动发送' });
-    expect(manual).toBeDisabled();
-    const suggestion = screen.getByLabelText('回复建议');
-    await user.type(suggestion, ' 已编辑');
-    await user.click(screen.getByRole('button', { name: '确认建议' }));
-    expect(manual).toBeEnabled();
-    await user.click(manual);
-    expect(await screen.findByText(/应用没有发送能力/u)).toBeVisible();
-    expect(document.body).toHaveTextContent('未连接平台，不会自动发送评论或私信');
+    expect(screen.getByRole('heading', { name: '尚无本地互动' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /手动发送/u })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '保存本地互动' })).toBeDisabled();
+    expect(document.body).toHaveTextContent('系统不会发送消息');
   });
 
   it('searches books, decides recommendations, and saves four persona fields in-session', async () => {

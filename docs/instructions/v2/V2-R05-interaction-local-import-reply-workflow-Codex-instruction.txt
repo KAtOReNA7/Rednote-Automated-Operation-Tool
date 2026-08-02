@@ -1,0 +1,312 @@
+Rednote V2-R04 合并与 V2-R05 正式增量指令
+主题：评论/私信本地导入、回复建议与手动发送记录
+
+完整遵守仓库根级及作用域内 AGENTS.md。本指令只定义本轮增量；不复制、替换或弱化
+公共规则、验证门禁、永久产品约束及已冻结的 V2 合同。
+
+一、用户授权与最终停止点
+
+用户已亲自体验 V2-R04 精确体验包并明确表示“我已经体验通过了”。该表述等同于：
+
+接受 V2-R04。
+
+本轮授权按以下顺序执行：
+
+1. 安全核验并普通合并 Draft PR #6；
+2. 等待并核验合并提交的 Windows required CI 全绿；
+3. 从新的绿色 main 建立独立 V2-R05 分支；
+4. 完成评论/私信的本地粘贴导入、Scripted 回复建议、编辑、确认、跳过、删除和
+   “已在官方端手动发送”状态记录；
+5. 创建 Draft PR、等待精确 HEAD 的托管 CI、准备 Windows 体验包；
+6. 停止在 R05_AWAITING_USER_ACCEPTANCE。
+
+未经用户再次明确回复“接受 V2-R05”，不得合并 R05，不得进入 R06、R07、V2-D-FINAL、
+R08、029B、Issue 031 或 M4。
+
+二、Phase A：安全合并已经验收的 R04
+
+1. 动态发现仓库根，读取适用 AGENTS.md、本指令、PR #6、R04 证据、检查结果、评论、review
+   和 mergeability；运行 git status --short --branch。
+2. 工作树/暂存区必须干净。未知用户文件或修改出现时立即停止，不 stash、reset 或覆盖。
+3. 允许 fetch 和只读 GitHub 核验；禁止 pull、rebase、amend、squash、force push 或改写历史。
+4. 核对用户实际验收的 PR #6 head 为 9a5b7f4dd52807de95d39d34e302949f0dbbb6a3。
+   该 SHA 只用于确认“待合并内容就是用户体验的内容”，不是跨电脑路径或未来任务门禁。
+   如果 PR head 已变化，停止并报告，不把未体验的新改动视为已接受。
+5. 确认 PR #6 没有未解决评论、requested changes 或失败检查；最终 Windows required CI 必须成功。
+6. 在 PR #6 记录用户验收事实，将 Draft 转为 Ready，使用普通 merge commit 合并；不得 squash/rebase。
+7. 核验远端 main 已包含该 merge commit，并等待该 exact merge commit 的 Windows required CI 完整成功。
+8. 如果合并提交 CI 失败，立即停止在 R04 集成修复边界；不得借 R05 修改或绕过。
+9. CI 全绿后，以安全 fast-forward 方式同步本地 main；确认本地、tracking 和实际远端 main 一致，
+   ahead/behind 为 0/0，工作树干净。R04 分支保留，不删除审计证据。
+
+只有 Phase A 全部通过，才允许进入 R05。
+
+三、R05 用户结果
+
+在已经存在的“互动”页面完成以下全本地闭环：
+
+选择评论或私信
+→ 用户主动粘贴一条文本并可选关联一个 R04 内容包
+→ 保存为本地互动项
+→ 由 ScriptedReplyProvider 生成确定性回复建议
+→ 用户编辑建议
+→ 确认、跳过或重新打开
+→ 只有已确认建议才能标记“已在小红书官方端手动发送”
+→ 关闭并重启后恢复
+→ 用户可明确删除本地互动记录。
+
+本轮只证明产品流程和本地持久化，不评价回复内容质量。所有建议必须可见标注：
+
+“本地 Scripted 建议，不是模型生成；系统不会发送消息。”
+
+四、视觉与产品层约束
+
+1. 完整服从 R04 合并后存在的 v2-final-visual-convergence-policy。
+2. R05 不调用 Figma、ImageGen、Sites、HTML 原型、计算机控制或商业范例调研。
+3. 不得自行重做导航、信息架构、页面布局、颜色、字体、图标、间距、卡片或设计系统。
+4. 复用当前绿色 V2 壳层、tokens、组件以及既有“互动”页的评论/私信 tab、列表/详情结构。
+5. 只允许加入完成导入、建议编辑、状态变更和删除所必需的控件、反馈及无障碍语义。
+6. 不修改总览、本周计划、内容页或 D01 冻结画面；总览如需显示互动待办，只能使用既有摘要位置
+   和现有组件，不改变布局。
+7. 视觉问题只追加到最终视觉债务清单，不在本轮顺手美化。
+
+五、Phase 0：R05 动态开工
+
+1. 从 Phase A 后的绿色 main 创建分支：codex/v2-r05-interaction-replies。
+2. 将本 TXT 唯一归档为：
+   docs/instructions/v2/V2-R05-interaction-local-import-reply-workflow-Codex-instruction.txt。
+   不在仓库根、桌面或其他 tracked 位置保留副本。
+3. 完整检查 R02 facade/codec、R04 内容包身份、两个 V2 workspace IPC、ProjectDataRoot、
+   managed file repository、migration 尾部、interaction mock UI 和 CI 工作流。
+4. 编码前输出文件级实施计划、预测预算、两表语义、状态机、删除策略和风险测试选择。
+5. 发现现有能力与本指令冲突、必须扩大范围或预计超预算时立即停止，不先写半套实现。
+
+六、必须复用的边界
+
+1. 复用 packages/v2 facade、DTO/codec、V2 repository、独立 preload/runtime，以及仅有的
+   v2:workspace:read 和 v2:workspace:mutate 两条底层 channel。
+2. 复用 AccountPersona 作为回复口吻输入；可选关联 R04 ContentPackage 的稳定 ID 和有限标题摘要。
+3. 复用本地 SQLite migration runner、ProjectDataRoot、managed file repository 和 Electron 安全壳。
+4. renderer 不得接收绝对路径、raw DB row、SQL、内部 lease、secret 或任意 IPC channel 名。
+5. 不直接复用旧 Clipper、旧评论/私信对象或旧研究产品状态；需要的信息通过窄 V2 合同表达。
+
+七、R05 数据合同
+
+A. InteractionItem
+
+每条互动项至少包含以下有限语义：
+
+- 稳定 item ID、workspace ID；
+- kind：COMMENT 或 DIRECT_MESSAGE；
+- source：固定 USER_PASTE；
+- 可选 relatedContentPackageId；
+- 用户文本的 ManagedRelativePath、hash、实际字节数；
+- 当前 reply version ID；
+- 状态、revision、有限 UTC 时间；
+- 不保存平台账号凭据、Cookie、联系人通讯录或真实平台对象。
+
+B. ReplySuggestionVersion
+
+- 稳定 suggestion/version ID 与 interaction item ID；
+- provider kind 固定 SCRIPTED；
+- 回复正文的 ManagedRelativePath、hash、实际字节数；
+- version、状态关联和时间；
+- 不保存 prompt、raw response、模型名、请求头或费用记录。
+
+C. 状态机
+
+采用最小、明确的产品状态：
+
+NEW → SUGGESTED → CONFIRMED → MANUAL_SENT
+                  ↘ SKIPPED
+
+并满足：
+
+1. NEW 可生成建议或跳过；SUGGESTED 可编辑、确认或跳过。
+2. 实质编辑创建新建议版本；no-op 保存不升版。
+3. 已确认建议再次编辑，当前项回到 SUGGESTED，旧确认不得沿用。
+4. 只有精确当前建议版本处于 CONFIRMED 才能进入 MANUAL_SENT。
+5. MANUAL_SENT 只表示用户确认自己已在官方端完成发送，不触发、暗示或模拟平台发送。
+6. SKIPPED 可以由用户明确“重新打开”回到可处理状态。
+7. MANUAL_SENT 为历史事实，不能通过编辑静默改写；如需纠正，只允许受控撤销回 CONFIRMED，
+   并记录本地状态变化，不进行任何外部动作。
+8. 所有 mutation 使用 expectedRevision，stale 页面不得覆盖新状态。
+
+八、本地导入、去重、建议与删除
+
+A. 导入
+
+1. 第一版只支持用户在应用中主动粘贴一条评论或一条私信；可连续重复添加，但不解析任意批量格式。
+2. 输入必须有明确类型，可选关联一个当前 workspace 的 R04 内容包；不要求填写发送者姓名。
+3. 文本、上下文、条数和总字节必须有界；以现有 codec 风格确定合理上限并写入合同和测试。
+4. 规范化后的 workspace + kind + related content + text hash 构成稳定去重语义；同一导入重放
+   返回既有项并显示“已存在”，不得重复写文件或数据库。
+5. 原始文本只存入受控文件仓库；SQLite 只保存 metadata 和 ManagedRelativePath。
+
+B. Scripted 回复建议
+
+1. 新增窄的 ScriptedReplyProvider port/实现，只读取有限人设、互动类型、可选内容标题摘要和用户文本。
+2. 相同输入和幂等键产生稳定建议，不创建重复版本。
+3. 不调用模型、搜索、抓取、OCR、网页、图片、业务 API 或外部网络，费用为 0。
+4. 建议可编辑；必须区分“系统建议”“用户编辑后的当前版本”和“用户已确认”。
+5. 不宣称 Scripted 建议具有真实语义理解能力或可代表最终回复质量。
+
+C. 批量动作
+
+1. 支持选择当前可处理项，并原子批量确认精确当前建议版本。
+2. revision 混入 stale 项时整批失败，不允许部分成功。
+3. 标记 MANUAL_SENT 默认逐项执行并进行明确确认；不得加入“自动发送”或容易误解为发送的按钮。
+
+D. 本地保留与删除
+
+1. 默认保留策略：数据只在本机保存，直到用户明确删除；R05 不设置静默自动过期。
+2. UI 必须说明保存位置属于本地项目数据，不会上传。
+3. 删除采用预览 → 明确确认 → 精确 tombstone/解除产品引用；删除后普通 UI、facade 和 IPC 均不得
+   再读取正文或建议，也不得影响其他 item 或 R04 文件。
+4. 对已确认无其他引用的 managed files，优先复用现有文件仓库安全删除能力；如果内容寻址或
+   断电语义不能证明可立即物理删除，可将其保留为不可通过产品访问、可检测的 orphan/cleanup pending，
+   并在证据中如实说明，不能宣称磁盘字节已删除。
+5. 不得为物理清理引入宽泛扫描、普通 rm、glob、受控目录外删除或新的全库垃圾回收系统。
+   产品级删除失败不得伪装成功，也不得出现删除后仍能从正常接口读取正文的矛盾状态。
+6. 日志、audit、诊断、错误、测试快照和导出不得包含用户粘贴的正文、回复正文、联系人标识或绝对路径；
+   只允许类型、状态、有限字节数、稳定错误码及去标识化计数。
+
+九、功能 UI
+
+1. “互动”页提供评论/私信 tab、添加入口、有限粘贴框、可选关联内容包、列表、详情和状态筛选。
+2. 详情区域显示用户文本、Scripted 建议编辑框、当前版本和真实状态。
+3. 提供生成建议、保存编辑、确认、跳过、重新打开、标记已在官方端手动发送、撤销错误标记、
+   删除本地记录等真实动作。
+4. 未确认建议不得标记为已手动发送；已删除或 stale 项不得继续操作。
+5. 普通成功路径不出现 Dossier、Brief、Claim、Evidence、Job、Capability、Ledger 或旧质量术语。
+6. 总览的互动待办数如接线，必须来自真实 V2 repository，不再显示 R01 interaction fixture。
+7. 所有 loading、empty、duplicate、validation、stale、delete failure 和 restart recovery 状态可观察；
+   不使用假 toast 代替实际持久化结果。
+
+十、Schema、IPC 与规模预算
+
+1. 最多新增 2 张 STRICT v2_ 表和 1 条运行时发现的连续 migration；不得修改历史 migration。
+2. 最多 4 个必要 trigger，若明确约束和 repository 事务足够则保持 0。
+3. SQLite 不保存评论/私信或回复正文，只保存有限 metadata、状态、revision、hash 和 ManagedRelativePath。
+4. 新 IPC channel 0；只扩展既有两个 channel 的受控 read/action 判别联合和 preload 具名方法。
+5. 新 package、dependency、queue、worker、route、一级导航、云服务均为 0。
+6. 产品源码净新增硬上限 1,400 LOC；测试净新增硬上限 1,100 LOC；R05 主体文件硬上限 25。
+7. 只有因连续 migration 必须机械更新的既有 migration-tail 断言可作为例外：逐文件列出修改前后断言，
+   保持数量与强度，最多额外 12 个文件；总文件绝对上限 37。不得挪作其他范围。
+8. 指令归档、合同/ADR、证据和必要状态文档计入主体 25 文件；核心验收保持 12—18 项，
+   使用表驱动测试，不制造庞大验收映射。
+
+十一、明确禁止范围
+
+- Figma、视觉改版、跨页面 CSS 重构和新的设计系统；
+- 真实模型、Search、Fetch、OCR、图片、Batch、真实网页或业务网络；
+- 浏览器扩展导入、剪贴板监听、截图识别、平台抓取或联系人同步；
+- 小红书登录、自动评论、自动私信、发送按钮、验证码或风控处理；
+- R06 数据复盘、R07 真实 adapter、V2-D-FINAL、R08 默认入口；
+- 旧 Dossier/Brief/Topic/Experiment/Quality 主流程；
+- 修改 AGENTS.md、整仓重构、删除旧表或改写历史 migration；
+- 置顶评论；
+- AI 标识或版权风险字段、检查、评分、审批或门禁。
+
+十二、核心验收
+
+R05-01 COMMENT 和 DIRECT_MESSAGE 可分别通过 USER_PASTE 创建并重启恢复。
+R05-02 输入边界、非法类型、空文本和超限文本 fail closed，且错误不泄漏正文。
+R05-03 完全相同的导入重放返回既有项，不重复数据库行或 managed file。
+R05-04 可选内容包关联只接受当前 workspace 的稳定 ID，不用标题猜测关联。
+R05-05 相同输入的 Scripted 建议稳定、幂等并明确标注非模型生成。
+R05-06 实质编辑升版、no-op 不升版；确认绑定精确当前版本。
+R05-07 确认后再编辑回到 SUGGESTED，旧确认不能用于 MANUAL_SENT。
+R05-08 SKIPPED 可明确重新打开；状态转换之外的命令被拒绝。
+R05-09 只有 CONFIRMED 当前版本可标记 MANUAL_SENT；该动作外部连接和平台副作用均为 0。
+R05-10 批量确认原子执行；混入 stale revision 时整批保持原状态。
+R05-11 重启后用户文本、建议版本、状态、关联内容和 revision 一致恢复。
+R05-12 删除具有精确预览/确认、产品不可再读、引用检查及诚实的 deleted/orphan 证据，
+       不影响其他 item 或 R04 内容文件。
+R05-13 日志、诊断、audit、错误、IPC 摘要和测试证据不包含用户正文、回复正文或绝对路径。
+R05-14 renderer 无 Node/Electron/DB/FS/网络直连，V2 IPC 总数仍为 2。
+R05-15 互动页核心操作键盘可达；无假发送、自动发送、旧术语或未接线按钮。
+R05-16 legacy、R03 人设/计划、R04 内容/导出和冻结视觉保持回归。
+R05-17 真实密钥、模型/API、业务网络、费用和平台操作均为 0。
+
+十三、经济型验证
+
+服从当前 validation gate matrix，采用“本地聚焦验证 + 托管完整门禁”，不恢复多次本地全量。
+
+本地：
+
+1. 编码前不跑全量，只动态选择 interaction、V2 repository/migration、storage cleanup、V2 IPC、
+   renderer、硬约束和受影响 R04 回归测试建立基线。
+2. 实现后运行 R05 新增专项与直接相邻测试；每次修复只精确复跑相关集合。
+3. format-check、lint、typecheck、build 各取得一次最终通过；运行 git diff --check、secret/egress、
+   预算及无 skip/todo/only 检查。
+4. 本地 normal 全量、capacity、package、packaged smoke、dependency audit 默认交给远端 Windows CI；
+   如 AGENTS 当前三层矩阵明确要求其他独立信号，按实际风险执行，但不无修改盲目重跑。
+
+远端：
+
+1. 创建 Draft PR 后让精确 PR HEAD 的 Windows required CI 完整运行一次，覆盖 normal、capacity
+   （若适用）、Electron source/packaged smoke、build、desktop/clipper package、audit 和 cleanup。
+2. packaged smoke 在隔离 ProjectDataRoot 中完成：导入评论和私信 → 去重 → 生成建议 → 编辑 →
+   确认/跳过 → 标记 manual sent → 重启恢复 → 精确删除；外部业务连接必须为 0。
+3. 失败先读取完整日志并定位根因；只有针对性修改后才重触发，不降低断言、不增加宽泛 timeout、
+   不无修改连续 rerun。明确基础设施瞬时故障最多按治理规则记录一次重跑，仍失败则停止。
+
+十四、Git、PR 与体验包
+
+1. 建议主提交信息：feat(v2): add local interaction reply workflow。
+2. 不要求唯一提交；CI 暴露的当前范围兼容修复可以追加普通小提交，禁止改写已推送历史。
+3. 普通 push R05 分支，创建 Draft PR；不得直接推 main，不得合并。
+4. PR 描述列出：用户结果、状态机、本地保留/删除、两表/migration、0 新 IPC、视觉延期、
+   预算、验证、副作用及明确未做范围。
+5. 精确 PR HEAD CI 全绿后下载并静态核验 Windows artifact。体验包包含 V2/legacy 两个启动器、
+   V2-R05-体验清单.txt 和精确 commit 标识，不依赖固定电脑路径。
+6. 不替用户启动或操作应用，不使用计算机控制代替用户体验。
+
+体验清单至少要求用户：
+
+1. 打开 V2“互动”，分别粘贴一条评论和一条私信；
+2. 可选给评论关联一个 R04 内容包，并验证重复粘贴不会产生第二条；
+3. 为两条记录生成本地 Scripted 建议，确认页面明确说明不是模型生成且没有发送行为；
+4. 编辑一条建议并确认；跳过另一条后重新打开；
+5. 尝试对未确认建议标记手动发送，确认被拒绝；
+6. 将已确认建议标记为“已在小红书官方端手动发送”，确认没有平台动作；
+7. 关闭并重启，核对正文、当前建议版本和状态恢复；
+8. 明确删除一条本地记录，确认另一条及 R04 内容包不受影响；
+9. 查看总览互动待办（若接线）与互动页计数一致；
+10. 启动 legacy，确认旧入口仍可打开；
+11. 回复“接受 V2-R05”或列出阻塞问题。
+
+十五、停止条件
+
+出现以下任一情况立即停止并保留现场：
+
+- R04 PR head 不是用户体验版本、存在未解决 review、merge CI 不绿或远端 main 分叉；
+- 未知工作树修改；
+- 必须新增第三条 V2 IPC、新 dependency/package、超过 2 表/1 migration、主体 25 文件、
+  migration-tail 例外 12 文件、总计 37 文件或 LOC 预算；
+- 必须调用真实模型/网络、读取密钥、操作平台、引入 OCR/截图或重新设计 UI；
+- 无法证明正文隔离、诊断脱敏，或删除后仍可经正常产品接口读取；
+- migration 无法安全升级/回滚，批量确认不能原子化，或状态会把“标记”误作“发送”；
+- Windows required CI 在允许的诊断/修复范围后仍不绿；
+- 无法生成供用户本人体验的 Windows 包。
+
+停止时区分已完成、未验证、失败和延期；不得把 Scripted 建议报告成 AI 质量，不得把
+MANUAL_SENT 报告成系统发送。
+
+十六、最终报告
+
+只报告：
+
+1. 状态：R05_AWAITING_USER_ACCEPTANCE / BLOCKED；
+2. R04 merge commit、merge CI，以及 R05 动态基线、分支、PR、HEAD、ahead/behind、工作树；
+3. 评论/私信导入、建议版本、状态机、删除和重启恢复结果；
+4. migration、表、trigger、IPC、dependency、LOC 和文件预算；
+5. 本地聚焦验证及精确 PR HEAD 的 Windows required CI；
+6. secret/content egress、外部连接、模型/API、费用和平台副作用；
+7. Windows 体验包和清单位置；
+8. 明确未进入 R06—R08、V2-D-FINAL、029B、Issue 031 或 M4；
+9. 等待用户回复“接受 V2-R05”，不得自动合并。
+
+现在开始。先执行 Phase A；只有 R04 合并提交的 Windows required CI 全绿后，才直接进入 R05，
+无需再次向用户确认已经明确的验收和产品边界。

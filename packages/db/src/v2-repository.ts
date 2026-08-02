@@ -17,10 +17,19 @@ import {
   type ContentCoverKey,
   type ContentPackageStatus,
   type ContentVersionRecord,
+  type InteractionBlobRef,
+  type InteractionDeletePreview,
+  type InteractionKind,
+  type InteractionRecord,
+  type InteractionStatus,
+  type InteractionVersionRef,
   type NewContentVersionRecord,
   type V2ContentRepositoryPort,
+  type V2InteractionRepositoryPort,
   type V2RepositoryPort,
   type WeeklyPlan,
+  V2InteractionError,
+  V2_INTERACTION_KINDS,
 } from '@mystery-operations/v2';
 import { parseManagedRelativePath } from '@mystery-operations/shared/storage';
 
@@ -54,6 +63,25 @@ interface ContentRow {
   readonly version: number;
   readonly version_id: string;
   readonly week_key: string;
+}
+
+interface InteractionRow {
+  readonly current_suggestion_version: number | null;
+  readonly dedup_key: string;
+  readonly item_id: string;
+  readonly kind: string;
+  readonly provider_kind: string | null;
+  readonly related_content_package_id: string | null;
+  readonly reply_path: string | null;
+  readonly reply_sha256: string | null;
+  readonly reply_size_bytes: number | null;
+  readonly revision: number;
+  readonly source: string;
+  readonly status: string;
+  readonly user_text_path: string;
+  readonly user_text_sha256: string;
+  readonly user_text_size_bytes: number;
+  readonly version_id: string | null;
 }
 
 const DEFAULT_WORKSPACE_ID = 'v2-local-workspace';
@@ -167,7 +195,68 @@ function decodeContent(row: ContentRow): ContentVersionRecord {
   };
 }
 
-export class SqliteV2Repository implements V2ContentRepositoryPort, V2RepositoryPort {
+function decodeInteractionBlob(
+  managedPath: string,
+  sha256: string,
+  sizeBytes: number,
+): InteractionBlobRef {
+  if (!/^[a-f0-9]{64}$/u.test(sha256) || !Number.isSafeInteger(sizeBytes) || sizeBytes < 1)
+    throw new V2InteractionError('INTERACTION_CORRUPT');
+  return {
+    managedPath: parseManagedRelativePath(managedPath, 'IMPORT'),
+    sha256,
+    sizeBytes,
+  };
+}
+
+function decodeInteraction(row: InteractionRow): InteractionRecord {
+  if (
+    !V2_INTERACTION_KINDS.includes(row.kind as InteractionKind) ||
+    !/^(?:CONFIRMED|DELETED|MANUAL_SENT|NEW|SKIPPED|SUGGESTED)$/u.test(row.status) ||
+    row.source !== 'USER_PASTE' ||
+    !/^[a-f0-9]{64}$/u.test(row.dedup_key) ||
+    !Number.isSafeInteger(row.revision)
+  )
+    throw new V2InteractionError('INTERACTION_CORRUPT');
+  const noSuggestion = row.current_suggestion_version === null;
+  if (
+    noSuggestion !==
+    [row.version_id, row.reply_path, row.reply_sha256, row.reply_size_bytes].every(
+      (value) => value === null,
+    )
+  )
+    throw new V2InteractionError('INTERACTION_CORRUPT');
+  if (!noSuggestion && row.provider_kind !== 'SCRIPTED')
+    throw new V2InteractionError('INTERACTION_CORRUPT');
+  return {
+    currentSuggestion: noSuggestion
+      ? null
+      : {
+          files: decodeInteractionBlob(
+            row.reply_path as string,
+            row.reply_sha256 as string,
+            row.reply_size_bytes as number,
+          ),
+          version: row.current_suggestion_version as number,
+          versionId: row.version_id as string,
+        },
+    dedupKey: row.dedup_key,
+    itemId: row.item_id,
+    kind: row.kind as InteractionKind,
+    relatedContentPackageId: row.related_content_package_id,
+    revision: row.revision,
+    status: row.status as InteractionStatus,
+    userText: decodeInteractionBlob(
+      row.user_text_path,
+      row.user_text_sha256,
+      row.user_text_size_bytes,
+    ),
+  };
+}
+
+export class SqliteV2Repository
+  implements V2ContentRepositoryPort, V2InteractionRepositoryPort, V2RepositoryPort
+{
   readonly #database: DatabaseSync;
   readonly #now: () => Date;
   readonly #workspaceId: string;
@@ -425,6 +514,203 @@ export class SqliteV2Repository implements V2ContentRepositoryPort, V2Repository
     });
   }
 
+  public listInteractions(): readonly InteractionRecord[] {
+    return this.#database
+      .prepare(
+        this.#interactionSelect(
+          `WHERE item.workspace_id = ? AND item.status <> 'DELETED' ORDER BY item.created_at, item.item_id`,
+        ),
+      )
+      .all(this.#workspaceId)
+      .map((row) => decodeInteraction(row as unknown as InteractionRow));
+  }
+
+  public getInteraction(itemId: string): InteractionRecord {
+    const row = this.#database
+      .prepare(
+        this.#interactionSelect(
+          `WHERE item.workspace_id = ? AND item.item_id = ? AND item.status <> 'DELETED'`,
+        ),
+      )
+      .get(this.#workspaceId, itemId) as InteractionRow | undefined;
+    if (row === undefined) throw new V2InteractionError('INVALID_REQUEST', ['itemId']);
+    return decodeInteraction(row);
+  }
+
+  public findInteractionByDedup(dedupKey: string): InteractionRecord | null {
+    const row = this.#database
+      .prepare(this.#interactionSelect(`WHERE item.workspace_id = ? AND item.dedup_key = ?`))
+      .get(this.#workspaceId, dedupKey) as InteractionRow | undefined;
+    return row === undefined ? null : decodeInteraction(row);
+  }
+
+  public contentPackageExists(packageId: string): boolean {
+    return (
+      this.#database
+        .prepare(`SELECT 1 FROM v2_content_packages WHERE workspace_id = ? AND package_id = ?`)
+        .get(this.#workspaceId, packageId) !== undefined
+    );
+  }
+
+  public createInteraction(record: InteractionRecord): InteractionRecord {
+    if (record.status !== 'NEW' || record.revision !== 0 || record.currentSuggestion !== null)
+      throw new V2InteractionError('INVALID_REQUEST');
+    const timestamp = this.#timestamp();
+    this.#database
+      .prepare(
+        `INSERT INTO v2_interaction_items(
+           workspace_id, item_id, kind, source, related_content_package_id,
+           user_text_path, user_text_sha256, user_text_size_bytes, dedup_key,
+           current_suggestion_version, status, revision, deleted_at, created_at, updated_at
+         ) VALUES (?, ?, ?, 'USER_PASTE', ?, ?, ?, ?, ?, NULL, 'NEW', 0, NULL, ?, ?)`,
+      )
+      .run(
+        this.#workspaceId,
+        record.itemId,
+        record.kind,
+        record.relatedContentPackageId,
+        parseManagedRelativePath(record.userText.managedPath, 'IMPORT'),
+        record.userText.sha256,
+        record.userText.sizeBytes,
+        record.dedupKey,
+        timestamp,
+        timestamp,
+      );
+    return this.getInteraction(record.itemId);
+  }
+
+  public appendSuggestion(
+    expected: InteractionRecord,
+    files: InteractionBlobRef,
+  ): InteractionRecord {
+    return runInTransaction(this.#database, () => {
+      const current = this.getInteraction(expected.itemId);
+      if (
+        current.revision !== expected.revision ||
+        current.currentSuggestion?.versionId !== expected.currentSuggestion?.versionId ||
+        !['NEW', 'SUGGESTED', 'CONFIRMED'].includes(current.status)
+      )
+        throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
+      const version = (current.currentSuggestion?.version ?? 0) + 1;
+      const versionId = `${current.itemId}-v${version}`;
+      const timestamp = this.#timestamp();
+      this.#database
+        .prepare(
+          `INSERT INTO v2_reply_suggestion_versions(
+             workspace_id, item_id, version, version_id, provider_kind,
+             reply_path, reply_sha256, reply_size_bytes, created_at
+           ) VALUES (?, ?, ?, ?, 'SCRIPTED', ?, ?, ?, ?)`,
+        )
+        .run(
+          this.#workspaceId,
+          current.itemId,
+          version,
+          versionId,
+          parseManagedRelativePath(files.managedPath, 'IMPORT'),
+          files.sha256,
+          files.sizeBytes,
+          timestamp,
+        );
+      const result = this.#database
+        .prepare(
+          `UPDATE v2_interaction_items
+           SET current_suggestion_version = ?, status = 'SUGGESTED',
+               revision = revision + 1, updated_at = ?
+           WHERE workspace_id = ? AND item_id = ? AND revision = ? AND status <> 'MANUAL_SENT'`,
+        )
+        .run(version, timestamp, this.#workspaceId, current.itemId, current.revision);
+      if (result.changes !== 1) throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
+      return this.getInteraction(current.itemId);
+    });
+  }
+
+  public batchConfirm(items: readonly InteractionVersionRef[]): readonly InteractionRecord[] {
+    return runInTransaction(this.#database, () => {
+      const current = items.map((item) => {
+        const record = this.getInteraction(item.itemId);
+        if (
+          record.revision !== item.expectedRevision ||
+          record.currentSuggestion?.versionId !== item.expectedVersionId
+        )
+          throw new V2InteractionError('REVISION_CONFLICT', ['items']);
+        if (!['SUGGESTED', 'CONFIRMED'].includes(record.status))
+          throw new V2InteractionError('INTERACTION_STATE_INVALID', ['items']);
+        return record;
+      });
+      const timestamp = this.#timestamp();
+      for (const record of current) {
+        if (record.status === 'CONFIRMED') continue;
+        const result = this.#database
+          .prepare(
+            `UPDATE v2_interaction_items
+             SET status = 'CONFIRMED', revision = revision + 1, updated_at = ?
+             WHERE workspace_id = ? AND item_id = ? AND revision = ? AND status = 'SUGGESTED'`,
+          )
+          .run(timestamp, this.#workspaceId, record.itemId, record.revision);
+        if (result.changes !== 1) throw new V2InteractionError('REVISION_CONFLICT', ['items']);
+      }
+      return current.map(({ itemId }) => this.getInteraction(itemId));
+    });
+  }
+
+  public transitionInteraction(
+    itemId: string,
+    expectedRevision: number,
+    expectedVersionId: string | null,
+    allowed: readonly InteractionStatus[],
+    next: InteractionStatus,
+  ): InteractionRecord {
+    return runInTransaction(this.#database, () => {
+      const current = this.getInteraction(itemId);
+      if (current.revision !== expectedRevision)
+        throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
+      if (
+        !allowed.includes(current.status) ||
+        (expectedVersionId !== null &&
+          current.currentSuggestion?.versionId !== expectedVersionId) ||
+        next === 'DELETED'
+      )
+        throw new V2InteractionError('INTERACTION_STATE_INVALID', ['interaction']);
+      const result = this.#database
+        .prepare(
+          `UPDATE v2_interaction_items
+           SET status = ?, revision = revision + 1, updated_at = ?
+           WHERE workspace_id = ? AND item_id = ? AND revision = ?`,
+        )
+        .run(next, this.#timestamp(), this.#workspaceId, itemId, expectedRevision);
+      if (result.changes !== 1) throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
+      return this.getInteraction(itemId);
+    });
+  }
+
+  public previewDeleteInteraction(itemId: string): InteractionDeletePreview {
+    this.getInteraction(itemId);
+    const count = this.#database
+      .prepare(
+        `SELECT count(*) AS count FROM v2_reply_suggestion_versions
+         WHERE workspace_id = ? AND item_id = ?`,
+      )
+      .get(this.#workspaceId, itemId) as { readonly count: number };
+    return {
+      itemId,
+      physicalDeletion: false,
+      retainedManagedReferenceCount: count.count + 1,
+      tombstone: true,
+    };
+  }
+
+  public tombstoneInteraction(itemId: string, expectedRevision: number): void {
+    const timestamp = this.#timestamp();
+    const result = this.#database
+      .prepare(
+        `UPDATE v2_interaction_items
+         SET status = 'DELETED', deleted_at = ?, revision = revision + 1, updated_at = ?
+         WHERE workspace_id = ? AND item_id = ? AND revision = ? AND status <> 'DELETED'`,
+      )
+      .run(timestamp, timestamp, this.#workspaceId, itemId, expectedRevision);
+    if (result.changes !== 1) throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
+  }
+
   public summary(): {
     readonly personaRevision: number;
     readonly planRevision: number;
@@ -497,6 +783,20 @@ export class SqliteV2Repository implements V2ContentRepositoryPort, V2Repository
        AND version.version = package.current_version
       ${where}
       ORDER BY package.package_id`;
+  }
+
+  #interactionSelect(where: string): string {
+    return `SELECT item.item_id, item.kind, item.source, item.related_content_package_id,
+      item.user_text_path, item.user_text_sha256, item.user_text_size_bytes, item.dedup_key,
+      item.current_suggestion_version, item.status, item.revision,
+      suggestion.version_id, suggestion.reply_path, suggestion.reply_sha256,
+      suggestion.reply_size_bytes, suggestion.provider_kind
+      FROM v2_interaction_items AS item
+      LEFT JOIN v2_reply_suggestion_versions AS suggestion
+        ON suggestion.workspace_id = item.workspace_id
+       AND suggestion.item_id = item.item_id
+       AND suggestion.version = item.current_suggestion_version
+      ${where}`;
   }
 
   #insertVersion(record: ContentVersionRecord, createdAt: string): void {
