@@ -3,6 +3,7 @@ import { isAbsolute, relative, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 
 export const SMOKE_TITLE_PREFIX = '__ISSUE006_SMOKE__:';
+export const V2_SMOKE_TITLE_PREFIX = '__V2_R01_SMOKE__:';
 
 export interface RendererSmokeReport {
   readonly appInfo: boolean;
@@ -16,6 +17,32 @@ export interface RendererSmokeReport {
   readonly setupState: boolean;
   readonly credentialStatus: boolean;
   readonly windowState: boolean;
+}
+
+export interface V2RendererSmokeReport {
+  readonly marker: boolean;
+  readonly mockMode: boolean;
+  readonly navigationCount: number;
+  readonly preload: boolean;
+}
+
+export function parseV2RendererSmokeTitle(title: string): V2RendererSmokeReport | null {
+  if (!title.startsWith(V2_SMOKE_TITLE_PREFIX)) return null;
+  try {
+    const value = JSON.parse(
+      decodeURIComponent(title.slice(V2_SMOKE_TITLE_PREFIX.length)),
+    ) as unknown;
+    if (typeof value !== 'object' || value === null) return null;
+    const report = value as Record<string, unknown>;
+    return typeof report.marker === 'boolean' &&
+      typeof report.mockMode === 'boolean' &&
+      typeof report.navigationCount === 'number' &&
+      typeof report.preload === 'boolean'
+      ? (report as unknown as V2RendererSmokeReport)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 export function parseRendererSmokeTitle(title: string): RendererSmokeReport | null {

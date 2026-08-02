@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -60,6 +62,8 @@ jobs:
         run: npm run build
 
       - name: Package Windows desktop directory
+        env:
+          REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run package:desktop
 
       - name: Package Chrome and Edge unpacked extensions
@@ -70,6 +74,26 @@ jobs:
 
       - name: Audit dependencies
         run: npm run audit:dependencies
+
+      - name: Prepare exact-head V2 artifact name
+        if: github.event_name == 'pull_request'
+        env:
+          REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        shell: pwsh
+        run: |
+          $exactHeadSha = [System.Environment]::GetEnvironmentVariable('REDNOTE_EXACT_HEAD_SHA')
+          $environmentFile = [System.Environment]::GetEnvironmentVariable('GITHUB_ENV')
+          $shortSha = $exactHeadSha.Substring(0, 8)
+          "V2_ARTIFACT_NAME=rednote-v2-r01-windows-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+
+      - name: Upload exact-head V2 Windows experience directory
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.V2_ARTIFACT_NAME }}
+          path: out/*-win32-x64/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Clean exact CI temporary directory
         if: always()

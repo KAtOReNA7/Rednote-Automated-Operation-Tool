@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { mkdtemp, readdir, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { randomUUID } from 'node:crypto';
 import { join, resolve } from 'node:path';
 
@@ -38,6 +38,21 @@ const unpackedApp = join(resourcesPath, 'app');
 
 await stat(executablePath);
 await stat(appAsar);
+const [v2Launcher, legacyLauncher, checklist] = await Promise.all([
+  readFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), 'utf8'),
+  readFile(join(packageDirectory, '返回当前绿色版本.cmd'), 'utf8'),
+  readFile(join(packageDirectory, 'V2-R01-体验清单.txt'), 'utf8'),
+]);
+if (
+  !v2Launcher.includes('%~dp0RednoteMysteryOperations.exe') ||
+  (v2Launcher.match(/--v2-shell/gu) ?? []).length !== 1 ||
+  legacyLauncher.includes('--v2-shell') ||
+  !checklist.includes('等待用户本人验收，禁止合并。') ||
+  (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
+    !checklist.includes(process.env.REDNOTE_EXACT_HEAD_SHA))
+) {
+  throw new Error('Packaged V2 launchers or exact-head checklist are invalid.');
+}
 try {
   await stat(unpackedApp);
   throw new Error('Packaged application contains an unpacked resources/app directory.');
@@ -151,6 +166,72 @@ for (const mode of ['disabled', 'enabled']) {
       recursive: true,
       retryDelay: 100,
     });
+    await temporary.cleanup();
+  }
+}
+
+{
+  const temporary = await createPortableTemp(projectRoot, 'packaged-smoke-v2');
+  const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
+  const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
+  const child = spawn(
+    executablePath,
+    [
+      '--issue006-smoke',
+      '--v2-shell',
+      `--issue006-smoke-output=${outputPath}`,
+      `--issue010-smoke-workspace=${smokeWorkspace}`,
+    ],
+    {
+      cwd: packageDirectory,
+      env: { ...childEnvironment, ...temporary.env },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      windowsHide: true,
+    },
+  );
+  const processCollector = createSmokeProcessCollector(child.pid);
+  const stdoutEnded = processCollector.attachStream(child.stdout);
+  const exitPromise = waitForExit(child);
+  try {
+    const report = await waitForSmokeReport(outputPath);
+    const processIds = await processCollector.waitForStages();
+    const socketEvidence = assertSocketSnapshot(
+      await inspectControlledProcesses(processIds),
+      'disabled',
+      43_119,
+      43_120,
+    );
+    const exitCode = await exitPromise;
+    await stdoutEnded;
+    const finalProcessIds = processCollector.finish();
+    if (
+      exitCode !== 0 ||
+      report.ok !== true ||
+      report.packaged !== true ||
+      report.mode !== 'v2' ||
+      report.renderer?.navigationCount !== 7 ||
+      report.renderer?.mockMode !== true ||
+      report.security?.preload !== false ||
+      report.runtime?.ipcRegistered !== false ||
+      report.runtime?.projectDataRootInitialized !== false ||
+      report.runtime?.sqliteInitialized !== false ||
+      report.security?.externalRequestAttempts !== 0
+    )
+      throw new Error(`V2 packaged smoke failed: ${JSON.stringify(report)}`);
+    await assertProcessesExited(finalProcessIds);
+    results.push({
+      mode: 'v2',
+      ...socketEvidence,
+      processCount: finalProcessIds.length,
+      processesExited: true,
+    });
+  } finally {
+    if (child.exitCode === null) {
+      child.kill();
+      await exitPromise.catch(() => undefined);
+    }
+    await rm(outputPath, { force: true });
+    await rm(smokeWorkspace, { force: true, maxRetries: 20, recursive: true, retryDelay: 100 });
     await temporary.cleanup();
   }
 }
