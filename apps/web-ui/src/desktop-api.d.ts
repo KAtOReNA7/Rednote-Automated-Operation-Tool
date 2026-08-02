@@ -9,6 +9,9 @@ declare global {
   type V2WeeklyPlanContract = V2.WeeklyPlan;
   type V2ContentPackageFieldsContract = V2.ContentPackageFields;
   type V2ContentWorkspaceContract = V2.ContentWorkspace;
+  type V2InteractionDeletePreviewContract = V2.InteractionDeletePreview;
+  type V2InteractionStatusContract = Exclude<V2.InteractionStatus, 'DELETED'>;
+  type V2InteractionWorkspaceContract = V2.InteractionWorkspace;
 
   interface Window {
     readonly rednoteDesktop?: DesktopBridge;

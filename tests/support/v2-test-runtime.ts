@@ -2,6 +2,7 @@ import {
   V2ApplicationFacade,
   V2ContractError,
   V2ContentError,
+  V2InteractionError,
   V2_SCHEMA_VERSION,
   parseAccountPersona,
   parseWeeklyPlan,
@@ -87,10 +88,26 @@ export function createMemoryV2Bridge(): V2Bridge {
     }),
     confirmPlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'CONFIRM_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    confirmReplySuggestions: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    createInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INVALID_REQUEST')),
+      ok: false,
+    }),
+    deleteInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INVALID_REQUEST')),
+      ok: false,
+    }),
     generateWeeklyPlan: (input) =>
       run(() => facade.mutate({ action: 'GENERATE_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     generateContentPackages: async () => ({
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
+    generateReplySuggestion: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
       ok: false,
     }),
     lockWeeklyPlan: (input) =>
@@ -107,21 +124,46 @@ export function createMemoryV2Bridge(): V2Bridge {
       error: toV2Exception(new V2ContentError('EXPORT_FAILED')),
       ok: false,
     }),
+    markInteractionManualSent: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    previewInteractionDelete: async () => ({
+      error: toV2Exception(new V2InteractionError('INVALID_REQUEST')),
+      ok: false,
+    }),
     readContentPackages: async (input) => ({
       ok: true,
       value: { packages: [], schemaVersion: 1, weekKey: input.weekKey },
     }),
+    readInteractions: async () => ({ ok: true, value: { items: [], schemaVersion: 1 } }),
     readPersona: () => run(() => facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: (input) =>
       run(() => facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    reopenInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    saveReplySuggestion: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
     saveContentPackage: async () => ({
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
       ok: false,
     }),
     skipPlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    skipInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    undoInteractionManualSent: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
     updatePersona: (input) =>
       run(() => facade.mutate({ action: 'UPDATE_PERSONA', ...input }) as AccountPersona),
   };

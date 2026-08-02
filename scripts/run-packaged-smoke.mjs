@@ -102,13 +102,13 @@ await stat(appAsar);
 const [v2Launcher, legacyLauncher, checklist] = await Promise.all([
   readFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), 'utf8'),
   readFile(join(packageDirectory, '返回当前绿色版本.cmd'), 'utf8'),
-  readFile(join(packageDirectory, 'V2-R04-体验清单.txt'), 'utf8'),
+  readFile(join(packageDirectory, 'V2-R05-体验清单.txt'), 'utf8'),
 ]);
 if (
   !v2Launcher.includes('%~dp0RednoteMysteryOperations.exe') ||
   (v2Launcher.match(/--v2-shell/gu) ?? []).length !== 1 ||
   legacyLauncher.includes('--v2-shell') ||
-  !checklist.startsWith('本轮验证完全本地的内容包、批量批准与导出，不是视觉改版。') ||
+  !checklist.startsWith('本轮验证完全本地的评论/私信导入与回复记录，不是视觉改版。') ||
   !checklist.includes('等待用户本人验收，禁止合并。') ||
   (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
     !checklist.includes(process.env.REDNOTE_EXACT_HEAD_SHA))
@@ -279,7 +279,7 @@ for (const mode of ['disabled', 'enabled']) {
           report.runtime?.ipcRegistered !== true ||
           report.runtime?.projectDataRootInitialized !== true ||
           report.runtime?.sqliteInitialized !== true ||
-          report.runtime?.v2TableCount !== 4 ||
+          report.runtime?.v2TableCount !== 6 ||
           report.runtime?.personaRevision !== 0 ||
           report.runtime?.planRevision !== 1 ||
           report.security?.externalRequestAttempts !== 0

@@ -12,19 +12,22 @@ type ContentRow = readonly [
   string,
   string,
 ];
-type InteractionRow = readonly [
-  string,
-  '评论' | '私信',
-  string,
-  string,
-  string,
-  string,
-  '可直接确认' | '需要追问',
-];
+export interface RendererInteractionItem {
+  readonly id: string;
+  readonly original: string;
+  readonly revision: number;
+  readonly source: string;
+  readonly status: V2InteractionStatusContract;
+  readonly suggestion: string;
+  readonly type: '评论' | '私信';
+  readonly version: number;
+  readonly versionId: string;
+}
 type PlanRow = readonly [string, string, string, string, string, string, string];
 type PersistedPlanStatus = V2PlanCandidateContract;
 export type PersistedWeeklyPlan = V2WeeklyPlanContract;
 export type PersistedContentWorkspace = V2ContentWorkspaceContract;
+export type PersistedInteractionWorkspace = V2InteractionWorkspaceContract;
 
 // One deterministic fixture record per line is easier to audit.
 // prettier-ignore
@@ -43,19 +46,6 @@ const contentRows: readonly ContentRow[] = [
   ['morgue', '《莫格街凶杀案》', 'morgue-cover.png', '雾夜巴黎街巷与亮灯窗户的封面建议', '密室诞生之前，侦探小说先学会了观察', '读这篇故事最有意思的地方，不是等一个答案，而是看杜宾如何把混乱一点点拆开。真正锋利的不是运气，是他对细节近乎不讲情面的耐心。', '重点复核', ['推理小说', '公版经典', '密室'], '周四 20:00', '复古街灯、旧报纸纹理；封面不出现凶手身份。'],
   ['yellow-room', '《黄色房间的秘密》', 'yellow-room-cover.png', '黄色密室门与棋盘地面的封面建议', '一扇锁死的门，为什么比凶手更有吸引力', '好的密室不是把出口藏起来，而是让你确信根本没有出口。黄色房间最狡猾的一步，是先让读者相信空间本身不会说谎。', '时间冲突', ['密室推理', '阅读清单', '经典'], '周五 20:00', '黄色房门、棋盘地面；保留醒目的剧透警告。'],
   ['moonstone', '《月亮宝石》', 'moonstone-cover.png', '月光下蓝色宝石与旧账簿的封面建议', '第一部现代侦探长篇，早就会玩不可靠叙述', '每个人都讲了一点真话，也都漏掉了一点关键。读《月亮宝石》像在听一桌人轮流作证：越诚恳，越值得怀疑。', '待确认', ['月亮宝石', '侦探小说', '不可靠叙述'], '周六 14:00', '深蓝宝石、旧宅剪影；避免使用真人影视剧照。'],
-];
-
-// Fixed IDs and order make interaction state reproducible.
-// prettier-ignore
-const interactionRows: readonly InteractionRow[] = [
-  ['comment-1', '评论', '纸上迷雾', '《莫格街凶杀案》那篇', '第一次读古典推理，怕太难进入，有推荐顺序吗？', '可以先从《莫格街凶杀案》开始，篇幅短、观察过程清楚。喜欢这种节奏，再接《四签名》。', '可直接确认'],
-  ['comment-2', '评论', '书页侦探', '密室主题笔记', '黄色房间现在读还好看吗？', '把它当密室教科书读，会更有趣。', '可直接确认'],
-  ['comment-3', '评论', '夜航读者', '本周书单', '想看反转多一点的，最推荐哪本？', '如果更在意叙述反转，我会先推《月亮宝石》。', '可直接确认'],
-  ['comment-4', '评论', '解谜者', '密室主题笔记', '密室系列还会继续吗？', '会，下一篇会聊空间线索如何误导判断。', '可直接确认'],
-  ['comment-5', '评论', '旧书签', '经典书单', '短篇适合从哪本开始？', '可以从《莫格街凶杀案》开始，篇幅和节奏都更友好。', '可直接确认'],
-  ['comment-6', '评论', '月下读者', '《月亮宝石》那篇', '会做无剧透版本吗？', '会，关键转折都会避开，完整分析前也会醒目标注。', '可直接确认'],
-  ['message-1', '私信', '新读者', '未关联内容', '能推荐一本适合我的推理吗？', '可以，先告诉我你更喜欢密室、人物心理，还是节奏快的短篇？', '需要追问'],
-  ['message-2', '私信', '雨夜来信', '未关联内容', '想找一本不太吓人的。', '可以说说你更在意氛围、谜题还是人物吗？我会避开惊悚取向。', '需要追问'],
 ];
 
 // The approved weekly calendar has exactly three pending and one conflict item.
@@ -99,7 +89,7 @@ function createFixture() {
   return {
     books: bookRows.map(([id, title, author, angle, posts, saves]) => ({ id, title, author, angle, posts, saves })),
     content: contentRows.map(([id, book, image, coverAlt, title, body, status, tags, time, materials]) => ({ id, book, candidateId: id, cover: cover(image), coverAlt, coverKey: id, title, body, status, tags, time, materials, revision: 0, version: 1, versionId: `${id}-v1`, weekKey: '2026-W31' })),
-    interactions: interactionRows.map(([id, type, author, source, original, suggestion, confidence]) => ({ id, type, author, source, original, suggestion, confidence, status: String('PENDING') })),
+    interactions: [] as RendererInteractionItem[],
     metrics: ([['浏览', '12.8万', '+18%'], ['点赞', '8,640', '+12%'], ['收藏', '3,120', '+21%'], ['评论', '486', '+9%'], ['新增关注', '732', '+16%']] as const).map(([label, value, change]) => ({ label, value, change })),
     opportunities: ([['rain-room', '雨夜密室讨论升温', '《黄色房间的秘密》', '相关内容收藏增长明显，适合强化氛围与诡计拆解。'], ['public-domain', '公版侦探经典适合系列解读', '《莫格街凶杀案》', '长尾搜索稳定，可连续三篇建立专业判断。'], ['unreliable', '反套路叙述者收藏表现突出', '《月亮宝石》', '收藏率高于账号均值，适合做反套路短评。']] as const).map(([id, title, book, reason]) => ({ id, title, book, reason })),
     persona: { audience: '喜欢悬疑、推理与文化内容的普通读者', boundary: '不提前揭示关键凶手；完整诡计前给醒目剧透警告', name: '雾灯书页', revision: 0, schemaVersion: 1 as const, tone: '理性、短句、观点鲜明、少量冷幽默' },
@@ -112,7 +102,6 @@ function createFixture() {
 }
 
 export type V2Session = ReturnType<typeof createFixture>;
-export type InteractionItem = V2Session['interactions'][number];
 export type RendererPlanRescheduleMode = V2PlanModeContract;
 export type RendererPlanRescheduleFields = V2PlanFieldsContract;
 export type RendererPlanReschedulePreview = V2PlanPreviewContract;
@@ -180,6 +169,29 @@ export function withPersistedContentPackages(
         weekKey: item.weekKey,
       };
     }),
+  };
+}
+
+export function withPersistedInteractions(
+  session: V2Session,
+  workspace: PersistedInteractionWorkspace,
+): V2Session {
+  return {
+    ...session,
+    interactions: workspace.items.map((item) => ({
+      id: item.itemId,
+      original: item.userText,
+      revision: item.revision,
+      source:
+        item.relatedContentPackageId === null
+          ? '未关联内容包'
+          : `关联内容包 ${item.relatedContentPackageId}`,
+      status: item.status,
+      suggestion: item.currentSuggestion ?? '',
+      type: item.kind === 'COMMENT' ? ('评论' as const) : ('私信' as const),
+      version: item.currentSuggestionVersion ?? 0,
+      versionId: item.currentSuggestionVersionId ?? '',
+    })),
   };
 }
 

@@ -8,8 +8,23 @@ import {
   type V2ContentErrorCode,
   type ContentWorkspace,
 } from './content.js';
+import {
+  V2InteractionError,
+  isInteractionMutationRequest,
+  parseInteractionMutationRequest,
+  parseInteractionReadRequest,
+  utf8Bytes,
+  type InteractionCreateResult,
+  type InteractionDeletePreview,
+  type InteractionItem,
+  type InteractionMutationRequest,
+  type InteractionReadRequest,
+  type InteractionWorkspace,
+  type V2InteractionErrorCode,
+} from './interaction.js';
 
 export * from './content.js';
+export * from './interaction.js';
 
 export const V2_SCHEMA_VERSION = 1 as const;
 export const V2_DEFAULT_WEEK_KEY = '2026-W31' as const;
@@ -116,7 +131,8 @@ export type V2ReadRequest =
   | { readonly view: 'ACCOUNT_PERSONA' }
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
-  | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string };
+  | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
+  | InteractionReadRequest;
 
 export type V2MutationRequest =
   | {
@@ -150,11 +166,17 @@ export type V2MutationRequest =
       readonly expectedRevision: number;
       readonly weekKey: string;
     }
-  | ContentMutationRequest;
+  | ContentMutationRequest
+  | InteractionMutationRequest;
 
 export interface V2ExceptionSummary {
   readonly affectedFields: readonly string[];
-  readonly code: V2ContentErrorCode | 'PERSISTENCE_UNAVAILABLE' | 'PLAN_CONFLICT' | 'PLAN_LOCKED';
+  readonly code:
+    | V2ContentErrorCode
+    | V2InteractionErrorCode
+    | 'PERSISTENCE_UNAVAILABLE'
+    | 'PLAN_CONFLICT'
+    | 'PLAN_LOCKED';
   readonly message: string;
   readonly severity: 'ERROR' | 'WARNING';
   readonly suggestedAction: string;
@@ -168,6 +190,17 @@ type ContentInput<Action extends ContentMutationRequest['action']> = Omit<
   Extract<ContentMutationRequest, { action: Action }>,
   'action'
 >;
+type InteractionInput<Action extends InteractionMutationRequest['action']> = Omit<
+  Extract<InteractionMutationRequest, { action: Action }>,
+  'action'
+>;
+type InteractionCall<Action extends InteractionMutationRequest['action'], Result> = (
+  input: InteractionInput<Action>,
+) => Promise<V2Result<Result>>;
+type InteractionItemCall<Action extends InteractionMutationRequest['action']> = InteractionCall<
+  Action,
+  InteractionItem
+>;
 
 export interface V2Bridge {
   readonly approveContentPackages: (
@@ -178,6 +211,12 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
+  readonly confirmReplySuggestions: InteractionCall<
+    'CONFIRM_REPLY_SUGGESTIONS',
+    InteractionWorkspace
+  >;
+  readonly createInteraction: InteractionCall<'CREATE_INTERACTION', InteractionCreateResult>;
+  readonly deleteInteraction: InteractionCall<'DELETE_INTERACTION', InteractionWorkspace>;
   readonly generateWeeklyPlan: (input: {
     readonly expectedRevision: number;
     readonly weekKey: string;
@@ -185,6 +224,7 @@ export interface V2Bridge {
   readonly generateContentPackages: (
     input: ContentInput<'GENERATE_CONTENT_PACKAGES'>,
   ) => Promise<V2Result<ContentWorkspace>>;
+  readonly generateReplySuggestion: InteractionItemCall<'GENERATE_REPLY_SUGGESTION'>;
   readonly lockWeeklyPlan: (input: {
     readonly expectedRevision: number;
     readonly weekKey: string;
@@ -198,14 +238,21 @@ export interface V2Bridge {
   readonly openContentExport: (
     input: ContentInput<'OPEN_CONTENT_EXPORT'>,
   ) => Promise<V2Result<{ readonly opened: true }>>;
+  readonly markInteractionManualSent: InteractionItemCall<'MARK_INTERACTION_MANUAL_SENT'>;
+  readonly previewInteractionDelete: (input: {
+    readonly itemId: string;
+  }) => Promise<V2Result<InteractionDeletePreview>>;
   readonly readContentPackages: (input: {
     readonly weekKey: string;
   }) => Promise<V2Result<ContentWorkspace>>;
+  readonly readInteractions: () => Promise<V2Result<InteractionWorkspace>>;
   readonly readPersona: () => Promise<V2Result<AccountPersona>>;
   readonly readWeeklyPlan: (input: { readonly weekKey: string }) => Promise<V2Result<WeeklyPlan>>;
   readonly reschedulePlanCandidates: (
     input: PlanRescheduleFields & { readonly allowConflicts: boolean },
   ) => Promise<V2Result<WeeklyPlan>>;
+  readonly reopenInteraction: InteractionItemCall<'REOPEN_INTERACTION'>;
+  readonly saveReplySuggestion: InteractionItemCall<'SAVE_REPLY_SUGGESTION'>;
   readonly saveContentPackage: (
     input: ContentInput<'SAVE_CONTENT_PACKAGE'>,
   ) => Promise<V2Result<ContentPackage>>;
@@ -214,6 +261,8 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
+  readonly skipInteraction: InteractionItemCall<'SKIP_INTERACTION'>;
+  readonly undoInteractionManualSent: InteractionItemCall<'UNDO_INTERACTION_MANUAL_SENT'>;
   readonly updatePersona: (input: {
     readonly expectedRevision: number;
     readonly persona: AccountPersonaFields;
@@ -230,15 +279,6 @@ export class V2ContractError extends Error {
     this.code = code;
     this.affectedFields = affectedFields;
   }
-}
-
-function utf8Bytes(value: string): number {
-  let bytes = 0;
-  for (const character of value) {
-    const point = character.codePointAt(0) ?? 0;
-    bytes += point <= 0x7f ? 1 : point <= 0x7ff ? 2 : point <= 0xffff ? 3 : 4;
-  }
-  return bytes;
 }
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -565,6 +605,8 @@ export function parseContentMutationRequest(value: unknown): ContentMutationRequ
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.view === 'INTERACTIONS' || value.view === 'INTERACTION_DELETE_PREVIEW')
+    return parseInteractionReadRequest(value);
   if (value.view === 'ACCOUNT_PERSONA' && exactKeys(value, ['view'])) {
     return { view: 'ACCOUNT_PERSONA' };
   }
@@ -594,6 +636,8 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (typeof value.action === 'string' && isInteractionMutationRequest({ action: value.action }))
+    return parseInteractionMutationRequest(value);
   if (
     typeof value.action === 'string' &&
     [
@@ -963,7 +1007,12 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
-    if (request.view === 'CONTENT_PACKAGES') throw new V2ContractError('INVALID_REQUEST');
+    if (
+      request.view === 'CONTENT_PACKAGES' ||
+      request.view === 'INTERACTIONS' ||
+      request.view === 'INTERACTION_DELETE_PREVIEW'
+    )
+      throw new V2ContractError('INVALID_REQUEST');
     const current = this.#readPlan(request.weekKey);
     return request.view === 'WEEKLY_PLAN' ? current : previewPlanReschedule(current, request);
   }
@@ -983,6 +1032,7 @@ export class V2ApplicationFacade {
     ) {
       throw new V2ContractError('INVALID_REQUEST');
     }
+    if (isInteractionMutationRequest(request)) throw new V2ContractError('INVALID_REQUEST');
     const current = this.#readPlan(request.weekKey);
     this.#assertRevision(current, request.expectedRevision);
     if (request.action === 'GENERATE_WEEKLY_PLAN') {
@@ -1091,6 +1141,21 @@ export class V2ApplicationFacade {
 }
 
 export function toV2Exception(error: unknown): V2ExceptionSummary {
+  if (error instanceof V2InteractionError) {
+    const messages = Object.freeze({
+      INTERACTION_CORRUPT: '本地互动文件缺失或校验失败，未执行操作。',
+      INTERACTION_STATE_INVALID: '当前互动状态不允许执行此操作。',
+      INVALID_REQUEST: '互动请求不符合本地合同。',
+      REVISION_CONFLICT: '互动项已更新，请重新载入后再试。',
+    } satisfies Readonly<Record<V2InteractionErrorCode, string>>);
+    return {
+      affectedFields: error.affectedFields,
+      code: error.code,
+      message: messages[error.code],
+      severity: error.code === 'REVISION_CONFLICT' ? 'WARNING' : 'ERROR',
+      suggestedAction: error.code === 'REVISION_CONFLICT' ? '重新载入互动页' : '检查互动状态后重试',
+    };
+  }
   if (error instanceof V2ContentError) {
     const messages = Object.freeze({
       CONTENT_CORRUPT: '内容文件缺失或校验失败，未执行操作。',

@@ -22,6 +22,7 @@ import {
   V2ApplicationFacade,
   V2ContractError,
   V2ContentError,
+  V2InteractionError,
   V2_DEFAULT_WEEK_KEY,
   V2_IPC_CHANNELS,
   parseV2ReadRequest,
@@ -83,10 +84,26 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
     }),
     confirmPlanCandidates: async (input) =>
       success(facade.mutate({ action: 'CONFIRM_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    confirmReplySuggestions: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    createInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INVALID_REQUEST')),
+      ok: false,
+    }),
+    deleteInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INVALID_REQUEST')),
+      ok: false,
+    }),
     generateWeeklyPlan: async (input) =>
       success(facade.mutate({ action: 'GENERATE_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     generateContentPackages: async () => ({
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
+      ok: false,
+    }),
+    generateReplySuggestion: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
       ok: false,
     }),
     lockWeeklyPlan: async (input) =>
@@ -101,19 +118,44 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
       error: toV2Exception(new V2ContentError('EXPORT_FAILED')),
       ok: false,
     }),
+    markInteractionManualSent: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    previewInteractionDelete: async () => ({
+      error: toV2Exception(new V2InteractionError('INVALID_REQUEST')),
+      ok: false,
+    }),
     readContentPackages: async (input) =>
       success({ packages: [], schemaVersion: 1 as const, weekKey: input.weekKey }),
+    readInteractions: async () => success({ items: [], schemaVersion: 1 as const }),
     readPersona: async () => success(facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: async (input) =>
       success(facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: async (input) =>
       success(facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    reopenInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    saveReplySuggestion: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
     saveContentPackage: async () => ({
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
       ok: false,
     }),
     skipPlanCandidates: async (input) =>
       success(facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    skipInteraction: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
+    undoInteractionManualSent: async () => ({
+      error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
+      ok: false,
+    }),
     updatePersona: async (input) =>
       success(facade.mutate({ action: 'UPDATE_PERSONA', ...input }) as AccountPersona),
   };
@@ -207,11 +249,11 @@ describe('V2 pure contracts', () => {
 });
 
 describe('V2 migration and repository', () => {
-  it('appends the R04 migration with two additional STRICT v2_ tables and no triggers', async () => {
+  it('appends the R05 migration with two additional STRICT v2_ tables and no triggers', async () => {
     const previous = MIGRATIONS.at(-2);
     const current = MIGRATIONS.at(-1);
     expect(current).toMatchObject({
-      name: 'v2_content_packages_and_versions',
+      name: 'v2_interactions_and_reply_versions',
       version: (previous?.version ?? 0) + 1,
     });
     const databasePath = createTemporaryDatabasePath('v2 new database');
@@ -228,6 +270,8 @@ describe('V2 migration and repository', () => {
       expect(tables).toEqual([
         { name: 'v2_content_package_versions', strict: 1 },
         { name: 'v2_content_packages', strict: 1 },
+        { name: 'v2_interaction_items', strict: 1 },
+        { name: 'v2_reply_suggestion_versions', strict: 1 },
         { name: 'v2_weekly_plan_snapshots', strict: 1 },
         { name: 'v2_workspaces', strict: 1 },
       ]);
@@ -296,7 +340,7 @@ describe('V2 migration and repository', () => {
              WHERE type = 'table' AND name LIKE 'v2\\_%' ESCAPE '\\'`,
           )
           .get(),
-      ).toEqual({ count: 2 });
+      ).toEqual({ count: 4 });
       expect(
         database.prepare(`SELECT working_name FROM account_profiles WHERE id = 'keep'`).get(),
       ).toEqual({ working_name: '回滚后仍在' });
@@ -453,23 +497,36 @@ describe('V2 Electron boundary', () => {
     expect(Object.keys(exposed).sort()).toEqual([
       'approveContentPackages',
       'confirmPlanCandidates',
+      'confirmReplySuggestions',
+      'createInteraction',
+      'deleteInteraction',
       'exportContentPackages',
       'generateContentPackages',
+      'generateReplySuggestion',
       'generateWeeklyPlan',
       'lockWeeklyPlan',
+      'markInteractionManualSent',
       'openContentExport',
+      'previewInteractionDelete',
       'previewPlanReschedule',
       'readContentPackages',
+      'readInteractions',
       'readPersona',
       'readWeeklyPlan',
+      'reopenInteraction',
       'reschedulePlanCandidates',
       'saveContentPackage',
+      'saveReplySuggestion',
+      'skipInteraction',
       'skipPlanCandidates',
+      'undoInteractionManualSent',
       'updatePersona',
     ]);
     expect('invoke' in exposed).toBe(false);
     expect('rednoteDesktop' in exposed).toBe(false);
     await exposed.readPersona();
+    await exposed.readInteractions();
+    await exposed.previewInteractionDelete({ itemId: 'interaction-1' });
     await exposed.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY });
     await exposed.previewPlanReschedule({
       candidateIds: ['thu-1'],
@@ -503,6 +560,46 @@ describe('V2 Electron boundary', () => {
       weekKey: V2_DEFAULT_WEEK_KEY,
     });
     await exposed.lockWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });
+    await exposed.createInteraction({
+      expectedRevision: 0,
+      kind: 'COMMENT',
+      relatedContentPackageId: null,
+      userText: 'synthetic',
+    });
+    await exposed.generateReplySuggestion({
+      expectedRevision: 0,
+      idempotencyKey: 'reply-1',
+      itemId: 'interaction-1',
+    });
+    await exposed.saveReplySuggestion({
+      expectedRevision: 1,
+      expectedVersionId: 'interaction-1-v1',
+      itemId: 'interaction-1',
+      replyText: 'synthetic reply',
+    });
+    await exposed.confirmReplySuggestions({
+      items: [
+        {
+          expectedRevision: 2,
+          expectedVersionId: 'interaction-1-v2',
+          itemId: 'interaction-1',
+        },
+      ],
+    });
+    await exposed.skipInteraction({ expectedRevision: 1, itemId: 'interaction-1' });
+    await exposed.reopenInteraction({ expectedRevision: 2, itemId: 'interaction-1' });
+    await exposed.markInteractionManualSent({
+      confirmed: true,
+      expectedRevision: 3,
+      expectedVersionId: 'interaction-1-v2',
+      itemId: 'interaction-1',
+    });
+    await exposed.undoInteractionManualSent({ expectedRevision: 4, itemId: 'interaction-1' });
+    await exposed.deleteInteraction({
+      confirmed: true,
+      expectedRevision: 5,
+      itemId: 'interaction-1',
+    });
     expect(new Set(electron.invoke.mock.calls.map(([channel]) => channel))).toEqual(
       new Set(Object.values(V2_IPC_CHANNELS)),
     );
@@ -564,6 +661,8 @@ describe('V2 renderer persistence wiring', () => {
     ).toEqual([
       { name: 'v2_content_package_versions' },
       { name: 'v2_content_packages' },
+      { name: 'v2_interaction_items' },
+      { name: 'v2_reply_suggestion_versions' },
       { name: 'v2_weekly_plan_snapshots' },
       { name: 'v2_workspaces' },
     ]);

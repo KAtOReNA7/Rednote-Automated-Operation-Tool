@@ -13,6 +13,7 @@ import {
 import {
   v2MockProvider,
   withPersistedContentPackages,
+  withPersistedInteractions,
   withPersistedWeeklyPlan,
   type PersistedWeeklyPlan,
   type RendererPlanRescheduleFields,
@@ -36,9 +37,14 @@ function restoreSession(
   persona: V2Session['persona'],
   plan: PersistedWeeklyPlan,
   content?: V2ContentWorkspaceContract,
+  interactions?: V2InteractionWorkspaceContract,
 ): V2Session {
   const restored = withPersistedWeeklyPlan({ ...session, persona: { ...persona } }, plan);
-  return content === undefined ? restored : withPersistedContentPackages(restored, content);
+  const withContent =
+    content === undefined ? restored : withPersistedContentPackages(restored, content);
+  return interactions === undefined
+    ? withContent
+    : withPersistedInteractions(withContent, interactions);
 }
 
 export function V2App(): React.JSX.Element {
@@ -105,13 +111,18 @@ export function V2App(): React.JSX.Element {
       bridge.readPersona(),
       bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
       bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY }),
-    ]).then(([persona, plan, content]) => {
-      if (cancelled || !persona.ok || !plan.ok || !content.ok) return;
-      setSession((current) => restoreSession(current, persona.value, plan.value, content.value));
+      bridge.readInteractions(),
+    ]).then(([persona, plan, content, interactions]) => {
+      if (cancelled || !persona.ok || !plan.ok || !content.ok || !interactions.ok) return;
+      setSession((current) =>
+        restoreSession(current, persona.value, plan.value, content.value, interactions.value),
+      );
       setUi((current) => ({
         ...current,
         activeContentId: content.value.packages[0]?.id ?? '',
+        activeInteractionId: interactions.value.items[0]?.itemId ?? '',
         contentSelectedIds: [],
+        interactionSelectedIds: [],
       }));
     });
     return () => {
@@ -171,11 +182,108 @@ export function V2App(): React.JSX.Element {
         items: refs(),
       });
       if (!exported.ok) throw new Error('V2 export failed');
+      let interactionRead = await bridge.readInteractions();
+      if (!interactionRead.ok) throw new Error('V2 interaction read failed');
+      if (interactionRead.value.items.length === 0) {
+        const relatedContentPackageId = packages[0]?.id;
+        if (relatedContentPackageId === undefined) throw new Error('V2 interaction setup failed');
+        const createInput = {
+          expectedRevision: 0 as const,
+          kind: 'COMMENT' as const,
+          relatedContentPackageId,
+          userText: '这篇内容适合第一次读古典推理的人吗？',
+        };
+        const created = await bridge.createInteraction(createInput);
+        const replay = await bridge.createInteraction(createInput);
+        if (!created.ok || !replay.ok || !replay.value.duplicate)
+          throw new Error('V2 interaction dedup failed');
+        if (replay.value.item.itemId !== created.value.item.itemId)
+          throw new Error('V2 interaction dedup identity failed');
+        const suggested = await bridge.generateReplySuggestion({
+          expectedRevision: created.value.item.revision,
+          idempotencyKey: 'reply-r05-comment-smoke',
+          itemId: created.value.item.itemId,
+        });
+        if (!suggested.ok || suggested.value.currentSuggestion === null)
+          throw new Error('V2 interaction suggestion failed');
+        const edited = await bridge.saveReplySuggestion({
+          expectedRevision: suggested.value.revision,
+          expectedVersionId: suggested.value.currentSuggestionVersionId ?? '',
+          itemId: suggested.value.itemId,
+          replyText: `${suggested.value.currentSuggestion}（本地 smoke 修订）`,
+        });
+        if (!edited.ok) throw new Error('V2 interaction edit failed');
+        const confirmed = await bridge.confirmReplySuggestions({
+          items: [
+            {
+              expectedRevision: edited.value.revision,
+              expectedVersionId: edited.value.currentSuggestionVersionId ?? '',
+              itemId: edited.value.itemId,
+            },
+          ],
+        });
+        const confirmedItem = confirmed.ok ? confirmed.value.items[0] : undefined;
+        if (confirmedItem === undefined) throw new Error('V2 interaction confirmation failed');
+        const sent = await bridge.markInteractionManualSent({
+          confirmed: true,
+          expectedRevision: confirmedItem.revision,
+          expectedVersionId: confirmedItem.currentSuggestionVersionId ?? '',
+          itemId: confirmedItem.itemId,
+        });
+        if (!sent.ok) throw new Error('V2 interaction manual record failed');
+        const undone = await bridge.undoInteractionManualSent({
+          expectedRevision: sent.value.revision,
+          itemId: sent.value.itemId,
+        });
+        const direct = await bridge.createInteraction({
+          expectedRevision: 0,
+          kind: 'DIRECT_MESSAGE',
+          relatedContentPackageId: null,
+          userText: '可以推荐一篇短篇推理吗？',
+        });
+        if (!undone.ok || !direct.ok) throw new Error('V2 interaction state setup failed');
+        const directSuggested = await bridge.generateReplySuggestion({
+          expectedRevision: direct.value.item.revision,
+          idempotencyKey: 'reply-r05-message-smoke',
+          itemId: direct.value.item.itemId,
+        });
+        if (!directSuggested.ok) throw new Error('V2 direct message suggestion failed');
+        const skipped = await bridge.skipInteraction({
+          expectedRevision: directSuggested.value.revision,
+          itemId: directSuggested.value.itemId,
+        });
+        if (!skipped.ok) throw new Error('V2 interaction skip failed');
+        const reopened = await bridge.reopenInteraction({
+          expectedRevision: skipped.value.revision,
+          itemId: skipped.value.itemId,
+        });
+        if (!reopened.ok) throw new Error('V2 interaction reopen failed');
+        const preview = await bridge.previewInteractionDelete({ itemId: reopened.value.itemId });
+        if (
+          !preview.ok ||
+          preview.value.physicalDeletion ||
+          preview.value.retainedManagedReferenceCount !== 2
+        )
+          throw new Error('V2 interaction delete preview failed');
+        const deleted = await bridge.deleteInteraction({
+          confirmed: true,
+          expectedRevision: reopened.value.revision,
+          itemId: reopened.value.itemId,
+        });
+        if (!deleted.ok) throw new Error('V2 interaction delete failed');
+        interactionRead = await bridge.readInteractions();
+        if (!interactionRead.ok) throw new Error('V2 interaction final read failed');
+      }
+      const finalInteraction = interactionRead.value.items[0];
       const valid =
         packages.length === 3 &&
         packages.every(({ status }) => status === 'APPROVED') &&
         Math.max(...packages.map(({ version }) => version)) === 2 &&
-        /^r04-[a-f0-9]{24}$/u.test(exported.value.exportId);
+        /^r04-[a-f0-9]{24}$/u.test(exported.value.exportId) &&
+        interactionRead.value.items.length === 1 &&
+        finalInteraction?.kind === 'COMMENT' &&
+        finalInteraction.status === 'CONFIRMED' &&
+        finalInteraction.currentSuggestionVersion === 2;
       const report = {
         marker: valid && document.querySelector('[data-v2-shell]') !== null,
         mockMode: document.querySelector('[data-v2-mock="true"]') !== null,

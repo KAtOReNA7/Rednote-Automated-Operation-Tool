@@ -11725,6 +11725,46 @@ CREATE TABLE v2_content_package_versions (
 ) STRICT, WITHOUT ROWID;
 `;
 
+const V2_INTERACTIONS_AND_REPLY_VERSIONS = `
+CREATE TABLE v2_interaction_items (
+  workspace_id TEXT NOT NULL, item_id TEXT NOT NULL CHECK (length(item_id) BETWEEN 1 AND 112),
+  kind TEXT NOT NULL CHECK (kind IN ('COMMENT', 'DIRECT_MESSAGE')), source TEXT NOT NULL CHECK (source = 'USER_PASTE'),
+  related_content_package_id TEXT CHECK (related_content_package_id IS NULL OR length(related_content_package_id) BETWEEN 1 AND 96),
+  user_text_path TEXT NOT NULL CHECK (length(user_text_path) BETWEEN 1 AND 1024 AND user_text_path GLOB 'imports/*'),
+  user_text_sha256 TEXT NOT NULL CHECK (length(user_text_sha256) = 64 AND user_text_sha256 NOT GLOB '*[^a-f0-9]*'),
+  user_text_size_bytes INTEGER NOT NULL CHECK (typeof(user_text_size_bytes) = 'integer' AND user_text_size_bytes BETWEEN 1 AND 8000),
+  dedup_key TEXT NOT NULL CHECK (length(dedup_key) = 64 AND dedup_key NOT GLOB '*[^a-f0-9]*'),
+  current_suggestion_version INTEGER CHECK (current_suggestion_version IS NULL OR (typeof(current_suggestion_version) = 'integer' AND current_suggestion_version > 0)),
+  status TEXT NOT NULL CHECK (status IN ('NEW', 'SUGGESTED', 'CONFIRMED', 'MANUAL_SENT', 'SKIPPED', 'DELETED')),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  deleted_at TEXT CHECK (deleted_at IS NULL OR deleted_at ${UTC_REQUIRED}), created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, item_id), UNIQUE (workspace_id, dedup_key),
+  FOREIGN KEY (workspace_id) REFERENCES v2_workspaces(workspace_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (workspace_id, related_content_package_id) REFERENCES v2_content_packages(workspace_id, package_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  FOREIGN KEY (workspace_id, item_id, current_suggestion_version) REFERENCES v2_reply_suggestion_versions(workspace_id, item_id, version) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (status <> 'NEW' OR current_suggestion_version IS NULL),
+  CHECK (status NOT IN ('SUGGESTED', 'CONFIRMED', 'MANUAL_SENT') OR current_suggestion_version IS NOT NULL),
+  CHECK ((status = 'DELETED') = (deleted_at IS NOT NULL))
+) STRICT, WITHOUT ROWID;
+
+CREATE TABLE v2_reply_suggestion_versions (
+  workspace_id TEXT NOT NULL, item_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+  version_id TEXT NOT NULL CHECK (length(version_id) BETWEEN 1 AND 112),
+  provider_kind TEXT NOT NULL CHECK (provider_kind = 'SCRIPTED'),
+  reply_path TEXT NOT NULL CHECK (length(reply_path) BETWEEN 1 AND 1024 AND reply_path GLOB 'imports/*'),
+  reply_sha256 TEXT NOT NULL CHECK (length(reply_sha256) = 64 AND reply_sha256 NOT GLOB '*[^a-f0-9]*'),
+  reply_size_bytes INTEGER NOT NULL CHECK (typeof(reply_size_bytes) = 'integer' AND reply_size_bytes BETWEEN 1 AND 4000),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, item_id, version), UNIQUE (workspace_id, version_id),
+  FOREIGN KEY (workspace_id, item_id) REFERENCES v2_interaction_items(workspace_id, item_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+
+CREATE INDEX idx_v2_interactions_related_content ON v2_interaction_items(workspace_id, related_content_package_id)
+  WHERE related_content_package_id IS NOT NULL;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -11844,5 +11884,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'v2_content_packages_and_versions',
     sql: V2_CONTENT_PACKAGES_AND_VERSIONS,
     version: 22,
+  }),
+  Object.freeze({
+    name: 'v2_interactions_and_reply_versions',
+    sql: V2_INTERACTIONS_AND_REPLY_VERSIONS,
+    version: 23,
   }),
 ]);
