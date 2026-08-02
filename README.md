@@ -2,197 +2,80 @@
   <a href="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml">
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
-  <img alt="V2 R03 accepted" src="https://img.shields.io/badge/V2--R03-已验收-2ea44f" />
-  <img alt="V2 R04 accepted" src="https://img.shields.io/badge/V2--R04-已验收-2ea44f" />
   <img alt="V2 R05 accepted" src="https://img.shields.io/badge/V2--R05-已验收-2ea44f" />
-  <img alt="V2 R06 not started" src="https://img.shields.io/badge/V2--R06-未开始-8b8b8b" />
+  <img alt="V2 R06 next" src="https://img.shields.io/badge/下一步-V2--R06-8b8b8b" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
-  <img alt="Unofficial project" src="https://img.shields.io/badge/项目-非官方-8b8b8b" />
+  <img alt="Development preview" src="https://img.shields.io/badge/状态-开发预览版-c69026" />
 </p>
 
-<p align="center">
-  <strong>面向推理小说内容运营的 Windows 本地优先、单用户开发工作台</strong>
-  <br />
-  用可审计、可恢复的本地基础设施，逐步承载素材、研究、内容生产与运营流程。
-</p>
+# Rednote V2
 
-<p align="center">
-  <a href="#十秒了解项目">十秒了解</a> ·
-  <a href="#开发进度">开发进度</a> ·
-  <a href="#快速开始">快速开始</a> ·
-  <a href="#架构概览">架构概览</a> ·
-  <a href="#质量与安全">质量与安全</a> ·
-  <a href="#文档索引">文档索引</a>
-</p>
-
----
-
-## 十秒了解项目
-
-| 你想知道的                   | 当前答案                                                                                      |
-| ---------------------------- | --------------------------------------------------------------------------------------------- |
-| **它是什么？**               | 面向推理小说内容运营的 Windows 本地工作台，强调隐私、可控、可恢复和人工最终确认               |
-| **做到哪一步？**             | V2-R01—R05 已验收；R05 已实现评论/私信本地导入、内容包关联、Scripted 建议、版本状态与墓碑删除 |
-| **下一步是什么？**           | V2-R06 尚未开始；必须另行授权，不因 R05 合并而自动实施                                        |
-| **现在可以投入生产吗？**     | 不可以；当前是可靠的本地基础设施，不是内容运营成品                                            |
-| **会自动操作小红书吗？**     | 不会；不包含自动登录、发布、评论、私信、验证码或风控处理                                      |
-| **会调用真实模型并收费吗？** | 默认不会；当前开发与测试使用 Mock、合成数据和本机 loopback                                    |
-
-> [!TIP]
-> 里程碑快照：M1（Issue 006—011）与 M2（Issue 012—021）均已完成验收；M3 已完成
-> Issue 028；Issue 029A 确定性子集与 Minimal Issue 030 已完成。原 Issue 029 仍为部分完成，
-> 029B 保持 deferred；M3 只按缩减范围收口，M4 尚未开始。浏览器插件只在用户点击后收藏当前公开页面的有限样本；候选固定为
-> `LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT`，且外部请求数为 0。
-> Fetch 只处理研究流程明确选择的单个已持久化候选；结果仍是
-> `FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT`，不会自动入队或升级为事实。Issue 019
-> 只有在用户明确接纳受控文档后，才创建版本化 Source、原子 Claim、精确 Evidence 与事实评估。
-> Issue 020 再把已验证事实确定性投影为可追溯 Dossier；Issue 021 由用户显式确认六类阅读
-> 状态，并把个人体验、公开资料分析、两类公开评分与内部预测严格隔离。Issue 022 再把 current
-> 研究状态投影为五类结构化候选，以确定性资格、五项整数排序、semantic 去重和
-> `FIRST_30_V1` 的 10/8/6/3/3 配额形成可审计计划。Issue 023 在其上建立严格单变量假设、
-> control/treatment、唯一主指标、四类作品热度快照、跨至少三本 canonical Work 的结构复现、
-> 确定性 assignment 和 immutable 版本历史；实验仍未执行，没有效果、显著性或 winner，
-> 也没有产生真实指标。Issue 024 再把 current Topic、Dossier、Evidence、真实性权限与可选
-> Experiment 约束投影为五类结构化 Content Brief，保留逐字段 provenance/lock、确定性
-> readiness 和单请求受控 structured generation。Issue 025 在 current ready Brief 上建立五类
-> 版本化 Draft，支持手工 scaffold、单请求完整生成、有限 scope 局部重写、字段锁、Brief lineage
-> 与实际剧透警告；结构有效只表示等待质量检查。Issue 026 把 current immutable Draft 的公开文本
-> 派生为 Unicode locator 与原子 Statement，以本地 allowlist 映射到 current Claim、
-> FactEvaluation、Evidence 与 SourceRevision，并提供 `PASS / FACT_BLOCKED / AWAITING_REVIEW`、
-> 人工复核和可选单请求 Scripted Mock 辅助。Issue 027 复用 current Draft 与 Issue 021 权限，新增
-> `PASS / BLOCKED / REVIEW_REQUIRED / STALE / NOT_RUN` 阅读真实性与公开评分检查；它只追加有界摘要，
-> 不修改文案。Issue 028 再以确定性子集核对 Brief/Draft 剧透声明、四个 warning surface 和
-> NO/LIGHT 的窄答案式表达候选；FULL 正文允许直接拆解凶手、结局与核心诡计。单项 PASS 只表示
-> 有限规则未发现复核证据，仍不代表全文语义安全、整体质量通过或发布许可。Issue 029A 进一步
-> 增加 exact duplicate、有限 overlap 候选和标题/正文 authoritative lineage 检查，只追加
-> `DUPLICATION / TITLE_BODY_CONSISTENCY` 两类摘要；`INTERNAL_CONSISTENCY` 明确保持
-> `NOT_RUN`。语义矛盾、同质化与完整标题语义判断属于未实施的 029B。Minimal Issue 030 只经现有
-> `copy:get` 即时读取七项 saved exact-current 状态，显示质量建议与人工下一步；它不会自动运行检查、
-> 改写 Draft、创建审批、导出或发布。独立 V2 路线当前已验收 R01—R05：R04 提供本地内容包与受控目录导出；
-> R05 再提供用户主动粘贴评论/私信、确定性 Scripted 回复建议、版本状态和明确墓碑删除。
-> 它不是模型生成，`MANUAL_SENT` 只记录用户在官方端完成的动作，系统不会发送消息。
-> 其后的治理专项只用完全合成材料接通
-> `Work → SourceRevision → Dossier → Topic → Brief → Draft → Fact Mapping` 最小本地闭环；
-> 每个下游步骤仍由用户在既有工作台分别预览、确认或手工填写，不是自动内容流水线。
+面向推理小说内容运营的 Windows 本地工作台。它把账号人设、周计划、内容包和评论/私信回复整理到
+一个桌面应用里，数据保存在本机，所有对外发布与发送动作仍由用户亲自在官方平台完成。
 
 > [!IMPORTANT]
-> 本项目是**非官方开发项目**，不代表小红书或任何平台立场。V2-R05 只在本机保存用户主动粘贴的
-> 互动文本并生成确定性 Scripted 建议，没有接通真实模型、搜索服务或平台自动化；评论、私信与
-> 最终发布动作始终由用户在官方端手动完成。
+> 当前版本是**开发预览版**，不是可以直接投入日常运营的正式产品。V2-R01—R05 已验收；
+> 下一步是 V2-R06 数据复盘。真实模型、平台连接和最终视觉统一尚未完成。
 
-## 开发进度
+## 现在能做什么
 
-```mermaid
-flowchart LR
-    M0["M0<br/>Issue 001–005<br/>基础与硬约束"] --> M1["M1<br/>Issue 006–011<br/>本地应用基础设施"]
-    M1 --> M2["M2<br/>Issue 012–021<br/>模型、搜索、书库与研究"]
-    M2 --> M3["M3<br/>022–028 + 029A + Minimal 030<br/>缩减范围收口"]
-    M3 --> NEXT["NEXT<br/>受控本地内容试运行<br/>需另行授权"]
-    NEXT -.-> FUTURE["M4–M6<br/>视觉、审批、运营与发布"]
+- **账号人设**：保存账号名称、定位、语气和目标读者，关闭再打开仍能恢复。
+- **本周计划**：生成确定性候选，按周查看，支持单选、批量选择、跨周和任意日期时间改期。
+- **内容包**：从已锁定计划生成 3 个本地 Scripted 内容包，编辑并保留版本，单篇或批量批准后导出。
+- **互动回复**：手动粘贴评论或私信，可关联已有内容包，生成可编辑的 Scripted 回复建议。
+- **本地恢复**：计划、内容包、互动记录和状态保存在本机 SQLite 与受控文件目录中。
 
-    classDef done fill:#fff0f2,stroke:#ff2442,color:#111,stroke-width:2px;
-    classDef active fill:#ff2442,stroke:#ff2442,color:#fff,stroke-width:2px;
-    classDef next fill:#fff,stroke:#ff2442,color:#ff2442,stroke-width:3px;
-    classDef future fill:#f6f6f6,stroke:#b8b8b8,color:#666,stroke-dasharray:5 5;
+内容包固定包含 6 项：封面、标题、正文、标签、建议发布时间、素材说明。**不包含置顶评论。**
+互动建议不是模型生成；软件不会读取平台收件箱，也不会替用户发送评论或私信。
 
-    class M0,M1,M2 done;
-    class M3 done;
-    class NEXT next;
-    class FUTURE future;
-```
+## 还不能做什么
 
-| 里程碑 | Issue 范围 | 交付主题                               | 状态               |
-| ------ | ---------: | -------------------------------------- | :----------------- |
-| M0     |    001–005 | 单仓库、领域规则、硬约束、Windows CI   | **已完成**         |
-| M1     |    006–011 | Electron、SQLite、队列、存储、本地 API | **已完成**         |
-| M2     |    012–021 | 模型接口、搜索、书库与研究             | **已完成 · 10/10** |
-| M3     |    022–030 | 选题、实验、文案与质量门禁             | **缩减范围已收口** |
-| M4–M6  |       后续 | 视觉、审批、导出、运营与发布           | **未开始**         |
+- 不能自动登录、发布、评论、私信或处理验证码与平台风控。
+- V2 尚未接入真实模型、搜索、图片生成、OCR 或真实业务 API。
+- 书库和数据复盘还没有完成 V2 业务迁移；V2-R06 将处理数据复盘。
+- R07 真实 adapter、V2-D-FINAL 最终视觉统一和 R08 默认入口切换尚未开始。
+- 目前没有正式安装器、自动更新或面向生产环境的发布版本。
 
-### V2 生产迁移进度
+## 当前页面
 
-| 阶段 | 用户结果                                        | 状态       |
-| ---: | ----------------------------------------------- | :--------- |
-|  R01 | 已批准原型进入 Electron 本地 mock 切片          | **已验收** |
-|  R02 | V2 workspace 持久化 facade 与重启恢复           | **已验收** |
-|  R03 | 账号人设与支持批量操作的本周计划                | **已验收** |
-|  R04 | 内容包、批量批准与受控本地导出                  | **已验收** |
-|  R05 | 评论/私信本地录入、内容包关联与 Scripted 回复流 | **已验收** |
-|  R06 | 后续增量                                        | **未开始** |
+| 页面     | 当前状态                                                  |
+| -------- | --------------------------------------------------------- |
+| 总览     | 展示本地计划、待处理内容和互动摘要                        |
+| 本周计划 | 已接通人设、批量选择、确认、锁定和自由日期时间            |
+| 内容     | 已接通三包生成、编辑、版本、批准和本地导出                |
+| 互动     | 已接通评论/私信粘贴、内容关联、建议确认和手动发送事实记录 |
+| 书库     | 页面已保留，核心业务尚未迁移到 V2                         |
+| 数据复盘 | 页面已保留，计划在 V2-R06 接通                            |
+| 设置     | 当前承载本地 workspace 与账号人设；更多设置仍在后续阶段   |
 
-R05 仍保持本地优先与人工最终确认：互动只能由用户主动粘贴，关联 ID 必须属于当前 workspace；
-系统不读取平台收件箱、不调用真实模型，也不会自动发送评论或私信。详见
-[R05 实现合同](./docs/product/v2-r05-interaction-contract.md)与
-[R05 验收证据](./docs/evidence/v2-r05-interaction-replies-evidence.md)。
+## V2 开发进度
 
-### 最近完成
+| 阶段       | 用户结果                                             | 状态       |
+| ---------- | ---------------------------------------------------- | ---------- |
+| V2-R01     | Electron 七页产品壳与固定 Mock 流程                  | 已验收     |
+| V2-R02     | 本地 workspace 持久化与重启恢复                      | 已验收     |
+| V2-R03     | 账号人设、周计划、批量操作与自由日期时间             | 已验收     |
+| V2-R04     | 三个内容包、版本编辑、批量批准与本地导出             | 已验收     |
+| V2-R05     | 评论/私信导入、内容关联与 Scripted 回复建议          | 已验收     |
+| **V2-R06** | **数据导入、复盘与下一轮策略（具体范围需单独授权）** | **下一步** |
+| V2-R07     | 真实 adapter                                         | 未开始     |
+| V2-D-FINAL | 参考成熟商业产品，在 Figma 中统一七页视觉与交互      | 未开始     |
+| V2-R08     | V2 默认入口与旧产品归档                              | 未开始     |
 
-| Issue | 能力                                                        |       状态       |
-| ----: | ----------------------------------------------------------- | :--------------: |
-|   012 | 供应商无关的文本、结构化、视觉与图片模型接口                |      已完成      |
-|   013 | 用户显式预览、预算确认、串行无重试的 Provider 能力探测      |      已完成      |
-|   014 | 模型执行幂等、本地结果缓存、成本账本、预算预留与恢复语义    |      已完成      |
-|   015 | 统一 `SearchProvider`、候选归一化、持久限速与 SearchRun     |      已完成      |
-|   016 | 候选绑定、SSRF/DNS/robots/限速、HTML 净化与离线快照         |      已完成      |
-|   017 | Chrome / Edge MV3 公开页面样本收藏与本地只读查看            |    **已完成**    |
-|   018 | 三级书目、分层发现、保守实体消歧与可逆人工决策              |    **已完成**    |
-|   019 | 版本化来源、原子事实、精确证据、事实策略与冲突处理          |    **已完成**    |
-|   020 | 版本化研究档案、确定性覆盖度、精确失效与显式增量重建        |    **已完成**    |
-|   021 | 六态阅读真实性、R2 逐条确认、表达/评分权限与剧透政策        |    **已完成**    |
-|   022 | 五类 Topic Pool、可解释排序、状态控制与 First-30 配额       |    **已完成**    |
-|   023 | 可检验单变量实验、跨作品复现、确定性分配与版本状态          |    **已完成**    |
-|   024 | 五类结构化 Brief、证据映射、字段锁定、就绪门与受控生成      |    **已完成**    |
-|   025 | 五类版本化文案、实际剧透警告、局部重写、结构门与工作台      |    **已完成**    |
-|   026 | 原子 Statement、事实映射、证据回溯、人工复核与质量汇总      |    **已完成**    |
-|   027 | 阅读真实性、公开评分来源、五态摘要与文案工作台检查          |    **已完成**    |
-|   028 | 确定性剧透声明、警告 surface、窄候选定位与五态摘要          |    **已完成**    |
-|  029A | exact duplicate、有限 overlap、标题/正文 lineage 与两类摘要 |  **子集已完成**  |
-|   030 | 七项 saved exact-current 只读聚合、人工建议与零写副作用     | **极简版已完成** |
-
-> [!NOTE]
-> 原 Issue 029 仅部分完成，029B 保持 deferred。Minimal Issue 030 不补做语义内部一致性，也不
-> 推进 Draft/审批状态。下一步固定为另行授权的受控本地内容试运行，不自动进入 029B 或 M4。
-> 当前额外完成的是不新增业务表、trigger、package 或质量类型的最小垂直切片验证，不计作
-> Issue 027 业务范围。普通测试与容量测试现使用静态零重叠集合；长任务会持久记录 stdout/stderr、结构化结果、
-> 起止时间与真实 exit code，该治理收口同样不改变产品能力。
-
-## 能力边界
-
-| 已经具备                                                                    | 尚未接通                                                  |
-| --------------------------------------------------------------------------- | --------------------------------------------------------- |
-| 安全的 Electron + React 中文桌面壳                                          | 内容工作流中的真实 Provider wiring                        |
-| SQLite 连续迁移、备份、回滚、外键、STRICT 表与 WAL                          | 视觉内容生产与正式审批工作流                              |
-| 支持暂停、取消、租约和重启恢复的持久化任务队列                              | M3 的质量编排、人工审批与导出                             |
-| 受控 ProjectDataRoot、本地文件仓库、中文/空格/长路径                        | 正式审批、排期、发布包与复盘                              |
-| 本机设置、凭据引用、脱敏诊断与默认关闭的 `127.0.0.1` 本地 API               | 面向最终用户的安装器、自动更新与正式发布版本              |
-| Provider-neutral 接口、显式能力探测、统一 usage、有限重试与 Scripted Mock   | 小红书自动登录、发布、评论、私信、验证码或风控处理        |
-| 模型执行幂等、本地结果缓存、singleflight、成本账本与预算控制                | 任何未经用户显式授权的真实模型、搜索、图片或付费 API 调用 |
-| 五类 SearchProvider、URL/domain 归一化、SearchRun、持久限速和被动本地输入   | Search API 生产 codec、浏览器插件业务                     |
-| 单候选受控 Fetch、DNS/socket 固定、robots、净化 HTML 与文本内容寻址快照     | 自动抓取、站点遍历、Source/Claim 或把抓取结果当作证据     |
-| Work / Expression / Edition 三级书目、分层 Coverage 与可逆实体决策          | 正式审批、排期与发布                                      |
-| Source revision、AtomicClaim、精确 EvidenceLocator、FactPolicy 与冲突审计   | 029B 语义一致性与正式质量审批                             |
-| 版本化 Dossier、共识/争议/缺口、整数 coverage、readiness 与精确增量重建     | 封面、图片或自动质量结论                                  |
-| 六态阅读真实性、R2 逐条观点、三类评分隔离、剧透策略与书库权限矩阵           | 自动发布、运营数据回收或策略复盘                          |
-| 五类 Topic Pool、确定性资格/排序/去重、状态控制与 10/8/6/3/3 配额计划       | 图片或质量流程                                            |
-| 单变量 Experiment、跨三本 Work 复现、热度分层、确定性 assignment 与版本历史 | 真实指标回收、效果/显著性/winner 与实验执行               |
-| 五类 Content Brief、Evidence 映射、真实性/评分/剧透约束、字段锁与就绪门     | 图片、事实检查、审批或发布                                |
-| 五类版本化 Copy 与七项 saved exact-current 极简质量聚合                     | 029B、图片、正式审批、导出与发布                          |
-| FACT_MAPPING Statement、类型化 Claim 映射、证据链、精确失效与人工复核       | 整体质量通过、审批、导出或发布                            |
-| 阅读亲历与公开评分的五态检查、精确定位、幂等摘要与现有工作台区块            | 自动修文、评分预测公开、质量总分或流程推进                |
-| 剧透声明/警告确定性子集、FULL 放行、窄候选定位与精确 stale                  | 全文剧情理解、自动补警告、质量总分或流程推进              |
-| 完全合成、手工确认、可重开的最小本地内容闭环                                | 真实 Provider、真实素材、自动编排或真实生产可用性         |
-| V2 评论/私信主动粘贴、Scripted 建议、精确版本状态与墓碑删除                 | 平台收件箱同步、自动评论、自动私信或联系人同步            |
+当前视觉可以用于功能验证，但仍有明显设计债务。根据
+[最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)，R04—R07 优先完成本地功能闭环；
+R07 完成后、R08 之前再集中进入 Figma 设计与用户验收，不在每个功能阶段反复改版。
 
 ## 快速开始
 
-### 1. 准备环境
+### 环境
 
 - Windows 10 或 Windows 11
 - Node.js 24（最低支持 `22.16.0`）
 - npm 11
 - PowerShell
 
-### 2. 克隆并安装
+### 安装
 
 ```powershell
 git clone https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool.git
@@ -200,334 +83,81 @@ Set-Location '.\Rednote-Automated-Operation-Tool'
 npm ci
 ```
 
-### 3. 验证并启动
+### 启动 V2
 
 ```powershell
-# 格式、lint、类型、普通测试、隔离容量测试与构建
-npm run check
-
-# 启动本地桌面开发版本
-npm run desktop:dev
+npm run desktop:dev -- --v2-shell
 ```
 
-首次启动后可在设置页选择本地数据目录。模型配置和密钥均可留空；应用不会因为安装、启动、
-迁移、保存设置、定时器或队列而自动探测或调用模型服务。
+不带 `--v2-shell` 的 `npm run desktop:dev` 会启动保留的旧产品界面，仅用于兼容和回退。
 
-## 架构概览
+### 本地验证
+
+```powershell
+npm run check
+```
+
+`check` 会依次运行格式、lint、类型检查、普通测试、隔离容量测试和构建。完整 Windows/Electron
+发布门禁由 [GitHub Actions](https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml)
+执行。
+
+## 数据与安全边界
+
+- 数据默认保存在本机；云数据库、云存储和远程队列都不是运行前提。
+- renderer 不能直接访问 Node、SQLite、文件系统、凭据或网络；这些能力由 Electron main 管理。
+- V2 继续只使用两条受控 workspace IPC；用户正文不写进日志、错误消息或 Git。
+- 真实密钥不会进入 SQLite、日志、诊断、fixture、截图或导出文件。
+- 未经明确授权，应用不会探测或调用真实模型、搜索、图片或业务 API，也不会产生服务费用。
+- `aiDisclosure` 默认并固定为 `false`，不参与门禁、评分、审批或排期。
+- 版权风险不进入字段、门禁、评分、审批、优先级、排期或导出决策。
+- 不使用开卷数据、盗版电子书或磨铁内部经营、采买和历史项目数据。
+
+## 架构简图
 
 ```mermaid
 flowchart LR
-    UI["React renderer"] --> MAIN["Electron main / IPC"]
-    MAIN --> DB["SQLite"]
-    MAIN --> FS["ProjectDataRoot"]
-    MAIN --> QUEUE["持久化任务队列"]
-    MAIN --> SETTINGS["设置与凭据引用"]
-    MAIN --> API["本地 API"]
-    MAIN --> MODEL["模型执行内核"]
-    MAIN --> SEARCH["SearchProvider<br/>只发现 LEAD_ONLY 候选"]
-    MAIN --> FETCH["Controlled Fetch<br/>单候选、未核验、非证据"]
-    MAIN --> CATALOG["Bibliographic Catalog<br/>Work / Expression / Edition"]
-    MAIN --> EVIDENCE["Research Evidence<br/>Source / Claim / Conflict"]
-    MAIN --> DOSSIER["Research Dossier<br/>Version / Coverage / Gap"]
-    MAIN --> AUTH["Reading Authenticity<br/>State / Assertion / Permission"]
-    MAIN --> TOPICS["Topic Pool<br/>Eligibility / Ranking / First-30"]
-    MAIN --> EXPERIMENTS["Experiment<br/>Design / Assignment / Version"]
-    MAIN --> BRIEFS["Content Brief<br/>Evidence / Lock / Readiness"]
-    MAIN --> COPY["Versioned Copy<br/>Draft / Rewrite / Structure"]
-    MAIN --> QUALITY["Fact Mapping<br/>Statement / Claim / Evidence trace"]
-    MODEL --> PROBE["用户显式能力探测"]
-    PROBE --> PROVIDERS["Provider 接口"]
-    API -.-> CLIPPER["浏览器插件"]
-    QUEUE -.-> PROVIDERS
-    SEARCH -.-> MODEL
-    SEARCH --> FETCH
-    SEARCH --> CATALOG
-    FETCH --> CATALOG
-    CLIPPER --> CATALOG
-    FETCH -.-> EVIDENCE
-    CATALOG --> EVIDENCE
-    EVIDENCE --> DOSSIER
-    CATALOG --> AUTH
-    DOSSIER --> AUTH
-    CATALOG --> TOPICS
-    EVIDENCE --> TOPICS
-    DOSSIER --> TOPICS
-    AUTH --> TOPICS
-    TOPICS --> EXPERIMENTS
-    TOPICS --> BRIEFS
-    EXPERIMENTS --> BRIEFS
-    DOSSIER --> BRIEFS
-    EVIDENCE --> BRIEFS
-    AUTH --> BRIEFS
-    BRIEFS --> COPY
-    MODEL -.-> COPY
-    COPY --> QUALITY
-    EVIDENCE --> QUALITY
-    MODEL -.-> QUALITY
+    UI["V2 React 界面"] --> IPC["2 条受控 workspace IPC"]
+    IPC --> APP["Electron main / V2 application"]
+    APP --> DB["本地 SQLite"]
+    APP --> FILES["受控本地文件"]
+    APP -. 后续授权 .-> ADAPTERS["模型 / 数据 / 平台 adapter"]
 ```
 
-关键边界：
+主要代码位置：
 
-- renderer 不直接访问 Node、SQLite、文件系统、凭据、网络或 Provider。
-- preload 只公开按字段精确校验的有限 IPC 方法。
-- Electron main 负责本地资源、安全策略、凭据和生命周期。
-- 本地 API 默认关闭，只允许显式绑定 `127.0.0.1`，不扫描端口、不暴露到 LAN 或公网。
-- Provider 探测必须由用户在设置页显式预览并确认；无自动 fallback、重试或后台触发。
-- 本地缓存命中不会访问凭据、预留预算、写成本账本或发出外部请求。
-- 搜索结果只是不可信候选；Fetch 必须绑定一个已持久化候选并显式执行，且不会自动成为
-  Source、事实或证据。Source 接纳和事实处理必须由用户显式预览、确认。
-- 书目发现只消费已持久化候选 ID，外部请求恒为 0；Observation 固定为
-  `UNVERIFIED / NOT_A_FACT`。同类型强标识符和兼容上下文才允许自动关联，其余进入人工复核。
-- publication relationship 只是待核验业务关系，不是法律或版权结论，也不参与门禁、评分、
-  审批、优先级、排期或导出。
-- 一条官方一手证据或两个已确认独立的二级证据才可验证关键事实；未解决的实质冲突固定为
-  `FACT_BLOCKED`。中文摘要只帮助阅读，不能替代绑定不可变 Source revision 的原文摘录。
-- Dossier 只消费已验证事实并保留每个历史版本；coverage/readiness 由本地整数规则计算。
-  Source、Conflict 或书目实体变化只标记相关档案，用户预览并确认后才执行本地重建。
-- 阅读状态只由用户显式预览/确认；购买、持有、Clip、搜索、Dossier 或模型不能推断已读。
-  R1/R2/R3/S1/S2 与研究就绪度正交，内部预测分不会进入 renderer 或公开内容 DTO。
-- Topic Pool 只消费 current Catalog、Dossier、FactPolicy 与 Expression Permission；资格和五项
-  排序均为版本化整数规则。First-30 不跨类补位，pool 变化只标记已确认计划 stale，不自动重排。
-- Experiment 只保存严格单变量设计与确定性 assignment，不录入真实指标，也不计算效果或 winner。
-- Content Brief 只保存结构、Evidence 身份、真实性/评分/剧透约束和字段 provenance/lock；
-  incomplete、blocked 或 stale 不能进入 Draft 生成，structured generation 只经受控模型内核。
-- Copy 只从 current ready Brief 建立版本化标题、正文 block、标签、评论与实际剧透警告；完整生成
-  和局部重写都受单请求、lineage allowlist、scope preservation 与字段锁约束。结构有效只进入
-  `READY_FOR_QUALITY_PIPELINE`，不等于质量、审批、导出或发布通过。
+- `apps/desktop`：Electron 主进程、安全边界与打包。
+- `apps/web-ui`：V2 与旧版 React 界面。
+- `packages/v2`：V2 workspace、周计划、内容包和互动流程。
+- `packages/db`、`packages/storage`：SQLite 与本地文件能力。
+- `docs`：产品合同、ADR、历史验收证据和任务指令。
 
-## 仓库结构
+## 旧路线说明
 
-| 路径                    | 职责                                                     |
-| ----------------------- | -------------------------------------------------------- |
-| `apps/desktop`          | Electron main、preload、安全策略、运行时与 smoke         |
-| `apps/web-ui`           | React 桌面界面、设置、能力探测与任务中心                 |
-| `apps/clipper`          | Chrome / Edge MV3 插件、显式采集、配对和本地保存         |
-| `packages/core`         | 领域枚举、规则、状态机与不可变约束                       |
-| `packages/db`           | SQLite 连接、迁移和本地仓储                              |
-| `packages/workflows`    | 任务队列、恢复、worker、模型执行与预算编排               |
-| `packages/storage`      | ProjectDataRoot、本地文件、结果缓存和诊断存储            |
-| `packages/settings`     | 非秘密设置、凭据引用与诊断合同                           |
-| `packages/local-api`    | loopback HTTP、配对、认证、CORS 与限流                   |
-| `packages/providers`    | 模型接口、能力、usage、错误、transport、codec 与 Mock    |
-| `packages/search`       | SearchProvider 合同、五类适配器、URL/域名、计划与执行    |
-| `packages/fetch`        | 单候选抓取合同、SSRF/DNS、robots、传输、净化与抽取       |
-| `packages/catalog`      | 书目 Observation、三级实体、规范化、消歧与发现计划       |
-| `packages/evidence`     | Source/Claim/Evidence 合同、FactPolicy、冲突与确认令牌   |
-| `packages/dossier`      | 版本化 Dossier、CoveragePolicy、Gap、依赖与构建合同      |
-| `packages/authenticity` | 阅读状态、记忆可信度、表达/评分权限与剧透政策            |
-| `packages/topics`       | 五类候选、资格、整数排序、语义去重、状态与配额求解       |
-| `packages/experiments`  | 单变量合同、结构复现、热度分层、确定性 assignment 与状态 |
-| `packages/briefs`       | 五类 Brief、证据映射、真实性约束、字段锁、readiness      |
-| `packages/copy`         | 五类版本化文案、lineage、结构验证、字段锁与局部重写      |
-| `packages/quality`      | 确定性质量检查与只读 Quality Readiness 聚合策略          |
-| `packages/shared`       | renderer / preload / main 共享 DTO                       |
-| `docs`                  | ADR、稳定合同、验收映射和安全证据                        |
-| `tests`                 | 领域、架构、SQLite、Electron、安全与回归测试             |
+仓库早期已经完成 M0—M2 基础设施与研究能力；旧 M3 按 **Issue 022—028、Issue 029A 和
+Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferred，M4 未开始。
+这些代码和文档仍作为可复用基础设施与审计记录保留，但不再作为 V2 的主用户流程。
 
-## 质量与安全
+历史 Issue 的实现细节、状态机、验收数字和合同不再逐条堆在首页，需要时请从文档中心查阅。
 
-<p>
-  <img alt="Automated tests" src="https://img.shields.io/badge/自动化测试-1000%2B-2ea44f" />
-  <img alt="External smoke connections" src="https://img.shields.io/badge/Smoke%20外部连接-0-2ea44f" />
-  <img alt="Dependency vulnerabilities" src="https://img.shields.io/badge/依赖漏洞-0-2ea44f" />
-  <img alt="AI disclosure" src="https://img.shields.io/badge/aiDisclosure-false-111111" />
-</p>
-
-日常门禁：
-
-```powershell
-npm run format-check
-npm run lint
-npm run typecheck
-npm run test
-npm run test:capacity
-npm run build
-```
-
-<details>
-<summary><strong>Windows / Electron 发布级门禁</strong></summary>
-
-```powershell
-npm run test
-npm run test:capacity
-npm run test:clipper-real
-npm run test:electron-smoke
-npm run package:clipper
-npm run package:desktop
-npm run audit:dependencies
-npm run test:packaged-smoke
-```
-
-</details>
-
-领域 `test:*` 脚本只用于精确定位，不进入普通/容量固定链。所有测试只使用合成数据、运行时随机
-token、临时 SQLite 和本机 loopback；不读取真实密钥，
-不调用真实模型、搜索、图片或业务 API，也不产生真实服务费用。
-
-## 不可变产品边界
-
-- 最终平台发布动作始终由用户手动完成。
-- 不包含小红书自动登录、发布、评论、私信、验证码或风控处理。
-- 不使用小红书非公开 API，不绕过登录、验证码、付费墙或访问控制。
-- 不使用开卷数据，不读取、上传、解析或索引盗版电子书。
-- 不使用磨铁内部经营、采买或历史项目数据。
-- 不把云数据库、云对象存储、远程队列或服务器作为必需运行依赖。
-- `aiDisclosure` 固定为 `false`，且不参与任何门禁、评分、审批或排期。
-- 版权风险不进入字段、门禁、评分、审批、优先级、排期或导出。
-- 密钥不得进入 Git、日志、SQLite、WAL/SHM、诊断、fixture、截图或错误消息。
-
-## 文档索引
-
-<details open>
-<summary><strong>需求与路线</strong></summary>
+## 文档入口
 
 - [文档中心](./docs/README.md)
-- [产品 PRD](./docs/product/xiaohongshu-mystery-account-prd-v1.md)
+- [产品需求](./docs/product/xiaohongshu-mystery-account-prd-v1.md)
 - [开发路线图](./docs/product/xiaohongshu-development-roadmap-v1.md)
-- [Codex 总开发指令](./docs/governance/codex-master-development-instruction-v1.md)
-- [历史 Issue 执行指令](./docs/instructions/README.md)
-
-</details>
-
-<details>
-<summary><strong>核心 ADR</strong></summary>
-
-- [M0 基础架构](./docs/adr/0001-m0-foundation.md)
-- [SQLite 与迁移](./docs/adr/0002-sqlite-schema-and-migrations.md)
-- [持久化任务队列](./docs/adr/0003-persistent-local-job-queue.md)
-- [Electron + React 桌面壳](./docs/adr/0004-electron-react-desktop-shell.md)
-- [本地文件仓库](./docs/adr/0005-local-file-repository.md)
-- [设置与本地凭据引用](./docs/adr/0006-settings-and-local-credential-reference.md)
-- [本地 API 与插件认证](./docs/adr/0007-local-loopback-api-and-plugin-authentication.md)
-- [供应商无关模型接口](./docs/adr/0008-provider-neutral-model-interfaces.md)
-- [显式 Provider 能力探测](./docs/adr/0009-provider-capability-probing.md)
-- [模型执行缓存与成本账本](./docs/adr/0010-model-execution-cache-and-cost-ledger.md)
-- [书目三级模型与可逆实体解析](./docs/adr/0014-bibliographic-model-and-entity-resolution.md)
-- [来源版本、原子事实与冲突守卫](./docs/adr/0015-source-revisions-atomic-facts-and-conflict-guard.md)
-- [版本化研究档案与确定性就绪门](./docs/adr/0016-versioned-research-dossiers.md)
-- [阅读真实性与表达权限分离](./docs/adr/0017-reading-authenticity-and-expression-permissions.md)
-- [Topic Pool 与 First-30 配额](./docs/adr/0018-topic-pool-first-30-quota.md)
-
-</details>
-
-<details>
-<summary><strong>稳定合同与当前验收证据</strong></summary>
-
-- [Local API v1](./docs/contracts/local-api-v1.md)
-- [Provider v1](./docs/contracts/provider-v1.md)
-- [Provider Capabilities v1](./docs/contracts/provider-capabilities-v1.md)
-- [Model Execution v1](./docs/contracts/model-execution-v1.md)
-- [Model Accounting v1](./docs/contracts/model-accounting-v1.md)
-- [Issue 012 验收映射](./docs/m2-issue012-acceptance-map.md)
-- [Issue 013 验收映射](./docs/m2-issue013-acceptance-map.md)
-- [Issue 014 验收映射](./docs/m2-issue014-acceptance-map.md)
-- [Issue 014 外发矩阵](./docs/m2-issue014-egress-matrix.md)
-- [SearchProvider V1 合同](./docs/contracts/search-provider-v1.md)
-- [Search Fixture V1 合同](./docs/contracts/search-fixture-v1.md)
-- [ADR 0011：SearchProvider 与发现边界](./docs/adr/0011-search-provider-and-discovery-boundary.md)
-- [Issue 015 实施计划](./docs/m2-issue015-implementation-plan.md)
-- [Issue 015 验收映射](./docs/m2-issue015-acceptance-map.md)
-- [Issue 015 外发矩阵](./docs/m2-issue015-egress-matrix.md)
-- [ADR 0012：受控公开页面抓取](./docs/adr/0012-controlled-public-page-fetch.md)
-- [Controlled Fetch V1 合同](./docs/contracts/controlled-fetch-v1.md)
-- [HTML Sanitization V1 合同](./docs/contracts/html-sanitization-v1.md)
-- [Issue 016 实施计划](./docs/m2-issue016-implementation-plan.md)
-- [Issue 016 验收映射](./docs/m2-issue016-acceptance-map.md)
-- [Issue 016 外发矩阵](./docs/m2-issue016-egress-matrix.md)
-- [ADR 0013：浏览器收藏与本地导入](./docs/adr/0013-browser-clipper-and-local-ingest.md)
-- [Browser Clip V1 合同](./docs/contracts/browser-clip-v1.md)
-- [Browser Clip Local API V1 合同](./docs/contracts/browser-clip-local-api-v1.md)
-- [Issue 017 实施计划](./docs/m2-issue017-implementation-plan.md)
-- [Issue 017 验收映射](./docs/m2-issue017-acceptance-map.md)
-- [Issue 017 CDP 真实浏览器恢复验收](./docs/m2-issue017-recovery-acceptance.md)
-- [Chrome / Edge 脱敏真实 smoke 证据](./docs/evidence/m2-issue017-real-browser-smoke.json)
-- [Issue 017 外发矩阵](./docs/m2-issue017-egress-matrix.md)
-- [Chrome / Edge 侧载与配对](./docs/m2-issue017-clipper-installation.md)
-- [Bibliography Discovery V1 合同](./docs/contracts/bibliography-discovery-v1.md)
-- [Entity Resolution V1 合同](./docs/contracts/entity-resolution-v1.md)
-- [Issue 018 实施计划](./docs/m2-issue018-implementation-plan.md)
-- [Issue 018 验收映射](./docs/m2-issue018-acceptance-map.md)
-- [Source Evidence V1 合同](./docs/contracts/source-evidence-v1.md)
-- [Atomic Claim V1 合同](./docs/contracts/atomic-claim-v1.md)
-- [Fact Policy V1 合同](./docs/contracts/fact-policy-v1.md)
-- [ADR 0015：来源版本、原子事实与冲突守卫](./docs/adr/0015-source-revisions-atomic-facts-and-conflict-guard.md)
-- [Issue 019 实施计划](./docs/m2-issue019-implementation-plan.md)
-- [Issue 019 验收映射](./docs/m2-issue019-acceptance-map.md)
-- [Research Dossier V1 合同](./docs/contracts/research-dossier-v1.md)
-- [Dossier Coverage 与 Readiness V1 合同](./docs/contracts/dossier-coverage-readiness-v1.md)
-- [ADR 0016：版本化研究档案与确定性就绪门](./docs/adr/0016-versioned-research-dossiers.md)
-- [Issue 020 实施计划](./docs/m2-issue020-implementation-plan.md)
-- [Issue 020 验收映射](./docs/m2-issue020-acceptance-map.md)
-- [Reading Authenticity Policy V1](./docs/contracts/reading-authenticity-policy-v1.md)
-- [Expression Permission V1](./docs/contracts/expression-permission-v1.md)
-- [Spoiler Policy V1](./docs/contracts/spoiler-policy-v1.md)
-- [Issue 021 实施计划](./docs/m2-issue021-implementation-plan.md)
-- [Issue 021 验收映射](./docs/m2-issue021-acceptance-map.md)
-- [M2 收口说明](./docs/m2-closeout.md)
-- [Topic Pool V1 合同](./docs/contracts/topic-pool-v1.md)
-- [Topic Ranking 与 First-30 Quota V1 合同](./docs/contracts/topic-ranking-quota-v1.md)
-- [Issue 022 实施计划](./docs/m3-issue022-implementation-plan.md)
-- [Issue 022 验收映射](./docs/m3-issue022-acceptance-map.md)
-- [Issue 022 本地验收证据](./docs/evidence/m3-issue022-local-evidence.md)
-- [Experiment Design V1 合同](./docs/contracts/experiment-design-v1.md)
-- [Experiment Assignment V1 合同](./docs/contracts/experiment-assignment-v1.md)
-- [Experiment Metrics V1 合同](./docs/contracts/experiment-metrics-v1.md)
-- [ADR 0019：版本化单变量实验与确定性分配](./docs/adr/0019-versioned-single-variable-experiments.md)
-- [Issue 023 实施计划](./docs/m3-issue023-implementation-plan.md)
-- [Issue 023 验收映射](./docs/m3-issue023-acceptance-map.md)
-- [Issue 023 本地验收证据](./docs/evidence/m3-issue023-local-evidence.md)
-- [Content Brief V1 合同](./docs/contracts/content-brief-v1.md)
-- [Content Brief Readiness V1 合同](./docs/contracts/content-brief-readiness-v1.md)
-- [Content Brief Generation V1 合同](./docs/contracts/content-brief-generation-v1.md)
-- [ADR 0020：结构化 Content Brief、字段锁定与受控生成](./docs/adr/0020-structured-content-brief-generator.md)
-- [Issue 024 实施计划](./docs/m3-issue024-implementation-plan.md)
-- [Issue 024 验收映射](./docs/m3-issue024-acceptance-map.md)
-- [Issue 024 本地验收证据](./docs/evidence/m3-issue024-local-evidence.md)
-- [Draft Structure V1 合同](./docs/contracts/draft-structure-v1.md)
-- [Copy Generation V1 合同](./docs/contracts/copy-generation-v1.md)
-- [Copy Rewrite V1 合同](./docs/contracts/copy-rewrite-v1.md)
-- [ADR 0021：版本化文案、结构门与受控局部重写](./docs/adr/0021-versioned-copy-generation.md)
-- [Issue 025 实施计划](./docs/m3-issue025-implementation-plan.md)
-- [Issue 025 验收映射](./docs/m3-issue025-acceptance-map.md)
-- [Issue 025 本地验收证据](./docs/evidence/m3-issue025-local-evidence.md)
-- [Draft Statement V1 合同](./docs/contracts/draft-statement-v1.md)
-- [Fact Mapping V1 合同](./docs/contracts/fact-mapping-v1.md)
-- [FACT_MAPPING Quality Check V1 合同](./docs/contracts/fact-mapping-quality-check-v1.md)
-- [ADR 0022：事实声明映射、证据回溯与精确失效](./docs/adr/0022-factual-claim-mapping.md)
-- [Issue 026 实施计划](./docs/m3-issue026-implementation-plan.md)
-- [Issue 026 验收映射](./docs/m3-issue026-acceptance-map.md)
-- [Issue 026 本地验收证据](./docs/evidence/m3-issue026-local-evidence.md)
-- [Issue 026 外发矩阵](./docs/security/m3-issue026-egress-matrix.md)
-- [Reading Authenticity Quality Check V1 合同](./docs/contracts/reading-authenticity-quality-check-v1.md)
-- [ADR 0023：缩减范围的阅读真实性与评分检查](./docs/adr/0023-reading-authenticity-score-check.md)
-- [Issue 027 验收与证据](./docs/m3-issue027-acceptance-evidence.md)
-- [Issue 027 执行指令](./docs/instructions/m3/M3-Issue027-reading-authenticity-score-check-Codex-instruction.txt)
-- [Spoiler Quality Check V1 合同](./docs/contracts/spoiler-quality-check-v1.md)
-- [ADR 0024：确定性剧透声明与警告检查](./docs/adr/0024-spoiler-quality-check.md)
-- [Issue 028 验收与证据](./docs/m3-issue028-acceptance-evidence.md)
-- [Issue 028 V2 执行指令](./docs/instructions/m3/M3-Issue028-deterministic-spoiler-quality-subset-Codex-instruction-v2.txt)
-- [ADR 0025：Copy Integrity 确定性子集](./docs/adr/0025-copy-integrity-deterministic-subset.md)
-- [Issue 029A 执行指令](./docs/instructions/m3/M3-Issue029A-deterministic-copy-integrity-Codex-instruction.txt)
-- [ADR 0026：Minimal Quality Readiness Aggregator](./docs/adr/0026-quality-readiness-aggregator.md)
-- [Minimal Issue 030 执行指令](./docs/instructions/m3/M3-Issue030-minimal-quality-aggregator-Codex-instruction.txt)
-- [最小本地垂直切片验收证据](./docs/evidence/m3-minimal-local-vertical-slice-evidence.md)
-- [Issue 027 前验证可靠性盘点](./docs/reviews/m3-validation-reliability-plan.md)
-
-</details>
+- [V2 D01 设计基线](./docs/product/v2-d01-design-baseline.md)
+- [V2-R05 互动合同](./docs/product/v2-r05-interaction-contract.md)
+- [历史任务指令索引](./docs/instructions/README.md)
+- [贡献与代理规则](./AGENTS.md)
 
 ## 开发约定
 
-开始修改前请先阅读 [AGENTS.md](./AGENTS.md)。新增任务必须保持硬约束、迁移规则和既有门禁，
-并以真实代码、测试与命令证据更新文档；历史 ADR、验收映射与已发布 migration 不为追求整洁而改写。
-
-仓库根目录只保留贡献入口和构建工具要求的配置。产品基线、治理合同与历史 Issue 指令已经分别
-归入 `docs/product/`、`docs/governance/` 和 `docs/instructions/`，避免 GitHub 首页文件列表被
-历史执行材料淹没。
+修改前请完整阅读 [AGENTS.md](./AGENTS.md)。历史 ADR、已发布 migration 和验收证据属于审计记录，
+不因 README 精简而删除或改写。新功能必须在独立分支开发，通过对应测试与 Windows CI 后再合并。
 
 ---
 
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  M3 已按 Issue 022–028、029A 与 Minimal 030 缩减范围收口；V2-R01—R05 已验收，R06 与 M4 均未开始。
+  V2-R01—R05 已验收，下一步 V2-R06；最终发布和互动发送始终由用户手动完成。
 </p>
