@@ -1,7 +1,7 @@
 import type { WebPreferences } from 'electron';
 
 export function createSecureWebPreferences(
-  preloadPath: string,
+  preloadPath: string | undefined,
   production: boolean,
 ): WebPreferences {
   return {
@@ -10,7 +10,7 @@ export function createSecureWebPreferences(
     devTools: !production,
     nodeIntegration: false,
     nodeIntegrationInWorker: false,
-    preload: preloadPath,
+    ...(preloadPath === undefined ? {} : { preload: preloadPath }),
     sandbox: true,
     webSecurity: true,
     webviewTag: false,

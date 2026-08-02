@@ -8,6 +8,7 @@ describe('desktop renderer origin policy', () => {
     ['rednote://app/index.html', 'rednote://app/index.html', true],
     ['rednote://app/assets/app.js', 'rednote://app/index.html', true],
     ['rednote://app/index.html?smoke=1', 'rednote://app/index.html', true],
+    ['rednote://app/v2.html#/v2/overview', 'rednote://app/v2.html', true],
     ['rednote://evil/index.html', 'rednote://app/index.html', false],
     ['https://app/index.html', 'rednote://app/index.html', false],
     ['file:///C:/secret.txt', 'rednote://app/index.html', false],
@@ -51,5 +52,18 @@ describe('desktop renderer origin policy', () => {
   it('only permits development tools in an unpackaged build', () => {
     expect(createSecureWebPreferences('preload.cjs', false).devTools).toBe(true);
     expect(createSecureWebPreferences('preload.cjs', true).devTools).toBe(false);
+  });
+
+  it('keeps every security preference while omitting preload for the isolated V2 window', () => {
+    expect(createSecureWebPreferences(undefined, true)).toEqual({
+      allowRunningInsecureContent: false,
+      contextIsolation: true,
+      devTools: false,
+      nodeIntegration: false,
+      nodeIntegrationInWorker: false,
+      sandbox: true,
+      webSecurity: true,
+      webviewTag: false,
+    });
   });
 });

@@ -44,14 +44,37 @@ describe('Issue 006 architecture boundaries', () => {
   });
 
   it('uses a strict CSP without unsafe script or style escapes', () => {
-    const html = read('apps/web-ui/index.html');
-    expect(html).toContain("default-src 'self'");
-    expect(html).toContain("object-src 'none'");
-    expect(html).toContain("frame-src 'none'");
-    expect(html).toContain("base-uri 'none'");
-    expect(html).not.toContain("'unsafe-eval'");
-    expect(html).not.toContain("'unsafe-inline'");
-    expect(html).not.toMatch(/https?:\/\//u);
+    for (const html of [read('apps/web-ui/index.html'), read('apps/web-ui/v2.html')]) {
+      expect(html).toContain("default-src 'self'");
+      expect(html).toContain("object-src 'none'");
+      expect(html).toContain("frame-src 'none'");
+      expect(html).toContain("base-uri 'none'");
+      expect(html).not.toContain("'unsafe-eval'");
+      expect(html).not.toContain("'unsafe-inline'");
+      expect(html).not.toMatch(/https?:\/\//u);
+    }
+  });
+
+  it('keeps the V2 renderer isolated from legacy bridges, Node, Electron, database, and domains', () => {
+    const v2 = [
+      'app.tsx',
+      'components.tsx',
+      'main.tsx',
+      'mock-provider.ts',
+      'routes.ts',
+      'pages/content-page.tsx',
+      'pages/interaction-page.tsx',
+      'pages/library-page.tsx',
+      'pages/overview-page.tsx',
+      'pages/review-page.tsx',
+      'pages/settings-page.tsx',
+      'pages/weekly-plan-page.tsx',
+    ]
+      .map((path) => read(`apps/web-ui/src/v2/${path}`))
+      .join('\n');
+    expect(v2).not.toMatch(/from ['"](?:electron|node:)/u);
+    expect(v2).not.toMatch(/@mystery-operations|rednoteDesktop|ipcRenderer|\bfetch\s*\(/u);
+    expect(v2).not.toMatch(/XMLHttpRequest|WebSocket|EventSource|sendBeacon/u);
   });
 
   it('does not contain eval, Function construction, external opening, or webview markup', () => {
@@ -59,7 +82,9 @@ describe('Issue 006 architecture boundaries', () => {
       read('apps/desktop/src/main.ts'),
       read('apps/desktop/src/preload.ts'),
       read('apps/web-ui/src/app.tsx'),
+      read('apps/web-ui/src/v2/app.tsx'),
       read('apps/web-ui/index.html'),
+      read('apps/web-ui/v2.html'),
     ].join('\n');
     expect(production).not.toMatch(/\beval\s*\(/u);
     expect(production).not.toMatch(/\bnew\s+Function\b/u);
@@ -84,6 +109,14 @@ describe('Issue 006 architecture boundaries', () => {
     expect(packageScript).not.toMatch(
       /@electron-forge\/maker|electron-builder|electron-updater|publishConfig|osxSign|windowsSign|certificateFile|githubRelease|squirrel|wix|msi/iu,
     );
+  });
+
+  it('keeps legacy default and gates the isolated V2 shell on one exact argument', () => {
+    const main = read('apps/desktop/src/main.ts');
+    expect(main).toContain("process.argv.includes('--v2-shell')");
+    expect(main).toContain('const LEGACY_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`');
+    expect(main).toContain('const V2_RENDERER_URL = `${APP_PROTOCOL}://app/v2.html`');
+    expect(main).toContain('createSecureWebPreferences(undefined, app.isPackaged)');
   });
 
   it('flips every required Electron fuse explicitly', () => {

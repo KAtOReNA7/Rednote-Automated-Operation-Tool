@@ -8,6 +8,12 @@ export default defineConfig({
   build: {
     emptyOutDir: true,
     outDir: fileURLToPath(new URL('./.vite/renderer', import.meta.url)),
+    rollupOptions: {
+      input: {
+        legacy: fileURLToPath(new URL('./apps/web-ui/index.html', import.meta.url)),
+        v2: fileURLToPath(new URL('./apps/web-ui/v2.html', import.meta.url)),
+      },
+    },
     sourcemap: false,
   },
   plugins: [react()],

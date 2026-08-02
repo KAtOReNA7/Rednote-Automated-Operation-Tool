@@ -12,10 +12,14 @@ jobs:
     name: Windows required
     runs-on: windows-latest
     timeout-minutes: 30
+    env:
+      REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v6
+        with:
+          ref: ${{ env.REDNOTE_EXACT_HEAD_SHA }}
 
       - name: Set up Node.js
         uses: actions/setup-node@v6
@@ -70,6 +74,22 @@ jobs:
 
       - name: Audit dependencies
         run: npm run audit:dependencies
+
+      - name: Prepare exact-head V2 artifact name
+        if: github.event_name == 'pull_request'
+        shell: pwsh
+        run: |
+          $shortSha = $env:REDNOTE_EXACT_HEAD_SHA.Substring(0, 8)
+          "V2_ARTIFACT_NAME=rednote-v2-r01-windows-$shortSha" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Upload exact-head V2 Windows experience directory
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.V2_ARTIFACT_NAME }}
+          path: out/*-win32-x64/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Clean exact CI temporary directory
         if: always()

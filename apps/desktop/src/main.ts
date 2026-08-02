@@ -13,6 +13,7 @@ import { registerDesktopIpc } from './ipc.js';
 import { attachWebContentsSecurity, installSessionSecurity } from './security-policy.js';
 import {
   parseRendererSmokeTitle,
+  parseV2RendererSmokeTitle,
   resolveSmokeOutputPath,
   writeSmokeReport,
 } from './smoke-report.js';
@@ -21,9 +22,11 @@ import { createWindowStateStore } from './window-state.js';
 import { DesktopSettingsRuntime } from './settings-runtime.js';
 
 const APP_PROTOCOL = 'rednote';
-const LOCAL_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
+const LEGACY_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
+const V2_RENDERER_URL = `${APP_PROTOCOL}://app/v2.html`;
 const DEVELOPMENT_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d{1,5}(?:\/.*)?$/u;
 const isSmokeMode = process.argv.includes('--issue006-smoke');
+const isV2ShellMode = process.argv.includes('--v2-shell');
 const smokeOutputPath = resolveSmokeOutputPath(process.argv);
 const SMOKE_PROCESS_SAMPLE_PREFIX = '__REDNOTE_SMOKE_PROCESS_SAMPLE__:';
 const MAX_SMOKE_PROCESS_COUNT = 32;
@@ -117,6 +120,7 @@ const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
   '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
   '.svg': 'image/svg+xml',
 });
 let screenshotReader:
@@ -149,9 +153,10 @@ if (smokeWorkspacePath !== null) {
 
 function rendererUrl(): string {
   const candidate = process.env.DESKTOP_DEV_SERVER_URL;
-  return candidate !== undefined && DEVELOPMENT_URL_PATTERN.test(candidate)
-    ? candidate
-    : LOCAL_RENDERER_URL;
+  if (candidate !== undefined && DEVELOPMENT_URL_PATTERN.test(candidate)) {
+    return isV2ShellMode ? new URL('/v2.html', candidate).toString() : candidate;
+  }
+  return isV2ShellMode ? V2_RENDERER_URL : LEGACY_RENDERER_URL;
 }
 
 function registerLocalRendererProtocol(rendererRoot: string): void {
@@ -198,13 +203,92 @@ function registerLocalRendererProtocol(rendererRoot: string): void {
   });
 }
 
-async function startApplication(): Promise<void> {
-  await emitSmokeProcessSample('ready');
-  const expectedRendererUrl = rendererUrl();
-  const rendererRoot = join(app.getAppPath(), '.vite', 'renderer');
-  registerLocalRendererProtocol(rendererRoot);
+async function startV2Application(
+  expectedRendererUrl: string,
+  sessionSecurityAudit: ReturnType<typeof installSessionSecurity>,
+): Promise<void> {
+  let mainWindow: BrowserWindow | null = new BrowserWindow({
+    backgroundColor: '#fbfaf7',
+    height: 820,
+    minHeight: 640,
+    minWidth: 960,
+    show: false,
+    title: 'Rednote V2 · 模拟体验',
+    webPreferences: createSecureWebPreferences(undefined, app.isPackaged),
+    width: 1360,
+  });
+  attachWebContentsSecurity(mainWindow.webContents, expectedRendererUrl);
+  mainWindow.once('ready-to-show', () => {
+    if (!isSmokeMode) mainWindow?.show();
+  });
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 
-  const sessionSecurityAudit = installSessionSecurity(session.defaultSession, expectedRendererUrl);
+  if (isSmokeMode) {
+    if (smokeOutputPath === null) {
+      app.exit(2);
+      return;
+    }
+    const timeout = setTimeout(() => {
+      writeSmokeReport(smokeOutputPath, { error: 'V2_SMOKE_TIMEOUT', ok: false });
+      app.exit(3);
+    }, 20_000);
+    let reported = false;
+    mainWindow.on('page-title-updated', (event, title) => {
+      const renderer = parseV2RendererSmokeTitle(title);
+      if (renderer === null || reported) return;
+      reported = true;
+      event.preventDefault();
+      clearTimeout(timeout);
+      void (async () => {
+        const ok =
+          renderer.marker &&
+          renderer.mockMode &&
+          renderer.navigationCount === 7 &&
+          !renderer.preload &&
+          sessionSecurityAudit.externalRequestAttempts === 0;
+        await emitSmokeProcessSample('capability-validated');
+        writeSmokeReport(smokeOutputPath, {
+          main: true,
+          mode: 'v2',
+          ok,
+          packaged: app.isPackaged,
+          renderer,
+          runtime: {
+            ipcRegistered: false,
+            projectDataRootInitialized: false,
+            sqliteInitialized: false,
+          },
+          runtimeVersion: process.versions.electron ?? 'unknown',
+          security: {
+            contextIsolation: true,
+            externalRequestAttempts: sessionSecurityAudit.externalRequestAttempts,
+            navigationDenied: true,
+            networkDenied: true,
+            nodeIntegration: false,
+            preload: false,
+            sandbox: true,
+            webviewDenied: true,
+          },
+        });
+        await new Promise<void>((resolveDelay) => setTimeout(resolveDelay, 5_000));
+        await emitSmokeProcessSample('before-exit');
+        app.exit(ok ? 0 : 4);
+      })().catch(() => app.exit(5));
+    });
+  }
+
+  const targetUrl = new URL(expectedRendererUrl);
+  targetUrl.hash = '/v2/overview';
+  if (isSmokeMode) targetUrl.searchParams.set('smoke', '1');
+  await mainWindow.loadURL(targetUrl.toString());
+}
+
+async function startLegacyApplication(
+  expectedRendererUrl: string,
+  sessionSecurityAudit: ReturnType<typeof installSessionSecurity>,
+): Promise<void> {
   const foundationHealth = runFoundationHealthCheck();
   const settingsRuntime = new DesktopSettingsRuntime(app.getPath('userData'), safeStorage, dialog, {
     appVersion: app.getVersion(),
@@ -414,6 +498,18 @@ async function startApplication(): Promise<void> {
     targetUrl.searchParams.set('smoke', '1');
   }
   await mainWindow.loadURL(targetUrl.toString());
+}
+
+async function startApplication(): Promise<void> {
+  await emitSmokeProcessSample('ready');
+  const expectedRendererUrl = rendererUrl();
+  registerLocalRendererProtocol(join(app.getAppPath(), '.vite', 'renderer'));
+  const sessionSecurityAudit = installSessionSecurity(session.defaultSession, expectedRendererUrl);
+  if (isV2ShellMode) {
+    await startV2Application(expectedRendererUrl, sessionSecurityAudit);
+    return;
+  }
+  await startLegacyApplication(expectedRendererUrl, sessionSecurityAudit);
 }
 
 if (!app.requestSingleInstanceLock()) {

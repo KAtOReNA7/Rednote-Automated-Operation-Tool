@@ -7,8 +7,10 @@ import {
 } from '../packages/shared/src/index.js';
 import {
   parseRendererSmokeTitle,
+  parseV2RendererSmokeTitle,
   resolveSmokeOutputPath,
   SMOKE_TITLE_PREFIX,
+  V2_SMOKE_TITLE_PREFIX,
 } from '../apps/desktop/src/smoke-report.js';
 import { validateDesktopIpcRequest } from '../apps/desktop/src/ipc-policy.js';
 
@@ -111,6 +113,20 @@ describe('desktop process contracts', () => {
       }),
     );
     expect(parseRendererSmokeTitle(`${SMOKE_TITLE_PREFIX}${invalid}`)).toBeNull();
+  });
+
+  it('parses only the fixed V2 renderer smoke contract', () => {
+    const report = { marker: true, mockMode: true, navigationCount: 7, preload: false };
+    expect(
+      parseV2RendererSmokeTitle(
+        `${V2_SMOKE_TITLE_PREFIX}${encodeURIComponent(JSON.stringify(report))}`,
+      ),
+    ).toEqual(report);
+    expect(
+      parseV2RendererSmokeTitle(
+        `${V2_SMOKE_TITLE_PREFIX}${encodeURIComponent(JSON.stringify({ ...report, navigationCount: '7' }))}`,
+      ),
+    ).toBeNull();
   });
 
   it.each([

@@ -31,6 +31,52 @@ const electronDistDirectory = join(electronDirectory, 'dist');
 const electronVersion = '43.2.0';
 const electronArchiveName = `electron-v${electronVersion}-win32-x64.zip`;
 
+async function writeExperienceFiles(packageDirectory) {
+  const { stdout } = await execFileAsync('git', ['rev-parse', 'HEAD'], {
+    cwd: projectRoot,
+    windowsHide: true,
+  });
+  const commit = stdout.trim();
+  if (
+    !/^[a-f0-9]{40}$/u.test(commit) ||
+    (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
+      process.env.REDNOTE_EXACT_HEAD_SHA !== commit)
+  ) {
+    throw new Error('Experience checklist commit does not match the exact build HEAD.');
+  }
+  const command = (args) =>
+    `@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\nstart "" "%~dp0RednoteMysteryOperations.exe"${args}\r\n`;
+  await Promise.all([
+    writeFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), command(' --v2-shell'), 'utf8'),
+    writeFile(join(packageDirectory, '返回当前绿色版本.cmd'), command(''), 'utf8'),
+    writeFile(
+      join(packageDirectory, 'V2-R01-体验清单.txt'),
+      [
+        'Rednote V2-R01 用户体验清单',
+        `精确提交：${commit}`,
+        '',
+        '边界：确定性模拟数据；无数据库、IPC、模型、业务网络、真实导出或平台操作。',
+        '1. 启动 V2，确认无系统错误弹窗且顶部显示“模拟数据”。',
+        '2. 核对七项导航顺序与各页标题。',
+        '3. 总览切换“只看异常”、展开普通内容、打开重点复核。',
+        '4. 本周计划选择 3 条待审批，改期到周日 14:00，再批量确认。',
+        '5. 确认时间冲突项未被误选。',
+        '6. 内容页切换三包、修改一句正文、批量通过。',
+        '7. 确认六字段齐全且没有置顶评论。',
+        '8. 互动页切换评论/私信、编辑建议、确认后标记已在官方端手动发送。',
+        '9. 确认程序没有真正发送评论或私信。',
+        '10. 搜索一本书、采纳一条复盘建议、修改并保存账号人设。',
+        '11. 关闭 V2，用旧版启动器确认旧 UI 未被模拟会话改变。',
+        '12. 反馈：接受 / 阻塞问题 / 建议问题，并附主观操作体验。',
+        '',
+        '等待用户本人验收，禁止合并。',
+        '',
+      ].join('\r\n'),
+      'utf8',
+    ),
+  ]);
+}
+
 async function findFile(directory, name) {
   let entries;
   try {
@@ -194,7 +240,11 @@ try {
     }
   }
 
-  process.stdout.write('Packaged Windows desktop directory with verified Electron fuses.\n');
+  await writeExperienceFiles(packagePaths[0]);
+
+  process.stdout.write(
+    'Packaged Windows desktop directory, V2 launchers, checklist, and verified Electron fuses.\n',
+  );
 } finally {
   await rm(packagingScratchDirectory, { force: true, recursive: true });
 }
