@@ -17,7 +17,7 @@
 - 用户文本：NFC、换行统一、去首尾空白后 1—8,000 UTF-8 bytes。
 - 回复建议：同样规范化后 1—4,000 UTF-8 bytes。
 - 单次只创建一项；批量确认 1—40 项。
-- item、version、idempotency 与相关内容包 ID 只接受有界的 `[a-z0-9_-]` token。
+- item、version、idempotency 与相关内容包 ID 只接受有界的 `[A-Za-z0-9_-]` token，并原样保留大小写。
 - 去重作用域为 workspace；key 是 `kind + relatedContentPackageId + normalized text` 的 SHA-256。
 - 精确重放先查询去重 key：返回既有项，不新增 row，也不调用文件写入。
 
