@@ -1,4 +1,5 @@
 import { Button, Icon, useV2Controller, type ReviewItem } from '../components.js';
+import { planDateWeekKey } from '../mock-provider.js';
 import type { V2RouteId } from '../routes.js';
 
 const reviews: readonly ReviewItem[] = [
@@ -9,6 +10,15 @@ const reviews: readonly ReviewItem[] = [
 
 export function OverviewPage(): React.JSX.Element {
   const { navigate, notify, openDrawer, session, setUi, ui } = useV2Controller();
+  const currentPlan = session.plan.filter(
+    ({ date }) => planDateWeekKey(date, session.weekKey) === session.weekKey,
+  );
+  const pendingCount = currentPlan.filter(({ status }) => status === '待审批').length;
+  const conflictCount = currentPlan.filter(({ status }) => status === '时间冲突').length;
+  const skippedCount = currentPlan.filter(({ status }) => status === '已跳过').length;
+  const locked = session.planStatus === 'CONFIRMED';
+  const emptySlots = Math.max(0, 23 - currentPlan.length + skippedCount);
+  const activeReviews = reviews.filter(({ kind }) => kind !== '排程' || conflictCount > 0);
   const toggleExceptions = (): void =>
     setUi((current) => ({ ...current, onlyExceptions: !current.onlyExceptions }));
   return (
@@ -40,7 +50,7 @@ export function OverviewPage(): React.JSX.Element {
             icon="sparkle"
             onClick={() => {
               navigate('weekly-plan');
-              notify('已进入模拟周计划；未调用模型。');
+              notify('已进入本机周计划；计划行为会持久化，模型调用为 0。');
             }}
             tone="primary"
           >
@@ -55,9 +65,11 @@ export function OverviewPage(): React.JSX.Element {
               [
                 'calendar-blank',
                 '计划待确认',
-                '1',
-                '完整提案：21 篇 · 预计审批 18 分钟',
-                '查看 2 处调整',
+                String(pendingCount),
+                locked
+                  ? `计划已锁定 · ${currentPlan.length} 篇 · revision ${session.planRevision}`
+                  : `${currentPlan.length} 篇 · ${conflictCount} 处冲突 · ${emptySlots} 个空位`,
+                locked ? '查看只读计划' : pendingCount > 0 ? '处理本周计划' : '锁定本周计划',
                 'weekly-plan',
               ],
               ['file-text', '内容待确认', '3', '本周有 3 篇内容需要你确认', '批量通过', 'content'],
@@ -118,9 +130,9 @@ export function OverviewPage(): React.JSX.Element {
                 <p className="v2-kicker">只列出需要判断的地方</p>
                 <h2>重点复核</h2>
               </div>
-              <span>{reviews.length}</span>
+              <span>{activeReviews.length}</span>
             </header>
-            {reviews.map((item) => (
+            {activeReviews.map((item) => (
               <button
                 key={item.title}
                 onClick={(event) => openDrawer(item, event.currentTarget)}
@@ -138,20 +150,20 @@ export function OverviewPage(): React.JSX.Element {
         </div>
         <aside aria-label="运营摘要" className="v2-stack">
           <section className="v2-card v2-side-card">
-            <p className="v2-kicker">本周已完成 8 篇</p>
+            <p className="v2-kicker">{locked ? '计划已锁定' : '本机计划实时同步'}</p>
             <h2>本周节奏</h2>
             <dl className="v2-facts">
               <div>
                 <dt>计划</dt>
-                <dd>21 篇</dd>
+                <dd>{currentPlan.length} 篇</dd>
               </div>
               <div>
-                <dt>待审批</dt>
-                <dd className="v2-accent">3 篇</dd>
+                <dt>待确认</dt>
+                <dd className="v2-accent">{pendingCount} 篇</dd>
               </div>
               <div>
-                <dt>周日</dt>
-                <dd>2 个空位</dd>
+                <dt>空位</dt>
+                <dd>{emptySlots} 个</dd>
               </div>
             </dl>
           </section>

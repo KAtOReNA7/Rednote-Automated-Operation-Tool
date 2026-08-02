@@ -11,6 +11,7 @@ import {
   V2_IPC_CHANNELS,
   toV2Exception,
   type AccountPersona,
+  type PlanReschedulePreview,
   type V2Result,
   type WeeklyPlan,
 } from '@mystery-operations/v2';
@@ -40,7 +41,7 @@ export class V2DesktopRuntime {
     return new V2DesktopRuntime(connectDatabase(databasePath));
   }
 
-  public read(input: unknown): AccountPersona | WeeklyPlan {
+  public read(input: unknown): AccountPersona | PlanReschedulePreview | WeeklyPlan {
     this.#assertOpen();
     return this.#facade.read(input);
   }
@@ -107,11 +108,14 @@ export function registerV2Ipc(options: {
 }): () => void {
   const handle = (
     channel: string,
-    action: (input: unknown) => AccountPersona | WeeklyPlan,
+    action: (input: unknown) => AccountPersona | PlanReschedulePreview | WeeklyPlan,
   ): void => {
     ipcMain.handle(
       channel,
-      (event, ...args: readonly unknown[]): V2Result<AccountPersona | WeeklyPlan> => {
+      (
+        event,
+        ...args: readonly unknown[]
+      ): V2Result<AccountPersona | PlanReschedulePreview | WeeklyPlan> => {
         if (
           args.length !== 1 ||
           !isTrustedV2IpcSender(event, options.expectedRendererUrl, options.getWindow())

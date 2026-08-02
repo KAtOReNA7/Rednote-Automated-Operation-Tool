@@ -29,6 +29,7 @@ import {
   summarizeV2Workspace,
   type AccountPersona,
   type AccountPersonaFields,
+  type PlanReschedulePreview,
   type V2Bridge,
   type V2Result,
   type WeeklyPlan,
@@ -76,11 +77,19 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
   return {
     confirmPlanCandidates: async (input) =>
       success(facade.mutate({ action: 'CONFIRM_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    generateWeeklyPlan: async (input) =>
+      success(facade.mutate({ action: 'GENERATE_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    lockWeeklyPlan: async (input) =>
+      success(facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    previewPlanReschedule: async (input) =>
+      success(facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview),
     readPersona: async () => success(facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: async (input) =>
       success(facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: async (input) =>
       success(facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    skipPlanCandidates: async (input) =>
+      success(facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     updatePersona: async (input) =>
       success(facade.mutate({ action: 'UPDATE_PERSONA', ...input }) as AccountPersona),
   };
@@ -125,10 +134,12 @@ describe('V2 pure contracts', () => {
       },
       {
         action: 'RESCHEDULE_PLAN_CANDIDATES',
+        allowConflicts: false,
         candidateIds: ['thu-1'],
-        date: '8/2',
-        day: '周日',
+        date: '2026-08-02',
         expectedRevision: -1,
+        mode: 'DATE_TIME',
+        staggerMinutes: 0,
         time: '14:00',
         weekKey: V2_DEFAULT_WEEK_KEY,
       },
@@ -304,10 +315,12 @@ describe('V2 migration and repository', () => {
 
     const moved = facade.mutate({
       action: 'RESCHEDULE_PLAN_CANDIDATES',
+      allowConflicts: true,
       candidateIds: ['thu-1'],
-      date: '8/2',
-      day: '周日',
+      date: '2026-08-02',
       expectedRevision: 0,
+      mode: 'DATE_TIME',
+      staggerMinutes: 0,
       time: '14:00',
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
@@ -318,6 +331,18 @@ describe('V2 migration and repository', () => {
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
     expect(confirmed.revision).toBe(2);
+    const skipped = facade.mutate({
+      action: 'SKIP_PLAN_CANDIDATES',
+      candidateIds: ['sun-2'],
+      expectedRevision: confirmed.revision,
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    }) as WeeklyPlan;
+    const locked = facade.mutate({
+      action: 'LOCK_WEEKLY_PLAN',
+      expectedRevision: skipped.revision,
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    }) as WeeklyPlan;
+    expect(locked).toMatchObject({ revision: 4, status: 'CONFIRMED' });
     database.close();
 
     database = connectDatabase(databasePath);
@@ -326,11 +351,18 @@ describe('V2 migration and repository', () => {
       name: '重启后仍在',
       revision: 1,
     });
-    expect(
-      (
-        facade.read({ view: 'WEEKLY_PLAN', weekKey: V2_DEFAULT_WEEK_KEY }) as WeeklyPlan
-      ).candidates.find(({ id }) => id === 'thu-1'),
-    ).toMatchObject({ date: '8/2', day: '周日', status: 'CONFIRMED', time: '14:00' });
+    const restoredPlan = facade.read({
+      view: 'WEEKLY_PLAN',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    }) as WeeklyPlan;
+    expect(restoredPlan).toMatchObject({ revision: 4, status: 'CONFIRMED' });
+    expect(restoredPlan.candidates.find(({ id }) => id === 'thu-1')).toMatchObject({
+      date: '2026-08-02',
+      day: '周日',
+      status: 'CONFIRMED',
+      time: '14:00',
+    });
+    expect(restoredPlan.candidates.find(({ id }) => id === 'sun-2')?.status).toBe('SKIPPED');
     database.close();
   });
 });
@@ -388,21 +420,51 @@ describe('V2 Electron boundary', () => {
     expect(key).toBe('rednoteV2');
     expect(Object.keys(exposed).sort()).toEqual([
       'confirmPlanCandidates',
+      'generateWeeklyPlan',
+      'lockWeeklyPlan',
+      'previewPlanReschedule',
       'readPersona',
       'readWeeklyPlan',
       'reschedulePlanCandidates',
+      'skipPlanCandidates',
       'updatePersona',
     ]);
     expect('invoke' in exposed).toBe(false);
     expect('rednoteDesktop' in exposed).toBe(false);
     await exposed.readPersona();
     await exposed.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY });
+    await exposed.previewPlanReschedule({
+      candidateIds: ['thu-1'],
+      date: '2026-08-03',
+      expectedRevision: 0,
+      mode: 'DATE_TIME',
+      staggerMinutes: 0,
+      time: '18:30',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
     await exposed.updatePersona({ expectedRevision: 0, persona: DEFAULT_ACCOUNT_PERSONA });
+    await exposed.generateWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });
     await exposed.confirmPlanCandidates({
       candidateIds: ['thu-1'],
       expectedRevision: 0,
       weekKey: V2_DEFAULT_WEEK_KEY,
     });
+    await exposed.reschedulePlanCandidates({
+      allowConflicts: false,
+      candidateIds: ['thu-1'],
+      date: '2026-08-03',
+      expectedRevision: 0,
+      mode: 'DATE_TIME',
+      staggerMinutes: 0,
+      time: '18:30',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    await exposed.skipPlanCandidates({
+      candidateIds: ['sun-2'],
+      expectedRevision: 0,
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    await exposed.lockWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });
     expect(new Set(electron.invoke.mock.calls.map(([channel]) => channel))).toEqual(
       new Set(Object.values(V2_IPC_CHANNELS)),
     );
@@ -441,9 +503,9 @@ describe('V2 renderer persistence wiring', () => {
     await waitFor(() => expect(screen.getByText(/本机 revision 0/u)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: '选择待确认' }));
     await user.click(screen.getByRole('button', { name: '调整日期' }));
-    fireEvent.click(screen.getByRole('button', { name: '确认调整' }));
+    fireEvent.click(screen.getByRole('button', { name: '检查冲突并应用' }));
     await waitFor(() => expect(screen.getByText(/本机 revision 1/u)).toBeInTheDocument());
-    await user.click(screen.getByRole('button', { name: '确认所选 (3)' }));
+    await user.click(screen.getByRole('button', { name: '确认所选' }));
     await waitFor(() => expect(screen.getByText(/本机 revision 2/u)).toBeInTheDocument());
     planView.unmount();
     database.close();

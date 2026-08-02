@@ -58,7 +58,10 @@ describe('V2 renderer architecture', () => {
 
   it('has no legacy bridge, Node, Electron, DB, old domain, randomness, or network client', () => {
     expect(sources).not.toMatch(/from ['"](?:electron|node:)/u);
-    expect(sources).not.toMatch(/@mystery-operations|rednoteDesktop|ipcRenderer/u);
+    expect(sources).not.toMatch(/rednoteDesktop|ipcRenderer/u);
+    expect(sources.split("from '@mystery-operations/v2';")).toHaveLength(2);
+    expect(sources).toContain('import type {\n  PlanCandidateStatus');
+    expect(sources).not.toMatch(/import\s+(?!type\b)[^;]+@mystery-operations/gu);
     expect(sources).not.toMatch(/Date\.now|Math\.random|randomUUID/u);
     expect(sources).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/u);
     expect(sources).not.toMatch(/https?:\/\//u);

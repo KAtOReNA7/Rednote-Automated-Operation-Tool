@@ -30,7 +30,7 @@ describe('V2 renderer shell', () => {
     const user = userEvent.setup();
     render(<V2App />);
 
-    expect(screen.getByText('模拟数据 · 未连接真实服务')).toBeVisible();
+    expect(screen.getByText('周计划已连接本机 · 其他页面模拟')).toBeVisible();
     const navigation = screen.getByRole('navigation');
     expect(
       within(navigation)

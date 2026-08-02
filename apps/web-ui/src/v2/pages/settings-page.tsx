@@ -1,12 +1,25 @@
 import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
 
 export function SettingsPage(): React.JSX.Element {
-  const { notify, session, setSession } = useV2Controller();
-  const update = (field: 'audience' | 'boundary' | 'name' | 'tone', value: string): void =>
+  const { notify, session, setSession, setUi, ui } = useV2Controller();
+  const update = (field: 'audience' | 'boundary' | 'name' | 'tone', value: string): void => {
     setSession((current) => ({ ...current, persona: { ...current.persona, [field]: value } }));
+    setUi((current) => ({
+      ...current,
+      personaErrors: current.personaErrors.filter((item) => item !== field),
+    }));
+  };
   const save = (): void => {
+    const fields = ['name', 'audience', 'tone', 'boundary'] as const;
+    const missing = fields.filter((field) => session.persona[field].trim() === '');
+    if (missing.length > 0) {
+      setUi((current) => ({ ...current, personaErrors: missing }));
+      notify('账号人设不完整，请填写标出的字段。');
+      return;
+    }
     const bridge = window.rednoteV2;
     if (bridge === undefined) {
+      setUi((current) => ({ ...current, personaErrors: [] }));
       notify('账号人设已保存到当前模拟会话；关闭后重置。');
       return;
     }
@@ -22,6 +35,10 @@ export function SettingsPage(): React.JSX.Element {
       })
       .then((result) => {
         if (!result.ok) {
+          setUi((current) => ({
+            ...current,
+            personaErrors: result.error.affectedFields,
+          }));
           notify(result.error.message);
           if (result.error.code === 'REVISION_CONFLICT') {
             void bridge.readPersona().then((latest) => {
@@ -33,6 +50,7 @@ export function SettingsPage(): React.JSX.Element {
           return;
         }
         setSession((current) => ({ ...current, persona: { ...result.value } }));
+        setUi((current) => ({ ...current, personaErrors: [] }));
         notify(`账号人设已保存到本机 · revision ${result.value.revision}`);
       });
   };
@@ -67,18 +85,36 @@ export function SettingsPage(): React.JSX.Element {
             <label className="v2-field" key={field}>
               <span>{label}</span>
               <input
+                aria-invalid={ui.personaErrors.includes(field)}
+                aria-describedby={
+                  ui.personaErrors.includes(field) ? `v2-persona-${field}-error` : undefined
+                }
                 onChange={(event) => update(field, event.target.value)}
                 value={session.persona[field]}
               />
+              {ui.personaErrors.includes(field) ? (
+                <small className="v2-form-error" id={`v2-persona-${field}-error`}>
+                  {label}未填写或不符合本地长度限制
+                </small>
+              ) : null}
             </label>
           ))}
           <label className="v2-field">
             <span>内容边界</span>
             <textarea
+              aria-invalid={ui.personaErrors.includes('boundary')}
+              aria-describedby={
+                ui.personaErrors.includes('boundary') ? 'v2-persona-boundary-error' : undefined
+              }
               onChange={(event) => update('boundary', event.target.value)}
               rows={4}
               value={session.persona.boundary}
             />
+            {ui.personaErrors.includes('boundary') ? (
+              <small className="v2-form-error" id="v2-persona-boundary-error">
+                内容边界未填写或不符合本地长度限制
+              </small>
+            ) : null}
           </label>
         </section>
         <aside className="v2-settings-aside">
