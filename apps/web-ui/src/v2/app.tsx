@@ -27,7 +27,7 @@ import { ReviewPage } from './pages/review-page.js';
 import { SettingsPage } from './pages/settings-page.js';
 import { WeeklyPlanPage } from './pages/weekly-plan-page.js';
 
-const V2_SMOKE_PREFIX = '__V2_R03_SMOKE__:';
+const V2_SMOKE_PREFIX = '__V2_R01_SMOKE__:';
 const V2_DEFAULT_WEEK_KEY = '2026-W31';
 
 function restoreSession(
