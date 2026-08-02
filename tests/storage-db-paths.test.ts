@@ -180,7 +180,7 @@ describe('managed local path migration', () => {
     expect(Object.isFrozen(MIGRATIONS[2])).toBe(true);
   });
 
-  it('distinguishes ten managed file paths from four domain field-path identifiers', async () => {
+  it('distinguishes twelve managed file paths from four domain field-path identifiers', async () => {
     const databasePath = createTemporaryDatabasePath();
     await initializeDatabase({ databasePath });
     const database = connectDatabase(databasePath);
@@ -209,6 +209,8 @@ describe('managed local path migration', () => {
         { column_name: 'export_path', table_name: 'post_packages' },
         { column_name: 'extracted_text_path', table_name: 'source_revisions' },
         { column_name: 'local_snapshot_path', table_name: 'sources' },
+        { column_name: 'user_text_path', table_name: 'v2_interaction_items' },
+        { column_name: 'reply_path', table_name: 'v2_reply_suggestion_versions' },
       ]);
     } finally {
       database.close();

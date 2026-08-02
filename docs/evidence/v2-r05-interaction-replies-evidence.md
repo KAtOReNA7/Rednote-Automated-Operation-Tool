@@ -45,8 +45,9 @@
 - 最终互动/持久化/R04 内容/renderer 集合：4 个文件、23 项测试通过；结构化结果位于受控 ignored validation 目录。
 - migration/存储架构集合：2 个静态 normal 文件、19 项测试通过。请求的 `storage-repository` 属于 capacity 静态集合，依指令交给托管 CI，未在本地重复运行。
 - `npm run format-check`、`npm run lint`、`npm run typecheck`、`npm run build` 与 `git diff --check` 通过；变更增量 secret/egress、skip/todo/only、V2 IPC 数和依赖文件检查均通过。UTF-8 package build 修正后的互动专项再次 8/8 通过。
-- 产品源码净新增 `1,400 LOC`（新增 1,537、删除 137）；测试净新增 `675 LOC`（新增 678、删除 3）。
-- 主体文件为 25 个，包含本文件与归档指令；migration-tail 例外仅 `tests/db-migrations.test.ts` 1 个文件，其强断言只从 4 张 V2 表扩展为 6 张，不删除或弱化既有项；总文件仍为 25。
+- 首次 R05 PR Windows run `30751879832` 的 207 个 normal 文件中 205 个通过；失败仅为两项陈旧强断言。`tests/storage-db-paths.test.ts` 精确加入两个新 managed path，`tests/v2-workflow.test.tsx` 改为断言 R05 显式录入前的真实空状态；两项本地精确复验通过，未修改产品或降低断言。
+- 产品源码净新增 `1,400 LOC`（新增 1,537、删除 137）；测试净新增 `672 LOC`（新增 686、删除 14）。
+- 主体文件为 25 个，包含本文件、归档指令与 `tests/v2-workflow.test.tsx`；migration-tail 例外为 `tests/db-migrations.test.ts`、`tests/storage-db-paths.test.ts` 2 个文件，只追加 2 张 V2 表与 2 个 managed path 的强断言，不删除既有项；总文件为 27。
 - 1 个 migration、2 张新表、0 trigger、0 新 IPC、0 新 package/dependency/route/queue/worker/top-level navigation。
 
 ## 托管门禁与体验包停止点
