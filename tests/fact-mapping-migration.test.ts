@@ -97,7 +97,10 @@ describe('M3 Issue 026 migration and precise invalidation', () => {
     database.close();
 
     const result = await initializeDatabase({ databasePath });
-    expect(result).toMatchObject({ appliedVersions: [19, 20], schemaVersion: 20 });
+    expect(result).toMatchObject({
+      appliedVersions: MIGRATIONS.slice(18).map(({ version }) => version),
+      schemaVersion: MIGRATIONS.at(-1)?.version,
+    });
     expect(result.backupPath).not.toBeNull();
     database = connectDatabase(databasePath);
     try {

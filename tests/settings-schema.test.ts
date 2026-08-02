@@ -26,9 +26,9 @@ afterEach(cleanTemporaryDatabases);
 describe('Issue 010 migration v4', () => {
   it('keeps v1-v3 immutable and appends one stable consecutive migration', () => {
     expect(MIGRATIONS.slice(0, 3).map(migrationChecksum)).toEqual(HISTORICAL_HASHES);
-    expect(MIGRATIONS.map(({ version }) => version)).toEqual([
-      1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20,
-    ]);
+    expect(MIGRATIONS.map(({ version }) => version)).toEqual(
+      Array.from({ length: MIGRATIONS.at(-1)?.version ?? 0 }, (_, index) => index + 1),
+    );
     expect(MIGRATIONS[3]).toMatchObject({
       name: 'local_settings_and_credential_reference',
       version: 4,
