@@ -153,6 +153,8 @@
   .v2-field > span { color: #5f5953; font-size: 12px; font-weight: 700; }
   .v2-field :is(input, textarea, select), .v2-search { width: 100%; border: 1px solid #c8c1b7; border-radius: 8px; background: white; padding: 10px 12px; }
   .v2-field textarea { resize: vertical; line-height: 1.7; }
+  .v2-probe-step-list { display: grid; gap: 10px; margin: 12px 0; padding-left: 22px; }
+  .v2-probe-step-list li { line-height: 1.6; }
   .v2-metric-intake { display: grid; gap: 16px; }
   .v2-metric-package { padding: 18px; }
   .v2-metric-package header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }

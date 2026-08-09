@@ -199,6 +199,8 @@ import { V2ProviderRuntime } from './v2-provider-runtime.js';
 import type {
   V2CapabilityProbePreview,
   V2CapabilityProbeProgress,
+  V2CapabilityProbeStepDiagnostic,
+  V2CapabilityProbeSummaryState,
   V2ProviderActionExecutionRequest,
   V2ProviderActionExecutionResult,
   V2ProviderActionReadiness,
@@ -213,6 +215,57 @@ import {
 
 const PROJECT_DATABASE_FILE = 'rednote.sqlite';
 const SECRET_EGRESS_TARGET_COUNT = 50;
+const V2_R07_PROBE_SELECTION = Object.freeze({
+  includeToolCalling: false,
+  profile: 'CUSTOM' as const,
+  selectedCapabilities: Object.freeze(['structuredJson', 'imageGeneration'] as const),
+  targetModelSlots: Object.freeze(['RESEARCH', 'WRITING', 'IMAGE'] as const),
+});
+
+function v2ProbeDiagnosticCode(
+  entry: ProviderCapabilityStateView['entries'][number] | undefined,
+  fallback: string,
+): string {
+  if (entry === undefined) return fallback;
+  if (entry.safeDetails.modelIdMismatch === 1) return 'MODEL_ID_MISMATCH';
+  if (entry.safeDetails.modelNotFound === 1) return 'MODEL_NOT_FOUND';
+  if (entry.safeDetails.endpointNotFound === 1) return 'ENDPOINT_OR_ROUTE_NOT_FOUND';
+  return entry.reasonCode;
+}
+
+function v2ProbeReason(code: string, sent: boolean): string {
+  if (!sent)
+    return code === 'CONFIG_STALE' ? '配置在探测期间发生变化，该步骤未发送。' : '该步骤未发送。';
+  const reasons: Readonly<Record<string, string>> = Object.freeze({
+    ABORTED: '用户取消了本次能力检查。',
+    AMBIGUOUS_OUTCOME: '请求已结束，但返回证据不足，能力保持未知。',
+    AUTHENTICATION_REJECTED: '凭据无效或被 Provider 拒绝（HTTP 401）。',
+    CONFIG_STALE: '配置在探测期间发生变化，结果未继续采用。',
+    ENDPOINT_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示该能力或 endpoint 不受支持。',
+    ENDPOINT_OR_ROUTE_NOT_FOUND: '请求路由不存在或当前协议与 endpoint 不兼容（HTTP 404）。',
+    INTERNAL_ERROR: '探测计划发生本地内部错误，未确认能力。',
+    INVALID_CONTENT_TYPE: '返回内容类型不符合协议，能力保持未知。',
+    INVALID_JSON: '返回内容不是有效 JSON，能力保持未知。',
+    INVALID_RESPONSE: '返回格式不符合能力证据合同，能力保持未知。',
+    MODEL_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示该模型不支持所需能力。',
+    MODEL_ID_MISMATCH: '响应中的模型身份与配置模型不一致，结果未采用。',
+    MODEL_NOT_FOUND: '配置的模型 ID 不存在或当前不可用（HTTP 404）。',
+    NETWORK_UNREACHABLE: '网络连接失败，未获得能力证据。',
+    NOT_PROBED: '请求获得了符合强证据合同的明确结果。',
+    OUTPUT_VARIANT_UNSUPPORTED: '图片仅返回 URL，未提供允许的 inline 图片证据。',
+    PERMISSION_REJECTED: '凭据没有访问该能力的权限（HTTP 403）。',
+    PROTOCOL_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示当前协议不受支持。',
+    RATE_LIMITED: 'Provider 限流（HTTP 429），能力保持未知。',
+    SCHEMA_MISMATCH: '结构化输出未满足固定 Schema 证据，能力保持未知。',
+    TIMEOUT: '请求超时，能力保持未知。',
+    TLS_FAILURE: 'TLS 连接或证书校验失败，能力保持未知。',
+  });
+  return reasons[code] ?? '请求已结束，但没有足够的允许证据确认能力。';
+}
+
+function v2ProbeSlot(slot: 'IMAGE' | 'RESEARCH' | 'WRITING'): 'image' | 'research' | 'writing' {
+  return slot === 'IMAGE' ? 'image' : slot === 'RESEARCH' ? 'research' : 'writing';
+}
 
 function containsPlaintext(directory: string, plaintext: Buffer): boolean {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -367,6 +420,140 @@ export class DesktopSettingsRuntime {
       : bundle.credential.available
         ? ('CONFIGURED' as const)
         : ('NOT_CONFIGURED' as const);
+    const latestRun =
+      capability.runId === null
+        ? null
+        : (capability.history.find((candidate) => candidate.runId === capability.runId) ?? null);
+    let planSteps: readonly {
+      readonly capability: 'imageGeneration' | 'structuredJson';
+      readonly modelId: string;
+      readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
+      readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+    }[];
+    try {
+      planSteps = active.capabilities.describePlan(V2_R07_PROBE_SELECTION).steps.filter(
+        (
+          candidate,
+        ): candidate is typeof candidate & {
+          readonly capability: 'imageGeneration' | 'structuredJson';
+          readonly modelId: string;
+          readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
+          readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+        } =>
+          candidate.modelId !== null &&
+          (candidate.capability === 'structuredJson' || candidate.capability === 'imageGeneration'),
+      );
+    } catch {
+      planSteps = [];
+    }
+    const relevantEntries = capability.entries.filter(
+      (entry) =>
+        (entry.capability === 'structuredJson' &&
+          (entry.modelSlot === 'RESEARCH' || entry.modelSlot === 'WRITING')) ||
+        (entry.capability === 'imageGeneration' && entry.modelSlot === 'IMAGE'),
+    );
+    if (capability.derivedState === 'STALE' && relevantEntries.length > 0) {
+      const grouped = new Map<string, (typeof planSteps)[number]>();
+      for (const entry of relevantEntries) {
+        if (entry.modelId === null) continue;
+        const key = `${entry.modelId}\0${entry.protocolMode}\0${entry.capability}`;
+        const existing = grouped.get(key);
+        const modelSlot = entry.modelSlot as 'IMAGE' | 'RESEARCH' | 'WRITING';
+        grouped.set(key, {
+          capability: entry.capability as 'imageGeneration' | 'structuredJson',
+          modelId: entry.modelId,
+          modelSlots: Object.freeze([...(existing?.modelSlots ?? []), modelSlot]),
+          protocolMode: entry.protocolMode as 'NOT_APPLICABLE' | 'RESPONSES',
+        });
+      }
+      planSteps = Object.freeze([...grouped.values()]);
+    }
+    const sentRequestCount =
+      capability.activeRun?.sentRequestCount ?? latestRun?.sentRequestCount ?? 0;
+    const diagnosticEntries = capability.activeRun === null ? relevantEntries : [];
+    const steps: readonly V2CapabilityProbeStepDiagnostic[] = Object.freeze(
+      planSteps.map((planned, index) => {
+        const matches = diagnosticEntries.filter(
+          (entry) =>
+            entry.modelId === planned.modelId &&
+            entry.capability === planned.capability &&
+            entry.protocolMode === planned.protocolMode &&
+            planned.modelSlots.includes(entry.modelSlot as 'IMAGE' | 'RESEARCH' | 'WRITING'),
+        );
+        const primary = matches.find((entry) => entry.source !== 'NOT_PROBED') ?? matches[0];
+        const sent = primary?.source !== 'NOT_PROBED' || index < sentRequestCount;
+        const fullyMapped = planned.modelSlots.every((modelSlot) =>
+          matches.some((entry) => entry.modelSlot === modelSlot),
+        );
+        const state =
+          fullyMapped && matches.every((entry) => entry.state === primary?.state)
+            ? (primary?.state ?? 'UNKNOWN')
+            : ('UNKNOWN' as const);
+        const fallbackCode = sent
+          ? (latestRun?.reasonCode ?? 'AMBIGUOUS_OUTCOME')
+          : (latestRun?.reasonCode ?? 'NOT_PROBED');
+        const diagnosticCode = v2ProbeDiagnosticCode(primary, fallbackCode);
+        return Object.freeze({
+          capability: planned.capability,
+          deduplicated: planned.modelSlots.length > 1,
+          diagnosticCode,
+          httpStatus: primary?.safeDetails.status ?? null,
+          mappedSlots: Object.freeze(planned.modelSlots.map(v2ProbeSlot)),
+          modelId: planned.modelId,
+          observedAt: primary?.observedAt ?? null,
+          protocolMode: planned.protocolMode,
+          reason: v2ProbeReason(diagnosticCode, sent),
+          sent,
+          stale: matches.some((entry) => entry.stale) || capability.derivedState === 'STALE',
+          state,
+        });
+      }),
+    );
+    const confirmedCount = steps.filter((step) => step.state !== 'UNKNOWN').length;
+    const summaryState: V2CapabilityProbeSummaryState =
+      capability.activeRun?.status === 'RUNNING'
+        ? 'RUNNING'
+        : latestRun === null
+          ? 'NOT_RUN'
+          : capability.derivedState === 'STALE'
+            ? 'STALE'
+            : latestRun.status === 'FAILED' || latestRun.status === 'INTERRUPTED'
+              ? 'FAILED'
+              : latestRun.status === 'CANCELLED'
+                ? 'CANCELLED'
+                : confirmedCount === steps.length && steps.length > 0
+                  ? 'COMPLETE'
+                  : confirmedCount > 0
+                    ? 'PARTIAL'
+                    : 'NONE_CONFIRMED';
+    const runDiagnostic =
+      latestRun === null
+        ? null
+        : Object.freeze({
+            completedAt: latestRun.completedAt,
+            completedRequestCount: latestRun.sentRequestCount,
+            costState: 'UNKNOWN' as const,
+            fetchEnabled: false as const,
+            plannedRequestCount: latestRun.plannedRequestCount,
+            runId: latestRun.runId,
+            searchEnabled: false as const,
+            sentRequestCount: latestRun.sentRequestCount,
+            startedAt: latestRun.startedAt,
+            status: latestRun.status,
+          });
+    const diagnosticText =
+      runDiagnostic === null
+        ? ''
+        : [
+            `run=${runDiagnostic.runId} status=${summaryState}`,
+            `time=${runDiagnostic.startedAt}..${runDiagnostic.completedAt ?? '未结束'}`,
+            `requests=${runDiagnostic.plannedRequestCount}/${runDiagnostic.sentRequestCount}/${runDiagnostic.completedRequestCount}`,
+            'Search=关闭 Fetch=关闭 fee=UNKNOWN',
+            ...steps.map(
+              (step) =>
+                `${step.mappedSlots.join('+')} model=${step.modelId} capability=${step.capability} protocol=${step.protocolMode} state=${step.state} code=${step.diagnosticCode} sent=${step.sent ? 'yes' : 'no'} stale=${step.stale ? 'yes' : 'no'} observedAt=${step.observedAt ?? '无'} reason=${step.reason}`,
+            ),
+          ].join('\n');
     const slot = (
       modelSlot: 'IMAGE' | 'RESEARCH' | 'WRITING',
       modelId: string | null,
@@ -401,7 +588,11 @@ export class DesktopSettingsRuntime {
       }),
       capabilityProbe: Object.freeze({
         activeRun: capability.activeRun,
+        diagnosticText,
         derivedState: capability.derivedState,
+        latestRun: runDiagnostic,
+        steps,
+        summaryState,
       }),
       credentialState,
       providerBaseUrl: bundle.settings.providerBaseUrl,
@@ -457,16 +648,7 @@ export class DesktopSettingsRuntime {
     windowId: number,
   ): V2CapabilityProbePreview {
     const active = this.#requireActive();
-    const preview = active.capabilities.preview(
-      {
-        includeToolCalling: false,
-        profile: 'CUSTOM',
-        selectedCapabilities: ['structuredJson', 'imageGeneration'],
-        targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
-      },
-      senderId,
-      windowId,
-    );
+    const preview = active.capabilities.preview(V2_R07_PROBE_SELECTION, senderId, windowId);
     if (preview.requestCount > 3) {
       throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
     }

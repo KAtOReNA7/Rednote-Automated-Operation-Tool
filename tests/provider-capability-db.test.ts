@@ -157,6 +157,51 @@ describe('Issue 013 capability persistence migration', () => {
         ],
         runId: 'probe-success-000001',
       });
+      repository.createRun('probe-partial-000001', currentPlan, '2026-07-28T00:00:05.000Z');
+      repository.recordObservation(
+        'probe-partial-000001',
+        currentPlan,
+        {
+          capability: 'structuredJson',
+          confidence: 'INCONCLUSIVE',
+          maxContextTokens: null,
+          modelId: 'fixture-model',
+          modelSlots: ['RESEARCH', 'WRITING'],
+          observedAt: '2026-07-28T00:00:06.000Z',
+          protocolMode: 'RESPONSES',
+          rateLimitRequests: null,
+          rateLimitTokens: null,
+          reasonCode: 'SCHEMA_MISMATCH',
+          safeDetails: { status: 200 },
+          source: 'PROBED',
+          state: 'UNKNOWN',
+        },
+        '2026-07-28T00:00:06.000Z',
+      );
+      repository.finishRun('probe-partial-000001', {
+        completedAt: '2026-07-28T00:00:07.000Z',
+        reasonCode: 'SCHEMA_MISMATCH',
+        sentRequestCount: 1,
+        status: 'PARTIAL',
+      });
+      expect(repository.getState(currentPlan.configFingerprint, 1)).toMatchObject({
+        derivedState: 'PARTIAL',
+        entries: [
+          {
+            modelSlot: 'RESEARCH',
+            reasonCode: 'SCHEMA_MISMATCH',
+            safeDetails: { status: 200 },
+            state: 'UNKNOWN',
+          },
+          {
+            modelSlot: 'WRITING',
+            reasonCode: 'SCHEMA_MISMATCH',
+            safeDetails: { status: 200 },
+            state: 'UNKNOWN',
+          },
+        ],
+        runId: 'probe-partial-000001',
+      });
       expect(repository.getState(currentPlan.configFingerprint, 2).derivedState).toBe('STALE');
     } finally {
       database.close();

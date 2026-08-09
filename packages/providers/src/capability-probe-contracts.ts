@@ -139,9 +139,12 @@ export interface CapabilityProbePlan {
 
 export interface ProbeSafeDetails {
   readonly citationCount?: number;
+  readonly endpointNotFound?: number;
   readonly eventCount?: number;
   readonly imageCount?: number;
   readonly inputTokens?: number;
+  readonly modelIdMismatch?: number;
+  readonly modelNotFound?: number;
   readonly outputTokens?: number;
   readonly status?: number;
   readonly totalTokens?: number;

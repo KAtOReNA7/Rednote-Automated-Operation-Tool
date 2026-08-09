@@ -216,6 +216,11 @@ export class ProviderCapabilityRuntime {
     return progress;
   }
 
+  public describePlan(selection: CapabilityProbeSelection): CapabilityProbePlan {
+    this.#assertOpen();
+    return buildCapabilityProbePlan(this.#snapshot(), selection);
+  }
+
   public cancel(input: CancelProviderCapabilityProbeInput): ProviderCapabilityProbeProgressView {
     if (
       input.confirmation !== 'CANCEL_PROVIDER_CAPABILITY_PROBE' ||
@@ -257,6 +262,7 @@ export class ProviderCapabilityRuntime {
         rateLimitRequests: entry.rateLimitRequests,
         rateLimitTokens: entry.rateLimitTokens,
         reasonCode: entry.reasonCode,
+        safeDetails: entry.safeDetails,
         source: entry.source,
         stale: entry.stale,
         state: entry.state,

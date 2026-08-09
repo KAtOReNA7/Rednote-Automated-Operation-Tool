@@ -434,6 +434,41 @@ export interface V2CapabilityProbeProgress {
   readonly sentRequestCount: number;
   readonly status: 'CANCELLED' | 'FAILED' | 'INTERRUPTED' | 'PARTIAL' | 'RUNNING' | 'SUCCEEDED';
 }
+export type V2CapabilityProbeSummaryState =
+  | 'CANCELLED'
+  | 'COMPLETE'
+  | 'FAILED'
+  | 'NONE_CONFIRMED'
+  | 'NOT_RUN'
+  | 'PARTIAL'
+  | 'RUNNING'
+  | 'STALE';
+export interface V2CapabilityProbeStepDiagnostic {
+  readonly capability: 'imageGeneration' | 'structuredJson';
+  readonly deduplicated: boolean;
+  readonly diagnosticCode: string;
+  readonly httpStatus: number | null;
+  readonly mappedSlots: readonly V2ProviderModelSlot[];
+  readonly modelId: string;
+  readonly observedAt: string | null;
+  readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+  readonly reason: string;
+  readonly sent: boolean;
+  readonly stale: boolean;
+  readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+}
+export interface V2CapabilityProbeRunDiagnostic {
+  readonly completedAt: string | null;
+  readonly completedRequestCount: number;
+  readonly costState: 'UNKNOWN';
+  readonly fetchEnabled: false;
+  readonly plannedRequestCount: number;
+  readonly runId: string;
+  readonly searchEnabled: false;
+  readonly sentRequestCount: number;
+  readonly startedAt: string;
+  readonly status: V2CapabilityProbeProgress['status'];
+}
 export interface V2CapabilityProbePreview {
   readonly budgetReady: boolean;
   readonly credentialBindingVersion: number;
@@ -459,7 +494,11 @@ export interface V2ProviderSettingsView {
   };
   readonly capabilityProbe: {
     readonly activeRun: V2CapabilityProbeProgress | null;
+    readonly diagnosticText: string;
     readonly derivedState: string;
+    readonly latestRun: V2CapabilityProbeRunDiagnostic | null;
+    readonly steps: readonly V2CapabilityProbeStepDiagnostic[];
+    readonly summaryState: V2CapabilityProbeSummaryState;
   };
   readonly credentialState: V2CredentialState;
   readonly providerBaseUrl: string | null;

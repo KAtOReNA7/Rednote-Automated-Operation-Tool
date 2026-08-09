@@ -182,11 +182,23 @@ function httpFailure(
   if (response.status === 429) {
     return observation(step, now, 'RATE_LIMITED', 'UNKNOWN', { status: response.status });
   }
+  if (response.status === 404) {
+    const error = record(record(parsed)?.error);
+    const code = typeof error?.code === 'string' ? error.code.toLowerCase() : '';
+    const type = typeof error?.type === 'string' ? error.type.toLowerCase() : '';
+    if (/(model[_-]?(not[_-]?found|unavailable)|unknown[_-]?model)/u.test(`${code} ${type}`)) {
+      return observation(step, now, 'AMBIGUOUS_OUTCOME', 'UNKNOWN', {
+        modelNotFound: 1,
+        status: response.status,
+      });
+    }
+  }
   const negative = explicitNegativeReason(response.status, parsed);
   if (negative !== null) {
     return observation(step, now, negative, 'UNSUPPORTED', { status: response.status });
   }
   return observation(step, now, 'AMBIGUOUS_OUTCOME', 'UNKNOWN', {
+    ...(response.status === 404 ? { endpointNotFound: 1 } : {}),
     status: response.status,
   });
 }
@@ -350,6 +362,18 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
   }
   if (!parsed.ok) {
     return [observation(step, now, 'INVALID_JSON', 'UNKNOWN')];
+  }
+  const responseModel = record(parsed.value)?.model;
+  if (
+    step.modelId !== null &&
+    typeof responseModel === 'string' &&
+    responseModel !== step.modelId
+  ) {
+    return [
+      observation(step, now, 'INVALID_RESPONSE', 'UNKNOWN', {
+        modelIdMismatch: 1,
+      }),
+    ];
   }
   if (step.kind === 'METADATA') {
     const root = record(parsed.value);

@@ -292,18 +292,24 @@ export class SqliteProviderCapabilityRepository {
         configFingerprint,
         credentialBindingVersion,
       );
-    const current = this.#database
+    const latestTerminal = this.#database
       .prepare(
-        `SELECT id AS run_id
+        `SELECT id AS run_id, config_fingerprint, credential_binding_version, status
          FROM provider_capability_probe_runs
-         WHERE config_fingerprint = ? AND credential_binding_version = ?
-           AND status = 'SUCCEEDED'
-         ORDER BY completed_at DESC, id DESC
+         WHERE status <> 'RUNNING'
+         ORDER BY started_at DESC, id DESC
          LIMIT 1`,
       )
-      .get(configFingerprint, credentialBindingVersion) as { readonly run_id: string } | undefined;
+      .get() as
+      | {
+          readonly config_fingerprint: string;
+          readonly credential_binding_version: number;
+          readonly run_id: string;
+          readonly status: ProbeRunStatus;
+        }
+      | undefined;
     const entries =
-      current === undefined
+      latestTerminal === undefined
         ? []
         : (this.#database
             .prepare(
@@ -315,7 +321,7 @@ export class SqliteProviderCapabilityRepository {
                WHERE run_id = ?
                ORDER BY model_slot, protocol_mode, capability`,
             )
-            .all(current.run_id) as unknown as readonly EntryRow[]);
+            .all(latestTerminal.run_id) as unknown as readonly EntryRow[]);
     const history = this.#database
       .prepare(
         `SELECT id AS run_id, profile, planned_request_count, sent_request_count,
@@ -326,32 +332,26 @@ export class SqliteProviderCapabilityRepository {
       )
       .all() as unknown as readonly RunRow[];
 
-    const latest = history[0];
-    const hasStaleSuccess = this.#database
-      .prepare(
-        `SELECT 1 AS present
-         FROM provider_capability_probe_runs
-         WHERE status = 'SUCCEEDED'
-           AND (config_fingerprint <> ? OR credential_binding_version <> ?)
-         LIMIT 1`,
-      )
-      .get(configFingerprint, credentialBindingVersion) as { readonly present: number } | undefined;
+    const terminalIsCurrent =
+      latestTerminal !== undefined &&
+      latestTerminal.config_fingerprint === configFingerprint &&
+      latestTerminal.credential_binding_version === credentialBindingVersion;
     const derivedState: ProviderCapabilityStateRecord['derivedState'] =
-      current !== undefined
-        ? 'PROBE_COMPLETE'
-        : latest === undefined
-          ? 'NOT_PROBED'
-          : latest.status === 'PARTIAL'
-            ? 'PARTIAL'
-            : latest.status === 'FAILED'
-              ? 'FAILED'
-              : latest.status === 'CANCELLED'
-                ? 'CANCELLED'
-                : latest.status === 'INTERRUPTED'
-                  ? 'INTERRUPTED'
-                  : hasStaleSuccess === undefined
-                    ? 'NOT_PROBED'
-                    : 'STALE';
+      latestTerminal === undefined
+        ? 'NOT_PROBED'
+        : !terminalIsCurrent
+          ? 'STALE'
+          : latestTerminal.status === 'SUCCEEDED'
+            ? 'PROBE_COMPLETE'
+            : latestTerminal.status === 'PARTIAL'
+              ? 'PARTIAL'
+              : latestTerminal.status === 'FAILED'
+                ? 'FAILED'
+                : latestTerminal.status === 'CANCELLED'
+                  ? 'CANCELLED'
+                  : latestTerminal.status === 'INTERRUPTED'
+                    ? 'INTERRUPTED'
+                    : 'NOT_PROBED';
     return {
       derivedState,
       entries: entries.map((row) => ({
@@ -380,7 +380,7 @@ export class SqliteProviderCapabilityRepository {
         startedAt: row.started_at,
         status: row.status,
       })),
-      runId: current?.run_id ?? null,
+      runId: latestTerminal?.run_id ?? null,
     };
   }
 }

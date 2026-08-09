@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
 
@@ -21,6 +21,16 @@ const probeStatusLabel = {
   RUNNING: '检查中',
   SUCCEEDED: '已完成',
 } as const;
+const probeSummaryLabel = {
+  CANCELLED: '已取消',
+  COMPLETE: '已完成：必需能力均有明确结论',
+  FAILED: '失败：探测计划未能完整执行',
+  NONE_CONFIRMED: '未确认任何能力',
+  NOT_RUN: '尚未运行',
+  PARTIAL: '部分完成：仍有能力保持未知',
+  RUNNING: '运行中',
+  STALE: '结果已过期',
+} as const;
 
 function ProviderSettings(): React.JSX.Element {
   const { notify } = useV2Controller();
@@ -36,6 +46,7 @@ function ProviderSettings(): React.JSX.Element {
     null,
   );
   const [confirmProbe, setConfirmProbe] = useState(false);
+  const diagnosticRef = useRef<HTMLTextAreaElement>(null);
 
   const apply = (next: V2ProviderSettingsViewContract): void => {
     setView(next);
@@ -154,6 +165,19 @@ function ProviderSettings(): React.JSX.Element {
       `能力检查已由用户明确启动：${result.value.sentRequestCount}/${result.value.plannedRequestCount} 请求。`,
     );
     await load();
+  };
+  const copyDiagnostic = async (): Promise<void> => {
+    const text = view?.capabilityProbe.diagnosticText ?? '';
+    if (text === '') return;
+    try {
+      if (navigator.clipboard?.writeText === undefined) throw new Error('CLIPBOARD_UNAVAILABLE');
+      await navigator.clipboard.writeText(text);
+      notify('脱敏诊断已复制；不包含凭据、原始请求或响应。');
+    } catch {
+      diagnosticRef.current?.focus();
+      diagnosticRef.current?.select();
+      notify('系统剪贴板不可用，已选中只读脱敏诊断，请按 Ctrl+C 复制。');
+    }
   };
 
   return (
@@ -282,6 +306,51 @@ function ProviderSettings(): React.JSX.Element {
               >
                 确认并启动
               </Button>
+            </div>
+          )}
+          {view.capabilityProbe.latestRun === null ? null : (
+            <div className="v2-provider-blockers" data-testid="v2-probe-diagnostics">
+              <h4>最近一次能力检查</h4>
+              <p>
+                <strong>{probeSummaryLabel[view.capabilityProbe.summaryState]}</strong> · 已计划{' '}
+                {view.capabilityProbe.latestRun.plannedRequestCount} · 已发送{' '}
+                {view.capabilityProbe.latestRun.sentRequestCount} · 已完成{' '}
+                {view.capabilityProbe.latestRun.completedRequestCount}
+              </p>
+              <p>
+                Search：关闭 · Fetch：关闭 · 费用：
+                {view.capabilityProbe.latestRun.costState === 'UNKNOWN' ? '未知' : '已知'}
+              </p>
+              <ul className="v2-probe-step-list">
+                {view.capabilityProbe.steps.map((step) => (
+                  <li key={`${step.modelId}:${step.protocolMode}:${step.capability}`}>
+                    <strong>{step.mappedSlots.join(' + ')}</strong> · {step.modelId} ·{' '}
+                    {step.capability} · {step.protocolMode}
+                    <br />
+                    结论：{capabilityLabel[step.state]} · {step.sent ? '已发送' : '未发送'} ·{' '}
+                    {step.stale ? '已过期' : '当前'} · 错误码：{step.diagnosticCode}
+                    <br />
+                    {step.reason}
+                    {step.httpStatus === null ? '' : ` HTTP ${step.httpStatus}`}
+                    {step.deduplicated
+                      ? `；同一请求已去重并映射到 ${step.mappedSlots.join('、')}`
+                      : ''}
+                    <br />
+                    观测时间：{step.observedAt ?? '无'}
+                  </li>
+                ))}
+              </ul>
+              <Button onClick={() => void copyDiagnostic()}>复制脱敏诊断</Button>
+              <label className="v2-field">
+                <span>脱敏诊断（只读，可手动选择）</span>
+                <textarea
+                  aria-label="脱敏诊断（只读）"
+                  readOnly
+                  ref={diagnosticRef}
+                  rows={Math.min(10, 4 + view.capabilityProbe.steps.length)}
+                  value={view.capabilityProbe.diagnosticText}
+                />
+              </label>
             </div>
           )}
           <hr />

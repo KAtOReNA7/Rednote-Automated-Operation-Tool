@@ -16,6 +16,7 @@ import { createMemoryV2Bridge } from './support/v2-test-runtime.js';
 afterEach(() => {
   cleanup();
   Reflect.deleteProperty(window, 'rednoteV2');
+  Reflect.deleteProperty(navigator, 'clipboard');
   window.history.replaceState(null, '', '/');
 });
 
@@ -103,7 +104,14 @@ describe('V2 R07 provider action renderer', () => {
         priceReadyForWeeklyPlan: false,
         warning: false,
       },
-      capabilityProbe: { activeRun: null, derivedState: 'NEVER_RUN' },
+      capabilityProbe: {
+        activeRun: null,
+        diagnosticText: '',
+        derivedState: 'NEVER_RUN',
+        latestRun: null,
+        steps: [],
+        summaryState: 'NOT_RUN',
+      },
       credentialState: 'NOT_CONFIGURED',
       providerBaseUrl: 'https://provider.example/v1',
       providerConfigured: true,
@@ -257,6 +265,117 @@ describe('V2 R07 provider action renderer', () => {
     expect(await screen.findByDisplayValue('research-v2')).toBeVisible();
     expect(screen.getByText(/研究槽：未知/)).toBeVisible();
     expect(screen.getByText(/写作槽：支持/)).toBeVisible();
+  });
+
+  it('shows mapped partial diagnostics, distinguishes no conclusions, and copies only safe text', async () => {
+    const diagnosticText = [
+      'run=probe-safe status=PARTIAL',
+      'requests=2/2/2',
+      'Search=关闭 Fetch=关闭 fee=UNKNOWN',
+      'research+writing model=shared-model capability=structuredJson protocol=RESPONSES state=SUPPORTED code=NOT_PROBED',
+      'image model=image-model capability=imageGeneration protocol=NOT_APPLICABLE state=UNKNOWN code=OUTPUT_VARIANT_UNSUPPORTED',
+    ].join('\n');
+    let settings: V2ProviderSettingsView = {
+      accounting: {
+        hardLimitMicroUsd: '1000000',
+        hardStop: false,
+        priceReadyForContent: false,
+        priceReadyForReply: false,
+        priceReadyForWeeklyPlan: false,
+        warning: false,
+      },
+      capabilityProbe: {
+        activeRun: null,
+        diagnosticText,
+        derivedState: 'PROBE_COMPLETE',
+        latestRun: {
+          completedAt: '2026-08-10T00:00:02.000Z',
+          completedRequestCount: 2,
+          costState: 'UNKNOWN',
+          fetchEnabled: false,
+          plannedRequestCount: 2,
+          runId: 'probe-safe',
+          searchEnabled: false,
+          sentRequestCount: 2,
+          startedAt: '2026-08-10T00:00:00.000Z',
+          status: 'SUCCEEDED',
+        },
+        steps: [
+          {
+            capability: 'structuredJson',
+            deduplicated: true,
+            diagnosticCode: 'NOT_PROBED',
+            httpStatus: 200,
+            mappedSlots: ['research', 'writing'],
+            modelId: 'shared-model',
+            observedAt: '2026-08-10T00:00:01.000Z',
+            protocolMode: 'RESPONSES',
+            reason: '请求获得了符合强证据合同的明确结果。',
+            sent: true,
+            stale: false,
+            state: 'SUPPORTED',
+          },
+          {
+            capability: 'imageGeneration',
+            deduplicated: false,
+            diagnosticCode: 'OUTPUT_VARIANT_UNSUPPORTED',
+            httpStatus: 200,
+            mappedSlots: ['image'],
+            modelId: 'image-model',
+            observedAt: '2026-08-10T00:00:02.000Z',
+            protocolMode: 'NOT_APPLICABLE',
+            reason: '图片仅返回 URL，未提供允许的 inline 图片证据。',
+            sent: true,
+            stale: false,
+            state: 'UNKNOWN',
+          },
+        ],
+        summaryState: 'PARTIAL',
+      },
+      credentialState: 'CONFIGURED',
+      image: { modelId: 'image-model', state: 'UNKNOWN' },
+      providerBaseUrl: 'https://provider.example/v1',
+      providerConfigured: true,
+      research: { modelId: 'shared-model', state: 'SUPPORTED' },
+      revision: 1,
+      setupAvailable: true,
+      writing: { modelId: 'shared-model', state: 'SUPPORTED' },
+    };
+    const user = userEvent.setup();
+    const writeText = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText },
+    });
+    expose({
+      ...createMemoryV2Bridge(),
+      readProviderSettings: async () => ({ ok: true, value: settings }),
+    });
+    window.history.replaceState(null, '', '#/v2/settings');
+    render(<V2App />);
+    expect(await screen.findByText(/部分完成：仍有能力保持未知/)).toBeVisible();
+    expect(screen.getByText(/research \+ writing/)).toBeVisible();
+    expect(screen.getByText(/同一请求已去重并映射到 research、writing/)).toBeVisible();
+    expect(screen.getByText(/图片仅返回 URL/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '复制脱敏诊断' }));
+    expect(writeText).toHaveBeenCalledWith(diagnosticText);
+    expect(diagnosticText).not.toMatch(
+      /authorization|api.?key|https?:\/\/|stack|select\s|insert\s|[A-Za-z]:\\/iu,
+    );
+
+    cleanup();
+    settings = {
+      ...settings,
+      capabilityProbe: {
+        ...settings.capabilityProbe,
+        steps: settings.capabilityProbe.steps.map((step) => ({ ...step, state: 'UNKNOWN' })),
+        summaryState: 'NONE_CONFIRMED',
+      },
+      research: { modelId: 'shared-model', state: 'UNKNOWN' },
+      writing: { modelId: 'shared-model', state: 'UNKNOWN' },
+    };
+    render(<V2App />);
+    expect(await screen.findByText('未确认任何能力')).toBeVisible();
   });
 
   it('confirms once, refreshes persisted data, and exposes uncertain outcomes as blocking state', async () => {
