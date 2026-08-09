@@ -15,6 +15,7 @@ import type {
   ProbeProtocolMode,
   ProbeReasonCode,
   ProbeRunStatus,
+  ProbeSafeDetails,
   ProbeSource,
   ProbeState,
 } from '@mystery-operations/providers';
@@ -444,6 +445,7 @@ export interface ProviderCapabilityEntryView {
   readonly rateLimitRequests: number | null;
   readonly rateLimitTokens: number | null;
   readonly reasonCode: ProbeReasonCode;
+  readonly safeDetails: ProbeSafeDetails;
   readonly source: ProbeSource;
   readonly stale: boolean;
   readonly state: ProbeState;

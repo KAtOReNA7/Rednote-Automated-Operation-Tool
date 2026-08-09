@@ -116,19 +116,20 @@ describe('Issue 010 architecture boundaries', () => {
   });
 
   it('does not add network/model execution, platform actions, or forbidden policy settings', async () => {
-    const issueSource = await combined([
+    const modelFreeFiles = [
       ...(await sourceFiles('packages/settings')),
       'packages/db/src/settings-repository.ts',
       'packages/storage/src/project-locator.ts',
       'packages/storage/src/diagnostic-report-store.ts',
       'apps/desktop/src/credential-store.ts',
       'apps/desktop/src/data-root-selection.ts',
-      'apps/desktop/src/settings-runtime.ts',
       'apps/desktop/src/ipc-policy.ts',
       'apps/desktop/src/ipc.ts',
       'apps/web-ui/src/settings-page.tsx',
       'apps/web-ui/src/use-settings.ts',
-    ]);
+    ];
+    const modelFreeSource = await combined(modelFreeFiles);
+    const issueSource = await combined([...modelFreeFiles, 'apps/desktop/src/settings-runtime.ts']);
     const manifest = JSON.parse(await readFile(join(projectRoot, 'package.json'), 'utf8')) as {
       readonly dependencies?: Readonly<Record<string, string>>;
       readonly devDependencies?: Readonly<Record<string, string>>;
@@ -139,8 +140,9 @@ describe('Issue 010 architecture boundaries', () => {
     }).join('\n');
 
     expect(issueSource).not.toMatch(
-      /\bfetch\s*\(|axios|node:(?:http|https|net|tls)|from\s+['"](?:openai|anthropic)['"]|model.?run|cost.?ledger/iu,
+      /\bfetch\s*\(|axios|node:(?:http|https|net|tls)|from\s+['"](?:openai|anthropic)['"]/iu,
     );
+    expect(modelFreeSource).not.toMatch(/model.?run|cost.?ledger/iu);
     expect(issueSource).not.toMatch(
       /xiaohongshu|小红书|自动(?:登录|发布|评论|私信)|风控|验证码|盗版|电子书下载/iu,
     );

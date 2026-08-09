@@ -140,6 +140,7 @@ describe('Issue 013 capability settings renderer', () => {
               rateLimitRequests: null,
               rateLimitTokens: null,
               reasonCode: 'NOT_PROBED',
+              safeDetails: {},
               source: 'PROBED',
               stale: false,
               state: 'SUPPORTED',

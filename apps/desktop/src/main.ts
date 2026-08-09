@@ -130,6 +130,8 @@ let screenshotReader:
       readonly mime: 'image/jpeg' | 'image/png';
     } | null>)
   | null = null;
+let v2CoverReader: ((packageId: string, version: number) => Promise<Uint8Array | null>) | null =
+  null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -181,6 +183,20 @@ function registerLocalRendererProtocol(rendererRoot: string): void {
         },
       });
     }
+    const coverMatch = /^\/v2-cover\/(pkg-[a-z0-9_-]{1,96})\/(\d{1,6})$/u.exec(url.pathname);
+    if (coverMatch !== null) {
+      if (url.search !== '' || url.hash !== '' || v2CoverReader === null)
+        return new Response('Not found', { status: 404 });
+      const bytes = await v2CoverReader(coverMatch[1] ?? '', Number(coverMatch[2]));
+      if (bytes === null) return new Response('Not found', { status: 404 });
+      return new Response(Uint8Array.from(bytes).buffer, {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Type': 'image/png',
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
 
     const decodedPath = decodeURIComponent(url.pathname === '/' ? '/index.html' : url.pathname);
     const candidate = resolve(rendererRoot, `.${decodedPath}`);
@@ -208,13 +224,39 @@ async function startV2Application(
   expectedRendererUrl: string,
   sessionSecurityAudit: ReturnType<typeof installSessionSecurity>,
 ): Promise<void> {
-  const runtime = await V2DesktopRuntime.open(app.getPath('userData'));
+  const settingsRuntime = new DesktopSettingsRuntime(app.getPath('userData'), safeStorage, dialog, {
+    appVersion: app.getVersion(),
+    chromiumVersion: process.versions.chrome ?? 'unknown',
+    electronVersion: process.versions.electron ?? 'unknown',
+    nodeVersion: process.versions.node,
+  });
+  await settingsRuntime.initialize();
+  const runtime = await V2DesktopRuntime.open(app.getPath('userData'), {
+    providerExecution: {
+      execute: (request) => settingsRuntime.executeV2ProviderAction(request),
+      inspect: (request) => settingsRuntime.inspectV2ProviderAction(request),
+    },
+    settingsControl: {
+      clearCredential: () => settingsRuntime.clearV2ProviderCredential(),
+      getCapabilityProgress: (runId) => settingsRuntime.getV2ProviderCapabilityProbeProgress(runId),
+      getSettings: () => settingsRuntime.getV2ProviderSettings(),
+      previewCapabilityProbe: (caller) =>
+        settingsRuntime.previewV2ProviderCapabilityProbe(caller.senderId, caller.windowId),
+      setCredential: (plaintext) => settingsRuntime.setV2ProviderCredential(plaintext),
+      startCapabilityProbe: (input, caller) =>
+        settingsRuntime.startV2ProviderCapabilityProbe(input, caller.senderId, caller.windowId),
+      updateSettings: (input) => settingsRuntime.updateV2ProviderSettings(input),
+    },
+  });
+  v2CoverReader = (packageId, version) => runtime.readGeneratedCover(packageId, version);
   let runtimeClosed = false;
   let removeIpcHandlers = (): void => undefined;
   const closeRuntime = (): void => {
     if (runtimeClosed) return;
     removeIpcHandlers();
     runtime.close();
+    v2CoverReader = null;
+    void settingsRuntime.close();
     runtimeClosed = true;
   };
   let mainWindow: BrowserWindow | null = new BrowserWindow({
@@ -265,7 +307,7 @@ async function startV2Application(
         const persistence = runtime.smokeSummary();
         const ok =
           renderer.marker &&
-          renderer.mockMode &&
+          !renderer.mockMode &&
           renderer.navigationCount === 7 &&
           renderer.preload &&
           persistence.personaRevision === 0 &&

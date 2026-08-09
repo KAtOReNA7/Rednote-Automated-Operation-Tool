@@ -413,6 +413,7 @@ export class SqliteModelAccountingRepository {
     readonly now: string;
     readonly reservedAmountMicroUsd: number | null;
     readonly unitDemandJson: string;
+    readonly userApprovedUnknownCost?: boolean;
     readonly weekKey: string;
   }): { readonly reservationId: string; readonly run: ModelRunRecord } {
     return runInTransaction(this.#database, () => {
@@ -452,10 +453,13 @@ export class SqliteModelAccountingRepository {
           throw new Error('BUDGET_HARD_LIMIT_REACHED');
         }
       } else if (
+        input.userApprovedUnknownCost !== true &&
         this.findApplicableUnitPolicy(input.identity.taskKind, input.identity.modelRole) === null
       ) {
         throw new Error('BUDGET_UNPRICED_LIMIT_REQUIRED');
-      } else {
+      } else if (
+        this.findApplicableUnitPolicy(input.identity.taskKind, input.identity.modelRole) !== null
+      ) {
         const policy = this.findApplicableUnitPolicy(
           input.identity.taskKind,
           input.identity.modelRole,

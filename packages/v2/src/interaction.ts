@@ -18,6 +18,8 @@ export interface ReplySuggestionRecord {
   readonly files: InteractionBlobRef;
   readonly version: number;
   readonly versionId: string;
+  readonly modelRunId: string | null;
+  readonly providerKind: 'MODEL' | 'SCRIPTED';
 }
 
 export interface InteractionRecord {
@@ -110,7 +112,14 @@ export interface V2InteractionFilePort {
 }
 
 export interface V2InteractionRepositoryPort {
-  appendSuggestion(current: InteractionRecord, files: InteractionBlobRef): InteractionRecord;
+  appendSuggestion(
+    current: InteractionRecord,
+    files: InteractionBlobRef,
+    provenance?: {
+      readonly modelRunId: string | null;
+      readonly providerKind: 'MODEL' | 'SCRIPTED';
+    },
+  ): InteractionRecord;
   batchConfirm(items: readonly InteractionVersionRef[]): readonly InteractionRecord[];
   contentPackageExists(packageId: string): boolean;
   createInteraction(record: InteractionRecord): InteractionRecord;
@@ -332,6 +341,32 @@ export class V2InteractionApplication {
     return this.repository.previewDeleteInteraction(itemId);
   }
 
+  public async generateFromReply(
+    request: Extract<InteractionMutationRequest, { action: 'GENERATE_REPLY_SUGGESTION' }>,
+    replyValue: unknown,
+    modelRunId: string | null = null,
+  ): Promise<InteractionItem> {
+    const current = this.repository.getInteraction(request.itemId);
+    if (current.status === 'SUGGESTED' && current.currentSuggestion !== null)
+      return this.#hydrate(current);
+    if (current.revision !== request.expectedRevision)
+      throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
+    if (current.status !== 'NEW')
+      throw new V2InteractionError('INTERACTION_STATE_INVALID', ['status']);
+    const reply = normalizeInteractionText(
+      replyValue,
+      V2_INTERACTION_LIMITS.replyBytes,
+      'replyText',
+    );
+    return this.#hydrate(
+      this.repository.appendSuggestion(
+        current,
+        await this.files.writeText(reply, 'REPLY_SUGGESTION'),
+        { modelRunId, providerKind: modelRunId === null ? 'SCRIPTED' : 'MODEL' },
+      ),
+    );
+  }
+
   public async mutate(
     request: InteractionMutationRequest,
     persona: { readonly name: string; readonly tone: string },
@@ -426,23 +461,14 @@ export class V2InteractionApplication {
     if (current.status !== 'NEW')
       throw new V2InteractionError('INTERACTION_STATE_INVALID', ['status']);
     const userText = await this.files.readText(current.userText);
-    const reply = normalizeInteractionText(
-      this.provider.generate({
-        kind: current.kind,
-        personaName: persona.name,
-        relatedContentPackageId: current.relatedContentPackageId,
-        tone: persona.tone,
-        userText,
-      }),
-      V2_INTERACTION_LIMITS.replyBytes,
-      'replyText',
-    );
-    return this.#hydrate(
-      this.repository.appendSuggestion(
-        current,
-        await this.files.writeText(reply, 'REPLY_SUGGESTION'),
-      ),
-    );
+    const reply = this.provider.generate({
+      kind: current.kind,
+      personaName: persona.name,
+      relatedContentPackageId: current.relatedContentPackageId,
+      tone: persona.tone,
+      userText,
+    });
+    return this.generateFromReply(request, reply);
   }
 
   async #save(

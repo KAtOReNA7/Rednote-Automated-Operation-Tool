@@ -197,6 +197,7 @@ function exactRequestKeys(request: ModelExecutionRequestV1): void {
     'sourceIdentities',
     'taskKind',
     'unitDemandUpperBound',
+    'userApprovedUnknownCost',
   ]);
   if (Object.keys(request).some((key) => !allowed.has(key))) {
     throw new TypeError('ModelExecutionRequest contains unsupported fields.');
@@ -241,6 +242,7 @@ export function validateModelExecutionRequest(
     request.mediaIdentities.length > 64 ||
     Object.keys(request.unitDemandUpperBound).sort().join(',') !== unitKeys.sort().join(',') ||
     request.unitDemandUpperBound.externalCalls !== 1 ||
+    (request.userApprovedUnknownCost !== undefined && request.userApprovedUnknownCost !== true) ||
     (/^(?:CAPABILITY_PROBE|WEB_SEARCH|TOOL)(?:_|$)/u.test(request.taskKind) &&
       request.cachePolicy !== 'BYPASS')
   ) {

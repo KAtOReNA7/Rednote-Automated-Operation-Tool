@@ -33,6 +33,27 @@ export interface ContentPackage {
   readonly version: number;
   readonly versionId: string;
   readonly weekKey: string;
+  readonly provenance?: ContentVersionProvenance;
+}
+
+export interface GeneratedCoverRef {
+  readonly height: number;
+  readonly managedPath: string;
+  readonly mimeType: 'image/png';
+  readonly modelRunId: string | null;
+  readonly sha256: string;
+  readonly width: number;
+}
+
+export interface ContentVersionProvenance {
+  readonly copyModelRunId: string | null;
+  readonly coverModelRunId: string | null;
+  readonly coverSource: 'GENERATED_IMAGE' | 'SCRIPTED';
+  readonly generatedAt: string;
+  readonly copyModelId: string | null;
+  readonly coverModelId: string | null;
+  readonly copyCostState: string | null;
+  readonly coverCostState: string | null;
 }
 
 export interface ContentWorkspace {
@@ -71,6 +92,13 @@ export interface ContentVersionRecord {
   readonly version: number;
   readonly versionId: string;
   readonly weekKey: string;
+  readonly copyModelRunId?: string | null;
+  readonly createdAt?: string;
+  readonly generatedCover?: GeneratedCoverRef | null;
+  readonly copyModelId?: string | null;
+  readonly coverModelId?: string | null;
+  readonly copyCostState?: string | null;
+  readonly coverCostState?: string | null;
 }
 
 export interface NewContentVersionRecord extends ContentVersionRecord {
@@ -130,6 +158,10 @@ export interface V2ContentRepositoryPort {
     current: ContentVersionRecord,
     files: ContentBlobSet,
     status: 'DRAFT' | 'REVIEW_REQUIRED',
+    provenance?: {
+      readonly copyModelRunId?: string | null;
+      readonly generatedCover?: GeneratedCoverRef | null;
+    },
   ) => ContentVersionRecord;
   readonly approve: (items: readonly ContentApprovalRef[]) => readonly ContentVersionRecord[];
   readonly create: (records: readonly NewContentVersionRecord[]) => readonly ContentVersionRecord[];
@@ -145,6 +177,11 @@ export interface V2ContentFilePort {
   readonly openExport: (exportId: string) => Promise<void>;
   readonly readFields: (record: ContentVersionRecord) => Promise<ContentPackageFields>;
   readonly writeFields: (fields: ContentPackageFields) => Promise<ContentBlobSet>;
+  readonly writeGeneratedCover?: (
+    bytes: Uint8Array,
+    modelRunId: string,
+  ) => Promise<GeneratedCoverRef>;
+  readonly readGeneratedCover?: (ref: GeneratedCoverRef) => Promise<Uint8Array>;
 }
 
 const DATE_TIME = /^(\d{4}-\d{2}-\d{2})T(?:[01]\d|2[0-3]):[0-5]\d$/u;
@@ -297,6 +334,34 @@ export class V2ContentApplication {
     if (selectedExisting.length === 3) return this.#workspace(request.weekKey, existing);
     if (selectedExisting.length !== 0) throw new V2ContentError('REVISION_CONFLICT', ['packages']);
     const generated = this.#provider.generate(request.candidateIds, persona, plan);
+    return this.generateFromFields(request, plan, generated);
+  }
+
+  public async generateFromFields(
+    request: Extract<ContentMutationRequest, { readonly action: 'GENERATE_CONTENT_PACKAGES' }>,
+    plan: WeeklyPlan,
+    fields: readonly ContentPackageFields[],
+  ): Promise<ContentWorkspace> {
+    if (
+      plan.status !== 'CONFIRMED' ||
+      plan.revision !== request.expectedPlanRevision ||
+      plan.weekKey !== request.weekKey
+    ) {
+      throw new V2ContentError(
+        plan.status === 'CONFIRMED' ? 'REVISION_CONFLICT' : 'CONTENT_NOT_READY',
+        ['weeklyPlan'],
+      );
+    }
+    if (fields.length !== request.candidateIds.length || fields.length !== 3) {
+      throw new V2ContentError('INVALID_REQUEST', ['packages']);
+    }
+    const existing = this.#repository.list(request.weekKey);
+    const selectedExisting = existing.filter(({ candidateId }) =>
+      request.candidateIds.includes(candidateId),
+    );
+    if (selectedExisting.length === 3) return this.#workspace(request.weekKey, existing);
+    if (selectedExisting.length !== 0) throw new V2ContentError('REVISION_CONFLICT', ['packages']);
+    const generated = fields.map(parseContentPackageFields);
     const records: NewContentVersionRecord[] = [];
     for (const [index, fields] of generated.entries()) {
       const candidateId = request.candidateIds[index];
@@ -304,8 +369,11 @@ export class V2ContentApplication {
       const packageId = `pkg-${request.weekKey.toLowerCase()}-${candidateId}`;
       records.push({
         candidateId,
+        copyModelRunId: null,
         coverKey: fields.coverKey,
+        createdAt: new Date(0).toISOString(),
         files: await this.#files.writeFields(fields),
+        generatedCover: null,
         packageId,
         planRevision: request.expectedPlanRevision,
         revision: 0,
@@ -335,6 +403,47 @@ export class V2ContentApplication {
     return this.#package(next, request.fields);
   }
 
+  public async appendModelCopy(
+    packageId: string,
+    expectedRevision: number,
+    expectedVersionId: string,
+    fieldsValue: unknown,
+    modelRunId: string,
+  ): Promise<ContentPackage> {
+    const current = this.#repository.get(packageId);
+    this.#assertCurrent(current, { expectedRevision, expectedVersionId });
+    const fields = parseContentPackageFields(fieldsValue);
+    const next = this.#repository.appendVersion(
+      current,
+      await this.#files.writeFields(fields),
+      current.status === 'APPROVED' ? 'REVIEW_REQUIRED' : 'DRAFT',
+      { copyModelRunId: modelRunId, generatedCover: current.generatedCover ?? null },
+    );
+    return this.#package(next, fields);
+  }
+
+  public async appendGeneratedCover(
+    packageId: string,
+    expectedRevision: number,
+    expectedVersionId: string,
+    bytes: Uint8Array,
+    modelRunId: string,
+  ): Promise<ContentPackage> {
+    const current = this.#repository.get(packageId);
+    this.#assertCurrent(current, { expectedRevision, expectedVersionId });
+    const fields = await this.#readFields(current);
+    if (this.#files.writeGeneratedCover === undefined)
+      throw new V2ContentError('CONTENT_NOT_READY', ['cover']);
+    const generatedCover = await this.#files.writeGeneratedCover(bytes, modelRunId);
+    const next = this.#repository.appendVersion(
+      current,
+      current.files,
+      current.status === 'APPROVED' ? 'REVIEW_REQUIRED' : 'DRAFT',
+      { copyModelRunId: current.copyModelRunId ?? null, generatedCover },
+    );
+    return this.#package(next, fields);
+  }
+
   public async approve(items: readonly ContentApprovalRef[]): Promise<ContentWorkspace> {
     const approved = this.#repository.approve(items);
     const weekKey = approved[0]?.weekKey;
@@ -359,6 +468,17 @@ export class V2ContentApplication {
 
   public async openExport(exportId: string): Promise<void> {
     await this.#files.openExport(exportId);
+  }
+
+  public async readGeneratedCover(packageId: string, version: number): Promise<Uint8Array | null> {
+    const current = this.#repository.get(packageId);
+    if (
+      current.version !== version ||
+      current.generatedCover == null ||
+      this.#files.readGeneratedCover === undefined
+    )
+      return null;
+    return this.#files.readGeneratedCover(current.generatedCover);
   }
 
   #assertCurrent(
@@ -407,6 +527,17 @@ export class V2ContentApplication {
       version: record.version,
       versionId: record.versionId,
       weekKey: record.weekKey,
+      provenance: {
+        copyModelRunId: record.copyModelRunId ?? null,
+        coverModelRunId: record.generatedCover?.modelRunId ?? null,
+        coverSource:
+          record.generatedCover == null ? ('SCRIPTED' as const) : ('GENERATED_IMAGE' as const),
+        generatedAt: record.createdAt ?? new Date(0).toISOString(),
+        copyModelId: record.copyModelId ?? null,
+        coverModelId: record.coverModelId ?? null,
+        copyCostState: record.copyCostState ?? null,
+        coverCostState: record.coverCostState ?? null,
+      },
     });
   }
 }

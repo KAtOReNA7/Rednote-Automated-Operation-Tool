@@ -1,5 +1,8 @@
+import { useEffect, useState } from 'react';
+
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
 import { withPersistedWeeklyPlan } from '../mock-provider.js';
+import { ProviderActionControl } from '../provider-action-control.js';
 
 const dayOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const;
 
@@ -9,10 +12,40 @@ function shortDate(value: string): string {
   return `${String(Number(month))}/${String(Number(day))}`;
 }
 
+function nextWeekKey(value: string): string {
+  const year = Number(value.slice(0, 4));
+  const week = Number(value.slice(6));
+  const januaryFourth = new Date(Date.UTC(year, 0, 4));
+  const monday = new Date(januaryFourth);
+  monday.setUTCDate(januaryFourth.getUTCDate() - ((januaryFourth.getUTCDay() + 6) % 7) + week * 7);
+  const thursday = new Date(monday);
+  thursday.setUTCDate(monday.getUTCDate() + 3);
+  const weekYear = thursday.getUTCFullYear();
+  const firstThursday = new Date(Date.UTC(weekYear, 0, 4));
+  firstThursday.setUTCDate(firstThursday.getUTCDate() + ((4 - firstThursday.getUTCDay() + 7) % 7));
+  const weekNumber = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / 604_800_000);
+  return `${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
+}
+
 export function WeeklyPlanPage(): React.JSX.Element {
   const { notify, openDate, session, setSession, setUi, ui } = useV2Controller();
   const { planFilter: filter, planSelectedIds: selectedIds } = ui;
   const locked = session.planStatus === 'CONFIRMED';
+  const targetWeekKey = locked ? nextWeekKey(session.weekKey) : session.weekKey;
+  const [targetPlan, setTargetPlan] = useState<{
+    readonly revision: number;
+    readonly weekKey: string;
+  } | null>(null);
+  useEffect(() => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) return;
+    setTargetPlan(null);
+    void bridge.readWeeklyPlan({ weekKey: targetWeekKey }).then((result) => {
+      if (result.ok)
+        setTargetPlan({ revision: result.value.revision, weekKey: result.value.weekKey });
+    });
+  }, [targetWeekKey]);
+  const targetRevision = targetPlan?.weekKey === targetWeekKey ? targetPlan.revision : null;
   const pending = session.plan.filter(({ status }) => status === '待审批');
   const conflicts = session.plan.filter(({ status }) => status === '时间冲突');
   const skipped = session.plan.filter(({ status }) => status === '已跳过');
@@ -93,24 +126,6 @@ export function WeeklyPlanPage(): React.JSX.Element {
       clearSelection();
     });
   };
-  const generate = (): void => {
-    const bridge = window.rednoteV2;
-    if (bridge === undefined) {
-      notify('本机周计划桥接不可用，未生成计划。');
-      return;
-    }
-    void bridge
-      .generateWeeklyPlan({ expectedRevision: session.planRevision, weekKey: session.weekKey })
-      .then((result) => {
-        if (!result.ok) {
-          notify(result.error.message);
-          if (result.error.code === 'REVISION_CONFLICT') reloadAfterConflict();
-          return;
-        }
-        setSession((current) => withPersistedWeeklyPlan(current, result.value));
-        notify(`已按保存的人设生成 ${result.value.candidates.length} 篇确定性计划，模型调用为 0。`);
-      });
-  };
   const lock = (): void => {
     const bridge = window.rednoteV2;
     if (bridge === undefined) {
@@ -141,12 +156,24 @@ export function WeeklyPlanPage(): React.JSX.Element {
     <div className="v2-page v2-weekly-page">
       <PageHeader
         actions={
-          <Button disabled={locked} icon="sparkle" onClick={generate} tone="primary">
-            生成下周计划
-          </Button>
+          <ProviderActionControl
+            disabled={window.rednoteV2 !== undefined && targetRevision === null}
+            disabledReason="正在读取目标周的真实 revision。"
+            intent={{
+              expectedRevision: targetRevision ?? 0,
+              kind: 'WEEKLY_PLAN',
+              weekKey: targetWeekKey,
+            }}
+            label="预览生成下周计划"
+            onSuccess={async () => {
+              const result = await window.rednoteV2?.readWeeklyPlan({ weekKey: targetWeekKey });
+              if (result?.ok === true)
+                setSession((current) => withPersistedWeeklyPlan(current, result.value));
+            }}
+          />
         }
         description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
-        eyebrow="7月27日—8月2日"
+        eyebrow={`目标周 ${targetWeekKey}${locked ? '（当前周已锁定）' : ''}`}
         title="本周计划"
       />
       <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>

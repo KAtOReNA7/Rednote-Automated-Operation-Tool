@@ -2,12 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
 import { withPersistedInteractions, type V2Session } from '../mock-provider.js';
+import { ProviderActionControl } from '../provider-action-control.js';
 
 // prettier-ignore
 const statusLabels: Readonly<Record<V2InteractionStatusContract, string>> = Object.freeze({ CONFIRMED: '已确认', MANUAL_SENT: '已记录手动发送', NEW: '待生成建议', SKIPPED: '已跳过', SUGGESTED: '待确认' });
-type ItemAction = 'GENERATE' | 'MANUAL_SENT' | 'REOPEN' | 'SAVE' | 'SKIP' | 'UNDO_SENT';
+type ItemAction = 'MANUAL_SENT' | 'REOPEN' | 'SAVE' | 'SKIP' | 'UNDO_SENT';
+type DetailAction = ItemAction | 'CONFIRM' | 'GENERATE';
 // prettier-ignore
-const detailActionsByStatus: Readonly<Record<V2InteractionStatusContract, readonly (readonly [ItemAction | 'CONFIRM', string])[]>> = Object.freeze({
+const detailActionsByStatus: Readonly<Record<V2InteractionStatusContract, readonly (readonly [DetailAction, string])[]>> = Object.freeze({
   CONFIRMED: [['SAVE', '保存建议']],
   MANUAL_SENT: [['UNDO_SENT', '撤销手动发送记录']],
   NEW: [['GENERATE', '生成建议'], ['SKIP', '跳过']],
@@ -140,7 +142,6 @@ export function InteractionPage(): React.JSX.Element {
     if (bridge === undefined || active === undefined) return fail('本机互动桥接不可用，未保存。');
     const item = active;
     const messages = {
-      GENERATE: '已生成确定性的本地 Scripted 建议；未调用模型。',
       MANUAL_SENT: '仅记录你已在官方端手动发送；系统没有发送消息。',
       REOPEN: '互动项已重新打开。',
       SAVE: '回复建议已保存；实质变化会创建新版本。',
@@ -148,33 +149,27 @@ export function InteractionPage(): React.JSX.Element {
       UNDO_SENT: '错误标记已撤销；没有执行平台动作。',
     } as const;
     const operation =
-      action === 'GENERATE'
-        ? bridge.generateReplySuggestion({
+      action === 'SAVE'
+        ? bridge.saveReplySuggestion({
             expectedRevision: item.revision,
-            idempotencyKey: `reply-${item.id}`,
+            expectedVersionId: item.versionId,
             itemId: item.id,
+            replyText: draft,
           })
-        : action === 'SAVE'
-          ? bridge.saveReplySuggestion({
+        : action === 'MANUAL_SENT'
+          ? bridge.markInteractionManualSent({
+              confirmed: true,
               expectedRevision: item.revision,
               expectedVersionId: item.versionId,
               itemId: item.id,
-              replyText: draft,
             })
-          : action === 'MANUAL_SENT'
-            ? bridge.markInteractionManualSent({
-                confirmed: true,
-                expectedRevision: item.revision,
-                expectedVersionId: item.versionId,
-                itemId: item.id,
-              })
-            : bridge[
-                action === 'REOPEN'
-                  ? 'reopenInteraction'
-                  : action === 'SKIP'
-                    ? 'skipInteraction'
-                    : 'undoInteractionManualSent'
-              ]({ expectedRevision: item.revision, itemId: item.id });
+          : bridge[
+              action === 'REOPEN'
+                ? 'reopenInteraction'
+                : action === 'SKIP'
+                  ? 'skipInteraction'
+                  : 'undoInteractionManualSent'
+            ]({ expectedRevision: item.revision, itemId: item.id });
     run(async () => {
       const result = await operation;
       if (!result.ok) return fail(result.error.message);
@@ -219,7 +214,7 @@ export function InteractionPage(): React.JSX.Element {
         eyebrow={`评论 ${session.interactions.filter(({ type }) => type === '评论').length} 条 · 私信 ${session.interactions.filter(({ type }) => type === '私信').length} 条 · 本地保存`}
         title="互动"
       />
-      <p className="v2-kicker">本地 Scripted 建议，不是模型生成；系统不会发送消息。</p>
+      <p className="v2-kicker">回复建议仅在你预览并确认后生成；系统不会发送消息。</p>
       <p className="v2-manual-note">数据保存在本地项目数据中，默认保留至你明确删除，不会上传。</p>
       {error === '' ? null : (
         <div className="v2-form-error" ref={errorRef} role="alert" tabIndex={-1}>
@@ -357,15 +352,32 @@ export function InteractionPage(): React.JSX.Element {
               />
             </label>
             <div className="v2-reply-actions">
-              {detailActions.map(([action, label]) => (
-                <Button
-                  disabled={busy}
-                  key={action}
-                  onClick={action === 'CONFIRM' ? confirmOne : () => itemAction(action)}
-                >
-                  {label}
-                </Button>
-              ))}
+              {detailActions.map(([action, label]) =>
+                action === 'GENERATE' ? (
+                  <ProviderActionControl
+                    disabled={busy}
+                    intent={{
+                      expectedRevision: active.revision,
+                      idempotencyKey: `reply-${active.id}`,
+                      itemId: active.id,
+                      kind: 'REPLY_SUGGESTION',
+                    }}
+                    key={action}
+                    label="预览生成回复建议"
+                    onSuccess={async () => {
+                      await refresh(active.id);
+                    }}
+                  />
+                ) : (
+                  <Button
+                    disabled={busy}
+                    key={action}
+                    onClick={action === 'CONFIRM' ? confirmOne : () => itemAction(action)}
+                  >
+                    {label}
+                  </Button>
+                ),
+              )}
             </div>
             {active.status === 'CONFIRMED' ? (
               <label>

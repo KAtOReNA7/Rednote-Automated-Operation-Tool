@@ -129,6 +129,9 @@ export class ProviderCapabilityRuntime {
         includeToolCalling: selection.includeToolCalling,
         profile: selection.profile,
         selectedCapabilities: Object.freeze([...selection.selectedCapabilities]),
+        ...(selection.targetModelSlots === undefined
+          ? {}
+          : { targetModelSlots: Object.freeze([...selection.targetModelSlots]) }),
       },
       senderId,
       windowId,
@@ -153,6 +156,7 @@ export class ProviderCapabilityRuntime {
     input: StartProviderCapabilityProbeInput,
     senderId: number,
     windowId: number,
+    userApprovedUnknownCost = false,
   ): Promise<ProviderCapabilityProbeProgressView> {
     this.#assertOpen();
     if (this.#active !== null) {
@@ -178,7 +182,11 @@ export class ProviderCapabilityRuntime {
     ) {
       throw new ProviderCapabilityControlError('PROBE_STALE');
     }
-    if (this.#accounting !== null && !this.#probeUnitPolicyReady(rebuilt)) {
+    if (
+      this.#accounting !== null &&
+      !this.#probeUnitPolicyReady(rebuilt) &&
+      !userApprovedUnknownCost
+    ) {
       throw new ProviderCapabilityControlError('BUDGET_UNPRICED_LIMIT_REQUIRED');
     }
 
@@ -196,7 +204,7 @@ export class ProviderCapabilityRuntime {
     this.#repository.createRun(runId, rebuilt, this.#now().toISOString());
     this.#progress.set(runId, initial);
     this.#active = { abortController, plan: rebuilt, runId };
-    void this.#execute(runId, rebuilt, credential, abortController);
+    void this.#execute(runId, rebuilt, credential, abortController, userApprovedUnknownCost);
     return initial;
   }
 
@@ -206,6 +214,11 @@ export class ProviderCapabilityRuntime {
       throw new ProviderCapabilityControlError('PROBE_NOT_RUNNING');
     }
     return progress;
+  }
+
+  public describePlan(selection: CapabilityProbeSelection): CapabilityProbePlan {
+    this.#assertOpen();
+    return buildCapabilityProbePlan(this.#snapshot(), selection);
   }
 
   public cancel(input: CancelProviderCapabilityProbeInput): ProviderCapabilityProbeProgressView {
@@ -249,6 +262,7 @@ export class ProviderCapabilityRuntime {
         rateLimitRequests: entry.rateLimitRequests,
         rateLimitTokens: entry.rateLimitTokens,
         reasonCode: entry.reasonCode,
+        safeDetails: entry.safeDetails,
         source: entry.source,
         stale: entry.stale,
         state: entry.state,
@@ -289,6 +303,7 @@ export class ProviderCapabilityRuntime {
     plan: CapabilityProbePlan,
     credential: string,
     abortController: AbortController,
+    userApprovedUnknownCost: boolean,
   ): Promise<void> {
     try {
       const snapshotAtStart = this.#snapshot();
@@ -334,6 +349,7 @@ export class ProviderCapabilityRuntime {
             identity: this.#probeIdentity(runId, plan, step),
             now: now.toISOString(),
             reservedAmountMicroUsd: null,
+            ...(userApprovedUnknownCost ? { userApprovedUnknownCost: true } : {}),
             unitDemandJson: JSON.stringify({
               externalCalls: 1,
               imageGenerationCalls: step.kind === 'IMAGE' ? 1 : 0,
@@ -471,8 +487,7 @@ export class ProviderCapabilityRuntime {
     if (
       settings.providerBaseUrl === null ||
       settings.researchModelId === null ||
-      settings.writingModelId === null ||
-      settings.reviewModelId === null
+      settings.writingModelId === null
     ) {
       throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
     }

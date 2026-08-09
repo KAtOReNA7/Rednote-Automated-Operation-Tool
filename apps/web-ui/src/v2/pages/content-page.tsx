@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
 import { type V2Session, withPersistedContentPackages } from '../mock-provider.js';
+import { ProviderActionControl } from '../provider-action-control.js';
 
 interface EditableFields {
   readonly body: string;
@@ -88,23 +89,6 @@ export function ContentPage(): React.JSX.Element {
       setBusy(false);
     }
   };
-  const generate = (): void => {
-    void run(async () => {
-      const bridge = window.rednoteV2;
-      if (bridge === undefined) return fail('本机内容桥接不可用，未生成内容包。');
-      if (session.planStatus !== 'CONFIRMED') return fail('请先锁定周计划，再生成内容包。');
-      if (selectedIds.length !== 3) return fail('请从已锁定计划中明确选择 3 项。');
-      const result = await bridge.generateContentPackages({
-        candidateIds: selectedIds,
-        expectedPlanRevision: session.planRevision,
-        idempotencyKey: stableKey('content', [session.weekKey, ...selectedIds.slice().sort()]),
-        weekKey: session.weekKey,
-      });
-      if (!result.ok) return fail(result.error.message);
-      applyWorkspace(result.value);
-      notify('已生成 3 个本地 Scripted 内容包；未调用模型。');
-    });
-  };
   const save = (): void => {
     if (active === undefined) return;
     void run(async () => {
@@ -142,17 +126,7 @@ export function ContentPage(): React.JSX.Element {
   const approve = (ids: readonly string[]): void => {
     void run(async () => {
       const bridge = window.rednoteV2;
-      if (bridge === undefined) {
-        if (ids.length === 0) return fail('请先选择内容包。');
-        setSession((current) => ({
-          ...current,
-          content: current.content.map((item) =>
-            ids.includes(item.id) ? { ...item, status: '已通过' } : item,
-          ),
-        }));
-        setUi((current) => ({ ...current, contentSelectedIds: [] }));
-        return notify(`已通过 ${ids.length} 个模拟内容包；未导出、未发布。`);
-      }
+      if (bridge === undefined) return fail('本机内容桥接不可用，未批准任何内容包。');
       const items = approvalRefs(session.content, ids);
       if (items.length === 0 || items.length !== ids.length) return fail('请选择当前内容包。');
       const result = await bridge.approveContentPackages({ items });
@@ -191,6 +165,9 @@ export function ContentPage(): React.JSX.Element {
 
   const generationCandidates = session.plan.filter(({ status }) => status !== '已跳过');
   const selectedPackages = session.content.filter(({ id }) => selectedIds.includes(id));
+  const copyTargets =
+    selectedPackages.length === 0 && active !== undefined ? [active] : selectedPackages;
+  const copyTargetCountAllowed = copyTargets.length === 1 || copyTargets.length === 3;
   const selectable = session.content.length === 0 ? generationCandidates : session.content;
   const allSelected = selectable.length > 0 && selectedIds.length === selectable.length;
 
@@ -199,9 +176,33 @@ export function ContentPage(): React.JSX.Element {
       <PageHeader
         actions={
           session.content.length === 0 ? (
-            <Button disabled={busy} icon="sparkle" onClick={generate} tone="primary">
-              生成 3 个内容包 {selectedIds.length > 0 ? `(${selectedIds.length}/3)` : ''}
-            </Button>
+            <ProviderActionControl
+              disabled={busy || session.planStatus !== 'CONFIRMED' || selectedIds.length !== 3}
+              disabledReason={
+                session.planStatus !== 'CONFIRMED'
+                  ? '请先锁定周计划，再查看调用 readiness。'
+                  : selectedIds.length !== 3
+                    ? '请选择恰好 3 个候选。'
+                    : undefined
+              }
+              intent={{
+                candidateIds: selectedIds,
+                expectedPlanRevision: session.planRevision,
+                idempotencyKey: stableKey('content', [
+                  session.weekKey,
+                  ...selectedIds.slice().sort(),
+                ]),
+                kind: 'CONTENT_PACKAGES',
+                weekKey: session.weekKey,
+              }}
+              label={`预览生成内容包 (${selectedIds.length}/3)`}
+              onSuccess={async () => {
+                const result = await window.rednoteV2?.readContentPackages({
+                  weekKey: session.weekKey,
+                });
+                if (result?.ok === true) applyWorkspace(result.value);
+              }}
+            />
           ) : (
             <>
               {exportId === '' ? null : (
@@ -228,7 +229,7 @@ export function ContentPage(): React.JSX.Element {
         eyebrow="六字段内容包 · 完全本地"
         title="内容"
       />
-      <p className="v2-kicker">本地 Scripted 内容，不是模型生成；费用与业务网络均为 0。</p>
+      <p className="v2-kicker">内容包仅在受控预览确认后生成，并保存到本机。</p>
       {error === '' ? null : (
         <div className="v2-form-error" ref={errorRef} role="alert" tabIndex={-1}>
           <Icon name="warning-circle" />
@@ -307,6 +308,11 @@ export function ContentPage(): React.JSX.Element {
                 <small>
                   v{active.version} · revision {active.revision} · {active.status}
                 </small>
+                <small>
+                  文案：{active.provenance.copyModelId ?? '历史演示内容'} · 封面：
+                  {active.provenance.coverModelId ?? '历史演示内容'} · 生成时间：
+                  {active.provenance.generatedAt}
+                </small>
               </div>
               <div className="v2-header-actions">
                 <Button disabled={busy} icon="check" onClick={() => approve([active.id])}>
@@ -317,12 +323,61 @@ export function ContentPage(): React.JSX.Element {
                 </Button>
               </div>
             </div>
+            <section aria-label="AI 生成" className="v2-provider-generation-panel">
+              <h3>AI 生成</h3>
+              <p>
+                每个动作先显示真实模型、能力、费用和 Search / Fetch 关闭状态；旧版本不会被覆盖。
+              </p>
+              <div className="v2-inline-actions">
+                <ProviderActionControl
+                  disabled={!copyTargetCountAllowed}
+                  disabledReason={
+                    copyTargetCountAllowed ? undefined : '请选择 1 个或 3 个内容包生成文案新版本。'
+                  }
+                  intent={{
+                    items: copyTargets.map((item) => ({
+                      expectedRevision: item.revision,
+                      expectedVersionId: item.versionId,
+                      packageId: item.id,
+                    })),
+                    kind: 'CONTENT_COPY_VERSION',
+                    weekKey: active.weekKey,
+                  }}
+                  label={`模型生成文案新版本 (${copyTargets.length})`}
+                  onSuccess={async () => {
+                    const result = await window.rednoteV2?.readContentPackages({
+                      weekKey: active.weekKey,
+                    });
+                    if (result?.ok === true) applyWorkspace(result.value);
+                  }}
+                />
+                <ProviderActionControl
+                  intent={{
+                    expectedRevision: active.revision,
+                    expectedVersionId: active.versionId,
+                    kind: 'CONTENT_COVER',
+                    packageId: active.id,
+                    weekKey: active.weekKey,
+                  }}
+                  label="生成或重新生成封面"
+                  onSuccess={async () => {
+                    const result = await window.rednoteV2?.readContentPackages({
+                      weekKey: active.weekKey,
+                    });
+                    if (result?.ok === true) applyWorkspace(result.value);
+                  }}
+                />
+              </div>
+            </section>
             <div className="v2-package-grid">
               <figure>
                 <img alt={active.coverAlt} src={active.cover} />
                 <figcaption>
                   <Icon name="image-square" size={16} />
-                  封面 · 已批准演示资产 · 不可在本轮替换
+                  封面 ·{' '}
+                  {active.provenance.coverSource === 'GENERATED_IMAGE'
+                    ? '模型生成版本'
+                    : '历史演示内容'}
                 </figcaption>
               </figure>
               <div className="v2-package-fields">

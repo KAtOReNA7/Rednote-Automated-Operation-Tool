@@ -306,6 +306,30 @@ describe('Issue 014 SQLite v7 accounting and cache state', () => {
     database.close();
   });
 
+  it('allows one explicitly approved unknown-cost reservation without creating a zero charge', async () => {
+    const { database } = await createInitializedDatabase('user approved unknown cost');
+    const repository = new SqliteModelAccountingRepository(database, () => 'unknown-approved');
+    expect(() =>
+      repository.reserveAndCreateRun({
+        billingMonth: '2026-08',
+        identity: identity('unknown-approved-execution'),
+        now: '2026-08-10T00:00:00.000Z',
+        reservedAmountMicroUsd: null,
+        unitDemandJson: '{"externalCalls":1}',
+        userApprovedUnknownCost: true,
+        weekKey: '2026-W33',
+      }),
+    ).not.toThrow();
+    expect(
+      database
+        .prepare(
+          `SELECT reserved_amount_microusd FROM model_budget_reservations WHERE execution_id='unknown-approved-execution'`,
+        )
+        .get(),
+    ).toEqual({ reserved_amount_microusd: null });
+    database.close();
+  });
+
   it('allows a local cache hit at the hard limit without adding a ledger row', async () => {
     const { database } = await createInitializedDatabase('model accounting cache hit');
     const repository = new SqliteModelAccountingRepository(database, () => 'fixture-id');

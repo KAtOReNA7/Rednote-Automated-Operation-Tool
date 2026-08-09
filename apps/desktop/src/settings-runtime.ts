@@ -177,7 +177,10 @@ import { type AsyncSafeStorage, ElectronCredentialStore } from './credential-sto
 import { DataRootSelectionBroker, type DirectoryDialog } from './data-root-selection.js';
 import { DesktopLocalApiRuntime } from './local-api-runtime.js';
 import { DesktopModelAccountingRuntime } from './model-accounting-runtime.js';
-import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
+import {
+  ProviderCapabilityControlError,
+  ProviderCapabilityRuntime,
+} from './provider-capability-runtime.js';
 import { DesktopSearchRuntime } from './search-runtime.js';
 import { DesktopFetchRuntime } from './fetch-runtime.js';
 import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
@@ -192,6 +195,18 @@ import { DesktopCopyRuntime } from './copy-runtime.js';
 import { DesktopFactMappingRuntime } from './fact-mapping-runtime.js';
 import { DesktopReadingAuthenticityRuntime } from './reading-authenticity-runtime.js';
 import { DesktopSpoilerQualityRuntime } from './spoiler-quality-runtime.js';
+import { V2ProviderRuntime } from './v2-provider-runtime.js';
+import type {
+  V2CapabilityProbePreview,
+  V2CapabilityProbeProgress,
+  V2CapabilityProbeStepDiagnostic,
+  V2CapabilityProbeSummaryState,
+  V2ProviderActionExecutionRequest,
+  V2ProviderActionExecutionResult,
+  V2ProviderActionReadiness,
+  V2ProviderSettingsDraft,
+  V2ProviderSettingsView,
+} from '@mystery-operations/v2';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -200,6 +215,57 @@ import {
 
 const PROJECT_DATABASE_FILE = 'rednote.sqlite';
 const SECRET_EGRESS_TARGET_COUNT = 50;
+const V2_R07_PROBE_SELECTION = Object.freeze({
+  includeToolCalling: false,
+  profile: 'CUSTOM' as const,
+  selectedCapabilities: Object.freeze(['structuredJson', 'imageGeneration'] as const),
+  targetModelSlots: Object.freeze(['RESEARCH', 'WRITING', 'IMAGE'] as const),
+});
+
+function v2ProbeDiagnosticCode(
+  entry: ProviderCapabilityStateView['entries'][number] | undefined,
+  fallback: string,
+): string {
+  if (entry === undefined) return fallback;
+  if (entry.safeDetails.modelIdMismatch === 1) return 'MODEL_ID_MISMATCH';
+  if (entry.safeDetails.modelNotFound === 1) return 'MODEL_NOT_FOUND';
+  if (entry.safeDetails.endpointNotFound === 1) return 'ENDPOINT_OR_ROUTE_NOT_FOUND';
+  return entry.reasonCode;
+}
+
+function v2ProbeReason(code: string, sent: boolean): string {
+  if (!sent)
+    return code === 'CONFIG_STALE' ? '配置在探测期间发生变化，该步骤未发送。' : '该步骤未发送。';
+  const reasons: Readonly<Record<string, string>> = Object.freeze({
+    ABORTED: '用户取消了本次能力检查。',
+    AMBIGUOUS_OUTCOME: '请求已结束，但返回证据不足，能力保持未知。',
+    AUTHENTICATION_REJECTED: '凭据无效或被 Provider 拒绝（HTTP 401）。',
+    CONFIG_STALE: '配置在探测期间发生变化，结果未继续采用。',
+    ENDPOINT_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示该能力或 endpoint 不受支持。',
+    ENDPOINT_OR_ROUTE_NOT_FOUND: '请求路由不存在或当前协议与 endpoint 不兼容（HTTP 404）。',
+    INTERNAL_ERROR: '探测计划发生本地内部错误，未确认能力。',
+    INVALID_CONTENT_TYPE: '返回内容类型不符合协议，能力保持未知。',
+    INVALID_JSON: '返回内容不是有效 JSON，能力保持未知。',
+    INVALID_RESPONSE: '返回格式不符合能力证据合同，能力保持未知。',
+    MODEL_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示该模型不支持所需能力。',
+    MODEL_ID_MISMATCH: '响应中的模型身份与配置模型不一致，结果未采用。',
+    MODEL_NOT_FOUND: '配置的模型 ID 不存在或当前不可用（HTTP 404）。',
+    NETWORK_UNREACHABLE: '网络连接失败，未获得能力证据。',
+    NOT_PROBED: '请求获得了符合强证据合同的明确结果。',
+    OUTPUT_VARIANT_UNSUPPORTED: '图片仅返回 URL，未提供允许的 inline 图片证据。',
+    PERMISSION_REJECTED: '凭据没有访问该能力的权限（HTTP 403）。',
+    PROTOCOL_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示当前协议不受支持。',
+    RATE_LIMITED: 'Provider 限流（HTTP 429），能力保持未知。',
+    SCHEMA_MISMATCH: '结构化输出未满足固定 Schema 证据，能力保持未知。',
+    TIMEOUT: '请求超时，能力保持未知。',
+    TLS_FAILURE: 'TLS 连接或证书校验失败，能力保持未知。',
+  });
+  return reasons[code] ?? '请求已结束，但没有足够的允许证据确认能力。';
+}
+
+function v2ProbeSlot(slot: 'IMAGE' | 'RESEARCH' | 'WRITING'): 'image' | 'research' | 'writing' {
+  return slot === 'IMAGE' ? 'image' : slot === 'RESEARCH' ? 'research' : 'writing';
+}
 
 function containsPlaintext(directory: string, plaintext: Buffer): boolean {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -246,6 +312,7 @@ interface ActiveProject {
   readonly search: DesktopSearchRuntime;
   readonly service: SettingsService;
   readonly topics: DesktopTopicRuntime;
+  readonly v2Provider: V2ProviderRuntime;
 }
 
 export class DesktopSettingsRuntime {
@@ -283,6 +350,356 @@ export class DesktopSettingsRuntime {
     const root = await openProjectDataRoot(this.#locatorState.record.activeDataRoot);
     this.#active = await this.#openActiveProject(root);
     await this.#localApi.attachProject(this.#active.database, this.#active.clipper);
+  }
+
+  public async executeV2ProviderAction(
+    request: V2ProviderActionExecutionRequest,
+  ): Promise<V2ProviderActionExecutionResult> {
+    if (this.#active === null) {
+      return {
+        costAmountMicroUsd: null,
+        costState: 'NOT_INCURRED',
+        externalRequestCount: 0,
+        outcomeCertainty: 'NOT_SENT',
+        output: null,
+        stableErrorCode: 'SETUP_NOT_INITIALIZED',
+        status: 'BLOCKED',
+        modelRunId: null,
+      };
+    }
+    return this.#active.v2Provider.execute(request);
+  }
+
+  public async inspectV2ProviderAction(
+    request: Omit<V2ProviderActionExecutionRequest, 'executionId'>,
+  ): Promise<V2ProviderActionReadiness> {
+    if (this.#active === null) {
+      return {
+        blockReasons: ['本地设置项目尚未就绪。'],
+        budgetState: 'UNKNOWN',
+        canConfirm: false,
+        capabilityState: 'UNKNOWN',
+        credentialState: 'NOT_CONFIGURED',
+        feeEstimateMicroUsd: null,
+        modelId: null,
+        modelSlot: request.modelSlot,
+        providerConfigured: false,
+        unknownCostApproved: request.userApprovedUnknownCost === true,
+      };
+    }
+    return this.#active.v2Provider.inspect(request);
+  }
+
+  public async getV2ProviderSettings(): Promise<V2ProviderSettingsView> {
+    const active = this.#requireActive();
+    const bundle = await active.service.getSettings();
+    const capability = active.capabilities.getState();
+    const accounting = active.accounting.getView();
+    const [weekly, content, reply] = await Promise.all([
+      active.v2Provider.inspect({
+        input: {},
+        kind: 'WEEKLY_PLAN',
+        modelSlot: 'research',
+        userApprovedUnknownCost: false,
+      }),
+      active.v2Provider.inspect({
+        input: {},
+        kind: 'CONTENT_PACKAGES',
+        modelSlot: 'writing',
+        userApprovedUnknownCost: false,
+      }),
+      active.v2Provider.inspect({
+        input: {},
+        kind: 'REPLY_SUGGESTION',
+        modelSlot: 'writing',
+        userApprovedUnknownCost: false,
+      }),
+    ]);
+    const credentialState = bundle.credential.requiresReauth
+      ? ('REAUTH_REQUIRED' as const)
+      : bundle.credential.available
+        ? ('CONFIGURED' as const)
+        : ('NOT_CONFIGURED' as const);
+    const latestRun =
+      capability.runId === null
+        ? null
+        : (capability.history.find((candidate) => candidate.runId === capability.runId) ?? null);
+    let planSteps: readonly {
+      readonly capability: 'imageGeneration' | 'structuredJson';
+      readonly modelId: string;
+      readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
+      readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+    }[];
+    try {
+      planSteps = active.capabilities.describePlan(V2_R07_PROBE_SELECTION).steps.filter(
+        (
+          candidate,
+        ): candidate is typeof candidate & {
+          readonly capability: 'imageGeneration' | 'structuredJson';
+          readonly modelId: string;
+          readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
+          readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+        } =>
+          candidate.modelId !== null &&
+          (candidate.capability === 'structuredJson' || candidate.capability === 'imageGeneration'),
+      );
+    } catch {
+      planSteps = [];
+    }
+    const relevantEntries = capability.entries.filter(
+      (entry) =>
+        (entry.capability === 'structuredJson' &&
+          (entry.modelSlot === 'RESEARCH' || entry.modelSlot === 'WRITING')) ||
+        (entry.capability === 'imageGeneration' && entry.modelSlot === 'IMAGE'),
+    );
+    if (capability.derivedState === 'STALE' && relevantEntries.length > 0) {
+      const grouped = new Map<string, (typeof planSteps)[number]>();
+      for (const entry of relevantEntries) {
+        if (entry.modelId === null) continue;
+        const key = `${entry.modelId}\0${entry.protocolMode}\0${entry.capability}`;
+        const existing = grouped.get(key);
+        const modelSlot = entry.modelSlot as 'IMAGE' | 'RESEARCH' | 'WRITING';
+        grouped.set(key, {
+          capability: entry.capability as 'imageGeneration' | 'structuredJson',
+          modelId: entry.modelId,
+          modelSlots: Object.freeze([...(existing?.modelSlots ?? []), modelSlot]),
+          protocolMode: entry.protocolMode as 'NOT_APPLICABLE' | 'RESPONSES',
+        });
+      }
+      planSteps = Object.freeze([...grouped.values()]);
+    }
+    const sentRequestCount =
+      capability.activeRun?.sentRequestCount ?? latestRun?.sentRequestCount ?? 0;
+    const diagnosticEntries = capability.activeRun === null ? relevantEntries : [];
+    const steps: readonly V2CapabilityProbeStepDiagnostic[] = Object.freeze(
+      planSteps.map((planned, index) => {
+        const matches = diagnosticEntries.filter(
+          (entry) =>
+            entry.modelId === planned.modelId &&
+            entry.capability === planned.capability &&
+            entry.protocolMode === planned.protocolMode &&
+            planned.modelSlots.includes(entry.modelSlot as 'IMAGE' | 'RESEARCH' | 'WRITING'),
+        );
+        const primary = matches.find((entry) => entry.source !== 'NOT_PROBED') ?? matches[0];
+        const sent = primary?.source !== 'NOT_PROBED' || index < sentRequestCount;
+        const fullyMapped = planned.modelSlots.every((modelSlot) =>
+          matches.some((entry) => entry.modelSlot === modelSlot),
+        );
+        const state =
+          fullyMapped && matches.every((entry) => entry.state === primary?.state)
+            ? (primary?.state ?? 'UNKNOWN')
+            : ('UNKNOWN' as const);
+        const fallbackCode = sent
+          ? (latestRun?.reasonCode ?? 'AMBIGUOUS_OUTCOME')
+          : (latestRun?.reasonCode ?? 'NOT_PROBED');
+        const diagnosticCode = v2ProbeDiagnosticCode(primary, fallbackCode);
+        return Object.freeze({
+          capability: planned.capability,
+          deduplicated: planned.modelSlots.length > 1,
+          diagnosticCode,
+          httpStatus: primary?.safeDetails.status ?? null,
+          mappedSlots: Object.freeze(planned.modelSlots.map(v2ProbeSlot)),
+          modelId: planned.modelId,
+          observedAt: primary?.observedAt ?? null,
+          protocolMode: planned.protocolMode,
+          reason: v2ProbeReason(diagnosticCode, sent),
+          sent,
+          stale: matches.some((entry) => entry.stale) || capability.derivedState === 'STALE',
+          state,
+        });
+      }),
+    );
+    const confirmedCount = steps.filter((step) => step.state !== 'UNKNOWN').length;
+    const summaryState: V2CapabilityProbeSummaryState =
+      capability.activeRun?.status === 'RUNNING'
+        ? 'RUNNING'
+        : latestRun === null
+          ? 'NOT_RUN'
+          : capability.derivedState === 'STALE'
+            ? 'STALE'
+            : latestRun.status === 'FAILED' || latestRun.status === 'INTERRUPTED'
+              ? 'FAILED'
+              : latestRun.status === 'CANCELLED'
+                ? 'CANCELLED'
+                : confirmedCount === steps.length && steps.length > 0
+                  ? 'COMPLETE'
+                  : confirmedCount > 0
+                    ? 'PARTIAL'
+                    : 'NONE_CONFIRMED';
+    const runDiagnostic =
+      latestRun === null
+        ? null
+        : Object.freeze({
+            completedAt: latestRun.completedAt,
+            completedRequestCount: latestRun.sentRequestCount,
+            costState: 'UNKNOWN' as const,
+            fetchEnabled: false as const,
+            plannedRequestCount: latestRun.plannedRequestCount,
+            runId: latestRun.runId,
+            searchEnabled: false as const,
+            sentRequestCount: latestRun.sentRequestCount,
+            startedAt: latestRun.startedAt,
+            status: latestRun.status,
+          });
+    const diagnosticText =
+      runDiagnostic === null
+        ? ''
+        : [
+            `run=${runDiagnostic.runId} status=${summaryState}`,
+            `time=${runDiagnostic.startedAt}..${runDiagnostic.completedAt ?? '未结束'}`,
+            `requests=${runDiagnostic.plannedRequestCount}/${runDiagnostic.sentRequestCount}/${runDiagnostic.completedRequestCount}`,
+            'Search=关闭 Fetch=关闭 fee=UNKNOWN',
+            ...steps.map(
+              (step) =>
+                `${step.mappedSlots.join('+')} model=${step.modelId} capability=${step.capability} protocol=${step.protocolMode} state=${step.state} code=${step.diagnosticCode} sent=${step.sent ? 'yes' : 'no'} stale=${step.stale ? 'yes' : 'no'} observedAt=${step.observedAt ?? '无'} reason=${step.reason}`,
+            ),
+          ].join('\n');
+    const slot = (
+      modelSlot: 'IMAGE' | 'RESEARCH' | 'WRITING',
+      modelId: string | null,
+      capabilityName: 'imageGeneration' | 'structuredJson' = 'structuredJson',
+    ) => {
+      const entry = capability.entries.find(
+        (candidate) =>
+          candidate.capability === capabilityName &&
+          candidate.modelSlot === modelSlot &&
+          candidate.modelId === modelId,
+      );
+      return {
+        modelId,
+        state:
+          entry?.stale === true
+            ? ('STALE' as const)
+            : entry?.state === 'SUPPORTED'
+              ? ('SUPPORTED' as const)
+              : entry?.state === 'UNSUPPORTED'
+                ? ('UNSUPPORTED' as const)
+                : ('UNKNOWN' as const),
+      };
+    };
+    return Object.freeze({
+      accounting: Object.freeze({
+        hardLimitMicroUsd: accounting.hardLimitMicroUsd,
+        hardStop: accounting.hardStop,
+        priceReadyForContent: content.feeEstimateMicroUsd !== null,
+        priceReadyForReply: reply.feeEstimateMicroUsd !== null,
+        priceReadyForWeeklyPlan: weekly.feeEstimateMicroUsd !== null,
+        warning: accounting.warning,
+      }),
+      capabilityProbe: Object.freeze({
+        activeRun: capability.activeRun,
+        diagnosticText,
+        derivedState: capability.derivedState,
+        latestRun: runDiagnostic,
+        steps,
+        summaryState,
+      }),
+      credentialState,
+      providerBaseUrl: bundle.settings.providerBaseUrl,
+      providerConfigured:
+        bundle.settings.providerBaseUrl !== null &&
+        bundle.settings.researchModelId !== null &&
+        bundle.settings.writingModelId !== null &&
+        bundle.settings.imageModelId !== null,
+      research: Object.freeze(slot('RESEARCH', bundle.settings.researchModelId)),
+      revision: bundle.settings.revision,
+      setupAvailable: true,
+      writing: Object.freeze(slot('WRITING', bundle.settings.writingModelId)),
+      image: Object.freeze(slot('IMAGE', bundle.settings.imageModelId, 'imageGeneration')),
+    });
+  }
+
+  public async updateV2ProviderSettings(
+    input: V2ProviderSettingsDraft,
+  ): Promise<V2ProviderSettingsView> {
+    const active = this.#requireActive();
+    const current = await active.service.getSettings();
+    await active.service.updateNonSecretSettings({
+      account: { bio: current.account.bio, workingName: current.account.workingName },
+      budget: {
+        hardLimitDollars: (current.settings.monthlyHardLimitCents / 100).toFixed(2),
+        warningDollars: (current.settings.monthlyWarningCents / 100).toFixed(2),
+      },
+      expectedRevision: input.expectedRevision,
+      models: {
+        embedding: current.settings.embeddingModelId,
+        image: input.imageModelId,
+        research: input.researchModelId,
+        review: current.settings.reviewModelId,
+        writing: input.writingModelId,
+      },
+      providerBaseUrl: input.providerBaseUrl,
+    });
+    return this.getV2ProviderSettings();
+  }
+
+  public async setV2ProviderCredential(plaintext: string): Promise<V2ProviderSettingsView> {
+    await this.#requireActive().service.setCredential(plaintext);
+    return this.getV2ProviderSettings();
+  }
+
+  public async clearV2ProviderCredential(): Promise<V2ProviderSettingsView> {
+    await this.#requireActive().service.clearCredential('DELETE_CONTENT_AI_API_KEY');
+    return this.getV2ProviderSettings();
+  }
+
+  public previewV2ProviderCapabilityProbe(
+    senderId: number,
+    windowId: number,
+  ): V2CapabilityProbePreview {
+    const active = this.#requireActive();
+    const preview = active.capabilities.preview(V2_R07_PROBE_SELECTION, senderId, windowId);
+    if (preview.requestCount > 3) {
+      throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
+    }
+    const accounting = active.accounting.getView();
+    return {
+      budgetReady: !accounting.hardStop,
+      credentialBindingVersion: preview.credentialBindingVersion,
+      expiresAt: preview.expiresAt,
+      feeEstimate: preview.feeEstimate,
+      planHash: preview.planHash,
+      requestCount: preview.requestCount,
+      fetchEnabled: false,
+      searchEnabled: false,
+      settingsRevision: preview.settingsRevision,
+      startToken: preview.startToken,
+      modelIds: Object.freeze([
+        ...new Set(
+          Object.values(
+            active.database
+              .prepare(
+                "SELECT research_model_id, writing_model_id, image_model_id FROM app_settings WHERE id='app'",
+              )
+              .get() as Record<string, string | null>,
+          ).filter((value): value is string => value !== null),
+        ),
+      ]),
+      userApprovedUnknownCost: false,
+    };
+  }
+
+  public async startV2ProviderCapabilityProbe(
+    input: {
+      readonly confirmation: 'START_PROVIDER_CAPABILITY_PROBE';
+      readonly credentialBindingVersion: number;
+      readonly planHash: string;
+      readonly settingsRevision: number;
+      readonly startToken: string;
+      readonly userApprovedUnknownCost: boolean;
+    },
+    senderId: number,
+    windowId: number,
+  ): Promise<V2CapabilityProbeProgress> {
+    const active = this.#requireActive();
+    if (active.accounting.getView().hardStop) {
+      throw new ProviderCapabilityControlError('BUDGET_UNPRICED_LIMIT_REQUIRED');
+    }
+    return active.capabilities.start(input, senderId, windowId, input.userApprovedUnknownCost);
+  }
+
+  public getV2ProviderCapabilityProbeProgress(runId: string): V2CapabilityProbeProgress {
+    return this.#requireActive().capabilities.getProgress(runId);
   }
 
   public async runIsolatedSmoke(
@@ -1160,6 +1577,13 @@ export class DesktopSettingsRuntime {
         }
       },
     );
+    const v2Provider = new V2ProviderRuntime({
+      accounting: accountingRepository,
+      capabilities,
+      credentials: this.#credentials,
+      root,
+      settings: repository,
+    });
     const search = new DesktopSearchRuntime(database);
     const clipper = new DesktopBrowserClipRuntime(database, root);
     const fetch = new DesktopFetchRuntime(database, root);
@@ -1201,6 +1625,7 @@ export class DesktopSettingsRuntime {
       search,
       service,
       topics,
+      v2Provider,
     };
   }
 

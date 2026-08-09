@@ -53,6 +53,67 @@ function configure(
 }
 
 describe('Issue 013 main-process capability runtime', () => {
+  it('allows one explicitly approved unknown-cost CUSTOM probe without a unit policy', async () => {
+    const credential = syntheticInvalidCredential();
+    const fixture = await startCapabilityProbeFixture({ expectedCredential: credential });
+    const { database } = await createInitializedDatabase();
+    configure(database, fixture.baseUrl);
+    const settings = new SqliteSettingsRepository(database);
+    const runtime = new ProviderCapabilityRuntime(
+      new SqliteProviderCapabilityRepository(database),
+      () => settings.getBundle().settings,
+      async () => credential,
+      { accountingRepository: new SqliteModelAccountingRepository(database) },
+    );
+    runtime.initialize();
+    try {
+      const preview = runtime.preview(
+        {
+          includeToolCalling: false,
+          profile: 'CUSTOM',
+          selectedCapabilities: ['structuredJson', 'imageGeneration'],
+          targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+        },
+        90,
+        92,
+      );
+      expect(preview).toMatchObject({
+        budgetCheck: 'UNIT_POLICY_REQUIRED',
+        feeEstimate: 'UNKNOWN',
+        requestCount: 2,
+      });
+      const started = await runtime.start(
+        {
+          confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
+          credentialBindingVersion: preview.credentialBindingVersion,
+          planHash: preview.planHash,
+          settingsRevision: preview.settingsRevision,
+          startToken: preview.startToken,
+        },
+        90,
+        92,
+        true,
+      );
+      expect((await waitForTerminal(runtime, started.runId)).status).toBe('SUCCEEDED');
+      expect(fixture.requests).toHaveLength(2);
+      expect(
+        database
+          .prepare(
+            `SELECT count(*) AS count FROM model_runs
+             WHERE task_kind LIKE 'CAPABILITY_PROBE_%' AND cache_policy='BYPASS'`,
+          )
+          .get(),
+      ).toEqual({ count: 2 });
+      expect(database.prepare(`SELECT count(*) AS count FROM cost_ledger`).get()).toEqual({
+        count: 2,
+      });
+    } finally {
+      await runtime.close();
+      database.close();
+      await fixture.close();
+    }
+  });
+
   it('uses the Issue 014 BYPASS accounting kernel and blocks before credentials without a unit policy', async () => {
     const credential = syntheticInvalidCredential();
     const fixture = await startCapabilityProbeFixture({ expectedCredential: credential });

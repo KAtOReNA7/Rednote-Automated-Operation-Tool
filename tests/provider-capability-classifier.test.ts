@@ -80,6 +80,42 @@ describe('Issue 013 conservative capability classifier', () => {
     });
   });
 
+  it('classifies model identity, model lookup, and route mismatches without raw payloads', () => {
+    expect(
+      classifyCapabilityProbeResponse(
+        STEP,
+        response(200, { model: 'different-model', output_text: CAPABILITY_PROBE_MARKERS.text }),
+        NOW,
+      )[0],
+    ).toMatchObject({
+      reasonCode: 'INVALID_RESPONSE',
+      safeDetails: { modelIdMismatch: 1 },
+      state: 'UNKNOWN',
+    });
+    expect(
+      classifyCapabilityProbeResponse(
+        STEP,
+        response(404, { error: { code: 'model_not_found', message: 'sensitive detail' } }),
+        NOW,
+      )[0],
+    ).toMatchObject({
+      reasonCode: 'AMBIGUOUS_OUTCOME',
+      safeDetails: { modelNotFound: 1, status: 404 },
+      state: 'UNKNOWN',
+    });
+    const route = classifyCapabilityProbeResponse(
+      STEP,
+      response(404, { error: { code: 'not_found', message: 'sensitive detail' } }),
+      NOW,
+    )[0];
+    expect(route).toMatchObject({
+      reasonCode: 'AMBIGUOUS_OUTCOME',
+      safeDetails: { endpointNotFound: 1, status: 404 },
+      state: 'UNKNOWN',
+    });
+    expect(JSON.stringify([route])).not.toContain('sensitive detail');
+  });
+
   it('keeps malformed JSON, content type, timeout and network failure inconclusive', () => {
     expect(classifyCapabilityProbeResponse(STEP, response(200, '{bad'), NOW)[0]).toMatchObject({
       reasonCode: 'INVALID_JSON',

@@ -205,6 +205,7 @@ export class SqliteModelExecutionPersistence implements ModelExecutionPersistenc
       now: now.toISOString(),
       reservedAmountMicroUsd: estimated?.amountMicroUsd ?? null,
       unitDemandJson: JSON.stringify(request.unitDemandUpperBound),
+      userApprovedUnknownCost: request.userApprovedUnknownCost === true,
       weekKey: utcWeekKey(now),
     });
     return { priceSchedule, reservationId: started.reservationId };

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CAPABILITY_PROBE_MARKERS,
   CapabilityProbeRunner,
   NodeFetchCapabilityProbeTransport,
   buildCapabilityProbePlan,
@@ -11,6 +12,78 @@ import {
 } from './support/capability-probe-fixture.js';
 
 describe('Issue 013 serial no-retry capability runner', () => {
+  it('deduplicates shared text slots and keeps a URL-only image result inconclusive', async () => {
+    const paths: string[] = [];
+    const runner = new CapabilityProbeRunner({
+      request: async (request) => {
+        paths.push(request.path);
+        return request.path === '/responses'
+          ? {
+              body: JSON.stringify({
+                output_text: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }),
+              }),
+              headers: { 'content-type': 'application/json' },
+              status: 200,
+            }
+          : {
+              body: JSON.stringify({ data: [{ url: 'https://invalid.example/image.png' }] }),
+              headers: { 'content-type': 'application/json' },
+              status: 200,
+            };
+      },
+    });
+    const plan = buildCapabilityProbePlan(
+      {
+        baseUrl: 'http://127.0.0.1:43119/v1',
+        credentialBindingVersion: 1,
+        models: {
+          image: 'fixture-image',
+          provider: 'shared-model',
+          research: 'shared-model',
+          review: 'review-model',
+          writing: 'shared-model',
+        },
+        protocol: 'OPENAI_COMPATIBLE',
+        settingsRevision: 1,
+      },
+      {
+        includeToolCalling: false,
+        profile: 'CUSTOM',
+        selectedCapabilities: ['structuredJson', 'imageGeneration'],
+        targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+      },
+    );
+    const result = await runner.run(
+      plan,
+      'http://127.0.0.1:43119/v1',
+      syntheticInvalidCredential(),
+      {
+        isConfigCurrent: () => true,
+        runId: 'probe-runner-diagnostics-0001',
+        signal: new AbortController().signal,
+      },
+    );
+
+    expect(plan.requestCount).toBe(2);
+    expect(paths).toEqual(['/responses', '/images/generations']);
+    expect(result.status).toBe('SUCCEEDED');
+    expect(result.observations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          capability: 'structuredJson',
+          modelSlots: ['RESEARCH', 'WRITING'],
+          state: 'SUPPORTED',
+        }),
+        expect.objectContaining({
+          capability: 'imageGeneration',
+          modelSlots: ['IMAGE'],
+          reasonCode: 'OUTPUT_VARIANT_UNSUPPORTED',
+          state: 'UNKNOWN',
+        }),
+      ]),
+    );
+  });
+
   it('executes a complete CORE plan once per step against loopback only', async () => {
     const credential = syntheticInvalidCredential();
     const fixture = await startCapabilityProbeFixture({ expectedCredential: credential });

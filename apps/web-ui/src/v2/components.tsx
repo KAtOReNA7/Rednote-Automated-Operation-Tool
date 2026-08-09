@@ -127,14 +127,44 @@ export function AppFrame({
   readonly notify: (message: string) => void;
 }): React.JSX.Element {
   const { session } = useV2Controller();
+  const [providerStatus, setProviderStatus] = useState<'PENDING' | 'READY' | 'UNAVAILABLE'>(
+    window.rednoteV2 === undefined ? 'UNAVAILABLE' : 'PENDING',
+  );
+  useEffect(() => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) return;
+    if (bridge.readProviderSettings === undefined) return setProviderStatus('PENDING');
+    void bridge.readProviderSettings().then((result) => {
+      if (!result.ok) return setProviderStatus('PENDING');
+      const settings = result.value;
+      setProviderStatus(
+        settings.providerConfigured &&
+          settings.credentialState === 'CONFIGURED' &&
+          settings.research.state === 'SUPPORTED' &&
+          settings.writing.state === 'SUPPORTED' &&
+          settings.accounting.priceReadyForWeeklyPlan &&
+          settings.accounting.priceReadyForContent &&
+          settings.accounting.priceReadyForReply &&
+          !settings.accounting.hardStop
+          ? 'READY'
+          : 'PENDING',
+      );
+    });
+  }, [activeRoute]);
   return (
-    <div className="v2-shell" data-v2-mock="true" data-v2-shell>
+    <div className="v2-shell" data-v2-mock={window.rednoteV2 === undefined} data-v2-shell>
       <header className="v2-window-bar">
         <div className="v2-brand">
           <Icon name="bookmark-simple" size={21} />
           <span>Rednote V2</span>
         </div>
-        <strong className="v2-mock-label">周计划已连接本机 · 其他页面模拟</strong>
+        <strong className="v2-mock-label">
+          {providerStatus === 'READY'
+            ? '本地工作区已连接 · AI 服务已就绪'
+            : providerStatus === 'PENDING'
+              ? '本地工作区已连接 · AI 服务待配置'
+              : '本地工作区未连接 · AI 服务不可用'}
+        </strong>
       </header>
       <div className="v2-app-body">
         <aside aria-label="主导航" className="v2-sidebar">
@@ -155,7 +185,7 @@ export function AppFrame({
           </nav>
           <button
             className="v2-account"
-            onClick={() => notify('账号切换尚未接入；当前为单账号模拟会话。')}
+            onClick={() => notify('当前版本为本机单用户工作区。')}
             type="button"
           >
             <Icon name="user-circle" size={29} />

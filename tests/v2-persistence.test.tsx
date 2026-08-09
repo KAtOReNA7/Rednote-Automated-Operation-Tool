@@ -249,11 +249,11 @@ describe('V2 pure contracts', () => {
 });
 
 describe('V2 migration and repository', () => {
-  it('appends the R06 metric migration with two additional STRICT v2_ tables and no triggers', async () => {
+  it('appends the R07 provenance migration without adding a business table or trigger', async () => {
     const previous = MIGRATIONS.at(-2);
     const current = MIGRATIONS.at(-1);
     expect(current).toMatchObject({
-      name: 'v2_metrics_and_strategy_decisions',
+      name: 'v2_generated_cover_and_model_provenance',
       version: (previous?.version ?? 0) + 1,
     });
     const databasePath = createTemporaryDatabasePath('v2 new database');
@@ -285,6 +285,139 @@ describe('V2 migration and repository', () => {
           )
           .get(),
       ).toEqual({ count: 0 });
+      const seeded = new V2ApplicationFacade(new SqliteV2Repository(database));
+      seeded.read({ view: 'WEEKLY_PLAN', weekKey: V2_DEFAULT_WEEK_KEY });
+      database
+        .prepare(
+          `INSERT INTO v2_content_packages(workspace_id,package_id,week_key,candidate_id,plan_revision,current_version)
+         VALUES ('v2-local-workspace','pkg-migration-check',?,'mon-1',0,1)`,
+        )
+        .run(V2_DEFAULT_WEEK_KEY);
+      database
+        .prepare(
+          `INSERT INTO v2_content_package_versions(workspace_id,package_id,version,version_id,status,cover_key,files_json)
+         VALUES ('v2-local-workspace','pkg-migration-check',1,'pkg-migration-check-v1','DRAFT','morgue',?)`,
+        )
+        .run(JSON.stringify(Array.from({ length: 6 }, () => ({}))));
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE v2_content_package_versions SET generated_cover_path='exports/not-generated'
+         WHERE package_id='pkg-migration-check'`,
+          )
+          .run(),
+      ).toThrow();
+      expect(() =>
+        database
+          .prepare(
+            `UPDATE v2_content_package_versions SET generated_cover_path='generated-images/aa/${'a'.repeat(64)}'
+         WHERE package_id='pkg-migration-check'`,
+          )
+          .run(),
+      ).toThrow();
+      const validCover = {
+        height: 1440,
+        mime: 'image/png',
+        path: `generated-images/aa/${'a'.repeat(64)}`,
+        sha256: 'b'.repeat(64),
+        width: 1080,
+      };
+      const setCover = database.prepare(
+        `UPDATE v2_content_package_versions
+         SET generated_cover_path=?, generated_cover_mime=?, generated_cover_sha256=?,
+             generated_cover_width=?, generated_cover_height=?
+         WHERE package_id='pkg-migration-check'`,
+      );
+      for (const invalid of [
+        { ...validCover, path: 'C:/generated-images/cover.png' },
+        { ...validCover, path: 'https://example.invalid/cover.png' },
+        { ...validCover, path: 'generated-images\\aa\\cover.png' },
+        { ...validCover, mime: 'image/jpeg' },
+        { ...validCover, sha256: 'not-a-hash' },
+        { ...validCover, width: 0 },
+      ]) {
+        expect(() =>
+          setCover.run(invalid.path, invalid.mime, invalid.sha256, invalid.width, invalid.height),
+        ).toThrow();
+      }
+      database
+        .prepare(
+          `INSERT INTO model_runs(
+             id, execution_id, task_kind, model_role, model_slot,
+             provider_config_fingerprint, model_id, protocol_mode, prompt_template_id,
+             prompt_version, prompt_content_hash, input_hash, cache_key, cache_policy,
+             status, outcome_certainty, cost_state, started_at, finished_at, created_at, updated_at
+           ) VALUES (
+             'run-r07', 'execution-r07', 'V2_CONTENT_COPY_VERSION', 'WRITER', 'WRITING',
+             '${'0'.repeat(64)}', 'fixture-model', 'MOCK', 'fixture-prompt', 1,
+             'prompt-hash', 'input-hash', '${'1'.repeat(64)}', 'BYPASS', 'SUCCEEDED',
+             'COMPLETED_INVALID_OUTPUT', 'UNPRICED_USAGE',
+             '2026-08-10T00:00:00.000Z', '2026-08-10T00:00:01.000Z',
+             '2026-08-10T00:00:00.000Z', '2026-08-10T00:00:01.000Z'
+           )`,
+        )
+        .run();
+      setCover.run(
+        validCover.path,
+        validCover.mime,
+        validCover.sha256,
+        validCover.width,
+        validCover.height,
+      );
+      database
+        .prepare(
+          `UPDATE v2_content_package_versions
+           SET copy_model_run_id='run-r07', cover_model_run_id='run-r07'
+           WHERE package_id='pkg-migration-check'`,
+        )
+        .run();
+      database
+        .prepare(
+          `INSERT INTO v2_interaction_items(
+             workspace_id,item_id,kind,source,user_text_path,user_text_sha256,
+             user_text_size_bytes,dedup_key,status
+           ) VALUES ('v2-local-workspace','interaction-r07','COMMENT','USER_PASTE',
+             'imports/aa/${'a'.repeat(64)}','${'a'.repeat(64)}',10,'${'c'.repeat(64)}','NEW')`,
+        )
+        .run();
+      database
+        .prepare(
+          `INSERT INTO v2_reply_suggestion_versions(
+             workspace_id,item_id,version,version_id,provider_kind,model_run_id,
+             reply_path,reply_sha256,reply_size_bytes
+           ) VALUES ('v2-local-workspace','interaction-r07',1,'reply-r07-v1','MODEL','run-r07',
+             'imports/bb/${'b'.repeat(64)}','${'b'.repeat(64)}',10)`,
+        )
+        .run();
+      database.prepare(`DELETE FROM model_runs WHERE id='run-r07'`).run();
+      expect(
+        database
+          .prepare(
+            `SELECT copy_model_run_id,cover_model_run_id FROM v2_content_package_versions
+             WHERE package_id='pkg-migration-check'`,
+          )
+          .get(),
+      ).toEqual({ copy_model_run_id: null, cover_model_run_id: null });
+      expect(
+        database
+          .prepare(
+            `SELECT provider_kind,model_run_id FROM v2_reply_suggestion_versions
+             WHERE item_id='interaction-r07'`,
+          )
+          .get(),
+      ).toEqual({ model_run_id: null, provider_kind: 'MODEL' });
+      expect(
+        database
+          .prepare(
+            `SELECT cover_key,generated_cover_path,copy_model_run_id FROM v2_content_package_versions
+         WHERE package_id='pkg-migration-check'`,
+          )
+          .get(),
+      ).toEqual({
+        copy_model_run_id: null,
+        cover_key: 'morgue',
+        generated_cover_path: validCover.path,
+      });
     } finally {
       database.close();
     }
@@ -342,7 +475,7 @@ describe('V2 migration and repository', () => {
              WHERE type = 'table' AND name LIKE 'v2\\_%' ESCAPE '\\'`,
           )
           .get(),
-      ).toEqual({ count: 6 });
+      ).toEqual({ count: 8 });
       expect(
         database.prepare(`SELECT working_name FROM account_profiles WHERE id = 'keep'`).get(),
       ).toEqual({ working_name: '回滚后仍在' });
@@ -498,7 +631,9 @@ describe('V2 Electron boundary', () => {
     expect(key).toBe('rednoteV2');
     expect(Object.keys(exposed).sort()).toEqual([
       'approveContentPackages',
+      'clearProviderCredential',
       'confirmPlanCandidates',
+      'confirmProviderAction',
       'confirmReplySuggestions',
       'createInteraction',
       'decideStrategyRecommendation',
@@ -512,20 +647,27 @@ describe('V2 Electron boundary', () => {
       'openContentExport',
       'previewInteractionDelete',
       'previewPlanReschedule',
+      'previewProviderAction',
+      'previewProviderCapabilityProbe',
       'readContentPackages',
       'readInteractions',
       'readMetricsReview',
       'readPersona',
+      'readProviderCapabilityProbeProgress',
+      'readProviderSettings',
       'readWeeklyPlan',
       'reopenInteraction',
       'reschedulePlanCandidates',
       'saveContentPackage',
       'saveMetricSnapshots',
       'saveReplySuggestion',
+      'setProviderCredential',
       'skipInteraction',
       'skipPlanCandidates',
+      'startProviderCapabilityProbe',
       'undoInteractionManualSent',
       'updatePersona',
+      'updateProviderSettings',
     ]);
     expect('invoke' in exposed).toBe(false);
     expect('rednoteDesktop' in exposed).toBe(false);
@@ -541,6 +683,20 @@ describe('V2 Electron boundary', () => {
       staggerMinutes: 0,
       time: '18:30',
       weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    const previewProviderAction = exposed.previewProviderAction;
+    const confirmProviderAction = exposed.confirmProviderAction;
+    if (previewProviderAction === undefined || confirmProviderAction === undefined) {
+      throw new Error('R07 provider action bridge missing.');
+    }
+    await previewProviderAction({
+      expectedRevision: 0,
+      kind: 'WEEKLY_PLAN',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    await confirmProviderAction({
+      confirmation: 'RUN_PROVIDER_ACTION',
+      previewToken: 'r07-preview-token',
     });
     await exposed.updatePersona({ expectedRevision: 0, persona: DEFAULT_ACCOUNT_PERSONA });
     await exposed.generateWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });
@@ -624,7 +780,7 @@ describe('V2 renderer persistence wiring', () => {
     const name = await screen.findByRole('textbox', { name: '账号名称' });
     await user.clear(name);
     await user.type(name, '本机重启恢复账号');
-    await user.click(screen.getByRole('button', { name: '保存设置' }));
+    await user.click(screen.getByRole('button', { name: '保存人设' }));
     expect(await screen.findByText(/revision 1/u)).toBeInTheDocument();
     first.unmount();
     database.close();

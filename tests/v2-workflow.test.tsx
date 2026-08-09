@@ -34,8 +34,7 @@ describe('V2 deterministic session workflows', () => {
     });
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '本周计划' }));
-    await user.click(screen.getByRole('button', { name: '生成下周计划' }));
-    expect(await screen.findByText(/按保存的人设生成 21 篇/u)).toBeVisible();
+    expect(screen.getByRole('button', { name: '预览生成下周计划' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: '选择待确认' }));
     expect(document.querySelectorAll('.v2-post[data-selected="true"]')).toHaveLength(3);
 
@@ -103,7 +102,7 @@ describe('V2 deterministic session workflows', () => {
     await user.type(title, '修改后的模拟标题');
     expect(screen.getByRole('heading', { level: 2, name: '修改后的模拟标题' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: '批量通过 (3)' }));
-    expect(await screen.findByText(/已通过 3 个模拟内容包/u)).toBeVisible();
+    expect(await screen.findByText(/本机内容桥接不可用/u)).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '互动' }));
     expect(screen.getByRole('heading', { name: '尚无本地互动' })).toBeVisible();
@@ -128,10 +127,10 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getAllByRole('textbox')).toHaveLength(4);
     const name = screen.getByDisplayValue('雾灯书页');
     await user.clear(name);
-    await user.click(screen.getByRole('button', { name: '保存设置' }));
+    await user.click(screen.getByRole('button', { name: '保存人设' }));
     expect(screen.getByText(/账号名称未填写/u)).toBeVisible();
-    await user.type(name, '雾灯书页·模拟');
-    await user.click(screen.getByRole('button', { name: '保存设置' }));
-    expect(await screen.findByText(/保存到当前模拟会话/u)).toBeVisible();
+    await user.type(name, '雾灯书页·本机');
+    await user.click(screen.getByRole('button', { name: '保存人设' }));
+    expect(await screen.findByText(/本机设置桥接不可用/u)).toBeVisible();
   });
 });

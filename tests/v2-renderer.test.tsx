@@ -30,7 +30,9 @@ describe('V2 renderer shell', () => {
     const user = userEvent.setup();
     render(<V2App />);
 
-    expect(screen.getByText('周计划已连接本机 · 其他页面模拟')).toBeVisible();
+    expect(screen.getByText('本地工作区未连接 · AI 服务不可用')).toBeVisible();
+    expect(document.body).not.toHaveTextContent('其他页面模拟');
+    expect(document.body).not.toHaveTextContent('模拟体验');
     const navigation = screen.getByRole('navigation');
     expect(
       within(navigation)
@@ -72,7 +74,7 @@ describe('V2 renderer shell', () => {
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '内容' }));
     expect(screen.getByRole('heading', { level: 1, name: '内容' })).toBeVisible();
-    expect(screen.getByText(/本地 Scripted 内容，不是模型生成/u)).toBeVisible();
+    expect(screen.getByText(/内容包仅在受控预览确认后生成/u)).toBeVisible();
     expect(screen.getByRole('img', { name: /封面建议/u })).toHaveAttribute(
       'src',
       expect.stringContaining('morgue-cover.png'),
