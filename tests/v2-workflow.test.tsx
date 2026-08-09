@@ -121,8 +121,8 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.queryByRole('heading', { name: '《莫格街凶杀案》' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: '数据复盘' }));
-    expect(screen.getByRole('heading', { name: '录入指标' })).toBeVisible();
-    expect(screen.getByRole('button', { name: '保存本地指标' })).toBeVisible();
+    expect(screen.getByRole('heading', { name: '指标录入' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '保存本页指标' })).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '设置' }));
     expect(screen.getAllByRole('textbox')).toHaveLength(4);

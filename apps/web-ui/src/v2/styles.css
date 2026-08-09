@@ -141,6 +141,14 @@
   .v2-field > span { color: #5f5953; font-size: 12px; font-weight: 700; }
   .v2-field :is(input, textarea, select), .v2-search { width: 100%; border: 1px solid #c8c1b7; border-radius: 8px; background: white; padding: 10px 12px; }
   .v2-field textarea { resize: vertical; line-height: 1.7; }
+  .v2-metric-intake { display: grid; gap: 16px; }
+  .v2-metric-package { padding: 18px; }
+  .v2-metric-package header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+  .v2-metric-package h3 { margin: 0; }
+  .v2-metric-package small, .v2-field small { color: var(--v2-muted); font-size: 11px; }
+  .v2-metric-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+  .v2-metric-save { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin: 18px 0; }
+  .v2-metric-save [role='alert'] { color: #a44936; }
   .v2-field-row, .v2-review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .v2-field-row > div, .v2-material { border: 1px solid var(--v2-line); border-radius: 8px; background: #f6f3ee; padding: 12px; }
   .v2-inbox > .v2-segments { width: calc(100% - 28px); margin: 14px; }
@@ -201,11 +209,13 @@
   .v2-book-grid { grid-template-columns: 1fr; }
   .v2-batch-bar { right: 12px; bottom: 12px; left: 12px; overflow-x: auto; }
   }
+  @media (max-width: 1050px) { .v2-metric-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   @media (max-width: 520px) {
   .v2-mock-label { display: none; }
   .v2-header-actions, .v2-plan-toolbar > div, .v2-reply-actions, .v2-overlay-actions { display: grid; grid-template-columns: 1fr; }
   .v2-metrics { grid-template-columns: repeat(2, 1fr); }
   .v2-field-row { grid-template-columns: 1fr; }
+  .v2-metric-fields { grid-template-columns: 1fr; }
   .v2-performance { grid-template-columns: 80px 1fr; }
   .v2-performance strong { grid-column: 2; }
   .v2-schedule-inputs, .v2-conflict-summary article { grid-template-columns: 1fr; }
