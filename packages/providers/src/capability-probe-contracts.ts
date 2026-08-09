@@ -103,6 +103,7 @@ export interface CapabilityProbeSelection {
   readonly includeToolCalling: boolean;
   readonly profile: ProbeProfile;
   readonly selectedCapabilities: readonly ProbeCapability[];
+  readonly targetModelSlots?: readonly ProbeModelSlot[];
 }
 
 export type CapabilityProbeStepKind =

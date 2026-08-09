@@ -129,6 +129,9 @@ export class ProviderCapabilityRuntime {
         includeToolCalling: selection.includeToolCalling,
         profile: selection.profile,
         selectedCapabilities: Object.freeze([...selection.selectedCapabilities]),
+        ...(selection.targetModelSlots === undefined
+          ? {}
+          : { targetModelSlots: Object.freeze([...selection.targetModelSlots]) }),
       },
       senderId,
       windowId,
@@ -201,7 +204,7 @@ export class ProviderCapabilityRuntime {
     this.#repository.createRun(runId, rebuilt, this.#now().toISOString());
     this.#progress.set(runId, initial);
     this.#active = { abortController, plan: rebuilt, runId };
-    void this.#execute(runId, rebuilt, credential, abortController);
+    void this.#execute(runId, rebuilt, credential, abortController, userApprovedUnknownCost);
     return initial;
   }
 
@@ -294,6 +297,7 @@ export class ProviderCapabilityRuntime {
     plan: CapabilityProbePlan,
     credential: string,
     abortController: AbortController,
+    userApprovedUnknownCost: boolean,
   ): Promise<void> {
     try {
       const snapshotAtStart = this.#snapshot();
@@ -339,6 +343,7 @@ export class ProviderCapabilityRuntime {
             identity: this.#probeIdentity(runId, plan, step),
             now: now.toISOString(),
             reservedAmountMicroUsd: null,
+            ...(userApprovedUnknownCost ? { userApprovedUnknownCost: true } : {}),
             unitDemandJson: JSON.stringify({
               externalCalls: 1,
               imageGenerationCalls: step.kind === 'IMAGE' ? 1 : 0,

@@ -444,6 +444,8 @@ export interface V2CapabilityProbePreview {
   readonly settingsRevision: number;
   readonly startToken: string;
   readonly modelIds?: readonly string[];
+  readonly fetchEnabled: false;
+  readonly searchEnabled: false;
   readonly userApprovedUnknownCost?: boolean;
 }
 export interface V2ProviderSettingsView {

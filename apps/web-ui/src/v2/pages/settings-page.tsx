@@ -13,6 +13,14 @@ const credentialLabel = {
   NOT_CONFIGURED: '未配置',
   REAUTH_REQUIRED: '需重新认证',
 } as const;
+const probeStatusLabel = {
+  CANCELLED: '已取消',
+  FAILED: '失败',
+  INTERRUPTED: '已中断',
+  PARTIAL: '部分完成',
+  RUNNING: '检查中',
+  SUCCEEDED: '已完成',
+} as const;
 
 function ProviderSettings(): React.JSX.Element {
   const { notify } = useV2Controller();
@@ -24,6 +32,9 @@ function ProviderSettings(): React.JSX.Element {
   const [credential, setCredential] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [probe, setProbe] = useState<V2CapabilityProbePreviewContract | null>(null);
+  const [probeProgress, setProbeProgress] = useState<V2CapabilityProbeProgressContract | null>(
+    null,
+  );
   const [confirmProbe, setConfirmProbe] = useState(false);
 
   const apply = (next: V2ProviderSettingsViewContract): void => {
@@ -42,6 +53,38 @@ function ProviderSettings(): React.JSX.Element {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (probeProgress?.status !== 'RUNNING') return;
+    const bridge = window.rednoteV2?.readProviderCapabilityProbeProgress;
+    if (bridge === undefined) return;
+    let cancelled = false;
+    let timer = 0;
+    const poll = async (): Promise<void> => {
+      const result = await bridge({ runId: probeProgress.runId });
+      if (cancelled) return;
+      if (!result.ok) {
+        notify(result.error.message);
+        return;
+      }
+      setProbeProgress(result.value);
+      if (result.value.status === 'RUNNING') {
+        timer = window.setTimeout(() => void poll(), 300);
+      } else {
+        await load();
+      }
+    };
+    timer = window.setTimeout(
+      () =>
+        void poll().catch((error: unknown) => {
+          if (!cancelled) notify(error instanceof Error ? error.message : '能力检查进度读取失败。');
+        }),
+      300,
+    );
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [probeProgress?.runId, probeProgress?.status]);
 
   const save = async (): Promise<void> => {
     if (view === null || window.rednoteV2?.updateProviderSettings === undefined) return;
@@ -55,6 +98,7 @@ function ProviderSettings(): React.JSX.Element {
     if (!result.ok) return notify(result.error.message);
     apply(result.value);
     setProbe(null);
+    setProbeProgress(null);
     notify('AI 服务非秘密设置已保存到本机。');
   };
   const saveCredential = async (): Promise<void> => {
@@ -77,10 +121,15 @@ function ProviderSettings(): React.JSX.Element {
     notify('凭据已清除。');
   };
   const previewProbe = async (): Promise<void> => {
+    if (view === null) return;
+    if (!view.providerConfigured) {
+      return notify('请先保存有效的 Base URL，以及研究、写作和图片模型 ID。');
+    }
     const result = await window.rednoteV2?.previewProviderCapabilityProbe?.();
     if (result === undefined) return notify('本机 capability bridge 不可用。');
     if (!result.ok) return notify(result.error.message);
     setProbe(result.value);
+    setProbeProgress(null);
     setConfirmProbe(false);
   };
   const startProbe = async (): Promise<void> => {
@@ -100,6 +149,7 @@ function ProviderSettings(): React.JSX.Element {
     });
     if (!result.ok) return notify(result.error.message);
     setProbe(null);
+    setProbeProgress(result.value);
     notify(
       `能力检查已由用户明确启动：${result.value.sentRequestCount}/${result.value.plannedRequestCount} 请求。`,
     );
@@ -188,13 +238,28 @@ function ProviderSettings(): React.JSX.Element {
           </p>
           <p>能力检查只会在你预览并明确确认后启动，不会自动探测。</p>
           <Button onClick={() => void previewProbe()}>验证 R07 所需能力</Button>
+          {probeProgress === null ? null : (
+            <p role="status">
+              能力检查：{probeStatusLabel[probeProgress.status]} · 已发送{' '}
+              {probeProgress.sentRequestCount}/{probeProgress.plannedRequestCount} 个请求 · 已完成{' '}
+              {probeProgress.completedRequestCount}/{probeProgress.plannedRequestCount}
+            </p>
+          )}
           {probe === null ? null : (
             <div className="v2-provider-blockers">
               <p>
                 预计请求 {probe.requestCount} 次 · 费用
                 {probe.feeEstimate === 'UNKNOWN' ? '无法估算' : probe.feeEstimate} · 预算
-                {probe.budgetReady ? '允许' : '未就绪'}
+                {probe.budgetReady ? '允许' : '已达到硬上限'}
               </p>
+              <p>
+                模型：{probe.modelIds?.join('、') ?? '未配置'} · Search：
+                {probe.searchEnabled ? '开启' : '关闭'} · Fetch：
+                {probe.fetchEnabled ? '开启' : '关闭'}
+              </p>
+              {view.credentialState === 'CONFIGURED' ? null : (
+                <p className="v2-form-error">凭据未配置或需重新认证，请先在上方保存凭据。</p>
+              )}
               <label>
                 <input
                   checked={confirmProbe}
@@ -202,11 +267,16 @@ function ProviderSettings(): React.JSX.Element {
                   type="checkbox"
                 />
                 {probe.feeEstimate === 'UNKNOWN'
-                  ? '我了解费用未知，仍授权本次最多 3 个能力检查请求'
+                  ? `我了解费用未知，仍授权本次最多 ${probe.requestCount} 个能力检查请求`
                   : '我确认启动本次能力检查'}
               </label>
               <Button
-                disabled={!confirmProbe || (probe.feeEstimate !== 'UNKNOWN' && !probe.budgetReady)}
+                disabled={
+                  !confirmProbe ||
+                  !probe.budgetReady ||
+                  view.credentialState !== 'CONFIGURED' ||
+                  !view.providerConfigured
+                }
                 onClick={() => void startProbe()}
                 tone="primary"
               >

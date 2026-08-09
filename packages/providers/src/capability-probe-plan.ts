@@ -158,7 +158,13 @@ export function buildCapabilityProbePlan(
   }
   const selected = assertSelection(selection);
   const enabled = selectedForProfile(selection, selected);
-  const models = configuredModels(snapshot);
+  const targetSlots =
+    selection.targetModelSlots === undefined ? null : new Set(selection.targetModelSlots);
+  const models = configuredModels(snapshot).flatMap((model) => {
+    const slots =
+      targetSlots === null ? model.slots : model.slots.filter((slot) => targetSlots.has(slot));
+    return slots.length === 0 ? [] : [{ id: model.id, slots }];
+  });
   const nonImageModels = models.flatMap((model) => {
     const slots = model.slots.filter((slot) => slot !== 'IMAGE');
     return slots.length === 0 ? [] : [{ id: model.id, slots }];
@@ -179,7 +185,9 @@ export function buildCapabilityProbePlan(
   };
 
   const providerModel = models.find((model) => model.slots.includes('PROVIDER'));
-  append('METADATA', 'usage', 'NOT_APPLICABLE', providerModel?.id ?? null, ['PROVIDER']);
+  if (selection.profile !== 'CUSTOM' || enabled.has('usage')) {
+    append('METADATA', 'usage', 'NOT_APPLICABLE', providerModel?.id ?? null, ['PROVIDER']);
+  }
   for (const model of nonImageModels) {
     if (enabled.has('text')) {
       append('TEXT', 'text', 'RESPONSES', model.id, model.slots);
@@ -203,9 +211,10 @@ export function buildCapabilityProbePlan(
   }
   if (enabled.has('imageGeneration')) {
     const image = models.find((model) => model.slots.includes('IMAGE'));
-    if (image !== undefined) {
-      append('IMAGE', 'imageGeneration', 'NOT_APPLICABLE', image.id, ['IMAGE']);
+    if (image === undefined) {
+      throw new TypeError('Image generation probes require an image model slot.');
     }
+    append('IMAGE', 'imageGeneration', 'NOT_APPLICABLE', image.id, ['IMAGE']);
   }
   if (enabled.has('batch')) {
     append('BATCH_METADATA', 'batch', 'NOT_APPLICABLE', null, ['PROVIDER']);

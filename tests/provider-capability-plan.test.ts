@@ -84,6 +84,61 @@ describe('Issue 013 immutable capability probe plans', () => {
     });
   });
 
+  it('builds the R07 CUSTOM bootstrap plan without an extra metadata request', () => {
+    const distinct = buildCapabilityProbePlan(snapshot(), {
+      includeToolCalling: false,
+      profile: 'CUSTOM',
+      selectedCapabilities: ['structuredJson', 'imageGeneration'],
+      targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+    });
+    expect(distinct.steps.map((candidate) => candidate.kind)).toEqual([
+      'STRUCTURED',
+      'STRUCTURED',
+      'IMAGE',
+    ]);
+    expect(distinct.steps.some((candidate) => candidate.kind === 'METADATA')).toBe(false);
+
+    const base = snapshot();
+    const deduplicated = buildCapabilityProbePlan(
+      {
+        ...base,
+        models: {
+          image: base.models.image,
+          provider: base.models.research,
+          research: base.models.research,
+          review: null,
+          writing: base.models.research,
+        },
+      },
+      {
+        includeToolCalling: false,
+        profile: 'CUSTOM',
+        selectedCapabilities: ['structuredJson', 'imageGeneration'],
+        targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+      },
+    );
+    expect(deduplicated.requestCount).toBe(2);
+    expect(deduplicated.steps[0]).toMatchObject({
+      kind: 'STRUCTURED',
+      modelSlots: ['RESEARCH', 'WRITING'],
+    });
+    expect(deduplicated.steps[1]).toMatchObject({ kind: 'IMAGE', modelSlots: ['IMAGE'] });
+  });
+
+  it('rejects an image capability selection without an image model', () => {
+    expect(() =>
+      buildCapabilityProbePlan(
+        { ...snapshot(), models: { ...snapshot().models, image: null } },
+        {
+          includeToolCalling: false,
+          profile: 'CUSTOM',
+          selectedCapabilities: ['structuredJson', 'imageGeneration'],
+          targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+        },
+      ),
+    ).toThrow(/image model slot/iu);
+  });
+
   it('keeps FULL under 32 requests and includes every explicit capability mode', () => {
     const plan = buildCapabilityProbePlan(snapshot(), {
       includeToolCalling: false,

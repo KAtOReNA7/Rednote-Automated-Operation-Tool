@@ -177,7 +177,10 @@ import { type AsyncSafeStorage, ElectronCredentialStore } from './credential-sto
 import { DataRootSelectionBroker, type DirectoryDialog } from './data-root-selection.js';
 import { DesktopLocalApiRuntime } from './local-api-runtime.js';
 import { DesktopModelAccountingRuntime } from './model-accounting-runtime.js';
-import { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
+import {
+  ProviderCapabilityControlError,
+  ProviderCapabilityRuntime,
+} from './provider-capability-runtime.js';
 import { DesktopSearchRuntime } from './search-runtime.js';
 import { DesktopFetchRuntime } from './fetch-runtime.js';
 import { DesktopBrowserClipRuntime } from './browser-clip-runtime.js';
@@ -459,17 +462,24 @@ export class DesktopSettingsRuntime {
         includeToolCalling: false,
         profile: 'CUSTOM',
         selectedCapabilities: ['structuredJson', 'imageGeneration'],
+        targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
       },
       senderId,
       windowId,
     );
+    if (preview.requestCount > 3) {
+      throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
+    }
+    const accounting = active.accounting.getView();
     return {
-      budgetReady: preview.budgetCheck === 'UNIT_POLICY_READY',
+      budgetReady: !accounting.hardStop,
       credentialBindingVersion: preview.credentialBindingVersion,
       expiresAt: preview.expiresAt,
       feeEstimate: preview.feeEstimate,
       planHash: preview.planHash,
       requestCount: preview.requestCount,
+      fetchEnabled: false,
+      searchEnabled: false,
       settingsRevision: preview.settingsRevision,
       startToken: preview.startToken,
       modelIds: Object.freeze([
@@ -499,12 +509,11 @@ export class DesktopSettingsRuntime {
     senderId: number,
     windowId: number,
   ): Promise<V2CapabilityProbeProgress> {
-    return this.#requireActive().capabilities.start(
-      input,
-      senderId,
-      windowId,
-      input.userApprovedUnknownCost,
-    );
+    const active = this.#requireActive();
+    if (active.accounting.getView().hardStop) {
+      throw new ProviderCapabilityControlError('BUDGET_UNPRICED_LIMIT_REQUIRED');
+    }
+    return active.capabilities.start(input, senderId, windowId, input.userApprovedUnknownCost);
   }
 
   public getV2ProviderCapabilityProbeProgress(runId: string): V2CapabilityProbeProgress {

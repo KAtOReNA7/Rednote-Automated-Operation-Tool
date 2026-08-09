@@ -138,22 +138,59 @@ describe('V2 R07 provider action renderer', () => {
     const previewProviderCapabilityProbe = vi.fn(async () => ({
       ok: true as const,
       value: {
-        budgetReady: false,
+        budgetReady: true,
         credentialBindingVersion: 2,
         expiresAt: '2026-08-09T15:00:00.000Z',
         feeEstimate: 'UNKNOWN' as const,
+        fetchEnabled: false as const,
+        modelIds: ['research-v2', 'writing-v1', 'image-v2'],
         planHash: 'probehash',
         requestCount: 2,
+        searchEnabled: false as const,
         settingsRevision: 2,
         startToken: 'probe-token',
       },
     }));
+    const startProviderCapabilityProbe = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        completedRequestCount: 0,
+        plannedRequestCount: 2,
+        runId: 'probe-run',
+        sentRequestCount: 0,
+        status: 'RUNNING' as const,
+      },
+    }));
+    const readProviderCapabilityProbeProgress = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true as const,
+        value: {
+          completedRequestCount: 1,
+          plannedRequestCount: 2,
+          runId: 'probe-run',
+          sentRequestCount: 1,
+          status: 'RUNNING' as const,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true as const,
+        value: {
+          completedRequestCount: 2,
+          plannedRequestCount: 2,
+          runId: 'probe-run',
+          sentRequestCount: 2,
+          status: 'SUCCEEDED' as const,
+        },
+      });
     expose({
       ...createMemoryV2Bridge(),
       clearProviderCredential,
       previewProviderCapabilityProbe,
+      readProviderCapabilityProbeProgress,
       readProviderSettings: async () => ({ ok: true, value: settings }),
       setProviderCredential,
+      startProviderCapabilityProbe,
       updateProviderSettings,
     });
     window.history.replaceState(null, '', '#/v2/settings');
@@ -185,13 +222,31 @@ describe('V2 R07 provider action renderer', () => {
       confirmation: 'DELETE_CONTENT_AI_API_KEY',
     });
     await user.click(screen.getByRole('button', { name: '验证 R07 所需能力' }));
-    expect(previewProviderCapabilityProbe).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(/凭据未配置或需重新认证/)).toBeVisible();
+    await user.click(
+      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 2 个能力检查请求' }),
+    );
+    expect(screen.getByRole('button', { name: '确认并启动' })).toBeDisabled();
+    await user.type(secret, `replacement-${randomUUID()}`);
+    await user.click(screen.getByRole('button', { name: '加密保存凭据' }));
+    await user.click(screen.getByRole('button', { name: '验证 R07 所需能力' }));
+    expect(previewProviderCapabilityProbe).toHaveBeenCalledTimes(2);
     expect(await screen.findByText(/费用无法估算/)).toBeVisible();
     expect(screen.getByRole('button', { name: '确认并启动' })).toBeDisabled();
     await user.click(
-      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 3 个能力检查请求' }),
+      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 2 个能力检查请求' }),
     );
     expect(screen.getByRole('button', { name: '确认并启动' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '确认并启动' }));
+    expect(startProviderCapabilityProbe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        startToken: 'probe-token',
+        userApprovedUnknownCost: true,
+      }),
+    );
+    expect(await screen.findByText(/能力检查：检查中/)).toBeVisible();
+    expect(await screen.findByText(/能力检查：已完成/)).toBeVisible();
+    expect(readProviderCapabilityProbeProgress).toHaveBeenCalledTimes(2);
     cleanup();
     settings = {
       ...settings,
