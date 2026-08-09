@@ -279,7 +279,7 @@ for (const mode of ['disabled', 'enabled']) {
           report.runtime?.ipcRegistered !== true ||
           report.runtime?.projectDataRootInitialized !== true ||
           report.runtime?.sqliteInitialized !== true ||
-          report.runtime?.v2TableCount !== 6 ||
+          report.runtime?.v2TableCount !== 8 ||
           report.runtime?.personaRevision !== 0 ||
           report.runtime?.planRevision !== 1 ||
           report.security?.externalRequestAttempts !== 0

@@ -16,6 +16,9 @@ import {
   parseV2ReadRequest,
   toV2Exception,
   type AccountPersona,
+  deterministicReview,
+  type MetricWindow,
+  type MetricsReview,
   type V2Result,
   type WeeklyPlan,
 } from '@mystery-operations/v2';
@@ -80,6 +83,7 @@ export class V2DesktopRuntime {
     if (request.view === 'INTERACTIONS') return this.#interaction.read();
     if (request.view === 'INTERACTION_DELETE_PREVIEW')
       return this.#interaction.previewDelete(request.itemId);
+    if (request.view === 'METRICS_REVIEW') return this.#metricsReview(request.snapshotWindow);
     return this.#facade.read(request);
   }
 
@@ -106,6 +110,17 @@ export class V2DesktopRuntime {
       await this.#content.openExport(request.exportId);
       return { opened: true };
     }
+    if (request.action === 'SAVE_METRIC_SNAPSHOTS') {
+      this.#repository.saveMetricSnapshots(request.snapshots);
+      const firstSnapshot = request.snapshots.at(0);
+      if (firstSnapshot === undefined) throw new V2ContractError('INVALID_REQUEST');
+      return this.#metricsReview(firstSnapshot.snapshotWindow);
+    }
+    if (request.action === 'DECIDE_STRATEGY_RECOMMENDATION') {
+      if (request.status === 'PENDING') throw new V2ContractError('INVALID_REQUEST');
+      this.#repository.decision(request.id, request.status, request.expectedRevision);
+      return this.#metricsReview('7D');
+    }
     return this.#facade.mutate(request);
   }
 
@@ -122,6 +137,24 @@ export class V2DesktopRuntime {
 
   #assertOpen(): void {
     if (this.#closed) throw new Error('V2_RUNTIME_CLOSED');
+  }
+
+  async #metricsReview(snapshotWindow: MetricWindow): Promise<MetricsReview> {
+    const workspace = await this.#content.read('2026-W01');
+    const titles = new Map(workspace.packages.map((item) => [item.id, item.fields.title]));
+    const review = deterministicReview(
+      this.#repository.listMetricSnapshots(),
+      titles,
+      snapshotWindow,
+    );
+    const decisions = this.#repository.syncStrategyRecommendations(review.recommendations);
+    return {
+      ...review,
+      recommendations: review.recommendations.map((item) => {
+        const decision = decisions.get(item.id);
+        return decision === undefined ? item : { ...item, status: decision.status };
+      }),
+    } as MetricsReview;
   }
 }
 

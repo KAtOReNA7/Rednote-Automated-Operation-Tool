@@ -22,6 +22,15 @@ import {
   type InteractionWorkspace,
   type V2InteractionErrorCode,
 } from './interaction.js';
+export * from './metrics.js';
+import {
+  METRIC_WINDOWS,
+  parseMetricSnapshot,
+  type MetricSnapshot,
+  type MetricWindow,
+  type MetricsReview,
+  type StrategyDecisionStatus,
+} from './metrics.js';
 
 export * from './content.js';
 export * from './interaction.js';
@@ -132,6 +141,7 @@ export type V2ReadRequest =
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
+  | { readonly view: 'METRICS_REVIEW'; readonly snapshotWindow: MetricWindow }
   | InteractionReadRequest;
 
 export type V2MutationRequest =
@@ -144,6 +154,13 @@ export type V2MutationRequest =
       readonly action: 'GENERATE_WEEKLY_PLAN';
       readonly expectedRevision: number;
       readonly weekKey: string;
+    }
+  | { readonly action: 'SAVE_METRIC_SNAPSHOTS'; readonly snapshots: readonly MetricSnapshot[] }
+  | {
+      readonly action: 'DECIDE_STRATEGY_RECOMMENDATION';
+      readonly expectedRevision: number;
+      readonly id: string;
+      readonly status: Exclude<StrategyDecisionStatus, 'STALE'>;
     }
   | {
       readonly action: 'CONFIRM_PLAN_CANDIDATES';
@@ -246,6 +263,17 @@ export interface V2Bridge {
     readonly weekKey: string;
   }) => Promise<V2Result<ContentWorkspace>>;
   readonly readInteractions: () => Promise<V2Result<InteractionWorkspace>>;
+  readonly readMetricsReview?: (input: {
+    readonly snapshotWindow: MetricWindow;
+  }) => Promise<V2Result<MetricsReview>>;
+  readonly saveMetricSnapshots?: (input: {
+    readonly snapshots: readonly Omit<MetricSnapshot, 'revision'>[];
+  }) => Promise<V2Result<MetricsReview>>;
+  readonly decideStrategyRecommendation?: (input: {
+    readonly expectedRevision: number;
+    readonly id: string;
+    readonly status: 'ACCEPTED' | 'REJECTED';
+  }) => Promise<V2Result<MetricsReview>>;
   readonly readPersona: () => Promise<V2Result<AccountPersona>>;
   readonly readWeeklyPlan: (input: { readonly weekKey: string }) => Promise<V2Result<WeeklyPlan>>;
   readonly reschedulePlanCandidates: (
@@ -616,6 +644,12 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   if (value.view === 'CONTENT_PACKAGES' && exactKeys(value, ['view', 'weekKey']))
     return { view: value.view, weekKey: weekKey(value.weekKey) };
   if (
+    value.view === 'METRICS_REVIEW' &&
+    exactKeys(value, ['snapshotWindow', 'view']) &&
+    METRIC_WINDOWS.includes(value.snapshotWindow as MetricWindow)
+  )
+    return { view: value.view, snapshotWindow: value.snapshotWindow as MetricWindow };
+  if (
     value.view === 'PLAN_RESCHEDULE_PREVIEW' &&
     exactKeys(value, [
       'candidateIds',
@@ -636,6 +670,30 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (
+    value.action === 'SAVE_METRIC_SNAPSHOTS' &&
+    exactKeys(value, ['action', 'snapshots']) &&
+    Array.isArray(value.snapshots) &&
+    value.snapshots.length >= 1 &&
+    value.snapshots.length <= 20
+  )
+    return { action: value.action, snapshots: value.snapshots.map(parseMetricSnapshot) };
+  if (
+    value.action === 'DECIDE_STRATEGY_RECOMMENDATION' &&
+    exactKeys(value, ['action', 'expectedRevision', 'id', 'status']) &&
+    typeof value.id === 'string' &&
+    /^[a-zA-Z0-9_-]{1,128}$/u.test(value.id) &&
+    typeof value.expectedRevision === 'number' &&
+    Number.isSafeInteger(value.expectedRevision) &&
+    value.expectedRevision >= 0 &&
+    (value.status === 'ACCEPTED' || value.status === 'REJECTED')
+  )
+    return {
+      action: value.action,
+      expectedRevision: value.expectedRevision,
+      id: value.id,
+      status: value.status,
+    };
   if (typeof value.action === 'string' && isInteractionMutationRequest({ action: value.action }))
     return parseInteractionMutationRequest(value);
   if (
@@ -1007,6 +1065,7 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
+    if (request.view === 'METRICS_REVIEW') throw new V2ContractError('INVALID_REQUEST');
     if (
       request.view === 'CONTENT_PACKAGES' ||
       request.view === 'INTERACTIONS' ||
@@ -1023,6 +1082,11 @@ export class V2ApplicationFacade {
       this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
       return this.#repository.savePersona(request.persona, request.expectedRevision);
     }
+    if (
+      request.action === 'SAVE_METRIC_SNAPSHOTS' ||
+      request.action === 'DECIDE_STRATEGY_RECOMMENDATION'
+    )
+      throw new V2ContractError('INVALID_REQUEST');
     if (
       request.action === 'GENERATE_CONTENT_PACKAGES' ||
       request.action === 'SAVE_CONTENT_PACKAGE' ||

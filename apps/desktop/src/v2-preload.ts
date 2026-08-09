@@ -10,6 +10,8 @@ import {
   type InteractionDeletePreview,
   type InteractionItem,
   type InteractionWorkspace,
+  type MetricSnapshot,
+  type MetricsReview,
   type PlanReschedulePreview,
   type V2Bridge,
   type V2Result,
@@ -32,6 +34,11 @@ const bridge: V2Bridge = Object.freeze({
     invoke<InteractionWorkspace>('mutate', { action: 'CONFIRM_REPLY_SUGGESTIONS', ...input }),
   createInteraction: (input: Parameters<V2Bridge['createInteraction']>[0]) =>
     invoke<InteractionCreateResult>('mutate', { action: 'CREATE_INTERACTION', ...input }),
+  decideStrategyRecommendation: (input: {
+    readonly expectedRevision: number;
+    readonly id: string;
+    readonly status: 'ACCEPTED' | 'REJECTED';
+  }) => invoke<MetricsReview>('mutate', { action: 'DECIDE_STRATEGY_RECOMMENDATION', ...input }),
   deleteInteraction: (input: Parameters<V2Bridge['deleteInteraction']>[0]) =>
     invoke<InteractionWorkspace>('mutate', { action: 'DELETE_INTERACTION', ...input }),
   generateWeeklyPlan: (input: Parameters<V2Bridge['generateWeeklyPlan']>[0]) =>
@@ -58,6 +65,8 @@ const bridge: V2Bridge = Object.freeze({
   readContentPackages: (input: Parameters<V2Bridge['readContentPackages']>[0]) =>
     invoke<ContentWorkspace>('read', { view: 'CONTENT_PACKAGES', ...input }),
   readInteractions: () => invoke<InteractionWorkspace>('read', { view: 'INTERACTIONS' }),
+  readMetricsReview: (input: { readonly snapshotWindow: '24H' | '72H' | '7D' }) =>
+    invoke<MetricsReview>('read', { view: 'METRICS_REVIEW', ...input }),
   readPersona: () => invoke<AccountPersona>('read', { view: 'ACCOUNT_PERSONA' }),
   readWeeklyPlan: (input: Parameters<V2Bridge['readWeeklyPlan']>[0]) =>
     invoke<WeeklyPlan>('read', { view: 'WEEKLY_PLAN', ...input }),
@@ -72,6 +81,9 @@ const bridge: V2Bridge = Object.freeze({
     invoke<InteractionItem>('mutate', { action: 'SAVE_REPLY_SUGGESTION', ...input }),
   saveContentPackage: (input: Parameters<V2Bridge['saveContentPackage']>[0]) =>
     invoke<ContentPackage>('mutate', { action: 'SAVE_CONTENT_PACKAGE', ...input }),
+  saveMetricSnapshots: (input: {
+    readonly snapshots: readonly Omit<MetricSnapshot, 'revision'>[];
+  }) => invoke<MetricsReview>('mutate', { action: 'SAVE_METRIC_SNAPSHOTS', ...input }),
   skipPlanCandidates: (input: Parameters<V2Bridge['skipPlanCandidates']>[0]) =>
     invoke<WeeklyPlan>('mutate', { action: 'SKIP_PLAN_CANDIDATES', ...input }),
   skipInteraction: (input: Parameters<V2Bridge['skipInteraction']>[0]) =>

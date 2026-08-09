@@ -178,7 +178,7 @@ export function OverviewPage(): React.JSX.Element {
               </button>
             </div>
             <div className="v2-metrics">
-              {session.metrics.map((metric) => (
+              {([] as typeof session.metrics).map((metric) => (
                 <div key={metric.label}>
                   <span>{metric.label}</span>
                   <strong>{metric.value}</strong>
@@ -191,7 +191,7 @@ export function OverviewPage(): React.JSX.Element {
             <p className="v2-kicker">3 个值得关注的方向</p>
             <h2>近期机会</h2>
             <div className="v2-opportunities">
-              {session.opportunities.map((item) => {
+              {([] as typeof session.opportunities).map((item) => {
                 const saved = ui.savedOpportunityIds.includes(item.id);
                 return (
                   <article key={item.id}>

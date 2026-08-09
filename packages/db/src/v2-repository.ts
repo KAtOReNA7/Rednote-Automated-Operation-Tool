@@ -30,6 +30,8 @@ import {
   type WeeklyPlan,
   V2InteractionError,
   V2_INTERACTION_KINDS,
+  V2MetricsError,
+  type MetricSnapshot,
 } from '@mystery-operations/v2';
 import { parseManagedRelativePath } from '@mystery-operations/shared/storage';
 
@@ -550,6 +552,176 @@ export class SqliteV2Repository
         .prepare(`SELECT 1 FROM v2_content_packages WHERE workspace_id = ? AND package_id = ?`)
         .get(this.#workspaceId, packageId) !== undefined
     );
+  }
+
+  public listMetricSnapshots(): readonly MetricSnapshot[] {
+    return this.#database
+      .prepare(
+        `SELECT package_id, snapshot_window, published_at, views, likes, collections, comments, new_followers, revision
+       FROM v2_metric_snapshots WHERE workspace_id = ? ORDER BY package_id, snapshot_window`,
+      )
+      .all(this.#workspaceId)
+      .map((row) => {
+        const value = row as Record<string, unknown>;
+        return {
+          packageId: value.package_id as string,
+          snapshotWindow: value.snapshot_window as MetricSnapshot['snapshotWindow'],
+          publishedAt: value.published_at as string,
+          views: value.views as number,
+          likes: value.likes as number,
+          collections: value.collections as number,
+          comments: value.comments as number,
+          newFollowers: value.new_followers as number,
+          revision: value.revision as number,
+          expectedRevision: value.revision as number,
+        };
+      });
+  }
+
+  public saveMetricSnapshots(snapshots: readonly MetricSnapshot[]): readonly MetricSnapshot[] {
+    return runInTransaction(this.#database, () => {
+      const unique = new Set<string>();
+      for (const snapshot of snapshots) {
+        const key = `${snapshot.packageId}:${snapshot.snapshotWindow}`;
+        if (unique.has(key)) throw new V2MetricsError('INVALID_REQUEST', ['snapshots']);
+        unique.add(key);
+        const content = this.get(snapshot.packageId);
+        if (content.status !== 'APPROVED')
+          throw new V2MetricsError('PACKAGE_NOT_APPROVED', ['packageId']);
+        const current = this.#database
+          .prepare(
+            `SELECT revision, published_at, views, likes, collections, comments, new_followers FROM v2_metric_snapshots
+           WHERE workspace_id = ? AND package_id = ? AND snapshot_window = ?`,
+          )
+          .get(this.#workspaceId, snapshot.packageId, snapshot.snapshotWindow) as
+          Record<string, unknown> | undefined;
+        if (current === undefined) {
+          if (snapshot.expectedRevision !== 0)
+            throw new V2MetricsError('METRICS_CONFLICT', ['expectedRevision']);
+          this.#database
+            .prepare(
+              `INSERT INTO v2_metric_snapshots(workspace_id,package_id,snapshot_window,published_at,views,likes,collections,comments,new_followers,revision,created_at,updated_at)
+            VALUES (?,?,?,?,?,?,?,?,?,0,?,?)`,
+            )
+            .run(
+              this.#workspaceId,
+              snapshot.packageId,
+              snapshot.snapshotWindow,
+              snapshot.publishedAt,
+              snapshot.views,
+              snapshot.likes,
+              snapshot.collections,
+              snapshot.comments,
+              snapshot.newFollowers,
+              this.#timestamp(),
+              this.#timestamp(),
+            );
+        } else {
+          if (current.revision !== snapshot.expectedRevision)
+            throw new V2MetricsError('METRICS_CONFLICT', ['expectedRevision']);
+          const same = [
+            'published_at',
+            'views',
+            'likes',
+            'collections',
+            'comments',
+            'new_followers',
+          ].every(
+            (key) =>
+              String(current[key]) ===
+              String(
+                (
+                  {
+                    published_at: snapshot.publishedAt,
+                    views: snapshot.views,
+                    likes: snapshot.likes,
+                    collections: snapshot.collections,
+                    comments: snapshot.comments,
+                    new_followers: snapshot.newFollowers,
+                  } as Record<string, unknown>
+                )[key],
+              ),
+          );
+          if (!same)
+            this.#database
+              .prepare(
+                `UPDATE v2_metric_snapshots SET published_at=?,views=?,likes=?,collections=?,comments=?,new_followers=?,revision=revision+1,updated_at=? WHERE workspace_id=? AND package_id=? AND snapshot_window=? AND revision=?`,
+              )
+              .run(
+                snapshot.publishedAt,
+                snapshot.views,
+                snapshot.likes,
+                snapshot.collections,
+                snapshot.comments,
+                snapshot.newFollowers,
+                this.#timestamp(),
+                this.#workspaceId,
+                snapshot.packageId,
+                snapshot.snapshotWindow,
+                snapshot.expectedRevision,
+              );
+        }
+      }
+      return this.listMetricSnapshots();
+    });
+  }
+
+  public decision(id: string, status: 'ACCEPTED' | 'REJECTED', expectedRevision: number): void {
+    const row = this.#database
+      .prepare(
+        `SELECT revision FROM v2_strategy_decisions WHERE workspace_id = ? AND recommendation_id = ?`,
+      )
+      .get(this.#workspaceId, id) as { readonly revision: number } | undefined;
+    if (row === undefined || row.revision !== expectedRevision)
+      throw new V2MetricsError('METRICS_CONFLICT', ['expectedRevision']);
+    this.#database
+      .prepare(
+        `UPDATE v2_strategy_decisions SET status = ?, revision = revision + 1, updated_at = ?
+       WHERE workspace_id = ? AND recommendation_id = ? AND revision = ?`,
+      )
+      .run(status, this.#timestamp(), this.#workspaceId, id, expectedRevision);
+  }
+
+  public syncStrategyRecommendations(
+    items: readonly { readonly fingerprint: string; readonly id: string }[],
+  ): ReadonlyMap<
+    string,
+    { readonly revision: number; readonly status: 'ACCEPTED' | 'PENDING' | 'REJECTED' | 'STALE' }
+  > {
+    return runInTransaction(this.#database, () => {
+      const timestamp = this.#timestamp();
+      for (const item of items) {
+        const row = this.#database
+          .prepare(
+            `SELECT fingerprint FROM v2_strategy_decisions WHERE workspace_id = ? AND recommendation_id = ?`,
+          )
+          .get(this.#workspaceId, item.id) as { readonly fingerprint: string } | undefined;
+        if (row === undefined)
+          this.#database
+            .prepare(
+              `INSERT INTO v2_strategy_decisions(workspace_id,recommendation_id,fingerprint,status,revision,created_at,updated_at) VALUES (?,?,?,'PENDING',0,?,?)`,
+            )
+            .run(this.#workspaceId, item.id, item.fingerprint, timestamp, timestamp);
+        else if (row.fingerprint !== item.fingerprint)
+          this.#database
+            .prepare(
+              `UPDATE v2_strategy_decisions SET fingerprint = ?, status = 'STALE', revision = revision + 1, updated_at = ? WHERE workspace_id = ? AND recommendation_id = ?`,
+            )
+            .run(item.fingerprint, timestamp, this.#workspaceId, item.id);
+      }
+      const rows = this.#database
+        .prepare(
+          `SELECT recommendation_id, revision, status FROM v2_strategy_decisions WHERE workspace_id = ?`,
+        )
+        .all(this.#workspaceId) as unknown as readonly {
+        readonly recommendation_id: string;
+        readonly revision: number;
+        readonly status: 'ACCEPTED' | 'PENDING' | 'REJECTED' | 'STALE';
+      }[];
+      return new Map(
+        rows.map((row) => [row.recommendation_id, { revision: row.revision, status: row.status }]),
+      );
+    });
   }
 
   public createInteraction(record: InteractionRecord): InteractionRecord {

@@ -270,7 +270,7 @@ async function startV2Application(
           renderer.preload &&
           persistence.personaRevision === 0 &&
           persistence.planRevision === 1 &&
-          persistence.v2TableCount === 6 &&
+          persistence.v2TableCount === 8 &&
           sessionSecurityAudit.externalRequestAttempts === 0;
         await emitSmokeProcessSample('capability-validated');
         writeSmokeReport(smokeOutputPath, {
