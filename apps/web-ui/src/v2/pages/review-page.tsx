@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
 
-import type { ContentPackage, MetricsReview, MetricWindow } from '@mystery-operations/v2';
-
 import { Button, PageHeader, useV2Controller } from '../components.js';
 
+type MetricWindow = '24H' | '72H' | '7D';
+type ContentPackage = V2ContentWorkspaceContract['packages'][number];
 const WINDOWS: readonly MetricWindow[] = ['24H', '72H', '7D'];
 const FIELDS = [
   'publishedAt',
@@ -17,7 +17,7 @@ const FIELDS = [
 export function ReviewPage(): React.JSX.Element {
   const { notify } = useV2Controller();
   const [metricWindow, setMetricWindow] = useState<MetricWindow>('7D');
-  const [review, setReview] = useState<MetricsReview | null>(null);
+  const [review, setReview] = useState<V2MetricsReviewContract | null>(null);
   const [packages, setPackages] = useState<readonly ContentPackage[]>([]);
   const [values, setValues] = useState<Record<string, string>>({});
   const load = async (): Promise<void> => {
