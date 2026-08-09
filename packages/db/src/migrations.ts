@@ -11765,6 +11765,34 @@ CREATE INDEX idx_v2_interactions_related_content ON v2_interaction_items(workspa
   WHERE related_content_package_id IS NOT NULL;
 `;
 
+const V2_METRICS_AND_STRATEGY_DECISIONS = `
+CREATE TABLE v2_metric_snapshots (
+  workspace_id TEXT NOT NULL, package_id TEXT NOT NULL,
+  snapshot_window TEXT NOT NULL CHECK (snapshot_window IN ('24H','72H','7D')),
+  published_at TEXT NOT NULL CHECK (published_at ${UTC_REQUIRED}),
+  views INTEGER NOT NULL CHECK (typeof(views) = 'integer' AND views >= 0),
+  likes INTEGER NOT NULL CHECK (typeof(likes) = 'integer' AND likes >= 0),
+  collections INTEGER NOT NULL CHECK (typeof(collections) = 'integer' AND collections >= 0),
+  comments INTEGER NOT NULL CHECK (typeof(comments) = 'integer' AND comments >= 0),
+  new_followers INTEGER NOT NULL CHECK (typeof(new_followers) = 'integer' AND new_followers >= 0),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, package_id, snapshot_window),
+  FOREIGN KEY (workspace_id, package_id) REFERENCES v2_content_packages(workspace_id, package_id)
+    ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+CREATE TABLE v2_strategy_decisions (
+  workspace_id TEXT NOT NULL, recommendation_id TEXT NOT NULL,
+  fingerprint TEXT NOT NULL, status TEXT NOT NULL CHECK (status IN ('PENDING','ACCEPTED','REJECTED','STALE')),
+  revision INTEGER NOT NULL DEFAULT 0 CHECK (typeof(revision) = 'integer' AND revision >= 0),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  updated_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (updated_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, recommendation_id),
+  FOREIGN KEY (workspace_id) REFERENCES v2_workspaces(workspace_id) ON UPDATE CASCADE ON DELETE RESTRICT
+) STRICT, WITHOUT ROWID;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -11889,5 +11917,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'v2_interactions_and_reply_versions',
     sql: V2_INTERACTIONS_AND_REPLY_VERSIONS,
     version: 23,
+  }),
+  Object.freeze({
+    name: 'v2_metrics_and_strategy_decisions',
+    sql: V2_METRICS_AND_STRATEGY_DECISIONS,
+    version: 24,
   }),
 ]);

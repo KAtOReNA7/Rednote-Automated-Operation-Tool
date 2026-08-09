@@ -1,0 +1,190 @@
+Rednote V2-R06 正式增量指令
+主题：本地运营数据录入、确定性复盘与策略决策
+
+执行模型：GPT-5.6 Terra，Low。
+
+完整遵守仓库 AGENTS.md。本文件只定义 R06 增量，不重复公共治理规则。
+
+一、目标与停止点
+
+从当前本地、tracking、远端完全一致且 Windows required CI 全绿的 main 开始，完成：
+
+已批准内容包
+→ 用户批量录入实际发布时间和 24H/72H/7D 指标
+→ 原子保存并可受控纠正
+→ 数据复盘页显示真实本地汇总
+→ 只在数据充分时生成确定性建议
+→ 用户采纳或拒绝并重启恢复
+→ 总览同步真实指标与待决建议。
+
+完成后创建 Draft PR 和 Windows 体验包，停止在 R06_AWAITING_USER_ACCEPTANCE。不得合并，不得进入 R07、最终视觉收敛或 R08。
+
+二、产品原则
+
+1. R06 是功能接线，不是 UI 设计任务。复用当前“数据复盘”和“总览”页面结构、组件与样式。
+2. 不调用 Figma、ImageGen、Sites、计算机控制或商业范例调研；视觉债务继续延期到最终上线前统一处理。
+3. 不得保留会被用户误认为真实结果的 R01 模拟指标、模拟涨幅或模拟机会。
+4. 没有数据就显示“暂无真实数据”；数据不足就显示“当前数据不足以形成建议”。
+5. 只说明相关性，不宣称某种内容、时间或题材导致了结果。
+6. 采纳建议只记录用户决策；R06 不自动修改周计划。后续真实 adapter 可显式读取该决策。
+
+三、动态开工
+
+1. 检查本地 main、origin/main、GitHub 实时 main、ahead/behind、工作树和暂存区。
+2. 确认精确 main 的 Windows required CI 全绿；若不绿则停止。
+3. tracked/staged 必须为 0。既有 ignored 文件不得删除、移动或作为门禁。
+4. 从实时绿色 main 创建：codex/v2-r06-local-metrics-review。
+5. 将本 TXT 唯一归档到 docs/instructions/v2/，不得在仓库根保留副本。
+6. 编码前阅读 R02—R05 合同、V2 facade/repository、两个 workspace IPC、当前 review/overview 页面及 migration 尾部，输出简短文件级实施计划和预算。
+7. 若必须新增第三条 IPC、第三张表、外部依赖或超过预算，停止，不先实现半套功能。
+
+四、录入范围
+
+A. 可录入对象
+
+1. 只接受当前 workspace 中真实存在、当前版本状态为 APPROVED 的 R04 ContentPackage。
+2. 不允许按标题猜测关联；使用稳定 packageId，并在 UI 显示对应标题帮助用户选择。
+3. 不接收任意小红书 URL、平台账号、Cookie、笔记抓取结果或联系人信息。
+
+B. 每条指标
+
+必须包含：
+
+- packageId；
+- 实际发布时间 publishedAt，精确到分钟；
+- snapshotWindow：24H、72H 或 7D；
+- views；
+- likes；
+- collections；
+- comments；
+- newFollowers；
+- expectedRevision，新建时为 0。
+
+所有计数必须为非负安全整数。views 为 0 时比例显示 N/A，不得除零或伪造 0%。不强制 likes、collections、comments 小于 views，因为平台指标语义不保证这种关系。
+
+C. 录入方式
+
+1. 使用当前页面内的紧凑表格/表单，一次可编辑并原子保存 1—20 个内容包指标。
+2. R06 不做平台 CSV 适配、文件选择器、截图 OCR 或批量任意格式解析。
+3. 同一 packageId + snapshotWindow 只有一个当前快照；完全相同的重放为 no-op。
+4. 对既有快照的实质纠正必须携带 expectedRevision，revision +1；混入 stale 行时整批失败，不部分保存。
+5. 关闭并重启后恢复全部快照与 revision。
+
+五、确定性复盘
+
+1. 用户明确选择 24H、72H 或 7D 窗口；只比较同一窗口的数据。
+2. 汇总显示真实整数：浏览、点赞、收藏、评论、新增关注。
+3. 比率使用整数基点或规范十进制计算，不使用 SQLite REAL，不出现浮点漂移：
+   - 收藏率 = collections / views；
+   - 互动率 = (likes + collections + comments) / views；
+   - 关注转化率 = newFollowers / views。
+4. 只有存在可比较的上一个完整周期时才显示环比；否则显示“无可比较周期”，删除当前固定模拟涨幅。
+5. 内容包明细必须可见，用户能核对每篇的原始计数和派生比率；总成绩不能代替单篇明细。
+6. 排序使用明确、确定性的 tie-break；不得把样本内排名称为统计显著性。
+
+六、策略建议
+
+1. 建议由本地 DeterministicReviewEngine 生成，不调用模型。
+2. 形成方向性建议的最低条件：同一窗口至少 3 个内容包，每个 views >= 100。
+3. 条件不足、并列无法区分、关键字段缺失时，不生成方向建议，返回 INSUFFICIENT_DATA。
+4. 数据充分时最多生成 2 条建议：
+   - 当前样本收藏率最强的内容方向；
+   - 当前样本关注转化率最强的内容方向。
+5. 若两项指向同一内容包，合并成 1 条，避免重复建议。
+6. 文案必须包含“在当前样本中”，展示支持它的内容标题、窗口、浏览量、分子和比率，不写因果结论。
+7. 建议状态只有 PENDING、ACCEPTED、REJECTED。采纳/拒绝使用 expectedRevision 并持久化。
+8. 指标实质变化后，旧决策按输入 fingerprint 派生为 STALE；不得继续冒充当前建议。
+9. R06 不让建议自动修改 R03 周计划；UI 明确提示“当前只记录策略决策，不自动改计划”。
+
+七、数据与边界
+
+1. 最多新增 2 张 STRICT v2_ 表、1 条连续 migration、0 trigger：
+   - v2_metric_snapshots；
+   - v2_strategy_decisions。
+2. 不修改历史 migration；升级、回滚、备份与旧数据保留按现有机制验证。
+3. 新 IPC channel 为 0；只扩展 v2:workspace:read 和 v2:workspace:mutate 的受控判别联合及 preload 具名方法。
+4. 新 package、dependency、route、queue、worker、模型调用、云服务均为 0。
+5. renderer 不接收 SQL、raw row、绝对路径、secret、任意 channel 名或内部异常。
+6. 指标数据不写入日志、诊断或错误正文；只允许有限计数和稳定错误码。
+7. AI 标识保持默认 false 且不参与输入、计算、建议或门禁；版权风险不参与字段、评分、审批或排期。
+
+八、页面接线
+
+数据复盘页：
+
+1. “更新指标”改为真实本地录入入口，不再显示“未接入”。
+2. 显示窗口选择、批量录入、保存结果、纠正冲突、空状态、数据不足状态和单篇明细。
+3. 显示真实汇总、真实比率及确定性建议；支持采纳、拒绝。
+4. 删除或隐藏固定模拟数字、模拟涨幅、模拟策略建议。
+
+总览页：
+
+1. “近期表现”读取 R06 当前窗口真实汇总；无数据时显示空状态。
+2. “近期机会”改为当前非 stale 的策略建议；没有建议时显示克制的空状态。
+3. 不改变导航、布局、设计系统或其他页面视觉。
+
+九、规模预算
+
+1. 产品源码净新增 <= 1,500 LOC。
+2. 测试净新增 <= 1,000 LOC。
+3. R06 主体文件 <= 26；连续 migration 的机械尾部测试最多额外 12 个文件，总绝对上限 38。
+4. 新测试文件 <= 6；核心验收使用表驱动方式，避免重复测试。
+5. 超预算前必须停止并报告，不以“已经写完”为理由追认。
+
+十、核心验收
+
+R06-01 仅 APPROVED 当前内容包可录入；跨 workspace、未知或旧版本关联被拒绝。
+R06-02 24H/72H/7D 和五项非负整数严格校验，错误不泄漏原始输入。
+R06-03 1—20 行原子保存；stale 混入时全部不变。
+R06-04 完全重放 no-op；实质纠正 revision +1；重启恢复。
+R06-05 views=0 的所有比率为 N/A，无除零、NaN 或 Infinity。
+R06-06 汇总与单篇明细使用同一窗口，整数计算精确且 tie-break 确定。
+R06-07 无完整对比周期时不显示伪环比。
+R06-08 少于 3 篇或任一篇 views<100 时明确 INSUFFICIENT_DATA，不生成建议。
+R06-09 数据充分时最多 2 条建议，证据可回溯且只陈述当前样本相关性。
+R06-10 采纳/拒绝持久化；指标变化使旧决策 STALE；不自动修改计划。
+R06-11 review 与 overview 均来自真实 repository，不再展示 R01 模拟指标和机会。
+R06-12 V2 IPC 总数仍为 2；renderer 无 Node/DB/FS/网络直连。
+R06-13 legacy、R03、R04、R05 行为保持回归，外部连接、模型、费用和平台动作均为 0。
+
+十一、经济型验证
+
+本地只运行：
+
+1. 编码前受影响测试的聚焦基线，不跑全量。
+2. R06 专项、V2 repository/migration、IPC、review/overview renderer 和直接相邻 R03—R05 回归。
+3. 每次修复只重跑失败集合；禁止无修改盲目重跑。
+4. 最终各一次 format-check、lint、typecheck、build、git diff --check。
+5. normal、capacity、Electron source/packaged smoke、desktop/clipper package 和 audit 交给远端 Windows required CI 一次完成。
+
+十二、Git、PR 与体验
+
+1. 建议提交：feat(v2): add local metrics and deterministic review。
+2. 普通 push R06 分支，创建 Draft PR；不得直接推 main，不得合并。
+3. 等待精确 PR HEAD 的 Windows required CI 全绿；失败只做有根因的当前范围修复，不无修改重跑。
+4. 下载并静态核验 Windows 体验包，不替用户启动或使用计算机控制。
+5. 体验清单要求用户：
+   - 给 3 个已批准内容包录入同一窗口的数据；
+   - 验证不足 100 浏览时不生成结论；
+   - 改成充分样本后核对单篇、汇总和建议；
+   - 采纳一条、拒绝一条；
+   - 纠正一个指标并确认旧建议变 stale；
+   - 关闭重启确认恢复；
+   - 检查总览同步且没有模拟涨幅；
+   - 确认系统没有自动修改周计划或连接平台。
+6. 等待用户回复“接受 V2-R06”或列出问题。
+
+十三、最终报告
+
+只报告：
+
+1. R06_AWAITING_USER_ACCEPTANCE 或 BLOCKED。
+2. 动态基线、分支、PR、HEAD、ahead/behind 和工作树。
+3. 真实录入、汇总、明细、建议、stale 与重启恢复结果。
+4. migration、表、trigger、IPC、dependency、LOC 和文件预算。
+5. 本地聚焦验证和精确 PR HEAD Windows CI。
+6. Windows 体验包与清单路径。
+7. 外部连接、模型/API、密钥、费用和平台操作均为 0。
+8. 明确未合并、未进入 R07、最终视觉收敛或 R08。
+
+现在开始。完成后停止。

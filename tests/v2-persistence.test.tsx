@@ -249,11 +249,11 @@ describe('V2 pure contracts', () => {
 });
 
 describe('V2 migration and repository', () => {
-  it('appends the R05 migration with two additional STRICT v2_ tables and no triggers', async () => {
+  it('appends the R06 metric migration with two additional STRICT v2_ tables and no triggers', async () => {
     const previous = MIGRATIONS.at(-2);
     const current = MIGRATIONS.at(-1);
     expect(current).toMatchObject({
-      name: 'v2_interactions_and_reply_versions',
+      name: 'v2_metrics_and_strategy_decisions',
       version: (previous?.version ?? 0) + 1,
     });
     const databasePath = createTemporaryDatabasePath('v2 new database');
@@ -271,7 +271,9 @@ describe('V2 migration and repository', () => {
         { name: 'v2_content_package_versions', strict: 1 },
         { name: 'v2_content_packages', strict: 1 },
         { name: 'v2_interaction_items', strict: 1 },
+        { name: 'v2_metric_snapshots', strict: 1 },
         { name: 'v2_reply_suggestion_versions', strict: 1 },
+        { name: 'v2_strategy_decisions', strict: 1 },
         { name: 'v2_weekly_plan_snapshots', strict: 1 },
         { name: 'v2_workspaces', strict: 1 },
       ]);
@@ -340,7 +342,7 @@ describe('V2 migration and repository', () => {
              WHERE type = 'table' AND name LIKE 'v2\\_%' ESCAPE '\\'`,
           )
           .get(),
-      ).toEqual({ count: 4 });
+      ).toEqual({ count: 6 });
       expect(
         database.prepare(`SELECT working_name FROM account_profiles WHERE id = 'keep'`).get(),
       ).toEqual({ working_name: '回滚后仍在' });
@@ -499,6 +501,7 @@ describe('V2 Electron boundary', () => {
       'confirmPlanCandidates',
       'confirmReplySuggestions',
       'createInteraction',
+      'decideStrategyRecommendation',
       'deleteInteraction',
       'exportContentPackages',
       'generateContentPackages',
@@ -511,11 +514,13 @@ describe('V2 Electron boundary', () => {
       'previewPlanReschedule',
       'readContentPackages',
       'readInteractions',
+      'readMetricsReview',
       'readPersona',
       'readWeeklyPlan',
       'reopenInteraction',
       'reschedulePlanCandidates',
       'saveContentPackage',
+      'saveMetricSnapshots',
       'saveReplySuggestion',
       'skipInteraction',
       'skipPlanCandidates',
@@ -662,7 +667,9 @@ describe('V2 renderer persistence wiring', () => {
       { name: 'v2_content_package_versions' },
       { name: 'v2_content_packages' },
       { name: 'v2_interaction_items' },
+      { name: 'v2_metric_snapshots' },
       { name: 'v2_reply_suggestion_versions' },
+      { name: 'v2_strategy_decisions' },
       { name: 'v2_weekly_plan_snapshots' },
       { name: 'v2_workspaces' },
     ]);
