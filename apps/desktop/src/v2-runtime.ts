@@ -29,7 +29,12 @@ import {
   type V2ProviderActionExecutionResult,
   type V2ProviderActionIntent,
   type V2ProviderActionPreview,
+  type V2ProviderActionReadiness,
   type V2ProviderActionResult,
+  type V2CapabilityProbePreview,
+  type V2CapabilityProbeProgress,
+  type V2ProviderSettingsDraft,
+  type V2ProviderSettingsView,
   type V2Result,
   type WeeklyPlan,
 } from '@mystery-operations/v2';
@@ -47,6 +52,28 @@ export interface V2ActionCaller {
 
 export interface V2ProviderExecutionPort {
   execute(request: V2ProviderActionExecutionRequest): Promise<V2ProviderActionExecutionResult>;
+  inspect(
+    request: Omit<V2ProviderActionExecutionRequest, 'executionId'>,
+  ): Promise<V2ProviderActionReadiness>;
+}
+
+export interface V2SettingsControlPort {
+  clearCredential(): Promise<V2ProviderSettingsView>;
+  getCapabilityProgress(runId: string): V2CapabilityProbeProgress;
+  getSettings(): Promise<V2ProviderSettingsView>;
+  previewCapabilityProbe(caller: V2ActionCaller): V2CapabilityProbePreview;
+  setCredential(plaintext: string): Promise<V2ProviderSettingsView>;
+  startCapabilityProbe(
+    input: {
+      readonly confirmation: 'START_PROVIDER_CAPABILITY_PROBE';
+      readonly credentialBindingVersion: number;
+      readonly planHash: string;
+      readonly settingsRevision: number;
+      readonly startToken: string;
+    },
+    caller: V2ActionCaller,
+  ): Promise<V2CapabilityProbeProgress>;
+  updateSettings(input: V2ProviderSettingsDraft): Promise<V2ProviderSettingsView>;
 }
 
 interface ProviderPreviewLease {
@@ -65,6 +92,41 @@ const unavailableProviderExecution: V2ProviderExecutionPort = {
     stableErrorCode: 'PROVIDER_NOT_CONFIGURED',
     status: 'BLOCKED',
   }),
+  inspect: async (request) => ({
+    blockReasons: ['本机 Provider runtime 不可用。'],
+    budgetState: 'UNKNOWN',
+    canConfirm: false,
+    capabilityState: 'UNKNOWN',
+    credentialState: 'NOT_CONFIGURED',
+    feeEstimateMicroUsd: null,
+    modelId: null,
+    modelSlot: request.modelSlot,
+    providerConfigured: false,
+  }),
+};
+
+const unavailableSettingsControl: V2SettingsControlPort = {
+  clearCredential: async () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
+  getCapabilityProgress: () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
+  getSettings: async () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
+  previewCapabilityProbe: () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
+  setCredential: async () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
+  startCapabilityProbe: async () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
+  updateSettings: async () => {
+    throw new V2ContractError('SETTINGS_NOT_READY');
+  },
 };
 
 export class V2DesktopRuntime {
@@ -74,6 +136,7 @@ export class V2DesktopRuntime {
   readonly #interaction: V2InteractionApplication;
   readonly #repository: SqliteV2Repository;
   readonly #providerExecution: V2ProviderExecutionPort;
+  readonly #settingsControl: V2SettingsControlPort;
   readonly #providerPreviews = new Map<string, ProviderPreviewLease>();
   #closed = false;
 
@@ -82,6 +145,7 @@ export class V2DesktopRuntime {
     contentFiles: V2LocalContentFiles,
     interactionFiles: V2LocalInteractionFiles,
     providerExecution: V2ProviderExecutionPort,
+    settingsControl: V2SettingsControlPort,
   ) {
     this.#database = database;
     this.#repository = new SqliteV2Repository(database);
@@ -89,6 +153,7 @@ export class V2DesktopRuntime {
     this.#content = new V2ContentApplication(this.#repository, contentFiles);
     this.#interaction = new V2InteractionApplication(this.#repository, interactionFiles);
     this.#providerExecution = providerExecution;
+    this.#settingsControl = settingsControl;
   }
 
   public static async open(
@@ -97,6 +162,7 @@ export class V2DesktopRuntime {
       readonly assetsDirectory?: string;
       readonly openDirectory?: (path: string) => Promise<string>;
       readonly providerExecution?: V2ProviderExecutionPort;
+      readonly settingsControl?: V2SettingsControlPort;
     } = {},
   ): Promise<V2DesktopRuntime> {
     const root = await initializeProjectDataRoot(join(userDataPath, V2_DATA_ROOT_DIRECTORY));
@@ -117,6 +183,7 @@ export class V2DesktopRuntime {
       contentFiles,
       new V2LocalInteractionFiles(root),
       options.providerExecution ?? unavailableProviderExecution,
+      options.settingsControl ?? unavailableSettingsControl,
     );
   }
 
@@ -126,6 +193,18 @@ export class V2DesktopRuntime {
     if (request.view === 'PROVIDER_ACTION_PREVIEW') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#previewProviderAction(request.intent, caller);
+    }
+    if (request.view === 'PROVIDER_SETTINGS') {
+      return this.#settingsOperation(() => this.#settingsControl.getSettings());
+    }
+    if (request.view === 'PROVIDER_CAPABILITY_PROBE_PREVIEW') {
+      if (caller === undefined) throw new V2ContractError('CAPABILITY_PROBE_BLOCKED');
+      return this.#settingsOperation(() => this.#settingsControl.previewCapabilityProbe(caller));
+    }
+    if (request.view === 'PROVIDER_CAPABILITY_PROBE_PROGRESS') {
+      return this.#settingsOperation(() =>
+        this.#settingsControl.getCapabilityProgress(request.runId),
+      );
     }
     if (request.view === 'CONTENT_PACKAGES') return this.#content.read(request.weekKey);
     if (request.view === 'INTERACTIONS') return this.#interaction.read();
@@ -141,6 +220,21 @@ export class V2DesktopRuntime {
     if (request.action === 'CONFIRM_PROVIDER_ACTION') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#confirmProviderAction(request.previewToken, caller);
+    }
+    if (request.action === 'UPDATE_PROVIDER_SETTINGS') {
+      return this.#settingsOperation(() => this.#settingsControl.updateSettings(request));
+    }
+    if (request.action === 'SET_PROVIDER_CREDENTIAL') {
+      return this.#settingsOperation(() => this.#settingsControl.setCredential(request.plaintext));
+    }
+    if (request.action === 'CLEAR_PROVIDER_CREDENTIAL') {
+      return this.#settingsOperation(() => this.#settingsControl.clearCredential());
+    }
+    if (request.action === 'START_PROVIDER_CAPABILITY_PROBE') {
+      if (caller === undefined) throw new V2ContractError('CAPABILITY_PROBE_BLOCKED');
+      return this.#settingsOperation(() =>
+        this.#settingsControl.startCapabilityProbe(request, caller),
+      );
     }
     if (isInteractionMutationRequest(request)) {
       const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
@@ -174,6 +268,28 @@ export class V2DesktopRuntime {
       return this.#metricsReview('7D');
     }
     return this.#facade.mutate(request);
+  }
+
+  async #settingsOperation<T>(operation: () => Promise<T> | T): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      if (error instanceof V2ContractError) throw error;
+      const code =
+        typeof error === 'object' && error !== null && 'code' in error
+          ? String((error as { readonly code: unknown }).code)
+          : '';
+      if (code.includes('CREDENTIAL') || code.includes('ENCRYPTION')) {
+        throw new V2ContractError('CREDENTIAL_ERROR');
+      }
+      if (code.includes('PROBE') || code.includes('CAPABILITY') || code.includes('BUDGET')) {
+        throw new V2ContractError('CAPABILITY_PROBE_BLOCKED');
+      }
+      if (code.includes('SETUP') || code.includes('PROJECT') || code.includes('DATA_ROOT')) {
+        throw new V2ContractError('SETTINGS_NOT_READY');
+      }
+      throw new V2ContractError('SETTINGS_INVALID');
+    }
   }
 
   public smokeSummary() {
@@ -215,16 +331,40 @@ export class V2DesktopRuntime {
     caller: V2ActionCaller,
   ): Promise<V2ProviderActionPreview> {
     this.#removeExpiredProviderPreviews();
-    await this.#providerInput(intent);
-    const previewToken = randomBytes(32).toString('base64url');
-    const expiresAtMs = Date.now() + V2_PROVIDER_ACTION_LIMITS.tokenTtlMs;
-    this.#providerPreviews.set(previewToken, { caller, expiresAtMs, intent });
-    return Object.freeze({
-      expiresAt: new Date(expiresAtMs).toISOString(),
-      feeEstimate: 'UNKNOWN',
-      fetchEnabled: false,
+    let input: Readonly<Record<string, unknown>> = Object.freeze({});
+    let businessBlock: string | null = null;
+    try {
+      input = await this.#providerInput(intent);
+    } catch (error) {
+      if (!(error instanceof V2ProviderActionError)) throw error;
+      businessBlock =
+        intent.kind === 'CONTENT_PACKAGES'
+          ? '请先锁定计划并选择 3 个尚未生成内容包的候选。'
+          : intent.kind === 'REPLY_SUGGESTION'
+            ? '当前互动状态不能生成回复建议。'
+            : '目标周计划已变化，请重新载入后再预览。';
+    }
+    const readiness = await this.#providerExecution.inspect({
+      input,
       kind: intent.kind,
       modelSlot: providerActionModelSlot(intent.kind),
+    });
+    const canConfirm = businessBlock === null && readiness.canConfirm;
+    const previewToken = canConfirm ? randomBytes(32).toString('base64url') : null;
+    const expiresAtMs = Date.now() + V2_PROVIDER_ACTION_LIMITS.tokenTtlMs;
+    if (previewToken !== null) {
+      this.#providerPreviews.set(previewToken, { caller, expiresAtMs, intent });
+    }
+    return Object.freeze({
+      ...readiness,
+      blockReasons:
+        businessBlock === null
+          ? readiness.blockReasons
+          : [businessBlock, ...readiness.blockReasons],
+      canConfirm,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      fetchEnabled: false,
+      kind: intent.kind,
       previewToken,
       requestCount: 1,
       searchEnabled: false,

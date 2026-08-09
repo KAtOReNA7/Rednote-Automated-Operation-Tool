@@ -27,6 +27,20 @@ afterEach(() => {
 class ScriptedProviderExecution {
   readonly calls: V2ProviderActionExecutionRequest[] = [];
 
+  public async inspect(request: Omit<V2ProviderActionExecutionRequest, 'executionId'>) {
+    return {
+      blockReasons: [],
+      budgetState: 'ALLOWED' as const,
+      canConfirm: true,
+      capabilityState: 'SUPPORTED' as const,
+      credentialState: 'CONFIGURED' as const,
+      feeEstimateMicroUsd: '1000',
+      modelId: request.modelSlot === 'research' ? 'research-test' : 'writing-test',
+      modelSlot: request.modelSlot,
+      providerConfigured: true,
+    };
+  }
+
   public async execute(
     request: V2ProviderActionExecutionRequest,
   ): Promise<V2ProviderActionExecutionResult> {
@@ -212,10 +226,43 @@ describe('V2 R07 controlled provider adapter', () => {
       expect(interactions).toMatchObject({
         items: [{ currentSuggestion: expect.stringContaining('手动发送'), status: 'SUGGESTED' }],
       });
+      const nextWeek = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W32',
+      })) as WeeklyPlan;
+      const nextPreview = (await runtime.read(
+        {
+          intent: {
+            expectedRevision: nextWeek.revision,
+            kind: 'WEEKLY_PLAN',
+            weekKey: nextWeek.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      await runtime.mutate(
+        {
+          action: 'CONFIRM_PROVIDER_ACTION',
+          confirmation: 'RUN_PROVIDER_ACTION',
+          previewToken: nextPreview.previewToken,
+        },
+        caller,
+      );
+      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: locked.weekKey })).toMatchObject({
+        revision: locked.revision,
+        status: 'CONFIRMED',
+      });
+      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: nextWeek.weekKey })).toMatchObject({
+        revision: nextWeek.revision + 1,
+        status: 'DRAFT',
+        weekKey: '2026-W32',
+      });
       expect(provider.calls.map(({ kind, modelSlot }) => [kind, modelSlot])).toEqual([
         ['WEEKLY_PLAN', 'research'],
         ['CONTENT_PACKAGES', 'writing'],
         ['REPLY_SUGGESTION', 'writing'],
+        ['WEEKLY_PLAN', 'research'],
       ]);
     } finally {
       runtime.close();

@@ -42,6 +42,14 @@ import {
   type V2ProviderActionIntent,
   type V2ProviderActionPreview,
   type V2ProviderActionResult,
+  parseV2ProviderSettingsMutation,
+  type V2CapabilityProbePreview,
+  type V2CapabilityProbeProgress,
+  type V2CapabilityProbeStart,
+  type V2ProviderCredentialInput,
+  type V2ProviderSettingsDraft,
+  type V2ProviderSettingsMutation,
+  type V2ProviderSettingsView,
 } from './provider-actions.js';
 
 export * from './content.js';
@@ -156,6 +164,9 @@ export type V2ReadRequest =
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
   | { readonly view: 'METRICS_REVIEW'; readonly snapshotWindow: MetricWindow }
   | { readonly intent: V2ProviderActionIntent; readonly view: 'PROVIDER_ACTION_PREVIEW' }
+  | { readonly view: 'PROVIDER_SETTINGS' }
+  | { readonly view: 'PROVIDER_CAPABILITY_PROBE_PREVIEW' }
+  | { readonly runId: string; readonly view: 'PROVIDER_CAPABILITY_PROBE_PROGRESS' }
   | InteractionReadRequest;
 
 export type V2MutationRequest =
@@ -198,6 +209,7 @@ export type V2MutationRequest =
       readonly weekKey: string;
     }
   | V2ProviderActionConfirmation
+  | V2ProviderSettingsMutation
   | ContentMutationRequest
   | InteractionMutationRequest;
 
@@ -207,6 +219,10 @@ export interface V2ExceptionSummary {
     | V2ContentErrorCode
     | V2InteractionErrorCode
     | V2ProviderActionErrorCode
+    | 'CAPABILITY_PROBE_BLOCKED'
+    | 'CREDENTIAL_ERROR'
+    | 'SETTINGS_INVALID'
+    | 'SETTINGS_NOT_READY'
     | 'PERSISTENCE_UNAVAILABLE'
     | 'PLAN_CONFLICT'
     | 'PLAN_LOCKED';
@@ -248,6 +264,9 @@ export interface V2Bridge {
     readonly confirmation: 'RUN_PROVIDER_ACTION';
     readonly previewToken: string;
   }) => Promise<V2Result<V2ProviderActionResult>>;
+  readonly clearProviderCredential?: (input: {
+    readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
+  }) => Promise<V2Result<V2ProviderSettingsView>>;
   readonly confirmReplySuggestions: InteractionCall<
     'CONFIRM_REPLY_SUGGESTIONS',
     InteractionWorkspace
@@ -272,6 +291,7 @@ export interface V2Bridge {
   readonly previewProviderAction?: (
     input: V2ProviderActionIntent,
   ) => Promise<V2Result<V2ProviderActionPreview>>;
+  readonly previewProviderCapabilityProbe?: () => Promise<V2Result<V2CapabilityProbePreview>>;
   readonly exportContentPackages: (
     input: ContentInput<'EXPORT_CONTENT_PACKAGES'>,
   ) => Promise<V2Result<ContentExportResult>>;
@@ -298,6 +318,10 @@ export interface V2Bridge {
     readonly status: 'ACCEPTED' | 'REJECTED';
   }) => Promise<V2Result<MetricsReview>>;
   readonly readPersona: () => Promise<V2Result<AccountPersona>>;
+  readonly readProviderCapabilityProbeProgress?: (input: {
+    readonly runId: string;
+  }) => Promise<V2Result<V2CapabilityProbeProgress>>;
+  readonly readProviderSettings?: () => Promise<V2Result<V2ProviderSettingsView>>;
   readonly readWeeklyPlan: (input: { readonly weekKey: string }) => Promise<V2Result<WeeklyPlan>>;
   readonly reschedulePlanCandidates: (
     input: PlanRescheduleFields & { readonly allowConflicts: boolean },
@@ -318,6 +342,15 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly persona: AccountPersonaFields;
   }) => Promise<V2Result<AccountPersona>>;
+  readonly updateProviderSettings?: (
+    input: V2ProviderSettingsDraft,
+  ) => Promise<V2Result<V2ProviderSettingsView>>;
+  readonly setProviderCredential?: (
+    input: V2ProviderCredentialInput,
+  ) => Promise<V2Result<V2ProviderSettingsView>>;
+  readonly startProviderCapabilityProbe?: (
+    input: V2CapabilityProbeStart,
+  ) => Promise<V2Result<V2CapabilityProbeProgress>>;
 }
 
 export class V2ContractError extends Error {
@@ -708,6 +741,20 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   if (value.view === 'PROVIDER_ACTION_PREVIEW' && exactKeys(value, ['intent', 'view'])) {
     return { intent: parseV2ProviderActionIntent(value.intent), view: value.view };
   }
+  if (
+    (value.view === 'PROVIDER_SETTINGS' || value.view === 'PROVIDER_CAPABILITY_PROBE_PREVIEW') &&
+    exactKeys(value, ['view'])
+  ) {
+    return { view: value.view };
+  }
+  if (
+    value.view === 'PROVIDER_CAPABILITY_PROBE_PROGRESS' &&
+    exactKeys(value, ['runId', 'view']) &&
+    typeof value.runId === 'string' &&
+    /^[a-z0-9_-]{1,128}$/iu.test(value.runId)
+  ) {
+    return { runId: value.runId, view: value.view };
+  }
   if (value.view === 'INTERACTIONS' || value.view === 'INTERACTION_DELETE_PREVIEW')
     return parseInteractionReadRequest(value);
   if (value.view === 'ACCOUNT_PERSONA' && exactKeys(value, ['view'])) {
@@ -747,6 +794,22 @@ export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
   if (value.action === 'CONFIRM_PROVIDER_ACTION') {
     return parseV2ProviderActionConfirmation(value);
+  }
+  if (
+    typeof value.action === 'string' &&
+    [
+      'CLEAR_PROVIDER_CREDENTIAL',
+      'SET_PROVIDER_CREDENTIAL',
+      'START_PROVIDER_CAPABILITY_PROBE',
+      'UPDATE_PROVIDER_SETTINGS',
+    ].includes(value.action)
+  ) {
+    try {
+      const settings = parseV2ProviderSettingsMutation(value);
+      if (settings !== null) return settings;
+    } catch {
+      throw new V2ContractError('SETTINGS_INVALID');
+    }
   }
   if (
     value.action === 'SAVE_METRIC_SNAPSHOTS' &&
@@ -1143,7 +1206,13 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
-    if (request.view === 'METRICS_REVIEW' || request.view === 'PROVIDER_ACTION_PREVIEW')
+    if (
+      request.view === 'METRICS_REVIEW' ||
+      request.view === 'PROVIDER_ACTION_PREVIEW' ||
+      request.view === 'PROVIDER_SETTINGS' ||
+      request.view === 'PROVIDER_CAPABILITY_PROBE_PREVIEW' ||
+      request.view === 'PROVIDER_CAPABILITY_PROBE_PROGRESS'
+    )
       throw new V2ContractError('INVALID_REQUEST');
     if (
       request.view === 'CONTENT_PACKAGES' ||
@@ -1164,7 +1233,11 @@ export class V2ApplicationFacade {
     if (
       request.action === 'SAVE_METRIC_SNAPSHOTS' ||
       request.action === 'DECIDE_STRATEGY_RECOMMENDATION' ||
-      request.action === 'CONFIRM_PROVIDER_ACTION'
+      request.action === 'CONFIRM_PROVIDER_ACTION' ||
+      request.action === 'UPDATE_PROVIDER_SETTINGS' ||
+      request.action === 'SET_PROVIDER_CREDENTIAL' ||
+      request.action === 'CLEAR_PROVIDER_CREDENTIAL' ||
+      request.action === 'START_PROVIDER_CAPABILITY_PROBE'
     )
       throw new V2ContractError('INVALID_REQUEST');
     if (
@@ -1366,6 +1439,10 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
     const planConflict = error.code === 'PLAN_CONFLICT';
     const locked = error.code === 'PLAN_LOCKED';
     const unavailable = error.code === 'PERSISTENCE_UNAVAILABLE';
+    const settingsNotReady = error.code === 'SETTINGS_NOT_READY';
+    const settingsInvalid = error.code === 'SETTINGS_INVALID';
+    const credentialError = error.code === 'CREDENTIAL_ERROR';
+    const capabilityBlocked = error.code === 'CAPABILITY_PROBE_BLOCKED';
     const fieldLabels: Readonly<Record<string, string>> = Object.freeze({
       audience: '目标受众',
       boundary: '内容边界',
@@ -1386,9 +1463,17 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
             ? '周计划已锁定，只能查看，不能继续修改。'
             : unavailable
               ? '本机保存暂时不可用。'
-              : personaFields.length > 0
-                ? `请填写或修正：${personaFields.join('、')}。`
-                : '请求内容不符合本地合同。',
+              : settingsNotReady
+                ? '本地设置项目尚未就绪，请先完成本地数据目录初始化。'
+                : settingsInvalid
+                  ? 'Provider 设置不符合现有本地合同，请检查标出的字段。'
+                  : credentialError
+                    ? '本地凭据操作失败；旧凭据不会回显，请重新输入或稍后重试。'
+                    : capabilityBlocked
+                      ? '能力探测尚不能开始，请检查凭据、模型与预算政策。'
+                      : personaFields.length > 0
+                        ? `请填写或修正：${personaFields.join('、')}。`
+                        : '请求内容不符合本地合同。',
       severity: revisionConflict || planConflict || locked ? 'WARNING' : 'ERROR',
       suggestedAction: revisionConflict
         ? '重新载入当前页面'
@@ -1398,7 +1483,15 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
             ? '保留当前只读计划'
             : unavailable
               ? '关闭后重新启动应用'
-              : '检查字段后重试',
+              : settingsNotReady
+                ? '完成本地项目初始化'
+                : settingsInvalid
+                  ? '检查 Base URL、模型 ID 与 revision'
+                  : credentialError
+                    ? '重新输入凭据或确认清除操作'
+                    : capabilityBlocked
+                      ? '先查看探测预览中的阻止原因'
+                      : '检查字段后重试',
     };
   }
   return {

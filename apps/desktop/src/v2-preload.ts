@@ -15,6 +15,9 @@ import {
   type PlanReschedulePreview,
   type V2ProviderActionPreview,
   type V2ProviderActionResult,
+  type V2CapabilityProbePreview,
+  type V2CapabilityProbeProgress,
+  type V2ProviderSettingsView,
   type V2Bridge,
   type V2Result,
   type WeeklyPlan,
@@ -34,6 +37,9 @@ const bridge: V2Bridge = Object.freeze({
     }),
   confirmProviderAction: (input: Parameters<NonNullable<V2Bridge['confirmProviderAction']>>[0]) =>
     invoke<V2ProviderActionResult>('mutate', { action: 'CONFIRM_PROVIDER_ACTION', ...input }),
+  clearProviderCredential: (
+    input: Parameters<NonNullable<V2Bridge['clearProviderCredential']>>[0],
+  ) => invoke<V2ProviderSettingsView>('mutate', { action: 'CLEAR_PROVIDER_CREDENTIAL', ...input }),
   confirmReplySuggestions: (input: Parameters<V2Bridge['confirmReplySuggestions']>[0]) =>
     invoke<InteractionWorkspace>('mutate', { action: 'CONFIRM_REPLY_SUGGESTIONS', ...input }),
   createInteraction: (input: Parameters<V2Bridge['createInteraction']>[0]) =>
@@ -60,6 +66,8 @@ const bridge: V2Bridge = Object.freeze({
     }),
   previewProviderAction: (input: Parameters<NonNullable<V2Bridge['previewProviderAction']>>[0]) =>
     invoke<V2ProviderActionPreview>('read', { intent: input, view: 'PROVIDER_ACTION_PREVIEW' }),
+  previewProviderCapabilityProbe: () =>
+    invoke<V2CapabilityProbePreview>('read', { view: 'PROVIDER_CAPABILITY_PROBE_PREVIEW' }),
   exportContentPackages: (input: Parameters<V2Bridge['exportContentPackages']>[0]) =>
     invoke<ContentExportResult>('mutate', { action: 'EXPORT_CONTENT_PACKAGES', ...input }),
   openContentExport: (input: Parameters<V2Bridge['openContentExport']>[0]) =>
@@ -74,6 +82,14 @@ const bridge: V2Bridge = Object.freeze({
   readMetricsReview: (input: { readonly snapshotWindow: '24H' | '72H' | '7D' }) =>
     invoke<MetricsReview>('read', { view: 'METRICS_REVIEW', ...input }),
   readPersona: () => invoke<AccountPersona>('read', { view: 'ACCOUNT_PERSONA' }),
+  readProviderCapabilityProbeProgress: (
+    input: Parameters<NonNullable<V2Bridge['readProviderCapabilityProbeProgress']>>[0],
+  ) =>
+    invoke<V2CapabilityProbeProgress>('read', {
+      runId: input.runId,
+      view: 'PROVIDER_CAPABILITY_PROBE_PROGRESS',
+    }),
+  readProviderSettings: () => invoke<V2ProviderSettingsView>('read', { view: 'PROVIDER_SETTINGS' }),
   readWeeklyPlan: (input: Parameters<V2Bridge['readWeeklyPlan']>[0]) =>
     invoke<WeeklyPlan>('read', { view: 'WEEKLY_PLAN', ...input }),
   reschedulePlanCandidates: (input: Parameters<V2Bridge['reschedulePlanCandidates']>[0]) =>
@@ -94,10 +110,21 @@ const bridge: V2Bridge = Object.freeze({
     invoke<WeeklyPlan>('mutate', { action: 'SKIP_PLAN_CANDIDATES', ...input }),
   skipInteraction: (input: Parameters<V2Bridge['skipInteraction']>[0]) =>
     invoke<InteractionItem>('mutate', { action: 'SKIP_INTERACTION', ...input }),
+  setProviderCredential: (input: Parameters<NonNullable<V2Bridge['setProviderCredential']>>[0]) =>
+    invoke<V2ProviderSettingsView>('mutate', { action: 'SET_PROVIDER_CREDENTIAL', ...input }),
+  startProviderCapabilityProbe: (
+    input: Parameters<NonNullable<V2Bridge['startProviderCapabilityProbe']>>[0],
+  ) =>
+    invoke<V2CapabilityProbeProgress>('mutate', {
+      action: 'START_PROVIDER_CAPABILITY_PROBE',
+      ...input,
+    }),
   undoInteractionManualSent: (input: Parameters<V2Bridge['undoInteractionManualSent']>[0]) =>
     invoke<InteractionItem>('mutate', { action: 'UNDO_INTERACTION_MANUAL_SENT', ...input }),
   updatePersona: (input: Parameters<V2Bridge['updatePersona']>[0]) =>
     invoke<AccountPersona>('mutate', { action: 'UPDATE_PERSONA', ...input }),
+  updateProviderSettings: (input: Parameters<NonNullable<V2Bridge['updateProviderSettings']>>[0]) =>
+    invoke<V2ProviderSettingsView>('mutate', { action: 'UPDATE_PROVIDER_SETTINGS', ...input }),
 });
 
 contextBridge.exposeInMainWorld('rednoteV2', bridge);

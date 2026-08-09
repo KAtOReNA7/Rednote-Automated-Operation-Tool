@@ -160,7 +160,6 @@ export function determineSetupState(
   const providerComplete =
     values.providerBaseUrl !== null &&
     values.researchModelId !== null &&
-    values.reviewModelId !== null &&
     values.writingModelId !== null;
   if (!providerComplete) {
     return 'PROVIDER_CONFIG_INCOMPLETE';

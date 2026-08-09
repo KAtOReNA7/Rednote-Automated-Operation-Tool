@@ -34,16 +34,34 @@ export type V2ProviderActionIntent =
     };
 
 export interface V2ProviderActionPreview {
+  readonly blockReasons: readonly string[];
+  readonly budgetState: V2BudgetState;
+  readonly canConfirm: boolean;
+  readonly capabilityState: V2StructuredJsonState;
+  readonly credentialState: V2CredentialState;
   readonly expiresAt: string;
-  readonly feeEstimate: 'UNKNOWN';
+  readonly feeEstimateMicroUsd: string | null;
   readonly fetchEnabled: false;
   readonly kind: V2ProviderActionKind;
+  readonly modelId: string | null;
   readonly modelSlot: V2ProviderModelSlot;
-  readonly previewToken: string;
+  readonly previewToken: string | null;
+  readonly providerConfigured: boolean;
   readonly requestCount: 1;
   readonly searchEnabled: false;
   readonly summary: string;
 }
+
+export type V2ProviderActionReadiness = Omit<
+  V2ProviderActionPreview,
+  | 'expiresAt'
+  | 'kind'
+  | 'previewToken'
+  | 'requestCount'
+  | 'searchEnabled'
+  | 'fetchEnabled'
+  | 'summary'
+>;
 
 export interface V2ProviderActionConfirmation {
   readonly action: 'CONFIRM_PROVIDER_ACTION';
@@ -275,4 +293,158 @@ export function providerActionSummary(kind: V2ProviderActionKind): string {
 
 export function providerActionModelSlot(kind: V2ProviderActionKind): V2ProviderModelSlot {
   return kind === 'WEEKLY_PLAN' ? 'research' : 'writing';
+}
+
+export type V2CredentialState = 'CONFIGURED' | 'NOT_CONFIGURED' | 'REAUTH_REQUIRED';
+export type V2StructuredJsonState = 'STALE' | 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+export type V2BudgetState = 'ALLOWED' | 'BLOCKED' | 'UNKNOWN';
+
+export interface V2CapabilitySlotView {
+  readonly modelId: string | null;
+  readonly state: V2StructuredJsonState;
+}
+export interface V2CapabilityProbeProgress {
+  readonly completedRequestCount: number;
+  readonly plannedRequestCount: number;
+  readonly runId: string;
+  readonly sentRequestCount: number;
+  readonly status: 'CANCELLED' | 'FAILED' | 'INTERRUPTED' | 'PARTIAL' | 'RUNNING' | 'SUCCEEDED';
+}
+export interface V2CapabilityProbePreview {
+  readonly budgetReady: boolean;
+  readonly credentialBindingVersion: number;
+  readonly expiresAt: string;
+  readonly feeEstimate: 'UNKNOWN';
+  readonly planHash: string;
+  readonly requestCount: number;
+  readonly settingsRevision: number;
+  readonly startToken: string;
+}
+export interface V2ProviderSettingsView {
+  readonly accounting: {
+    readonly hardLimitMicroUsd: string;
+    readonly hardStop: boolean;
+    readonly priceReadyForContent: boolean;
+    readonly priceReadyForReply: boolean;
+    readonly priceReadyForWeeklyPlan: boolean;
+    readonly warning: boolean;
+  };
+  readonly capabilityProbe: {
+    readonly activeRun: V2CapabilityProbeProgress | null;
+    readonly derivedState: string;
+  };
+  readonly credentialState: V2CredentialState;
+  readonly providerBaseUrl: string | null;
+  readonly providerConfigured: boolean;
+  readonly research: V2CapabilitySlotView;
+  readonly revision: number;
+  readonly setupAvailable: boolean;
+  readonly writing: V2CapabilitySlotView;
+}
+export interface V2ProviderSettingsDraft {
+  readonly expectedRevision: number;
+  readonly providerBaseUrl: string | null;
+  readonly researchModelId: string | null;
+  readonly writingModelId: string | null;
+}
+export interface V2ProviderCredentialInput {
+  readonly plaintext: string;
+}
+export interface V2CapabilityProbeStart {
+  readonly confirmation: 'START_PROVIDER_CAPABILITY_PROBE';
+  readonly credentialBindingVersion: number;
+  readonly planHash: string;
+  readonly settingsRevision: number;
+  readonly startToken: string;
+}
+export type V2ProviderSettingsMutation =
+  | ({ readonly action: 'UPDATE_PROVIDER_SETTINGS' } & V2ProviderSettingsDraft)
+  | ({ readonly action: 'SET_PROVIDER_CREDENTIAL' } & V2ProviderCredentialInput)
+  | {
+      readonly action: 'CLEAR_PROVIDER_CREDENTIAL';
+      readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
+    }
+  | ({ readonly action: 'START_PROVIDER_CAPABILITY_PROBE' } & V2CapabilityProbeStart);
+
+function settingsRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function settingsExact(value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
+  return Object.keys(value).sort().join('\0') === [...keys].sort().join('\0');
+}
+function settingsRevision(value: unknown): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new TypeError('INVALID_REQUEST');
+  return value as number;
+}
+function settingsNullableText(value: unknown, maximum: number): string | null {
+  if (value === null) return null;
+  if (
+    typeof value !== 'string' ||
+    value.length > maximum ||
+    [...value].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
+  )
+    throw new TypeError('INVALID_REQUEST');
+  return value;
+}
+function settingsToken(value: unknown): string {
+  if (typeof value !== 'string' || !/^[a-z0-9_-]{1,128}$/iu.test(value))
+    throw new TypeError('INVALID_REQUEST');
+  return value;
+}
+export function parseV2ProviderSettingsMutation(value: unknown): V2ProviderSettingsMutation | null {
+  if (!settingsRecord(value) || typeof value.action !== 'string') return null;
+  if (
+    value.action === 'UPDATE_PROVIDER_SETTINGS' &&
+    settingsExact(value, [
+      'action',
+      'expectedRevision',
+      'providerBaseUrl',
+      'researchModelId',
+      'writingModelId',
+    ])
+  ) {
+    return {
+      action: value.action,
+      expectedRevision: settingsRevision(value.expectedRevision),
+      providerBaseUrl: settingsNullableText(value.providerBaseUrl, 2_048),
+      researchModelId: settingsNullableText(value.researchModelId, 200),
+      writingModelId: settingsNullableText(value.writingModelId, 200),
+    };
+  }
+  if (value.action === 'SET_PROVIDER_CREDENTIAL' && settingsExact(value, ['action', 'plaintext'])) {
+    const plaintext = settingsNullableText(value.plaintext, 16_384);
+    if (plaintext === null || plaintext.trim() === '') throw new TypeError('INVALID_REQUEST');
+    return { action: value.action, plaintext };
+  }
+  if (
+    value.action === 'CLEAR_PROVIDER_CREDENTIAL' &&
+    settingsExact(value, ['action', 'confirmation']) &&
+    value.confirmation === 'DELETE_CONTENT_AI_API_KEY'
+  )
+    return { action: value.action, confirmation: value.confirmation };
+  if (
+    value.action === 'START_PROVIDER_CAPABILITY_PROBE' &&
+    settingsExact(value, [
+      'action',
+      'confirmation',
+      'credentialBindingVersion',
+      'planHash',
+      'settingsRevision',
+      'startToken',
+    ]) &&
+    value.confirmation === 'START_PROVIDER_CAPABILITY_PROBE'
+  ) {
+    return {
+      action: value.action,
+      confirmation: value.confirmation,
+      credentialBindingVersion: settingsRevision(value.credentialBindingVersion),
+      planHash: settingsToken(value.planHash),
+      settingsRevision: settingsRevision(value.settingsRevision),
+      startToken: settingsToken(value.startToken),
+    };
+  }
+  throw new TypeError('INVALID_REQUEST');
 }

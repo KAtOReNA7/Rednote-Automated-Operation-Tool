@@ -30,7 +30,9 @@ describe('V2 renderer shell', () => {
     const user = userEvent.setup();
     render(<V2App />);
 
-    expect(screen.getByText('周计划已连接本机 · 其他页面模拟')).toBeVisible();
+    expect(screen.getByText('本地工作区未连接 · AI 服务不可用')).toBeVisible();
+    expect(document.body).not.toHaveTextContent('其他页面模拟');
+    expect(document.body).not.toHaveTextContent('模拟体验');
     const navigation = screen.getByRole('navigation');
     expect(
       within(navigation)

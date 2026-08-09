@@ -498,6 +498,7 @@ describe('V2 Electron boundary', () => {
     expect(key).toBe('rednoteV2');
     expect(Object.keys(exposed).sort()).toEqual([
       'approveContentPackages',
+      'clearProviderCredential',
       'confirmPlanCandidates',
       'confirmProviderAction',
       'confirmReplySuggestions',
@@ -514,20 +515,26 @@ describe('V2 Electron boundary', () => {
       'previewInteractionDelete',
       'previewPlanReschedule',
       'previewProviderAction',
+      'previewProviderCapabilityProbe',
       'readContentPackages',
       'readInteractions',
       'readMetricsReview',
       'readPersona',
+      'readProviderCapabilityProbeProgress',
+      'readProviderSettings',
       'readWeeklyPlan',
       'reopenInteraction',
       'reschedulePlanCandidates',
       'saveContentPackage',
       'saveMetricSnapshots',
       'saveReplySuggestion',
+      'setProviderCredential',
       'skipInteraction',
       'skipPlanCandidates',
+      'startProviderCapabilityProbe',
       'undoInteractionManualSent',
       'updatePersona',
+      'updateProviderSettings',
     ]);
     expect('invoke' in exposed).toBe(false);
     expect('rednoteDesktop' in exposed).toBe(false);
@@ -640,7 +647,7 @@ describe('V2 renderer persistence wiring', () => {
     const name = await screen.findByRole('textbox', { name: '账号名称' });
     await user.clear(name);
     await user.type(name, '本机重启恢复账号');
-    await user.click(screen.getByRole('button', { name: '保存设置' }));
+    await user.click(screen.getByRole('button', { name: '保存人设' }));
     expect(await screen.findByText(/revision 1/u)).toBeInTheDocument();
     first.unmount();
     database.close();

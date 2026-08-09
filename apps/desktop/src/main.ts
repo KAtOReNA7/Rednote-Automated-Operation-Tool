@@ -218,6 +218,18 @@ async function startV2Application(
   const runtime = await V2DesktopRuntime.open(app.getPath('userData'), {
     providerExecution: {
       execute: (request) => settingsRuntime.executeV2ProviderAction(request),
+      inspect: (request) => settingsRuntime.inspectV2ProviderAction(request),
+    },
+    settingsControl: {
+      clearCredential: () => settingsRuntime.clearV2ProviderCredential(),
+      getCapabilityProgress: (runId) => settingsRuntime.getV2ProviderCapabilityProbeProgress(runId),
+      getSettings: () => settingsRuntime.getV2ProviderSettings(),
+      previewCapabilityProbe: (caller) =>
+        settingsRuntime.previewV2ProviderCapabilityProbe(caller.senderId, caller.windowId),
+      setCredential: (plaintext) => settingsRuntime.setV2ProviderCredential(plaintext),
+      startCapabilityProbe: (input, caller) =>
+        settingsRuntime.startV2ProviderCapabilityProbe(input, caller.senderId, caller.windowId),
+      updateSettings: (input) => settingsRuntime.updateV2ProviderSettings(input),
     },
   });
   let runtimeClosed = false;
@@ -277,7 +289,7 @@ async function startV2Application(
         const persistence = runtime.smokeSummary();
         const ok =
           renderer.marker &&
-          renderer.mockMode &&
+          !renderer.mockMode &&
           renderer.navigationCount === 7 &&
           renderer.preload &&
           persistence.personaRevision === 0 &&

@@ -194,8 +194,13 @@ import { DesktopReadingAuthenticityRuntime } from './reading-authenticity-runtim
 import { DesktopSpoilerQualityRuntime } from './spoiler-quality-runtime.js';
 import { V2ProviderRuntime } from './v2-provider-runtime.js';
 import type {
+  V2CapabilityProbePreview,
+  V2CapabilityProbeProgress,
   V2ProviderActionExecutionRequest,
   V2ProviderActionExecutionResult,
+  V2ProviderActionReadiness,
+  V2ProviderSettingsDraft,
+  V2ProviderSettingsView,
 } from '@mystery-operations/v2';
 import {
   disabledLocalApiSmoke,
@@ -306,6 +311,162 @@ export class DesktopSettingsRuntime {
       };
     }
     return this.#active.v2Provider.execute(request);
+  }
+
+  public async inspectV2ProviderAction(
+    request: Omit<V2ProviderActionExecutionRequest, 'executionId'>,
+  ): Promise<V2ProviderActionReadiness> {
+    if (this.#active === null) {
+      return {
+        blockReasons: ['本地设置项目尚未就绪。'],
+        budgetState: 'UNKNOWN',
+        canConfirm: false,
+        capabilityState: 'UNKNOWN',
+        credentialState: 'NOT_CONFIGURED',
+        feeEstimateMicroUsd: null,
+        modelId: null,
+        modelSlot: request.modelSlot,
+        providerConfigured: false,
+      };
+    }
+    return this.#active.v2Provider.inspect(request);
+  }
+
+  public async getV2ProviderSettings(): Promise<V2ProviderSettingsView> {
+    const active = this.#requireActive();
+    const bundle = await active.service.getSettings();
+    const capability = active.capabilities.getState();
+    const accounting = active.accounting.getView();
+    const [weekly, content, reply] = await Promise.all([
+      active.v2Provider.inspect({ input: {}, kind: 'WEEKLY_PLAN', modelSlot: 'research' }),
+      active.v2Provider.inspect({ input: {}, kind: 'CONTENT_PACKAGES', modelSlot: 'writing' }),
+      active.v2Provider.inspect({ input: {}, kind: 'REPLY_SUGGESTION', modelSlot: 'writing' }),
+    ]);
+    const credentialState = bundle.credential.requiresReauth
+      ? ('REAUTH_REQUIRED' as const)
+      : bundle.credential.available
+        ? ('CONFIGURED' as const)
+        : ('NOT_CONFIGURED' as const);
+    const slot = (modelSlot: 'RESEARCH' | 'WRITING', modelId: string | null) => {
+      const entry = capability.entries.find(
+        (candidate) =>
+          candidate.capability === 'structuredJson' &&
+          candidate.modelSlot === modelSlot &&
+          candidate.modelId === modelId,
+      );
+      return {
+        modelId,
+        state:
+          entry?.stale === true
+            ? ('STALE' as const)
+            : entry?.state === 'SUPPORTED'
+              ? ('SUPPORTED' as const)
+              : entry?.state === 'UNSUPPORTED'
+                ? ('UNSUPPORTED' as const)
+                : ('UNKNOWN' as const),
+      };
+    };
+    return Object.freeze({
+      accounting: Object.freeze({
+        hardLimitMicroUsd: accounting.hardLimitMicroUsd,
+        hardStop: accounting.hardStop,
+        priceReadyForContent: content.feeEstimateMicroUsd !== null,
+        priceReadyForReply: reply.feeEstimateMicroUsd !== null,
+        priceReadyForWeeklyPlan: weekly.feeEstimateMicroUsd !== null,
+        warning: accounting.warning,
+      }),
+      capabilityProbe: Object.freeze({
+        activeRun: capability.activeRun,
+        derivedState: capability.derivedState,
+      }),
+      credentialState,
+      providerBaseUrl: bundle.settings.providerBaseUrl,
+      providerConfigured:
+        bundle.settings.providerBaseUrl !== null &&
+        bundle.settings.researchModelId !== null &&
+        bundle.settings.writingModelId !== null,
+      research: Object.freeze(slot('RESEARCH', bundle.settings.researchModelId)),
+      revision: bundle.settings.revision,
+      setupAvailable: true,
+      writing: Object.freeze(slot('WRITING', bundle.settings.writingModelId)),
+    });
+  }
+
+  public async updateV2ProviderSettings(
+    input: V2ProviderSettingsDraft,
+  ): Promise<V2ProviderSettingsView> {
+    const active = this.#requireActive();
+    const current = await active.service.getSettings();
+    await active.service.updateNonSecretSettings({
+      account: { bio: current.account.bio, workingName: current.account.workingName },
+      budget: {
+        hardLimitDollars: (current.settings.monthlyHardLimitCents / 100).toFixed(2),
+        warningDollars: (current.settings.monthlyWarningCents / 100).toFixed(2),
+      },
+      expectedRevision: input.expectedRevision,
+      models: {
+        embedding: current.settings.embeddingModelId,
+        image: current.settings.imageModelId,
+        research: input.researchModelId,
+        review: current.settings.reviewModelId,
+        writing: input.writingModelId,
+      },
+      providerBaseUrl: input.providerBaseUrl,
+    });
+    return this.getV2ProviderSettings();
+  }
+
+  public async setV2ProviderCredential(plaintext: string): Promise<V2ProviderSettingsView> {
+    await this.#requireActive().service.setCredential(plaintext);
+    return this.getV2ProviderSettings();
+  }
+
+  public async clearV2ProviderCredential(): Promise<V2ProviderSettingsView> {
+    await this.#requireActive().service.clearCredential('DELETE_CONTENT_AI_API_KEY');
+    return this.getV2ProviderSettings();
+  }
+
+  public previewV2ProviderCapabilityProbe(
+    senderId: number,
+    windowId: number,
+  ): V2CapabilityProbePreview {
+    const preview = this.#requireActive().capabilities.preview(
+      {
+        includeToolCalling: false,
+        profile: 'CUSTOM',
+        selectedCapabilities: ['structuredJson'],
+      },
+      senderId,
+      windowId,
+    );
+    return {
+      budgetReady: preview.budgetCheck === 'UNIT_POLICY_READY',
+      credentialBindingVersion: preview.credentialBindingVersion,
+      expiresAt: preview.expiresAt,
+      feeEstimate: preview.feeEstimate,
+      planHash: preview.planHash,
+      requestCount: preview.requestCount,
+      settingsRevision: preview.settingsRevision,
+      startToken: preview.startToken,
+    };
+  }
+
+  public async startV2ProviderCapabilityProbe(
+    input: {
+      readonly confirmation: 'START_PROVIDER_CAPABILITY_PROBE';
+      readonly credentialBindingVersion: number;
+      readonly planHash: string;
+      readonly settingsRevision: number;
+      readonly startToken: string;
+    },
+    senderId: number,
+    windowId: number,
+  ): Promise<V2CapabilityProbeProgress> {
+    return this.#requireActive().capabilities.start(input, senderId, windowId);
+  }
+
+  public getV2ProviderCapabilityProbeProgress(runId: string): V2CapabilityProbeProgress {
+    return this.#requireActive().capabilities.getProgress(runId);
   }
 
   public async runIsolatedSmoke(

@@ -6,9 +6,10 @@ import { ProviderActionControl } from '../provider-action-control.js';
 
 // prettier-ignore
 const statusLabels: Readonly<Record<V2InteractionStatusContract, string>> = Object.freeze({ CONFIRMED: '已确认', MANUAL_SENT: '已记录手动发送', NEW: '待生成建议', SKIPPED: '已跳过', SUGGESTED: '待确认' });
-type ItemAction = 'GENERATE' | 'MANUAL_SENT' | 'REOPEN' | 'SAVE' | 'SKIP' | 'UNDO_SENT';
+type ItemAction = 'MANUAL_SENT' | 'REOPEN' | 'SAVE' | 'SKIP' | 'UNDO_SENT';
+type DetailAction = ItemAction | 'CONFIRM' | 'GENERATE';
 // prettier-ignore
-const detailActionsByStatus: Readonly<Record<V2InteractionStatusContract, readonly (readonly [ItemAction | 'CONFIRM', string])[]>> = Object.freeze({
+const detailActionsByStatus: Readonly<Record<V2InteractionStatusContract, readonly (readonly [DetailAction, string])[]>> = Object.freeze({
   CONFIRMED: [['SAVE', '保存建议']],
   MANUAL_SENT: [['UNDO_SENT', '撤销手动发送记录']],
   NEW: [['GENERATE', '生成建议'], ['SKIP', '跳过']],
@@ -141,7 +142,6 @@ export function InteractionPage(): React.JSX.Element {
     if (bridge === undefined || active === undefined) return fail('本机互动桥接不可用，未保存。');
     const item = active;
     const messages = {
-      GENERATE: '已生成确定性的本地 Scripted 建议；未调用模型。',
       MANUAL_SENT: '仅记录你已在官方端手动发送；系统没有发送消息。',
       REOPEN: '互动项已重新打开。',
       SAVE: '回复建议已保存；实质变化会创建新版本。',
@@ -149,33 +149,27 @@ export function InteractionPage(): React.JSX.Element {
       UNDO_SENT: '错误标记已撤销；没有执行平台动作。',
     } as const;
     const operation =
-      action === 'GENERATE'
-        ? bridge.generateReplySuggestion({
+      action === 'SAVE'
+        ? bridge.saveReplySuggestion({
             expectedRevision: item.revision,
-            idempotencyKey: `reply-${item.id}`,
+            expectedVersionId: item.versionId,
             itemId: item.id,
+            replyText: draft,
           })
-        : action === 'SAVE'
-          ? bridge.saveReplySuggestion({
+        : action === 'MANUAL_SENT'
+          ? bridge.markInteractionManualSent({
+              confirmed: true,
               expectedRevision: item.revision,
               expectedVersionId: item.versionId,
               itemId: item.id,
-              replyText: draft,
             })
-          : action === 'MANUAL_SENT'
-            ? bridge.markInteractionManualSent({
-                confirmed: true,
-                expectedRevision: item.revision,
-                expectedVersionId: item.versionId,
-                itemId: item.id,
-              })
-            : bridge[
-                action === 'REOPEN'
-                  ? 'reopenInteraction'
-                  : action === 'SKIP'
-                    ? 'skipInteraction'
-                    : 'undoInteractionManualSent'
-              ]({ expectedRevision: item.revision, itemId: item.id });
+          : bridge[
+              action === 'REOPEN'
+                ? 'reopenInteraction'
+                : action === 'SKIP'
+                  ? 'skipInteraction'
+                  : 'undoInteractionManualSent'
+            ]({ expectedRevision: item.revision, itemId: item.id });
     run(async () => {
       const result = await operation;
       if (!result.ok) return fail(result.error.message);
@@ -359,7 +353,7 @@ export function InteractionPage(): React.JSX.Element {
             </label>
             <div className="v2-reply-actions">
               {detailActions.map(([action, label]) =>
-                action === 'GENERATE' && window.rednoteV2?.previewProviderAction !== undefined ? (
+                action === 'GENERATE' ? (
                   <ProviderActionControl
                     disabled={busy}
                     intent={{

@@ -89,21 +89,6 @@ export function ContentPage(): React.JSX.Element {
       setBusy(false);
     }
   };
-  const generateScripted = (): void => {
-    void run(async () => {
-      const bridge = window.rednoteV2;
-      if (bridge === undefined) return fail('本机内容桥接不可用，未生成内容包。');
-      const result = await bridge.generateContentPackages({
-        candidateIds: selectedIds,
-        expectedPlanRevision: session.planRevision,
-        idempotencyKey: stableKey('content', [session.weekKey, ...selectedIds.slice().sort()]),
-        weekKey: session.weekKey,
-      });
-      if (!result.ok) return fail(result.error.message);
-      applyWorkspace(result.value);
-      notify('已生成 3 个本地 Scripted 内容包；未调用模型。');
-    });
-  };
   const save = (): void => {
     if (active === undefined) return;
     void run(async () => {
@@ -141,17 +126,7 @@ export function ContentPage(): React.JSX.Element {
   const approve = (ids: readonly string[]): void => {
     void run(async () => {
       const bridge = window.rednoteV2;
-      if (bridge === undefined) {
-        if (ids.length === 0) return fail('请先选择内容包。');
-        setSession((current) => ({
-          ...current,
-          content: current.content.map((item) =>
-            ids.includes(item.id) ? { ...item, status: '已通过' } : item,
-          ),
-        }));
-        setUi((current) => ({ ...current, contentSelectedIds: [] }));
-        return notify(`已通过 ${ids.length} 个模拟内容包；未导出、未发布。`);
-      }
+      if (bridge === undefined) return fail('本机内容桥接不可用，未批准任何内容包。');
       const items = approvalRefs(session.content, ids);
       if (items.length === 0 || items.length !== ids.length) return fail('请选择当前内容包。');
       const result = await bridge.approveContentPackages({ items });
@@ -198,32 +173,33 @@ export function ContentPage(): React.JSX.Element {
       <PageHeader
         actions={
           session.content.length === 0 ? (
-            window.rednoteV2?.previewProviderAction === undefined ? (
-              <Button disabled={busy} icon="sparkle" onClick={generateScripted} tone="primary">
-                生成 3 个内容包 {selectedIds.length > 0 ? `(${selectedIds.length}/3)` : ''}
-              </Button>
-            ) : (
-              <ProviderActionControl
-                disabled={busy || session.planStatus !== 'CONFIRMED' || selectedIds.length !== 3}
-                intent={{
-                  candidateIds: selectedIds,
-                  expectedPlanRevision: session.planRevision,
-                  idempotencyKey: stableKey('content', [
-                    session.weekKey,
-                    ...selectedIds.slice().sort(),
-                  ]),
-                  kind: 'CONTENT_PACKAGES',
+            <ProviderActionControl
+              disabled={busy || session.planStatus !== 'CONFIRMED' || selectedIds.length !== 3}
+              disabledReason={
+                session.planStatus !== 'CONFIRMED'
+                  ? '请先锁定周计划，再查看调用 readiness。'
+                  : selectedIds.length !== 3
+                    ? '请选择恰好 3 个候选。'
+                    : undefined
+              }
+              intent={{
+                candidateIds: selectedIds,
+                expectedPlanRevision: session.planRevision,
+                idempotencyKey: stableKey('content', [
+                  session.weekKey,
+                  ...selectedIds.slice().sort(),
+                ]),
+                kind: 'CONTENT_PACKAGES',
+                weekKey: session.weekKey,
+              }}
+              label={`预览生成内容包 (${selectedIds.length}/3)`}
+              onSuccess={async () => {
+                const result = await window.rednoteV2?.readContentPackages({
                   weekKey: session.weekKey,
-                }}
-                label={`预览生成内容包 (${selectedIds.length}/3)`}
-                onSuccess={async () => {
-                  const result = await window.rednoteV2?.readContentPackages({
-                    weekKey: session.weekKey,
-                  });
-                  if (result?.ok === true) applyWorkspace(result.value);
-                }}
-              />
-            )
+                });
+                if (result?.ok === true) applyWorkspace(result.value);
+              }}
+            />
           ) : (
             <>
               {exportId === '' ? null : (
@@ -250,7 +226,7 @@ export function ContentPage(): React.JSX.Element {
         eyebrow="六字段内容包 · 完全本地"
         title="内容"
       />
-      <p className="v2-kicker">本地 Scripted 内容，不是模型生成；费用与业务网络均为 0。</p>
+      <p className="v2-kicker">内容包仅在受控预览确认后生成，并保存到本机。</p>
       {error === '' ? null : (
         <div className="v2-form-error" ref={errorRef} role="alert" tabIndex={-1}>
           <Icon name="warning-circle" />

@@ -471,8 +471,7 @@ export class ProviderCapabilityRuntime {
     if (
       settings.providerBaseUrl === null ||
       settings.researchModelId === null ||
-      settings.writingModelId === null ||
-      settings.reviewModelId === null
+      settings.writingModelId === null
     ) {
       throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
     }

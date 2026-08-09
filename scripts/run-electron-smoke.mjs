@@ -166,7 +166,7 @@ for (const mode of ['disabled', 'enabled']) {
           report.packaged !== false ||
           report.mode !== 'v2' ||
           report.renderer?.navigationCount !== 7 ||
-          report.renderer?.mockMode !== true ||
+          report.renderer?.mockMode !== false ||
           report.security?.preload !== true ||
           report.runtime?.ipcRegistered !== true ||
           report.runtime?.projectDataRootInitialized !== true ||

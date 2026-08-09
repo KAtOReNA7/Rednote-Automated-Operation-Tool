@@ -5,7 +5,7 @@ import '@testing-library/jest-dom/vitest';
 import { createHash } from 'node:crypto';
 import type { DatabaseSync } from 'node:sqlite';
 
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -529,18 +529,10 @@ describe('V2-R05 interaction renderer and managed files', () => {
     await user.type(screen.getByLabelText('粘贴一条评论或私信'), '键盘录入评论');
     await user.click(screen.getByRole('button', { name: '保存本地互动' }));
     expect((await screen.findAllByText('键盘录入评论')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: '生成建议' }));
-    await waitFor(() => expect(screen.getByLabelText('回复建议')).not.toHaveValue(''));
+    await user.click(screen.getByRole('button', { name: '预览生成回复建议' }));
+    expect(await screen.findByText(/受控模型桥接不可用/u)).toBeVisible();
+    expect(screen.getByLabelText('回复建议')).toHaveValue('');
     expect(screen.queryByRole('button', { name: /自动发送|发送消息/u })).not.toBeInTheDocument();
-    const select = screen.getByRole('button', { name: /选择 评论/u });
-    select.focus();
-    await user.keyboard('{Enter}');
-    await user.click(screen.getByRole('button', { name: /批量确认建议/u }));
-    expect(await screen.findByText(/评论 · 已确认/u)).toBeVisible();
-    const record = screen.getByRole('button', { name: '记录已在官方端手动发送' });
-    expect(record).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: /我确认已在小红书官方端手动发送/u }));
-    expect(record).toBeEnabled();
   });
 
   it('never exposes prototype content IDs while persisted content is restoring', async () => {
