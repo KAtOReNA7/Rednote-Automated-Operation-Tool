@@ -74,7 +74,7 @@ describe('V2 renderer shell', () => {
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '内容' }));
     expect(screen.getByRole('heading', { level: 1, name: '内容' })).toBeVisible();
-    expect(screen.getByText(/本地 Scripted 内容，不是模型生成/u)).toBeVisible();
+    expect(screen.getByText(/内容包仅在受控预览确认后生成/u)).toBeVisible();
     expect(screen.getByRole('img', { name: /封面建议/u })).toHaveAttribute(
       'src',
       expect.stringContaining('morgue-cover.png'),
