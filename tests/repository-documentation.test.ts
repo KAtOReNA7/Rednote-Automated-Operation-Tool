@@ -50,9 +50,22 @@ function projectProgress(content: string): ProjectProgress | null {
 }
 
 describe('repository-facing documentation', () => {
-  it('keeps README, AGENTS and Roadmap on the same reduced-scope M3 closeout state', () => {
+  it('keeps the README focused on the accepted V2 path and links legacy details instead', () => {
+    expect(readme).toContain('V2-R01—R05 已验收');
+    expect(readme).toMatch(/下一步(?:是)?\s*V2-R06/u);
+    expect(readme).toContain('V2-D-FINAL');
+    expect(readme).toContain('R07');
+    expect(readme).toContain('R08');
+    expect(readme).toContain('Issue 022—028');
+    expect(readme).toContain('Issue 029A');
+    expect(readme).toContain('Minimal Issue 030');
+    expect(readme).toMatch(/029B[\s\S]{0,100}?deferred/iu);
+    expect(readme).toMatch(/M4[\s\S]{0,100}?未开始/u);
+    expect(readme).not.toContain('### 最近完成');
+    expect(readme).not.toContain('Issue 012 验收映射');
+    expect(readme.split(/\r?\n/u).length).toBeLessThanOrEqual(220);
+
     for (const [path, content] of [
-      ['README.md', readme],
       ['AGENTS.md', agents],
       ['docs/product/xiaohongshu-development-roadmap-v1.md', roadmap],
     ] as const) {
@@ -63,28 +76,6 @@ describe('repository-facing documentation', () => {
       expect(content, path).toMatch(/M4[\s\S]{0,100}?未开始/u);
       expect(content, path).toMatch(/下一步[\s\S]{0,120}?受控本地(?:内容)?试运行/u);
     }
-    expect(readme).toContain('M1（Issue 006—011）');
-    expect(readme).toContain('M2（Issue 012—021）均已完成验收');
-    expect(readme).toContain('五类 Topic Pool、可解释排序、状态控制与 First-30 配额');
-    expect(readme).toContain('可检验单变量实验、跨作品复现、确定性分配与版本状态');
-    expect(readme).toContain(
-      '五类 Content Brief、Evidence 映射、真实性/评分/剧透约束、字段锁与就绪门',
-    );
-    expect(readme).toContain('五类版本化文案、实际剧透警告、局部重写、结构门与工作台');
-    expect(readme).toContain(
-      'FACT_MAPPING Statement、类型化 Claim 映射、证据链、精确失效与人工复核',
-    );
-    expect(readme).toContain('剧透声明/警告确定性子集、FULL 放行、窄候选定位与精确 stale');
-    expect(readme).toContain('Work / Expression / Edition');
-    expect(readme).toContain('Source revision、AtomicClaim、精确 EvidenceLocator');
-    expect(readme).toContain('版本化 Dossier、共识/争议/缺口');
-    expect(readme).toContain('六态阅读真实性、R2 逐条观点、三类评分隔离');
-    expect(readme).toContain('LEAD_ONLY / NOT_FETCHED / UNVERIFIED / NOT_A_FACT');
-    expect(readme).toContain('FETCHED_NOT_EVIDENCE / UNVERIFIED / NOT_A_FACT');
-    expect(readme).toContain('外部请求恒为 0');
-    expect(readme).not.toContain('下一步仅规划 Issue 018');
-    expect(readme).not.toContain('Issue 021（阅读状态与真实性规则，仅规划）');
-    expect(readme).not.toContain('M0 仅保留包边界');
   });
 
   it('parses only explicit Issue references and rejects gaps or contradictory next states', () => {
