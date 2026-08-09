@@ -153,6 +153,7 @@ export class ProviderCapabilityRuntime {
     input: StartProviderCapabilityProbeInput,
     senderId: number,
     windowId: number,
+    userApprovedUnknownCost = false,
   ): Promise<ProviderCapabilityProbeProgressView> {
     this.#assertOpen();
     if (this.#active !== null) {
@@ -178,7 +179,11 @@ export class ProviderCapabilityRuntime {
     ) {
       throw new ProviderCapabilityControlError('PROBE_STALE');
     }
-    if (this.#accounting !== null && !this.#probeUnitPolicyReady(rebuilt)) {
+    if (
+      this.#accounting !== null &&
+      !this.#probeUnitPolicyReady(rebuilt) &&
+      !userApprovedUnknownCost
+    ) {
       throw new ProviderCapabilityControlError('BUDGET_UNPRICED_LIMIT_REQUIRED');
     }
 

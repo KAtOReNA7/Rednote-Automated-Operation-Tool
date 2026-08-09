@@ -1,10 +1,12 @@
 export const V2_PROVIDER_ACTION_KINDS = Object.freeze([
   'WEEKLY_PLAN',
   'CONTENT_PACKAGES',
+  'CONTENT_COPY_VERSION',
+  'CONTENT_COVER',
   'REPLY_SUGGESTION',
 ] as const);
 export type V2ProviderActionKind = (typeof V2_PROVIDER_ACTION_KINDS)[number];
-export type V2ProviderModelSlot = 'research' | 'writing';
+export type V2ProviderModelSlot = 'image' | 'research' | 'writing';
 
 export const V2_PROVIDER_ACTION_LIMITS = Object.freeze({
   candidateCount: 40,
@@ -17,6 +19,25 @@ export type V2ProviderActionIntent =
   | {
       readonly expectedRevision: number;
       readonly kind: 'WEEKLY_PLAN';
+      readonly userApprovedUnknownCost?: boolean;
+      readonly weekKey: string;
+    }
+  | {
+      readonly items: readonly {
+        readonly expectedRevision: number;
+        readonly expectedVersionId: string;
+        readonly packageId: string;
+      }[];
+      readonly kind: 'CONTENT_COPY_VERSION';
+      readonly userApprovedUnknownCost?: boolean;
+      readonly weekKey: string;
+    }
+  | {
+      readonly expectedRevision: number;
+      readonly expectedVersionId: string;
+      readonly kind: 'CONTENT_COVER';
+      readonly packageId: string;
+      readonly userApprovedUnknownCost?: boolean;
       readonly weekKey: string;
     }
   | {
@@ -25,12 +46,14 @@ export type V2ProviderActionIntent =
       readonly idempotencyKey: string;
       readonly kind: 'CONTENT_PACKAGES';
       readonly weekKey: string;
+      readonly userApprovedUnknownCost?: boolean;
     }
   | {
       readonly expectedRevision: number;
       readonly idempotencyKey: string;
       readonly itemId: string;
       readonly kind: 'REPLY_SUGGESTION';
+      readonly userApprovedUnknownCost?: boolean;
     };
 
 export interface V2ProviderActionPreview {
@@ -47,6 +70,7 @@ export interface V2ProviderActionPreview {
   readonly modelSlot: V2ProviderModelSlot;
   readonly previewToken: string | null;
   readonly providerConfigured: boolean;
+  readonly unknownCostApproved?: boolean;
   readonly requestCount: 1;
   readonly searchEnabled: false;
   readonly summary: string;
@@ -74,6 +98,7 @@ export interface V2ProviderActionExecutionRequest {
   readonly input: Readonly<Record<string, unknown>>;
   readonly kind: V2ProviderActionKind;
   readonly modelSlot: V2ProviderModelSlot;
+  readonly userApprovedUnknownCost?: boolean;
 }
 
 export interface V2ProviderActionExecutionResult {
@@ -90,6 +115,7 @@ export interface V2ProviderActionExecutionResult {
   readonly output: unknown;
   readonly stableErrorCode: string | null;
   readonly status: 'BLOCKED' | 'CANCELLED' | 'OUTCOME_UNCERTAIN' | 'SUCCEEDED';
+  readonly modelRunId?: string | null;
 }
 
 export interface V2ProviderActionResult {
@@ -154,11 +180,18 @@ function weekKey(value: unknown): string {
 
 export function parseV2ProviderActionIntent(value: unknown): V2ProviderActionIntent {
   if (!record(value)) throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
-  if (value.kind === 'WEEKLY_PLAN' && exactKeys(value, ['expectedRevision', 'kind', 'weekKey'])) {
+  if (!('userApprovedUnknownCost' in value)) value = { ...value, userApprovedUnknownCost: false };
+  if (!record(value)) throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
+  if (
+    value.kind === 'WEEKLY_PLAN' &&
+    exactKeys(value, ['expectedRevision', 'kind', 'userApprovedUnknownCost', 'weekKey']) &&
+    typeof value.userApprovedUnknownCost === 'boolean'
+  ) {
     return {
       expectedRevision: revision(value.expectedRevision, 'expectedRevision'),
       kind: value.kind,
       weekKey: weekKey(value.weekKey),
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
     };
   }
   if (
@@ -168,8 +201,10 @@ export function parseV2ProviderActionIntent(value: unknown): V2ProviderActionInt
       'expectedPlanRevision',
       'idempotencyKey',
       'kind',
+      'userApprovedUnknownCost',
       'weekKey',
     ]) &&
+    typeof value.userApprovedUnknownCost === 'boolean' &&
     Array.isArray(value.candidateIds) &&
     value.candidateIds.length === 3
   ) {
@@ -183,17 +218,72 @@ export function parseV2ProviderActionIntent(value: unknown): V2ProviderActionInt
       idempotencyKey: token(value.idempotencyKey, 'idempotencyKey'),
       kind: value.kind,
       weekKey: weekKey(value.weekKey),
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
+    };
+  }
+  if (
+    value.kind === 'CONTENT_COPY_VERSION' &&
+    exactKeys(value, ['items', 'kind', 'userApprovedUnknownCost', 'weekKey']) &&
+    typeof value.userApprovedUnknownCost === 'boolean' &&
+    Array.isArray(value.items) &&
+    (value.items.length === 1 || value.items.length === 3)
+  ) {
+    const items = value.items.map((item) => {
+      if (!record(item) || !exactKeys(item, ['expectedRevision', 'expectedVersionId', 'packageId']))
+        throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED', ['items']);
+      return Object.freeze({
+        expectedRevision: revision(item.expectedRevision, 'expectedRevision'),
+        expectedVersionId: token(item.expectedVersionId, 'expectedVersionId'),
+        packageId: token(item.packageId, 'packageId'),
+      });
+    });
+    if (new Set(items.map(({ packageId }) => packageId)).size !== items.length)
+      throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED', ['items']);
+    return {
+      items: Object.freeze(items),
+      kind: value.kind,
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
+      weekKey: weekKey(value.weekKey),
+    };
+  }
+  if (
+    value.kind === 'CONTENT_COVER' &&
+    exactKeys(value, [
+      'expectedRevision',
+      'expectedVersionId',
+      'kind',
+      'packageId',
+      'userApprovedUnknownCost',
+      'weekKey',
+    ]) &&
+    typeof value.userApprovedUnknownCost === 'boolean'
+  ) {
+    return {
+      expectedRevision: revision(value.expectedRevision, 'expectedRevision'),
+      expectedVersionId: token(value.expectedVersionId, 'expectedVersionId'),
+      kind: value.kind,
+      packageId: token(value.packageId, 'packageId'),
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
+      weekKey: weekKey(value.weekKey),
     };
   }
   if (
     value.kind === 'REPLY_SUGGESTION' &&
-    exactKeys(value, ['expectedRevision', 'idempotencyKey', 'itemId', 'kind'])
+    exactKeys(value, [
+      'expectedRevision',
+      'idempotencyKey',
+      'itemId',
+      'kind',
+      'userApprovedUnknownCost',
+    ]) &&
+    typeof value.userApprovedUnknownCost === 'boolean'
   ) {
     return {
       expectedRevision: revision(value.expectedRevision, 'expectedRevision'),
       idempotencyKey: token(value.idempotencyKey, 'idempotencyKey'),
       itemId: token(value.itemId, 'itemId'),
       kind: value.kind,
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
     };
   }
   throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
@@ -246,6 +336,36 @@ export const V2_PROVIDER_OUTPUT_JSON_SCHEMAS = Object.freeze({
     required: ['packages'],
     type: 'object',
   },
+  CONTENT_COPY_VERSION: {
+    additionalProperties: false,
+    properties: {
+      packages: {
+        items: {
+          additionalProperties: false,
+          properties: {
+            body: { maxLength: 16_000, minLength: 1, type: 'string' },
+            coverKey: { enum: ['moonstone', 'morgue', 'yellow-room'], type: 'string' },
+            materialNotes: { maxLength: 2_000, minLength: 1, type: 'string' },
+            suggestedTime: { maxLength: 32, minLength: 1, type: 'string' },
+            tags: {
+              items: { maxLength: 80, minLength: 1, type: 'string' },
+              maxItems: 10,
+              minItems: 1,
+              type: 'array',
+            },
+            title: { maxLength: 300, minLength: 1, type: 'string' },
+          },
+          required: ['body', 'coverKey', 'materialNotes', 'suggestedTime', 'tags', 'title'],
+          type: 'object',
+        },
+        maxItems: 3,
+        minItems: 1,
+        type: 'array',
+      },
+    },
+    required: ['packages'],
+    type: 'object',
+  },
   REPLY_SUGGESTION: {
     additionalProperties: false,
     properties: { replyText: { maxLength: 4_000, minLength: 1, type: 'string' } },
@@ -288,10 +408,14 @@ export const V2_PROVIDER_OUTPUT_JSON_SCHEMAS = Object.freeze({
 export function providerActionSummary(kind: V2ProviderActionKind): string {
   if (kind === 'WEEKLY_PLAN') return '使用 research 模型槽生成下一周计划候选。';
   if (kind === 'CONTENT_PACKAGES') return '使用 writing 模型槽生成 3 个六字段内容包。';
+  if (kind === 'CONTENT_COPY_VERSION')
+    return '使用 writing 模型槽为当前内容创建一个待复核文案版本。';
+  if (kind === 'CONTENT_COVER') return '使用 image 模型槽生成当前内容的新封面版本。';
   return '使用 writing 模型槽生成一条可编辑回复建议；不会自动发送。';
 }
 
 export function providerActionModelSlot(kind: V2ProviderActionKind): V2ProviderModelSlot {
+  if (kind === 'CONTENT_COVER') return 'image';
   return kind === 'WEEKLY_PLAN' ? 'research' : 'writing';
 }
 
@@ -319,6 +443,8 @@ export interface V2CapabilityProbePreview {
   readonly requestCount: number;
   readonly settingsRevision: number;
   readonly startToken: string;
+  readonly modelIds?: readonly string[];
+  readonly userApprovedUnknownCost?: boolean;
 }
 export interface V2ProviderSettingsView {
   readonly accounting: {
@@ -340,12 +466,14 @@ export interface V2ProviderSettingsView {
   readonly revision: number;
   readonly setupAvailable: boolean;
   readonly writing: V2CapabilitySlotView;
+  readonly image?: V2CapabilitySlotView;
 }
 export interface V2ProviderSettingsDraft {
   readonly expectedRevision: number;
   readonly providerBaseUrl: string | null;
   readonly researchModelId: string | null;
   readonly writingModelId: string | null;
+  readonly imageModelId: string | null;
 }
 export interface V2ProviderCredentialInput {
   readonly plaintext: string;
@@ -356,6 +484,7 @@ export interface V2CapabilityProbeStart {
   readonly planHash: string;
   readonly settingsRevision: number;
   readonly startToken: string;
+  readonly userApprovedUnknownCost: boolean;
 }
 export type V2ProviderSettingsMutation =
   | ({ readonly action: 'UPDATE_PROVIDER_SETTINGS' } & V2ProviderSettingsDraft)
@@ -404,6 +533,7 @@ export function parseV2ProviderSettingsMutation(value: unknown): V2ProviderSetti
       'providerBaseUrl',
       'researchModelId',
       'writingModelId',
+      'imageModelId',
     ])
   ) {
     return {
@@ -412,6 +542,7 @@ export function parseV2ProviderSettingsMutation(value: unknown): V2ProviderSetti
       providerBaseUrl: settingsNullableText(value.providerBaseUrl, 2_048),
       researchModelId: settingsNullableText(value.researchModelId, 200),
       writingModelId: settingsNullableText(value.writingModelId, 200),
+      imageModelId: settingsNullableText(value.imageModelId, 200),
     };
   }
   if (value.action === 'SET_PROVIDER_CREDENTIAL' && settingsExact(value, ['action', 'plaintext'])) {
@@ -434,8 +565,10 @@ export function parseV2ProviderSettingsMutation(value: unknown): V2ProviderSetti
       'planHash',
       'settingsRevision',
       'startToken',
+      'userApprovedUnknownCost',
     ]) &&
-    value.confirmation === 'START_PROVIDER_CAPABILITY_PROBE'
+    value.confirmation === 'START_PROVIDER_CAPABILITY_PROBE' &&
+    typeof value.userApprovedUnknownCost === 'boolean'
   ) {
     return {
       action: value.action,
@@ -444,6 +577,7 @@ export function parseV2ProviderSettingsMutation(value: unknown): V2ProviderSetti
       planHash: settingsToken(value.planHash),
       settingsRevision: settingsRevision(value.settingsRevision),
       startToken: settingsToken(value.startToken),
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
     };
   }
   throw new TypeError('INVALID_REQUEST');

@@ -130,6 +130,8 @@ let screenshotReader:
       readonly mime: 'image/jpeg' | 'image/png';
     } | null>)
   | null = null;
+let v2CoverReader: ((packageId: string, version: number) => Promise<Uint8Array | null>) | null =
+  null;
 
 protocol.registerSchemesAsPrivileged([
   {
@@ -177,6 +179,20 @@ function registerLocalRendererProtocol(rendererRoot: string): void {
         headers: {
           'Cache-Control': 'no-store',
           'Content-Type': screenshot.mime,
+          'X-Content-Type-Options': 'nosniff',
+        },
+      });
+    }
+    const coverMatch = /^\/v2-cover\/(pkg-[a-z0-9_-]{1,96})\/(\d{1,6})$/u.exec(url.pathname);
+    if (coverMatch !== null) {
+      if (url.search !== '' || url.hash !== '' || v2CoverReader === null)
+        return new Response('Not found', { status: 404 });
+      const bytes = await v2CoverReader(coverMatch[1] ?? '', Number(coverMatch[2]));
+      if (bytes === null) return new Response('Not found', { status: 404 });
+      return new Response(Uint8Array.from(bytes).buffer, {
+        headers: {
+          'Cache-Control': 'no-store',
+          'Content-Type': 'image/png',
           'X-Content-Type-Options': 'nosniff',
         },
       });
@@ -232,12 +248,14 @@ async function startV2Application(
       updateSettings: (input) => settingsRuntime.updateV2ProviderSettings(input),
     },
   });
+  v2CoverReader = (packageId, version) => runtime.readGeneratedCover(packageId, version);
   let runtimeClosed = false;
   let removeIpcHandlers = (): void => undefined;
   const closeRuntime = (): void => {
     if (runtimeClosed) return;
     removeIpcHandlers();
     runtime.close();
+    v2CoverReader = null;
     void settingsRuntime.close();
     runtimeClosed = true;
   };

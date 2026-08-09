@@ -18,6 +18,8 @@ export interface ReplySuggestionRecord {
   readonly files: InteractionBlobRef;
   readonly version: number;
   readonly versionId: string;
+  readonly modelRunId: string | null;
+  readonly providerKind: 'MODEL' | 'SCRIPTED';
 }
 
 export interface InteractionRecord {
@@ -110,7 +112,14 @@ export interface V2InteractionFilePort {
 }
 
 export interface V2InteractionRepositoryPort {
-  appendSuggestion(current: InteractionRecord, files: InteractionBlobRef): InteractionRecord;
+  appendSuggestion(
+    current: InteractionRecord,
+    files: InteractionBlobRef,
+    provenance?: {
+      readonly modelRunId: string | null;
+      readonly providerKind: 'MODEL' | 'SCRIPTED';
+    },
+  ): InteractionRecord;
   batchConfirm(items: readonly InteractionVersionRef[]): readonly InteractionRecord[];
   contentPackageExists(packageId: string): boolean;
   createInteraction(record: InteractionRecord): InteractionRecord;
@@ -335,6 +344,7 @@ export class V2InteractionApplication {
   public async generateFromReply(
     request: Extract<InteractionMutationRequest, { action: 'GENERATE_REPLY_SUGGESTION' }>,
     replyValue: unknown,
+    modelRunId: string | null = null,
   ): Promise<InteractionItem> {
     const current = this.repository.getInteraction(request.itemId);
     if (current.status === 'SUGGESTED' && current.currentSuggestion !== null)
@@ -352,6 +362,7 @@ export class V2InteractionApplication {
       this.repository.appendSuggestion(
         current,
         await this.files.writeText(reply, 'REPLY_SUGGESTION'),
+        { modelRunId, providerKind: modelRunId === null ? 'SCRIPTED' : 'MODEL' },
       ),
     );
   }

@@ -126,6 +126,7 @@ export interface ModelExecutionRequestV1 {
   readonly sourceIdentities: readonly SourceIdentityV1[];
   readonly taskKind: string;
   readonly unitDemandUpperBound: ModelUnitDemandV1;
+  readonly userApprovedUnknownCost?: true;
 }
 
 export interface ModelExecutionResultV1 {

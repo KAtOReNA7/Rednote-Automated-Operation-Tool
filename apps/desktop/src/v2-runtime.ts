@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 
@@ -70,6 +70,7 @@ export interface V2SettingsControlPort {
       readonly planHash: string;
       readonly settingsRevision: number;
       readonly startToken: string;
+      readonly userApprovedUnknownCost: boolean;
     },
     caller: V2ActionCaller,
   ): Promise<V2CapabilityProbeProgress>;
@@ -80,6 +81,12 @@ interface ProviderPreviewLease {
   readonly caller: V2ActionCaller;
   readonly expiresAtMs: number;
   readonly intent: V2ProviderActionIntent;
+  readonly inputHash: string;
+  readonly readinessBinding: string;
+}
+
+function providerInputHash(input: Readonly<Record<string, unknown>>): string {
+  return createHash('sha256').update(JSON.stringify(input)).digest('hex');
 }
 
 const unavailableProviderExecution: V2ProviderExecutionPort = {
@@ -91,6 +98,7 @@ const unavailableProviderExecution: V2ProviderExecutionPort = {
     output: null,
     stableErrorCode: 'PROVIDER_NOT_CONFIGURED',
     status: 'BLOCKED',
+    modelRunId: null,
   }),
   inspect: async (request) => ({
     blockReasons: ['本机 Provider runtime 不可用。'],
@@ -102,6 +110,7 @@ const unavailableProviderExecution: V2ProviderExecutionPort = {
     modelId: null,
     modelSlot: request.modelSlot,
     providerConfigured: false,
+    unknownCostApproved: request.userApprovedUnknownCost === true,
   }),
 };
 
@@ -297,6 +306,11 @@ export class V2DesktopRuntime {
     return this.#repository.summary();
   }
 
+  public readGeneratedCover(packageId: string, version: number): Promise<Uint8Array | null> {
+    this.#assertOpen();
+    return this.#content.readGeneratedCover(packageId, version);
+  }
+
   public close(): void {
     if (this.#closed) return;
     this.#database.close();
@@ -348,12 +362,25 @@ export class V2DesktopRuntime {
       input,
       kind: intent.kind,
       modelSlot: providerActionModelSlot(intent.kind),
+      userApprovedUnknownCost: intent.userApprovedUnknownCost === true,
     });
     const canConfirm = businessBlock === null && readiness.canConfirm;
     const previewToken = canConfirm ? randomBytes(32).toString('base64url') : null;
     const expiresAtMs = Date.now() + V2_PROVIDER_ACTION_LIMITS.tokenTtlMs;
     if (previewToken !== null) {
-      this.#providerPreviews.set(previewToken, { caller, expiresAtMs, intent });
+      this.#providerPreviews.set(previewToken, {
+        caller,
+        expiresAtMs,
+        intent,
+        inputHash: providerInputHash(input),
+        readinessBinding: JSON.stringify({
+          capabilityState: readiness.capabilityState,
+          credentialState: readiness.credentialState,
+          feeEstimateMicroUsd: readiness.feeEstimateMicroUsd,
+          modelId: readiness.modelId,
+          providerConfigured: readiness.providerConfigured,
+        }),
+      });
     }
     return Object.freeze({
       ...readiness,
@@ -387,11 +414,31 @@ export class V2DesktopRuntime {
       throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
     }
     const input = await this.#providerInput(lease.intent);
+    const currentReadiness = await this.#providerExecution.inspect({
+      input,
+      kind: lease.intent.kind,
+      modelSlot: providerActionModelSlot(lease.intent.kind),
+      userApprovedUnknownCost: lease.intent.userApprovedUnknownCost === true,
+    });
+    const currentBinding = JSON.stringify({
+      capabilityState: currentReadiness.capabilityState,
+      credentialState: currentReadiness.credentialState,
+      feeEstimateMicroUsd: currentReadiness.feeEstimateMicroUsd,
+      modelId: currentReadiness.modelId,
+      providerConfigured: currentReadiness.providerConfigured,
+    });
+    if (
+      !currentReadiness.canConfirm ||
+      providerInputHash(input) !== lease.inputHash ||
+      currentBinding !== lease.readinessBinding
+    )
+      throw new V2ProviderActionError('PROVIDER_ACTION_STALE');
     const executed = await this.#providerExecution.execute({
       executionId: `v2-r07-${randomUUID()}`,
       input,
       kind: lease.intent.kind,
       modelSlot: providerActionModelSlot(lease.intent.kind),
+      userApprovedUnknownCost: lease.intent.userApprovedUnknownCost === true,
     });
     if (executed.externalRequestCount > 1) {
       throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
@@ -405,7 +452,7 @@ export class V2DesktopRuntime {
     if (executed.status !== 'SUCCEEDED') {
       throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
     }
-    await this.#persistProviderOutput(lease.intent, executed.output);
+    await this.#persistProviderOutput(lease.intent, executed.output, executed.modelRunId ?? null);
     return Object.freeze({
       costAmountMicroUsd: executed.costAmountMicroUsd,
       costState: executed.costState,
@@ -447,6 +494,33 @@ export class V2DesktopRuntime {
         weekKey: intent.weekKey,
       });
     }
+    if (intent.kind === 'CONTENT_COPY_VERSION') {
+      const workspace = await this.#content.read(intent.weekKey);
+      const contentPackages = intent.items.map((ref) => {
+        const current = workspace.packages.find((item) => item.id === ref.packageId);
+        if (
+          current === undefined ||
+          current.revision !== ref.expectedRevision ||
+          current.versionId !== ref.expectedVersionId
+        )
+          throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['contentPackage']);
+        return current;
+      });
+      return Object.freeze({ contentPackages: Object.freeze(contentPackages), persona });
+    }
+    if (intent.kind === 'CONTENT_COVER') {
+      const workspace = await this.#content.read(intent.weekKey);
+      const current = workspace.packages.find((item) => item.id === intent.packageId);
+      if (
+        current === undefined ||
+        current.revision !== intent.expectedRevision ||
+        current.versionId !== intent.expectedVersionId
+      )
+        throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['contentPackage']);
+      return Object.freeze({ contentPackage: current, persona });
+    }
+    if (intent.kind !== 'REPLY_SUGGESTION')
+      throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
     const workspace = await this.#interaction.read();
     const item = workspace.items.find((candidate) => candidate.itemId === intent.itemId);
     if (item === undefined || item.revision !== intent.expectedRevision || item.status !== 'NEW') {
@@ -455,7 +529,11 @@ export class V2DesktopRuntime {
     return Object.freeze({ interaction: item, persona });
   }
 
-  async #persistProviderOutput(intent: V2ProviderActionIntent, output: unknown): Promise<void> {
+  async #persistProviderOutput(
+    intent: V2ProviderActionIntent,
+    output: unknown,
+    modelRunId: string | null,
+  ): Promise<void> {
     if (typeof output !== 'object' || output === null || Array.isArray(output)) {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID');
     }
@@ -467,6 +545,40 @@ export class V2DesktopRuntime {
         intent.weekKey,
         intent.expectedRevision,
         value.candidates,
+      );
+      return;
+    }
+    if (intent.kind === 'CONTENT_COPY_VERSION') {
+      if (modelRunId === null)
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['modelRunId']);
+      if (
+        Object.keys(value).length !== 1 ||
+        !Array.isArray(value.packages) ||
+        value.packages.length !== intent.items.length
+      )
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+      for (const [index, ref] of intent.items.entries()) {
+        await this.#content.appendModelCopy(
+          ref.packageId,
+          ref.expectedRevision,
+          ref.expectedVersionId,
+          value.packages[index],
+          modelRunId,
+        );
+      }
+      return;
+    }
+    if (intent.kind === 'CONTENT_COVER') {
+      if (modelRunId === null)
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['modelRunId']);
+      if (typeof value.base64 !== 'string' || value.mimeType !== 'image/png')
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['cover']);
+      await this.#content.appendGeneratedCover(
+        intent.packageId,
+        intent.expectedRevision,
+        intent.expectedVersionId,
+        Buffer.from(value.base64, 'base64'),
+        modelRunId,
       );
       return;
     }
@@ -501,7 +613,11 @@ export class V2DesktopRuntime {
       );
       return;
     }
-    if (Object.keys(value).length !== 1 || typeof value.replyText !== 'string') {
+    if (
+      intent.kind !== 'REPLY_SUGGESTION' ||
+      Object.keys(value).length !== 1 ||
+      typeof value.replyText !== 'string'
+    ) {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['replyText']);
     }
     await this.#interaction.generateFromReply(
@@ -512,6 +628,7 @@ export class V2DesktopRuntime {
         itemId: intent.itemId,
       },
       value.replyText,
+      modelRunId,
     );
   }
 

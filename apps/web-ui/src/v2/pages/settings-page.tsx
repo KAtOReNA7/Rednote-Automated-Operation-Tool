@@ -20,6 +20,7 @@ function ProviderSettings(): React.JSX.Element {
   const [baseUrl, setBaseUrl] = useState('');
   const [researchModel, setResearchModel] = useState('');
   const [writingModel, setWritingModel] = useState('');
+  const [imageModel, setImageModel] = useState('');
   const [credential, setCredential] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [probe, setProbe] = useState<V2CapabilityProbePreviewContract | null>(null);
@@ -30,6 +31,7 @@ function ProviderSettings(): React.JSX.Element {
     setBaseUrl(next.providerBaseUrl ?? '');
     setResearchModel(next.research.modelId ?? '');
     setWritingModel(next.writing.modelId ?? '');
+    setImageModel(next.image?.modelId ?? '');
   };
   const load = async (): Promise<void> => {
     const result = await window.rednoteV2?.readProviderSettings?.();
@@ -48,6 +50,7 @@ function ProviderSettings(): React.JSX.Element {
       providerBaseUrl: baseUrl.trim() || null,
       researchModelId: researchModel.trim() || null,
       writingModelId: writingModel.trim() || null,
+      imageModelId: imageModel.trim() || null,
     });
     if (!result.ok) return notify(result.error.message);
     apply(result.value);
@@ -93,6 +96,7 @@ function ProviderSettings(): React.JSX.Element {
       planHash: probe.planHash,
       settingsRevision: probe.settingsRevision,
       startToken: probe.startToken,
+      userApprovedUnknownCost: probe.feeEstimate === 'UNKNOWN' && confirmProbe,
     });
     if (!result.ok) return notify(result.error.message);
     setProbe(null);
@@ -139,6 +143,10 @@ function ProviderSettings(): React.JSX.Element {
             <span>写作模型 ID</span>
             <input onChange={(event) => setWritingModel(event.target.value)} value={writingModel} />
           </label>
+          <label className="v2-field">
+            <span>图片模型 ID</span>
+            <input onChange={(event) => setImageModel(event.target.value)} value={imageModel} />
+          </label>
           <Button onClick={() => void save()} tone="primary">
             保存 AI 服务设置
           </Button>
@@ -172,13 +180,14 @@ function ProviderSettings(): React.JSX.Element {
             </Button>
           </div>
           <hr />
-          <h3>结构化输出能力</h3>
+          <h3>R07 所需能力</h3>
           <p>
             研究槽：{capabilityLabel[view.research.state]} · 写作槽：
-            {capabilityLabel[view.writing.state]}
+            {capabilityLabel[view.writing.state]} · 图片槽 imageGeneration：
+            {capabilityLabel[view.image?.state ?? 'UNKNOWN']}
           </p>
           <p>能力检查只会在你预览并明确确认后启动，不会自动探测。</p>
-          <Button onClick={() => void previewProbe()}>预览能力检查</Button>
+          <Button onClick={() => void previewProbe()}>验证 R07 所需能力</Button>
           {probe === null ? null : (
             <div className="v2-provider-blockers">
               <p>
@@ -192,10 +201,12 @@ function ProviderSettings(): React.JSX.Element {
                   onChange={(event) => setConfirmProbe(event.target.checked)}
                   type="checkbox"
                 />
-                我确认启动本次能力检查
+                {probe.feeEstimate === 'UNKNOWN'
+                  ? '我了解费用未知，仍授权本次最多 3 个能力检查请求'
+                  : '我确认启动本次能力检查'}
               </label>
               <Button
-                disabled={!confirmProbe || !probe.budgetReady}
+                disabled={!confirmProbe || (probe.feeEstimate !== 'UNKNOWN' && !probe.budgetReady)}
                 onClick={() => void startProbe()}
                 tone="primary"
               >
@@ -212,7 +223,7 @@ function ProviderSettings(): React.JSX.Element {
           </p>
           <p>
             {view.accounting.hardStop ? '本月预算已阻止调用。' : '预算硬上限尚未触发。'}{' '}
-            价格不完整时，调用确认会保持禁用。
+            价格不完整时必须逐次明确授权，未知费用不会记为 0。
           </p>
         </>
       )}

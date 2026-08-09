@@ -4,11 +4,13 @@ import { join, resolve } from 'node:path';
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import type {
-  V2ProviderActionExecutionRequest,
-  V2ProviderActionExecutionResult,
-  V2ProviderActionPreview,
-  WeeklyPlan,
+import {
+  parseV2ProviderActionIntent,
+  parseV2ProviderActionOutput,
+  type V2ProviderActionExecutionRequest,
+  type V2ProviderActionExecutionResult,
+  type V2ProviderActionPreview,
+  type WeeklyPlan,
 } from '../packages/v2/src/index.js';
 
 vi.mock('electron', () => ({
@@ -88,6 +90,47 @@ class ScriptedProviderExecution {
 }
 
 describe('V2 R07 controlled provider adapter', () => {
+  it('accepts exactly one or three append-only copy targets and matching outputs', () => {
+    const item = (suffix: number) => ({
+      expectedRevision: suffix,
+      expectedVersionId: `version-${suffix}`,
+      packageId: `package-${suffix}`,
+    });
+    for (const items of [[item(1)], [item(1), item(2), item(3)]]) {
+      expect(
+        parseV2ProviderActionIntent({
+          items,
+          kind: 'CONTENT_COPY_VERSION',
+          userApprovedUnknownCost: false,
+          weekKey: '2026-W31',
+        }),
+      ).toMatchObject({ items });
+      expect(
+        parseV2ProviderActionOutput('CONTENT_COPY_VERSION', {
+          packages: items.map((_, index) => ({
+            body: `正文 ${index + 1}`,
+            coverKey: 'morgue',
+            materialNotes: '本地资料说明',
+            suggestedTime: '2026-07-27T10:00',
+            tags: ['推理小说'],
+            title: `标题 ${index + 1}`,
+          })),
+        }),
+      ).toHaveProperty(
+        'packages',
+        expect.arrayContaining([expect.objectContaining({ coverKey: 'morgue' })]),
+      );
+    }
+    expect(() =>
+      parseV2ProviderActionIntent({
+        items: [item(1), item(2)],
+        kind: 'CONTENT_COPY_VERSION',
+        userApprovedUnknownCost: false,
+        weekKey: '2026-W31',
+      }),
+    ).toThrow();
+  });
+
   it('previews offline, consumes one bound token, and persists all three scripted actions', async () => {
     const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
     const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r07-'));

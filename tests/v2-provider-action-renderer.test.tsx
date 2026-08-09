@@ -28,28 +28,42 @@ function expose(methods: Partial<V2Bridge>): void {
 
 describe('V2 R07 provider action renderer', () => {
   it('requires preview and explicit confirmation and lets the user cancel without execution', async () => {
-    const previewProviderAction = vi.fn().mockResolvedValue({
+    const previewProviderAction = vi.fn(
+      async (input) =>
+        ({
+          ok: true as const,
+          value: {
+            blockReasons: input.userApprovedUnknownCost
+              ? []
+              : ['费用未知；如仍要继续，必须逐次明确授权。'],
+            budgetState: 'UNKNOWN',
+            canConfirm: input.userApprovedUnknownCost === true,
+            capabilityState: 'SUPPORTED',
+            credentialState: 'CONFIGURED',
+            expiresAt: '2026-08-09T12:02:00.000Z',
+            feeEstimateMicroUsd: null,
+            fetchEnabled: false,
+            kind: 'WEEKLY_PLAN',
+            modelId: 'research-model',
+            modelSlot: 'research',
+            previewToken: input.userApprovedUnknownCost ? 'preview-token' : null,
+            providerConfigured: true,
+            requestCount: 1,
+            searchEnabled: false,
+            summary: '使用 research 模型槽生成下一周计划候选。',
+          },
+        }) as const,
+    );
+    const confirmProviderAction = vi.fn().mockResolvedValue({
       ok: true,
       value: {
-        blockReasons: ['费用上界无法估算，请先完善价格配置。'],
-        budgetState: 'UNKNOWN',
-        canConfirm: false,
-        capabilityState: 'SUPPORTED',
-        credentialState: 'CONFIGURED',
-        expiresAt: '2026-08-09T12:02:00.000Z',
-        feeEstimateMicroUsd: null,
-        fetchEnabled: false,
+        costAmountMicroUsd: null,
+        costState: 'UNPRICED_USAGE',
+        externalRequestCount: 1,
         kind: 'WEEKLY_PLAN',
-        modelId: 'research-model',
-        modelSlot: 'research',
-        previewToken: 'preview-token',
-        providerConfigured: true,
-        requestCount: 1,
-        searchEnabled: false,
-        summary: '使用 research 模型槽生成下一周计划候选。',
+        status: 'SUCCEEDED',
       },
     });
-    const confirmProviderAction = vi.fn();
     expose({ confirmProviderAction, previewProviderAction });
     const user = userEvent.setup();
     render(
@@ -65,12 +79,18 @@ describe('V2 R07 provider action renderer', () => {
     expect(await screen.findByText('搜索 / 抓取')).toBeVisible();
     expect(screen.getByText('关闭 / 关闭')).toBeVisible();
     expect(screen.getByText('research-model')).toBeVisible();
-    expect(screen.getByText('费用上界无法估算，请先完善价格配置。')).toBeVisible();
+    expect(screen.getByText('费用未知；如仍要继续，必须逐次明确授权。')).toBeVisible();
     expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeDisabled();
     expect(confirmProviderAction).not.toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: '取消' }));
-    expect(confirmProviderAction).not.toHaveBeenCalled();
-    expect(screen.getByText('已取消，未调用模型、未写入结果。')).toBeVisible();
+    await user.click(
+      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 1 个请求' }),
+    );
+    expect(previewProviderAction).toHaveBeenLastCalledWith(
+      expect.objectContaining({ userApprovedUnknownCost: true }),
+    );
+    expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '确认并执行一次' }));
+    expect(confirmProviderAction).toHaveBeenCalledTimes(1);
   });
 
   it('persists provider settings, keeps credentials write-only, and probes only after preview', async () => {
@@ -91,6 +111,7 @@ describe('V2 R07 provider action renderer', () => {
       revision: 1,
       setupAvailable: true,
       writing: { modelId: 'writing-v1', state: 'UNSUPPORTED' },
+      image: { modelId: 'image-v1', state: 'UNKNOWN' },
     };
     const updateProviderSettings = vi.fn(async (input) => {
       settings = {
@@ -99,6 +120,10 @@ describe('V2 R07 provider action renderer', () => {
         research: { ...settings.research, modelId: input.researchModelId },
         revision: settings.revision + 1,
         writing: { ...settings.writing, modelId: input.writingModelId },
+        image: {
+          ...(settings.image ?? { state: 'UNKNOWN' as const }),
+          modelId: input.imageModelId,
+        },
       };
       return { ok: true as const, value: settings };
     });
@@ -140,9 +165,11 @@ describe('V2 R07 provider action renderer', () => {
     expect(previewProviderCapabilityProbe).not.toHaveBeenCalled();
     await user.clear(screen.getByRole('textbox', { name: '研究模型 ID' }));
     await user.type(screen.getByRole('textbox', { name: '研究模型 ID' }), 'research-v2');
+    await user.clear(screen.getByRole('textbox', { name: '图片模型 ID' }));
+    await user.type(screen.getByRole('textbox', { name: '图片模型 ID' }), 'image-v2');
     await user.click(screen.getByRole('button', { name: '保存 AI 服务设置' }));
     expect(updateProviderSettings).toHaveBeenCalledWith(
-      expect.objectContaining({ researchModelId: 'research-v2' }),
+      expect.objectContaining({ researchModelId: 'research-v2', imageModelId: 'image-v2' }),
     );
     const runtimeCredential = `credential-${randomUUID()}`;
     const secret = screen.getByLabelText('设置或替换凭据');
@@ -157,10 +184,14 @@ describe('V2 R07 provider action renderer', () => {
     expect(clearProviderCredential).toHaveBeenCalledWith({
       confirmation: 'DELETE_CONTENT_AI_API_KEY',
     });
-    await user.click(screen.getByRole('button', { name: '预览能力检查' }));
+    await user.click(screen.getByRole('button', { name: '验证 R07 所需能力' }));
     expect(previewProviderCapabilityProbe).toHaveBeenCalledTimes(1);
     expect(await screen.findByText(/费用无法估算/)).toBeVisible();
     expect(screen.getByRole('button', { name: '确认并启动' })).toBeDisabled();
+    await user.click(
+      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 3 个能力检查请求' }),
+    );
+    expect(screen.getByRole('button', { name: '确认并启动' })).toBeEnabled();
     cleanup();
     settings = {
       ...settings,

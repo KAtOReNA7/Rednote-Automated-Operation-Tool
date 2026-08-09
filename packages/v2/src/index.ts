@@ -600,6 +600,23 @@ export function parseV2ProviderActionOutput(
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
     }
   }
+  if (kind === 'CONTENT_COPY_VERSION') {
+    if (
+      !exactKeys(value, ['packages']) ||
+      !Array.isArray(value.packages) ||
+      (value.packages.length !== 1 && value.packages.length !== 3)
+    )
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+    try {
+      return Object.freeze({
+        packages: Object.freeze(value.packages.map(parseContentPackageFields)),
+      });
+    } catch {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+    }
+  }
+  if (kind === 'CONTENT_COVER')
+    throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['cover']);
   if (!exactKeys(value, ['replyText']))
     throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['replyText']);
   try {

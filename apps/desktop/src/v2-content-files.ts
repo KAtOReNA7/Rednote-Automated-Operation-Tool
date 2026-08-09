@@ -15,10 +15,13 @@ import {
   type ContentFieldKey,
   type ContentPackageFields,
   type ContentVersionRecord,
+  type GeneratedCoverRef,
   type V2ContentFilePort,
 } from '@mystery-operations/v2';
 
 const MAX_COVER_BYTES = 10 * 1024 * 1024;
+const PNG_SIGNATURE = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+const PNG_IEND = Buffer.from([0, 0, 0, 0, 73, 69, 78, 68, 174, 66, 96, 130]);
 const COVER_PREFIXES: Readonly<Record<ContentCoverKey, string>> = Object.freeze({
   moonstone: 'moonstone-cover',
   morgue: 'morgue-cover',
@@ -148,6 +151,39 @@ export class V2LocalContentFiles implements V2ContentFilePort {
     return Object.freeze(refs);
   }
 
+  public async writeGeneratedCover(
+    bytesValue: Uint8Array,
+    modelRunId: string,
+  ): Promise<GeneratedCoverRef> {
+    const bytes = Buffer.from(bytesValue);
+    if (
+      bytes.byteLength < 45 ||
+      bytes.byteLength > MAX_COVER_BYTES ||
+      !bytes.subarray(0, 8).equals(PNG_SIGNATURE) ||
+      bytes.readUInt32BE(8) !== 13 ||
+      bytes.subarray(12, 16).toString('ascii') !== 'IHDR' ||
+      !bytes.subarray(-12).equals(PNG_IEND)
+    )
+      throw new V2ContentError('CONTENT_CORRUPT', ['cover']);
+    const width = bytes.readUInt32BE(16);
+    const height = bytes.readUInt32BE(20);
+    if (width < 1 || width > 8192 || height < 1 || height > 8192)
+      throw new V2ContentError('CONTENT_CORRUPT', ['cover']);
+    const descriptor = await this.#files.putBuffer(bytes, {
+      category: 'GENERATED_IMAGE',
+      displayName: 'generated-cover.png',
+      maxBytes: MAX_COVER_BYTES,
+    });
+    return Object.freeze({
+      height,
+      managedPath: descriptor.managedPath,
+      mimeType: 'image/png' as const,
+      modelRunId,
+      sha256: descriptor.sha256,
+      width,
+    });
+  }
+
   public async readFields(record: ContentVersionRecord): Promise<ContentPackageFields> {
     const values = {} as Record<ContentFieldKey, Buffer>;
     for (const key of V2_CONTENT_FIELD_KEYS) {
@@ -198,7 +234,10 @@ export class V2LocalContentFiles implements V2ContentFilePort {
               key,
               {
                 path: `${directory}/${fileNames[key]}`,
-                sha256: record.files[key].sha256,
+                sha256:
+                  key === 'cover' && record.generatedCover != null
+                    ? record.generatedCover.sha256
+                    : record.files[key].sha256,
               },
             ]),
           ),
@@ -240,7 +279,9 @@ export class V2LocalContentFiles implements V2ContentFilePort {
         for (const key of V2_CONTENT_FIELD_KEYS) {
           await writeExact(
             safeChild(directory, fileNames[key]),
-            await this.#readBlob(record.files[key], key === 'cover' ? MAX_COVER_BYTES : 32_768),
+            key === 'cover' && record.generatedCover != null
+              ? await this.readGeneratedCover(record.generatedCover)
+              : await this.#readBlob(record.files[key], key === 'cover' ? MAX_COVER_BYTES : 32_768),
           );
         }
       }
@@ -319,10 +360,35 @@ export class V2LocalContentFiles implements V2ContentFilePort {
         if (
           createHash('sha256')
             .update(await readFile(path))
-            .digest('hex') !== record.files[key].sha256
+            .digest('hex') !==
+          (key === 'cover' && record.generatedCover != null
+            ? record.generatedCover.sha256
+            : record.files[key].sha256)
         )
           throw new V2ContentError('EXPORT_FAILED');
       }
     }
+  }
+
+  public async readGeneratedCover(ref: GeneratedCoverRef): Promise<Buffer> {
+    const managedPath = parseManagedRelativePath(ref.managedPath, 'GENERATED_IMAGE');
+    const stat = await this.#files.statManagedFile(managedPath);
+    await this.#files.verifyManagedFile(managedPath, {
+      expectedSha256: ref.sha256,
+      expectedSizeBytes: stat.sizeBytes,
+    });
+    if (stat.sizeBytes > MAX_COVER_BYTES) throw new V2ContentError('CONTENT_CORRUPT', ['cover']);
+    const chunks: Buffer[] = [];
+    for await (const chunk of this.#files.openReadStream(managedPath))
+      chunks.push(Buffer.from(chunk as Uint8Array));
+    const bytes = Buffer.concat(chunks);
+    if (
+      bytes.byteLength < 45 ||
+      !bytes.subarray(0, 8).equals(PNG_SIGNATURE) ||
+      bytes.readUInt32BE(8) !== 13 ||
+      !bytes.subarray(-12).equals(PNG_IEND)
+    )
+      throw new V2ContentError('CONTENT_CORRUPT', ['cover']);
+    return bytes;
   }
 }

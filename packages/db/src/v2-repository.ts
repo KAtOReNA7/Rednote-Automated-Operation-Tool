@@ -17,6 +17,7 @@ import {
   type ContentCoverKey,
   type ContentPackageStatus,
   type ContentVersionRecord,
+  type GeneratedCoverRef,
   type InteractionBlobRef,
   type InteractionDeletePreview,
   type InteractionKind,
@@ -65,6 +66,18 @@ interface ContentRow {
   readonly version: number;
   readonly version_id: string;
   readonly week_key: string;
+  readonly copy_model_run_id: string | null;
+  readonly created_at: string;
+  readonly generated_cover_height: number | null;
+  readonly generated_cover_mime: string | null;
+  readonly generated_cover_path: string | null;
+  readonly generated_cover_sha256: string | null;
+  readonly generated_cover_width: number | null;
+  readonly cover_model_run_id: string | null;
+  readonly copy_model_id: string | null;
+  readonly cover_model_id: string | null;
+  readonly copy_cost_state: string | null;
+  readonly cover_cost_state: string | null;
 }
 
 interface InteractionRow {
@@ -84,6 +97,7 @@ interface InteractionRow {
   readonly user_text_sha256: string;
   readonly user_text_size_bytes: number;
   readonly version_id: string | null;
+  readonly model_run_id: string | null;
 }
 
 const DEFAULT_WORKSPACE_ID = 'v2-local-workspace';
@@ -183,10 +197,40 @@ function decodeContent(row: ContentRow): ContentVersionRecord {
   ) {
     throw new V2ContentError('CONTENT_CORRUPT');
   }
+  const coverValues = [
+    row.generated_cover_path,
+    row.generated_cover_mime,
+    row.generated_cover_sha256,
+    row.generated_cover_width,
+    row.generated_cover_height,
+  ];
+  if (
+    !coverValues.every((value) => value === null) &&
+    !coverValues.every((value) => value !== null)
+  )
+    throw new V2ContentError('CONTENT_CORRUPT', ['cover']);
+  const generatedCover: GeneratedCoverRef | null =
+    row.generated_cover_path === null
+      ? null
+      : {
+          height: row.generated_cover_height as number,
+          managedPath: parseManagedRelativePath(row.generated_cover_path, 'GENERATED_IMAGE'),
+          mimeType: row.generated_cover_mime as 'image/png',
+          modelRunId: row.cover_model_run_id,
+          sha256: row.generated_cover_sha256 as string,
+          width: row.generated_cover_width as number,
+        };
   return {
     candidateId: row.candidate_id,
+    copyModelRunId: row.copy_model_run_id,
+    copyModelId: row.copy_model_id,
+    coverModelId: row.cover_model_id,
+    copyCostState: row.copy_cost_state,
+    coverCostState: row.cover_cost_state,
     coverKey: row.cover_key as ContentCoverKey,
+    createdAt: row.created_at,
     files: decodeFiles(row.files_json),
+    generatedCover,
     packageId: row.package_id,
     planRevision: row.plan_revision,
     revision: row.revision,
@@ -228,7 +272,7 @@ function decodeInteraction(row: InteractionRow): InteractionRecord {
     )
   )
     throw new V2InteractionError('INTERACTION_CORRUPT');
-  if (!noSuggestion && row.provider_kind !== 'SCRIPTED')
+  if (!noSuggestion && !/^(?:MODEL|SCRIPTED)$/u.test(row.provider_kind ?? ''))
     throw new V2InteractionError('INTERACTION_CORRUPT');
   return {
     currentSuggestion: noSuggestion
@@ -241,6 +285,8 @@ function decodeInteraction(row: InteractionRow): InteractionRecord {
           ),
           version: row.current_suggestion_version as number,
           versionId: row.version_id as string,
+          modelRunId: row.model_run_id,
+          providerKind: row.provider_kind as 'MODEL' | 'SCRIPTED',
         },
     dedupKey: row.dedup_key,
     itemId: row.item_id,
@@ -446,6 +492,10 @@ export class SqliteV2Repository
     expected: ContentVersionRecord,
     files: ContentBlobSet,
     status: 'DRAFT' | 'REVIEW_REQUIRED',
+    provenance: {
+      readonly copyModelRunId?: string | null;
+      readonly generatedCover?: GeneratedCoverRef | null;
+    } = {},
   ): ContentVersionRecord {
     return runInTransaction(this.#database, () => {
       const current = this.get(expected.packageId);
@@ -457,7 +507,9 @@ export class SqliteV2Repository
       this.#insertVersion(
         {
           ...current,
+          copyModelRunId: provenance.copyModelRunId ?? current.copyModelRunId ?? null,
           files,
+          generatedCover: provenance.generatedCover ?? current.generatedCover ?? null,
           revision: current.revision + 1,
           status,
           version,
@@ -754,6 +806,7 @@ export class SqliteV2Repository
   public appendSuggestion(
     expected: InteractionRecord,
     files: InteractionBlobRef,
+    provenance = { modelRunId: null, providerKind: 'SCRIPTED' as const },
   ): InteractionRecord {
     return runInTransaction(this.#database, () => {
       const current = this.getInteraction(expected.itemId);
@@ -769,15 +822,17 @@ export class SqliteV2Repository
       this.#database
         .prepare(
           `INSERT INTO v2_reply_suggestion_versions(
-             workspace_id, item_id, version, version_id, provider_kind,
+             workspace_id, item_id, version, version_id, provider_kind, model_run_id,
              reply_path, reply_sha256, reply_size_bytes, created_at
-           ) VALUES (?, ?, ?, ?, 'SCRIPTED', ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           this.#workspaceId,
           current.itemId,
           version,
           versionId,
+          provenance.providerKind,
+          provenance.modelRunId,
           parseManagedRelativePath(files.managedPath, 'IMPORT'),
           files.sha256,
           files.sizeBytes,
@@ -947,12 +1002,19 @@ export class SqliteV2Repository
       package.package_id, package.week_key, package.candidate_id, package.plan_revision,
       package.revision,
       version.version, version.version_id, version.status, version.cover_key,
-      version.files_json
+      version.files_json, version.copy_model_run_id, version.created_at,
+      version.generated_cover_path, version.generated_cover_mime,
+      version.generated_cover_sha256, version.generated_cover_width,
+      version.generated_cover_height, version.cover_model_run_id
+      , copy_run.model_id AS copy_model_id, cover_run.model_id AS cover_model_id
+      , copy_run.cost_state AS copy_cost_state, cover_run.cost_state AS cover_cost_state
       FROM v2_content_packages AS package
       JOIN v2_content_package_versions AS version
         ON version.workspace_id = package.workspace_id
        AND version.package_id = package.package_id
        AND version.version = package.current_version
+      LEFT JOIN model_runs AS copy_run ON copy_run.id = version.copy_model_run_id
+      LEFT JOIN model_runs AS cover_run ON cover_run.id = version.cover_model_run_id
       ${where}
       ORDER BY package.package_id`;
   }
@@ -962,7 +1024,7 @@ export class SqliteV2Repository
       item.user_text_path, item.user_text_sha256, item.user_text_size_bytes, item.dedup_key,
       item.current_suggestion_version, item.status, item.revision,
       suggestion.version_id, suggestion.reply_path, suggestion.reply_sha256,
-      suggestion.reply_size_bytes, suggestion.provider_kind
+      suggestion.reply_size_bytes, suggestion.provider_kind, suggestion.model_run_id
       FROM v2_interaction_items AS item
       LEFT JOIN v2_reply_suggestion_versions AS suggestion
         ON suggestion.workspace_id = item.workspace_id
@@ -976,8 +1038,10 @@ export class SqliteV2Repository
       .prepare(
         `INSERT INTO v2_content_package_versions(
            workspace_id, package_id, version, version_id, status, cover_key,
-           files_json, approved_at, created_at
-         ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+           files_json, approved_at, created_at, copy_model_run_id,
+           generated_cover_path, generated_cover_mime, generated_cover_sha256,
+           generated_cover_width, generated_cover_height, cover_model_run_id
+         ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         this.#workspaceId,
@@ -988,6 +1052,13 @@ export class SqliteV2Repository
         record.coverKey,
         encodeFiles(record.files),
         createdAt,
+        record.copyModelRunId ?? null,
+        record.generatedCover?.managedPath ?? null,
+        record.generatedCover?.mimeType ?? null,
+        record.generatedCover?.sha256 ?? null,
+        record.generatedCover?.width ?? null,
+        record.generatedCover?.height ?? null,
+        record.generatedCover?.modelRunId ?? null,
       );
   }
 }

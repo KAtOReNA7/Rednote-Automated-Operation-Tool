@@ -88,7 +88,7 @@ function createFixture() {
   // prettier-ignore
   return {
     books: bookRows.map(([id, title, author, angle, posts, saves]) => ({ id, title, author, angle, posts, saves })),
-    content: contentRows.map(([id, book, image, coverAlt, title, body, status, tags, time, materials]) => ({ id, book, candidateId: id, cover: cover(image), coverAlt, coverKey: id, title, body, status, tags, time, materials, revision: 0, version: 1, versionId: `${id}-v1`, weekKey: '2026-W31' })),
+    content: contentRows.map(([id, book, image, coverAlt, title, body, status, tags, time, materials]) => ({ id, book, candidateId: id, cover: cover(image), coverAlt, coverKey: id, title, body, status, tags, time, materials, revision: 0, version: 1, versionId: `${id}-v1`, weekKey: '2026-W31', provenance: { copyModelRunId: null as string | null, coverModelRunId: null as string | null, coverSource: 'SCRIPTED' as 'GENERATED_IMAGE' | 'SCRIPTED', generatedAt: new Date(0).toISOString(), copyModelId: null as string | null, coverModelId: null as string | null, copyCostState: null as string | null, coverCostState: null as string | null } })),
     interactions: [] as RendererInteractionItem[],
     metrics: ([['浏览', '12.8万', '+18%'], ['点赞', '8,640', '+12%'], ['收藏', '3,120', '+21%'], ['评论', '486', '+9%'], ['新增关注', '732', '+16%']] as const).map(([label, value, change]) => ({ label, value, change })),
     opportunities: ([['rain-room', '雨夜密室讨论升温', '《黄色房间的秘密》', '相关内容收藏增长明显，适合强化氛围与诡计拆解。'], ['public-domain', '公版侦探经典适合系列解读', '《莫格街凶杀案》', '长尾搜索稳定，可连续三篇建立专业判断。'], ['unreliable', '反套路叙述者收藏表现突出', '《月亮宝石》', '收藏率高于账号均值，适合做反套路短评。']] as const).map(([id, title, book, reason]) => ({ id, title, book, reason })),
@@ -154,8 +154,11 @@ export function withPersistedContentPackages(
         body: item.fields.body,
         book: plan?.book ?? '已锁定计划项',
         candidateId: item.candidateId,
-        cover: cover(coverNames[item.fields.coverKey]),
-        coverAlt: `${plan?.book ?? '内容包'}的已批准演示封面`,
+        cover:
+          item.provenance?.coverSource === 'GENERATED_IMAGE'
+            ? `rednote://app/v2-cover/${item.id}/${item.version}`
+            : cover(coverNames[item.fields.coverKey]),
+        coverAlt: `${plan?.book ?? '内容包'}的${item.provenance?.coverSource === 'GENERATED_IMAGE' ? '模型生成' : '已批准演示'}封面`,
         coverKey: item.fields.coverKey,
         id: item.id,
         materials: item.fields.materialNotes,
@@ -167,6 +170,16 @@ export function withPersistedContentPackages(
         version: item.version,
         versionId: item.versionId,
         weekKey: item.weekKey,
+        provenance: item.provenance ?? {
+          copyModelRunId: null,
+          coverModelRunId: null,
+          coverSource: 'SCRIPTED' as const,
+          generatedAt: new Date(0).toISOString(),
+          copyModelId: null,
+          coverModelId: null,
+          copyCostState: null,
+          coverCostState: null,
+        },
       };
     }),
   };

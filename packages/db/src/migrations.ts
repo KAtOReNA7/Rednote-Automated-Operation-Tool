@@ -11793,6 +11793,83 @@ CREATE TABLE v2_strategy_decisions (
 ) STRICT, WITHOUT ROWID;
 `;
 
+const V2_GENERATED_COVER_AND_MODEL_PROVENANCE = `
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN copy_model_run_id TEXT REFERENCES model_runs(id) ON UPDATE CASCADE ON DELETE SET NULL;
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN generated_cover_path TEXT CHECK (
+    generated_cover_path IS NULL OR (
+      length(generated_cover_path) = 84
+      AND substr(generated_cover_path, 1, 17) = 'generated-images/'
+      AND substr(generated_cover_path, 20, 1) = '/'
+      AND substr(generated_cover_path, 18, 2) = substr(generated_cover_path, 21, 2)
+      AND substr(generated_cover_path, 18, 2) NOT GLOB '*[^a-f0-9]*'
+      AND substr(generated_cover_path, 21) NOT GLOB '*[^a-f0-9]*'
+    )
+  );
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN generated_cover_mime TEXT CHECK (
+    generated_cover_mime IS NULL OR generated_cover_mime = 'image/png'
+  );
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN generated_cover_sha256 TEXT CHECK (
+    generated_cover_sha256 IS NULL OR (
+      length(generated_cover_sha256) = 64
+      AND generated_cover_sha256 NOT GLOB '*[^a-f0-9]*'
+    )
+  );
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN generated_cover_width INTEGER CHECK (
+    generated_cover_width IS NULL OR (
+      typeof(generated_cover_width) = 'integer' AND generated_cover_width BETWEEN 1 AND 8192
+    )
+  );
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN generated_cover_height INTEGER CHECK (
+    generated_cover_height IS NULL OR (
+      typeof(generated_cover_height) = 'integer' AND generated_cover_height BETWEEN 1 AND 8192
+    )
+  );
+ALTER TABLE v2_content_package_versions
+  ADD COLUMN cover_model_run_id TEXT
+    REFERENCES model_runs(id) ON UPDATE CASCADE ON DELETE SET NULL
+    CHECK (
+      (generated_cover_path IS NULL AND generated_cover_mime IS NULL
+        AND generated_cover_sha256 IS NULL AND generated_cover_width IS NULL
+        AND generated_cover_height IS NULL)
+      OR
+      (generated_cover_path IS NOT NULL AND generated_cover_mime IS NOT NULL
+        AND generated_cover_sha256 IS NOT NULL AND generated_cover_width IS NOT NULL
+        AND generated_cover_height IS NOT NULL)
+    );
+
+CREATE TABLE v2_reply_suggestion_versions_r07_new (
+  workspace_id TEXT NOT NULL, item_id TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK (typeof(version) = 'integer' AND version > 0),
+  version_id TEXT NOT NULL CHECK (length(version_id) BETWEEN 1 AND 112),
+  provider_kind TEXT NOT NULL CHECK (provider_kind IN ('SCRIPTED', 'MODEL')),
+  model_run_id TEXT REFERENCES model_runs(id) ON UPDATE CASCADE ON DELETE SET NULL,
+  reply_path TEXT NOT NULL CHECK (length(reply_path) BETWEEN 1 AND 1024 AND reply_path GLOB 'imports/*'),
+  reply_sha256 TEXT NOT NULL CHECK (length(reply_sha256) = 64 AND reply_sha256 NOT GLOB '*[^a-f0-9]*'),
+  reply_size_bytes INTEGER NOT NULL CHECK (typeof(reply_size_bytes) = 'integer' AND reply_size_bytes BETWEEN 1 AND 4000),
+  created_at TEXT NOT NULL DEFAULT ${UTC_NOW} CHECK (created_at ${UTC_REQUIRED}),
+  PRIMARY KEY (workspace_id, item_id, version), UNIQUE (workspace_id, version_id),
+  FOREIGN KEY (workspace_id, item_id) REFERENCES v2_interaction_items(workspace_id, item_id) ON UPDATE CASCADE ON DELETE RESTRICT,
+  CHECK (provider_kind = 'MODEL' OR model_run_id IS NULL)
+) STRICT, WITHOUT ROWID;
+
+INSERT INTO v2_reply_suggestion_versions_r07_new(
+  workspace_id, item_id, version, version_id, provider_kind, model_run_id,
+  reply_path, reply_sha256, reply_size_bytes, created_at
+)
+SELECT workspace_id, item_id, version, version_id, provider_kind, NULL,
+  reply_path, reply_sha256, reply_size_bytes, created_at
+FROM v2_reply_suggestion_versions;
+
+DROP TABLE v2_reply_suggestion_versions;
+ALTER TABLE v2_reply_suggestion_versions_r07_new RENAME TO v2_reply_suggestion_versions;
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -11922,5 +11999,11 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'v2_metrics_and_strategy_decisions',
     sql: V2_METRICS_AND_STRATEGY_DECISIONS,
     version: 24,
+  }),
+  Object.freeze({
+    foreignKeysDisabled: true,
+    name: 'v2_generated_cover_and_model_provenance',
+    sql: V2_GENERATED_COVER_AND_MODEL_PROVENANCE,
+    version: 25,
   }),
 ]);

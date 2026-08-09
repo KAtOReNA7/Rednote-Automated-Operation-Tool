@@ -286,6 +286,26 @@ describe('V2-R04 content contracts and persistence', () => {
 });
 
 describe('V2-R04 controlled local export', () => {
+  it('accepts only bounded inline PNG bytes and stores them under GENERATED_IMAGE', async () => {
+    const { root } = await createStorageTestContext();
+    const assetRoot = resolve(import.meta.dirname, '../apps/web-ui/src/v2/assets/content');
+    const files = new V2LocalContentFiles(root, {
+      moonstone: join(assetRoot, 'moonstone-cover.png'),
+      morgue: join(assetRoot, 'morgue-cover.png'),
+      'yellow-room': join(assetRoot, 'yellow-room-cover.png'),
+    });
+    const png = await readFile(join(assetRoot, 'morgue-cover.png'));
+    const stored = await files.writeGeneratedCover(png, 'run-fixture');
+    expect(stored).toMatchObject({ mimeType: 'image/png' });
+    expect(stored.height).toBeGreaterThan(0);
+    expect(stored.width).toBeGreaterThan(0);
+    expect(stored.managedPath).toMatch(/^generated-images\/[a-f0-9]{2}\/[a-f0-9]{64}$/u);
+    await expect(files.readGeneratedCover(stored)).resolves.toEqual(png);
+    await expect(
+      files.writeGeneratedCover(Buffer.from('https://example.invalid/cover'), 'run-fixture'),
+    ).rejects.toMatchObject({ code: 'CONTENT_CORRUPT' });
+  });
+
   it('writes one atomic, idempotent multi-package directory and opens only its opaque ID', async () => {
     const { root, rootPath } = await createStorageTestContext();
     const assetRoot = resolve(import.meta.dirname, '../apps/web-ui/src/v2/assets/content');

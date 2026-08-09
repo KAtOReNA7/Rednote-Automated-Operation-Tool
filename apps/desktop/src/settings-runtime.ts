@@ -308,6 +308,7 @@ export class DesktopSettingsRuntime {
         output: null,
         stableErrorCode: 'SETUP_NOT_INITIALIZED',
         status: 'BLOCKED',
+        modelRunId: null,
       };
     }
     return this.#active.v2Provider.execute(request);
@@ -327,6 +328,7 @@ export class DesktopSettingsRuntime {
         modelId: null,
         modelSlot: request.modelSlot,
         providerConfigured: false,
+        unknownCostApproved: request.userApprovedUnknownCost === true,
       };
     }
     return this.#active.v2Provider.inspect(request);
@@ -338,19 +340,38 @@ export class DesktopSettingsRuntime {
     const capability = active.capabilities.getState();
     const accounting = active.accounting.getView();
     const [weekly, content, reply] = await Promise.all([
-      active.v2Provider.inspect({ input: {}, kind: 'WEEKLY_PLAN', modelSlot: 'research' }),
-      active.v2Provider.inspect({ input: {}, kind: 'CONTENT_PACKAGES', modelSlot: 'writing' }),
-      active.v2Provider.inspect({ input: {}, kind: 'REPLY_SUGGESTION', modelSlot: 'writing' }),
+      active.v2Provider.inspect({
+        input: {},
+        kind: 'WEEKLY_PLAN',
+        modelSlot: 'research',
+        userApprovedUnknownCost: false,
+      }),
+      active.v2Provider.inspect({
+        input: {},
+        kind: 'CONTENT_PACKAGES',
+        modelSlot: 'writing',
+        userApprovedUnknownCost: false,
+      }),
+      active.v2Provider.inspect({
+        input: {},
+        kind: 'REPLY_SUGGESTION',
+        modelSlot: 'writing',
+        userApprovedUnknownCost: false,
+      }),
     ]);
     const credentialState = bundle.credential.requiresReauth
       ? ('REAUTH_REQUIRED' as const)
       : bundle.credential.available
         ? ('CONFIGURED' as const)
         : ('NOT_CONFIGURED' as const);
-    const slot = (modelSlot: 'RESEARCH' | 'WRITING', modelId: string | null) => {
+    const slot = (
+      modelSlot: 'IMAGE' | 'RESEARCH' | 'WRITING',
+      modelId: string | null,
+      capabilityName: 'imageGeneration' | 'structuredJson' = 'structuredJson',
+    ) => {
       const entry = capability.entries.find(
         (candidate) =>
-          candidate.capability === 'structuredJson' &&
+          candidate.capability === capabilityName &&
           candidate.modelSlot === modelSlot &&
           candidate.modelId === modelId,
       );
@@ -384,11 +405,13 @@ export class DesktopSettingsRuntime {
       providerConfigured:
         bundle.settings.providerBaseUrl !== null &&
         bundle.settings.researchModelId !== null &&
-        bundle.settings.writingModelId !== null,
+        bundle.settings.writingModelId !== null &&
+        bundle.settings.imageModelId !== null,
       research: Object.freeze(slot('RESEARCH', bundle.settings.researchModelId)),
       revision: bundle.settings.revision,
       setupAvailable: true,
       writing: Object.freeze(slot('WRITING', bundle.settings.writingModelId)),
+      image: Object.freeze(slot('IMAGE', bundle.settings.imageModelId, 'imageGeneration')),
     });
   }
 
@@ -406,7 +429,7 @@ export class DesktopSettingsRuntime {
       expectedRevision: input.expectedRevision,
       models: {
         embedding: current.settings.embeddingModelId,
-        image: current.settings.imageModelId,
+        image: input.imageModelId,
         research: input.researchModelId,
         review: current.settings.reviewModelId,
         writing: input.writingModelId,
@@ -430,11 +453,12 @@ export class DesktopSettingsRuntime {
     senderId: number,
     windowId: number,
   ): V2CapabilityProbePreview {
-    const preview = this.#requireActive().capabilities.preview(
+    const active = this.#requireActive();
+    const preview = active.capabilities.preview(
       {
         includeToolCalling: false,
         profile: 'CUSTOM',
-        selectedCapabilities: ['structuredJson'],
+        selectedCapabilities: ['structuredJson', 'imageGeneration'],
       },
       senderId,
       windowId,
@@ -448,6 +472,18 @@ export class DesktopSettingsRuntime {
       requestCount: preview.requestCount,
       settingsRevision: preview.settingsRevision,
       startToken: preview.startToken,
+      modelIds: Object.freeze([
+        ...new Set(
+          Object.values(
+            active.database
+              .prepare(
+                "SELECT research_model_id, writing_model_id, image_model_id FROM app_settings WHERE id='app'",
+              )
+              .get() as Record<string, string | null>,
+          ).filter((value): value is string => value !== null),
+        ),
+      ]),
+      userApprovedUnknownCost: false,
     };
   }
 
@@ -458,11 +494,17 @@ export class DesktopSettingsRuntime {
       readonly planHash: string;
       readonly settingsRevision: number;
       readonly startToken: string;
+      readonly userApprovedUnknownCost: boolean;
     },
     senderId: number,
     windowId: number,
   ): Promise<V2CapabilityProbeProgress> {
-    return this.#requireActive().capabilities.start(input, senderId, windowId);
+    return this.#requireActive().capabilities.start(
+      input,
+      senderId,
+      windowId,
+      input.userApprovedUnknownCost,
+    );
   }
 
   public getV2ProviderCapabilityProbeProgress(runId: string): V2CapabilityProbeProgress {

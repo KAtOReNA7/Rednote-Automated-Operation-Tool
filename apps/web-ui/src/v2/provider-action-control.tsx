@@ -15,6 +15,12 @@ const credentialLabels = {
   REAUTH_REQUIRED: '需重新认证',
 } as const;
 
+type ProviderActionIntentWithoutCost = V2ProviderActionIntentContract extends infer Action
+  ? Action extends { readonly userApprovedUnknownCost?: boolean }
+    ? Omit<Action, 'userApprovedUnknownCost'>
+    : never
+  : never;
+
 function costLabel(value: string | null): string {
   if (value === null) return '无法估算';
   return `不超过 $${(Number(value) / 1_000_000).toFixed(6)}`;
@@ -29,18 +35,19 @@ export function ProviderActionControl({
 }: {
   readonly disabled?: boolean;
   readonly disabledReason?: string | undefined;
-  readonly intent: V2ProviderActionIntentContract;
+  readonly intent: ProviderActionIntentWithoutCost;
   readonly label: string;
   readonly onSuccess: () => Promise<void>;
 }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [preview, setPreview] = useState<V2ProviderActionPreviewContract | null>(null);
+  const [unknownCostApproved, setUnknownCostApproved] = useState(false);
   const [status, setStatus] = useState<
     'BLOCKED' | 'CANCELLED' | 'IDLE' | 'PREVIEW' | 'SUCCEEDED' | 'UNCERTAIN'
   >('IDLE');
 
-  const inspect = async (): Promise<void> => {
+  const inspect = async (approveUnknownCost = unknownCostApproved): Promise<void> => {
     const bridge = window.rednoteV2;
     if (bridge?.previewProviderAction === undefined) {
       setMessage('本机受控模型桥接不可用，未生成任何模拟结果。');
@@ -50,7 +57,10 @@ export function ProviderActionControl({
     setBusy(true);
     setMessage('');
     try {
-      const result = await bridge.previewProviderAction(intent);
+      const result = await bridge.previewProviderAction({
+        ...intent,
+        userApprovedUnknownCost: approveUnknownCost,
+      } as V2ProviderActionIntentContract);
       if (!result.ok) {
         setMessage(result.error.message);
         setStatus('BLOCKED');
@@ -174,11 +184,26 @@ export function ProviderActionControl({
               </button>
             </div>
           )}
+          {preview.feeEstimateMicroUsd === null ? (
+            <label className="v2-provider-unknown-cost">
+              <input
+                checked={unknownCostApproved}
+                onChange={(event) => {
+                  const checked = event.target.checked;
+                  setUnknownCostApproved(checked);
+                  void inspect(checked);
+                }}
+                type="checkbox"
+              />
+              <span>我了解费用未知，仍授权本次最多 1 个请求</span>
+            </label>
+          ) : null}
           <div className="v2-provider-preview-actions">
             <Button
               disabled={busy}
               onClick={() => {
                 setPreview(null);
+                setUnknownCostApproved(false);
                 setMessage('已取消，未调用模型、未写入结果。');
                 setStatus('CANCELLED');
               }}

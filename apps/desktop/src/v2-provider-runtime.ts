@@ -46,12 +46,16 @@ const MAX_OUTPUT_TOKENS = 4_000;
 function actionTaskKind(kind: V2ProviderActionKind): string {
   if (kind === 'WEEKLY_PLAN') return 'V2_WEEKLY_PLAN';
   if (kind === 'CONTENT_PACKAGES') return 'V2_CONTENT_PACKAGES';
+  if (kind === 'CONTENT_COPY_VERSION') return 'V2_CONTENT_COPY_VERSION';
+  if (kind === 'CONTENT_COVER') return 'V2_CONTENT_COVER';
   return 'V2_REPLY_SUGGESTION';
 }
 
 function actionKind(taskKind: string): V2ProviderActionKind {
   if (taskKind === 'V2_WEEKLY_PLAN') return 'WEEKLY_PLAN';
   if (taskKind === 'V2_CONTENT_PACKAGES') return 'CONTENT_PACKAGES';
+  if (taskKind === 'V2_CONTENT_COPY_VERSION') return 'CONTENT_COPY_VERSION';
+  if (taskKind === 'V2_CONTENT_COVER') return 'CONTENT_COVER';
   if (taskKind === 'V2_REPLY_SUGGESTION') return 'REPLY_SUGGESTION';
   throw new Error('V2_PROVIDER_TASK_INVALID');
 }
@@ -80,6 +84,18 @@ function demandUpperBound(input: Readonly<Record<string, unknown>>) {
     images: 0,
     inputTokens: Buffer.byteLength(serialized, 'utf8'),
     outputTokens: MAX_OUTPUT_TOKENS,
+    toolCalls: 0,
+    webSearchCalls: 0,
+  });
+}
+
+function imageDemandUpperBound(input: Readonly<Record<string, unknown>>) {
+  return Object.freeze({
+    externalCalls: 1,
+    imageGenerationCalls: 1,
+    images: 1,
+    inputTokens: Buffer.byteLength(JSON.stringify(input), 'utf8'),
+    outputTokens: null,
     toolCalls: 0,
     webSearchCalls: 0,
   });
@@ -122,7 +138,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
   ): Promise<V2ProviderActionExecutionResult> {
     let config;
     let modelId: string | null;
-    let protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES';
+    let protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES';
     try {
       config = new ProviderConfigLoader({
         readProviderSettings: () => this.#settings.getBundle().settings,
@@ -134,7 +150,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
           modelId,
           modelSlot: request.modelSlot,
         },
-        'structuredJson',
+        request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson',
       );
       if (capability.protocolMode === 'NOT_APPLICABLE') {
         throw new Error('PROVIDER_PROTOCOL_NOT_CONFIGURED');
@@ -144,23 +160,36 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       return this.#blocked(error instanceof Error ? error.message : 'PROVIDER_NOT_CONFIGURED');
     }
 
-    const schema = V2_PROVIDER_OUTPUT_JSON_SCHEMAS[request.kind];
+    const schema =
+      request.kind === 'CONTENT_COVER'
+        ? null
+        : V2_PROVIDER_OUTPUT_JSON_SCHEMAS[
+            request.kind as keyof typeof V2_PROVIDER_OUTPUT_JSON_SCHEMAS
+          ];
     const result = await this.#execution.execute({
       budgetClassification: 'NONESSENTIAL',
       cachePolicy: 'BYPASS',
       deadlineMs: 60_000,
       executionId: request.executionId,
-      generationOptions: Object.freeze({ maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0 }),
+      generationOptions: Object.freeze(
+        request.kind === 'CONTENT_COVER'
+          ? {}
+          : { maxOutputTokens: MAX_OUTPUT_TOKENS, temperature: 0 },
+      ),
       input: Object.freeze({ actionKind: request.kind, payload: request.input }),
       mediaIdentities: Object.freeze([]),
       modelId,
       modelRole: request.modelSlot,
       modelSlot: request.modelSlot,
-      outputSchemaIdentity: {
-        contentHash: canonicalSha256(schema),
-        id: `v2-r07-${request.kind.toLowerCase()}-output`,
-        version: 1,
-      },
+      ...(schema === null
+        ? {}
+        : {
+            outputSchemaIdentity: {
+              contentHash: canonicalSha256(schema),
+              id: `v2-r07-${request.kind.toLowerCase()}-output`,
+              version: 1,
+            },
+          }),
       parameterVersion: 1,
       promptIdentity: {
         contentHash: canonicalSha256(SYSTEM_PROMPT),
@@ -169,12 +198,24 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       },
       protocolMode,
       providerConfigFingerprint: this.#capabilities.getConfigFingerprint(),
-      requiredCapabilities: Object.freeze(['structuredJson']),
+      requiredCapabilities: Object.freeze([
+        request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson',
+      ]),
       sourceIdentities: Object.freeze([]),
       taskKind: actionTaskKind(request.kind),
-      unitDemandUpperBound: demandUpperBound(request.input),
+      unitDemandUpperBound:
+        request.kind === 'CONTENT_COVER'
+          ? imageDemandUpperBound(request.input)
+          : demandUpperBound(request.input),
+      ...(request.userApprovedUnknownCost ? { userApprovedUnknownCost: true as const } : {}),
     });
-    const output = result.output?.type === 'STRUCTURED' ? result.output.value : null;
+    const output =
+      result.output?.type === 'STRUCTURED'
+        ? result.output.value
+        : result.output?.type === 'IMAGE'
+          ? (result.output.images[0] ?? null)
+          : null;
+    const modelRunId = this.#accounting.getRunByExecutionId(request.executionId)?.id ?? null;
     return Object.freeze({
       costAmountMicroUsd: result.costAmountMicroUsd,
       costState: result.costState,
@@ -190,6 +231,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
             : result.status.startsWith('CANCELLED')
               ? 'CANCELLED'
               : 'BLOCKED',
+      modelRunId,
     });
   }
 
@@ -198,7 +240,11 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
   ): Promise<V2ProviderActionReadiness> {
     const settings = this.#settings.getBundle().settings;
     const modelId =
-      request.modelSlot === 'research' ? settings.researchModelId : settings.writingModelId;
+      request.modelSlot === 'research'
+        ? settings.researchModelId
+        : request.modelSlot === 'image'
+          ? settings.imageModelId
+          : settings.writingModelId;
     const providerConfigured = settings.providerBaseUrl !== null && modelId !== null;
     const credential = await this.#credentials.getStatus(CREDENTIAL_SLOT);
     const credentialState = credential.requiresReauth
@@ -209,12 +255,18 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     const capability =
       modelId === null
         ? {
-            capability: 'structuredJson' as const,
+            capability:
+              request.kind === 'CONTENT_COVER'
+                ? ('imageGeneration' as const)
+                : ('structuredJson' as const),
             protocolMode: 'NOT_APPLICABLE' as const,
             stale: false,
             state: 'UNKNOWN' as const,
           }
-        : this.#capabilityEntry({ modelId, modelSlot: request.modelSlot }, 'structuredJson');
+        : this.#capabilityEntry(
+            { modelId, modelSlot: request.modelSlot },
+            request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson',
+          );
     const capabilityState = capability.stale
       ? ('STALE' as const)
       : capability.state === 'SUPPORTED'
@@ -243,10 +295,10 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
             {
               cacheWriteTokens: null,
               cachedInputTokens: null,
-              imageGenerationCalls: 0,
-              images: 0,
+              imageGenerationCalls: request.kind === 'CONTENT_COVER' ? 1 : 0,
+              images: request.kind === 'CONTENT_COVER' ? 1 : 0,
               inputTokens: demandUpperBound(request.input).inputTokens,
-              outputTokens: MAX_OUTPUT_TOKENS,
+              outputTokens: request.kind === 'CONTENT_COVER' ? null : MAX_OUTPUT_TOKENS,
               reasoningTokens: null,
               source: 'NOT_REPORTED',
               toolCalls: 0,
@@ -288,7 +340,9 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
                 ? '当前模型不支持 structuredJson。'
                 : 'structuredJson 能力尚未探测。',
           ]),
-      ...(feeEstimateMicroUsd === null ? ['费用上界无法估算，请先完善价格配置。'] : []),
+      ...(feeEstimateMicroUsd === null && !request.userApprovedUnknownCost
+        ? ['费用未知；如仍要继续，必须逐次明确授权。']
+        : []),
       ...(budgetState === 'BLOCKED' ? ['本地预算硬上限不允许本次调用。'] : []),
     ];
     return Object.freeze({
@@ -298,14 +352,16 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         providerConfigured &&
         credentialState === 'CONFIGURED' &&
         capabilityState === 'SUPPORTED' &&
-        feeEstimateMicroUsd !== null &&
-        budgetState === 'ALLOWED',
+        (feeEstimateMicroUsd !== null
+          ? budgetState === 'ALLOWED'
+          : request.userApprovedUnknownCost === true),
       capabilityState,
       credentialState,
       feeEstimateMicroUsd,
       modelId,
       modelSlot: request.modelSlot,
       providerConfigured,
+      unknownCostApproved: request.userApprovedUnknownCost === true,
     });
   }
 
@@ -317,7 +373,9 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     const capabilities = this.#providerCapabilities(request);
     const schema: RuntimeSchema<Readonly<Record<string, unknown>>> = Object.freeze({
       id: `v2-r07-${kind.toLowerCase()}-output`,
-      jsonSchema: V2_PROVIDER_OUTPUT_JSON_SCHEMAS[kind] as unknown as JsonObject,
+      jsonSchema: V2_PROVIDER_OUTPUT_JSON_SCHEMAS[
+        kind === 'CONTENT_COVER' ? 'CONTENT_COPY_VERSION' : kind
+      ] as unknown as JsonObject,
       strictObject: true,
       validate: (value: unknown) => {
         try {
@@ -336,6 +394,50 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       { resolve: async () => credential },
       { retryPolicy: new ProviderRetryPolicy({ maxAttempts: 1 }) },
     );
+    if (kind === 'CONTENT_COVER') {
+      const generated = await provider.generateImage(
+        {
+          count: 1,
+          exposeRevisedPrompt: false,
+          prompt: JSON.stringify(request.input),
+          qualityHint: 'AUTO',
+          sizeHint: 'PORTRAIT',
+        },
+        {
+          capabilities,
+          configRevision: config.revision,
+          modelId: request.modelId,
+          operation: 'IMAGE_GENERATION',
+          protocolMode: 'IMAGES_GENERATIONS',
+          providerId: config.providerId,
+          requestId: request.executionId,
+          timeoutMs: request.deadlineMs,
+          traceMetadata: Object.freeze({ actionKind: kind }),
+        },
+      );
+      return Object.freeze({
+        cost: null,
+        outcomeCertainty: 'COMPLETED_INVALID_OUTPUT' as const,
+        output: Object.freeze({
+          images: Object.freeze(
+            generated.images.map((image) => ({
+              base64: Buffer.from(image.bytes).toString('base64'),
+              height: image.height,
+              mimeType: image.mimeType,
+              width: image.width,
+            })),
+          ),
+          partial: false as const,
+          refusal: false as const,
+          type: 'IMAGE' as const,
+        }),
+        usage: {
+          ...usageObservation(generated.usage),
+          imageGenerationCalls: 1,
+          images: generated.images.length,
+        },
+      });
+    }
     const generated = await provider.generateStructured(
       {
         messages: Object.freeze([
@@ -377,7 +479,12 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     request: Pick<ModelExecutionRequestV1, 'modelId' | 'modelSlot'>,
     capability: string,
   ) {
-    const modelSlot = request.modelSlot === 'research' ? 'RESEARCH' : 'WRITING';
+    const modelSlot =
+      request.modelSlot === 'research'
+        ? 'RESEARCH'
+        : request.modelSlot === 'image'
+          ? 'IMAGE'
+          : 'WRITING';
     const entry = this.#capabilities
       .getState()
       .entries.find(
@@ -388,7 +495,10 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       );
     if (entry === undefined) {
       return {
-        capability: 'structuredJson' as const,
+        capability:
+          capability === 'imageGeneration'
+            ? ('imageGeneration' as const)
+            : ('structuredJson' as const),
         protocolMode: 'NOT_APPLICABLE' as const,
         stale: false,
         state: 'UNKNOWN' as const,
@@ -405,11 +515,13 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
   #providerCapabilities(request: ModelExecutionRequestV1): ProviderCapabilities {
     const structured = this.#capabilityEntry(request, 'structuredJson');
     const usage = this.#capabilityEntry(request, 'usage');
+    const image = this.#capabilityEntry(request, 'imageGeneration');
     return Object.freeze({
       ...createUnknownCapabilities(),
       observedAt: new Date().toISOString(),
       source: 'PROBED',
       structuredJson: structured.state,
+      imageGeneration: image.state,
       usage: usage.state,
     });
   }
@@ -423,6 +535,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       output: null,
       stableErrorCode,
       status: 'BLOCKED',
+      modelRunId: null,
     });
   }
 }

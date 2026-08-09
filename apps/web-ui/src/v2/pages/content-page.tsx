@@ -165,6 +165,9 @@ export function ContentPage(): React.JSX.Element {
 
   const generationCandidates = session.plan.filter(({ status }) => status !== '已跳过');
   const selectedPackages = session.content.filter(({ id }) => selectedIds.includes(id));
+  const copyTargets =
+    selectedPackages.length === 0 && active !== undefined ? [active] : selectedPackages;
+  const copyTargetCountAllowed = copyTargets.length === 1 || copyTargets.length === 3;
   const selectable = session.content.length === 0 ? generationCandidates : session.content;
   const allSelected = selectable.length > 0 && selectedIds.length === selectable.length;
 
@@ -305,6 +308,11 @@ export function ContentPage(): React.JSX.Element {
                 <small>
                   v{active.version} · revision {active.revision} · {active.status}
                 </small>
+                <small>
+                  文案：{active.provenance.copyModelId ?? '历史演示内容'} · 封面：
+                  {active.provenance.coverModelId ?? '历史演示内容'} · 生成时间：
+                  {active.provenance.generatedAt}
+                </small>
               </div>
               <div className="v2-header-actions">
                 <Button disabled={busy} icon="check" onClick={() => approve([active.id])}>
@@ -315,12 +323,61 @@ export function ContentPage(): React.JSX.Element {
                 </Button>
               </div>
             </div>
+            <section aria-label="AI 生成" className="v2-provider-generation-panel">
+              <h3>AI 生成</h3>
+              <p>
+                每个动作先显示真实模型、能力、费用和 Search / Fetch 关闭状态；旧版本不会被覆盖。
+              </p>
+              <div className="v2-inline-actions">
+                <ProviderActionControl
+                  disabled={!copyTargetCountAllowed}
+                  disabledReason={
+                    copyTargetCountAllowed ? undefined : '请选择 1 个或 3 个内容包生成文案新版本。'
+                  }
+                  intent={{
+                    items: copyTargets.map((item) => ({
+                      expectedRevision: item.revision,
+                      expectedVersionId: item.versionId,
+                      packageId: item.id,
+                    })),
+                    kind: 'CONTENT_COPY_VERSION',
+                    weekKey: active.weekKey,
+                  }}
+                  label={`模型生成文案新版本 (${copyTargets.length})`}
+                  onSuccess={async () => {
+                    const result = await window.rednoteV2?.readContentPackages({
+                      weekKey: active.weekKey,
+                    });
+                    if (result?.ok === true) applyWorkspace(result.value);
+                  }}
+                />
+                <ProviderActionControl
+                  intent={{
+                    expectedRevision: active.revision,
+                    expectedVersionId: active.versionId,
+                    kind: 'CONTENT_COVER',
+                    packageId: active.id,
+                    weekKey: active.weekKey,
+                  }}
+                  label="生成或重新生成封面"
+                  onSuccess={async () => {
+                    const result = await window.rednoteV2?.readContentPackages({
+                      weekKey: active.weekKey,
+                    });
+                    if (result?.ok === true) applyWorkspace(result.value);
+                  }}
+                />
+              </div>
+            </section>
             <div className="v2-package-grid">
               <figure>
                 <img alt={active.coverAlt} src={active.cover} />
                 <figcaption>
                   <Icon name="image-square" size={16} />
-                  封面 · 已批准演示资产 · 不可在本轮替换
+                  封面 ·{' '}
+                  {active.provenance.coverSource === 'GENERATED_IMAGE'
+                    ? '模型生成版本'
+                    : '历史演示内容'}
                 </figcaption>
               </figure>
               <div className="v2-package-fields">
