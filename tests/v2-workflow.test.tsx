@@ -112,7 +112,7 @@ describe('V2 deterministic session workflows', () => {
     expect(document.body).toHaveTextContent('系统不会发送消息');
   });
 
-  it('searches books, decides recommendations, and saves four persona fields in-session', async () => {
+  it('searches books, exposes the local review intake, and saves four persona fields in-session', async () => {
     const user = userEvent.setup();
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '书库' }));
@@ -121,10 +121,8 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.queryByRole('heading', { name: '《莫格街凶杀案》' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: '数据复盘' }));
-    await user.click(screen.getAllByRole('button', { name: '采纳' })[0] as HTMLElement);
-    expect(screen.getByText('已采纳')).toBeVisible();
-    await user.click(screen.getAllByRole('button', { name: '拒绝' })[0] as HTMLElement);
-    expect(screen.getByText('已拒绝')).toBeVisible();
+    expect(screen.getByRole('heading', { name: '录入指标' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '保存本地指标' })).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '设置' }));
     expect(screen.getAllByRole('textbox')).toHaveLength(4);
