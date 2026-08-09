@@ -294,11 +294,22 @@ describe('V2-R04 controlled local export', () => {
       morgue: join(assetRoot, 'morgue-cover.png'),
       'yellow-room': join(assetRoot, 'yellow-room-cover.png'),
     });
-    const png = await readFile(join(assetRoot, 'morgue-cover.png'));
+    const png = Buffer.from(
+      [
+        '89504e470d0a1a0a',
+        '0000000d49484452',
+        '0000000100000001',
+        '08060000001f15c489',
+        '0000000d49444154',
+        '08d763f8cfc0f01f00050001ff89993d1d',
+        '0000000049454e44ae426082',
+      ].join(''),
+      'hex',
+    );
     const stored = await files.writeGeneratedCover(png, 'run-fixture');
     expect(stored).toMatchObject({ mimeType: 'image/png' });
-    expect(stored.height).toBeGreaterThan(0);
-    expect(stored.width).toBeGreaterThan(0);
+    expect(stored.height).toBe(1);
+    expect(stored.width).toBe(1);
     expect(stored.managedPath).toMatch(/^generated-images\/[a-f0-9]{2}\/[a-f0-9]{64}$/u);
     await expect(files.readGeneratedCover(stored)).resolves.toEqual(png);
     await expect(
