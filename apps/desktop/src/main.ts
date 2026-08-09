@@ -208,13 +208,25 @@ async function startV2Application(
   expectedRendererUrl: string,
   sessionSecurityAudit: ReturnType<typeof installSessionSecurity>,
 ): Promise<void> {
-  const runtime = await V2DesktopRuntime.open(app.getPath('userData'));
+  const settingsRuntime = new DesktopSettingsRuntime(app.getPath('userData'), safeStorage, dialog, {
+    appVersion: app.getVersion(),
+    chromiumVersion: process.versions.chrome ?? 'unknown',
+    electronVersion: process.versions.electron ?? 'unknown',
+    nodeVersion: process.versions.node,
+  });
+  await settingsRuntime.initialize();
+  const runtime = await V2DesktopRuntime.open(app.getPath('userData'), {
+    providerExecution: {
+      execute: (request) => settingsRuntime.executeV2ProviderAction(request),
+    },
+  });
   let runtimeClosed = false;
   let removeIpcHandlers = (): void => undefined;
   const closeRuntime = (): void => {
     if (runtimeClosed) return;
     removeIpcHandlers();
     runtime.close();
+    void settingsRuntime.close();
     runtimeClosed = true;
   };
   let mainWindow: BrowserWindow | null = new BrowserWindow({

@@ -1,3 +1,4 @@
+import { randomBytes, randomUUID } from 'node:crypto';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 
@@ -19,6 +20,16 @@ import {
   deterministicReview,
   type MetricWindow,
   type MetricsReview,
+  V2_PROVIDER_ACTION_LIMITS,
+  V2ProviderActionError,
+  parseContentPackageFields,
+  providerActionModelSlot,
+  providerActionSummary,
+  type V2ProviderActionExecutionRequest,
+  type V2ProviderActionExecutionResult,
+  type V2ProviderActionIntent,
+  type V2ProviderActionPreview,
+  type V2ProviderActionResult,
   type V2Result,
   type WeeklyPlan,
 } from '@mystery-operations/v2';
@@ -29,24 +40,55 @@ import { V2LocalInteractionFiles } from './v2-interaction-files.js';
 const V2_DATA_ROOT_DIRECTORY = 'v2-project-data';
 const PROJECT_DATABASE_FILE = 'rednote.sqlite';
 
+export interface V2ActionCaller {
+  readonly senderId: number;
+  readonly windowId: number;
+}
+
+export interface V2ProviderExecutionPort {
+  execute(request: V2ProviderActionExecutionRequest): Promise<V2ProviderActionExecutionResult>;
+}
+
+interface ProviderPreviewLease {
+  readonly caller: V2ActionCaller;
+  readonly expiresAtMs: number;
+  readonly intent: V2ProviderActionIntent;
+}
+
+const unavailableProviderExecution: V2ProviderExecutionPort = {
+  execute: async () => ({
+    costAmountMicroUsd: null,
+    costState: 'NOT_INCURRED',
+    externalRequestCount: 0,
+    outcomeCertainty: 'NOT_SENT',
+    output: null,
+    stableErrorCode: 'PROVIDER_NOT_CONFIGURED',
+    status: 'BLOCKED',
+  }),
+};
+
 export class V2DesktopRuntime {
   readonly #database: DatabaseSync;
   readonly #content: V2ContentApplication;
   readonly #facade: V2ApplicationFacade;
   readonly #interaction: V2InteractionApplication;
   readonly #repository: SqliteV2Repository;
+  readonly #providerExecution: V2ProviderExecutionPort;
+  readonly #providerPreviews = new Map<string, ProviderPreviewLease>();
   #closed = false;
 
   private constructor(
     database: DatabaseSync,
     contentFiles: V2LocalContentFiles,
     interactionFiles: V2LocalInteractionFiles,
+    providerExecution: V2ProviderExecutionPort,
   ) {
     this.#database = database;
     this.#repository = new SqliteV2Repository(database);
     this.#facade = new V2ApplicationFacade(this.#repository);
     this.#content = new V2ContentApplication(this.#repository, contentFiles);
     this.#interaction = new V2InteractionApplication(this.#repository, interactionFiles);
+    this.#providerExecution = providerExecution;
   }
 
   public static async open(
@@ -54,6 +96,7 @@ export class V2DesktopRuntime {
     options: {
       readonly assetsDirectory?: string;
       readonly openDirectory?: (path: string) => Promise<string>;
+      readonly providerExecution?: V2ProviderExecutionPort;
     } = {},
   ): Promise<V2DesktopRuntime> {
     const root = await initializeProjectDataRoot(join(userDataPath, V2_DATA_ROOT_DIRECTORY));
@@ -73,12 +116,17 @@ export class V2DesktopRuntime {
       connectDatabase(databasePath),
       contentFiles,
       new V2LocalInteractionFiles(root),
+      options.providerExecution ?? unavailableProviderExecution,
     );
   }
 
-  public async read(input: unknown) {
+  public async read(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2ReadRequest(input);
+    if (request.view === 'PROVIDER_ACTION_PREVIEW') {
+      if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+      return this.#previewProviderAction(request.intent, caller);
+    }
     if (request.view === 'CONTENT_PACKAGES') return this.#content.read(request.weekKey);
     if (request.view === 'INTERACTIONS') return this.#interaction.read();
     if (request.view === 'INTERACTION_DELETE_PREVIEW')
@@ -87,9 +135,13 @@ export class V2DesktopRuntime {
     return this.#facade.read(request);
   }
 
-  public async mutate(input: unknown) {
+  public async mutate(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2MutationRequest(input);
+    if (request.action === 'CONFIRM_PROVIDER_ACTION') {
+      if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+      return this.#confirmProviderAction(request.previewToken, caller);
+    }
     if (isInteractionMutationRequest(request)) {
       const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
       return this.#interaction.mutate(request, persona);
@@ -132,6 +184,7 @@ export class V2DesktopRuntime {
   public close(): void {
     if (this.#closed) return;
     this.#database.close();
+    this.#providerPreviews.clear();
     this.#closed = true;
   }
 
@@ -155,6 +208,178 @@ export class V2DesktopRuntime {
         return decision === undefined ? item : { ...item, status: decision.status };
       }),
     } as MetricsReview;
+  }
+
+  async #previewProviderAction(
+    intent: V2ProviderActionIntent,
+    caller: V2ActionCaller,
+  ): Promise<V2ProviderActionPreview> {
+    this.#removeExpiredProviderPreviews();
+    await this.#providerInput(intent);
+    const previewToken = randomBytes(32).toString('base64url');
+    const expiresAtMs = Date.now() + V2_PROVIDER_ACTION_LIMITS.tokenTtlMs;
+    this.#providerPreviews.set(previewToken, { caller, expiresAtMs, intent });
+    return Object.freeze({
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      feeEstimate: 'UNKNOWN',
+      fetchEnabled: false,
+      kind: intent.kind,
+      modelSlot: providerActionModelSlot(intent.kind),
+      previewToken,
+      requestCount: 1,
+      searchEnabled: false,
+      summary: providerActionSummary(intent.kind),
+    });
+  }
+
+  async #confirmProviderAction(
+    previewToken: string,
+    caller: V2ActionCaller,
+  ): Promise<V2ProviderActionResult> {
+    const lease = this.#providerPreviews.get(previewToken);
+    this.#providerPreviews.delete(previewToken);
+    if (
+      lease === undefined ||
+      lease.expiresAtMs < Date.now() ||
+      lease.caller.senderId !== caller.senderId ||
+      lease.caller.windowId !== caller.windowId
+    ) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+    }
+    const input = await this.#providerInput(lease.intent);
+    const executed = await this.#providerExecution.execute({
+      executionId: `v2-r07-${randomUUID()}`,
+      input,
+      kind: lease.intent.kind,
+      modelSlot: providerActionModelSlot(lease.intent.kind),
+    });
+    if (executed.externalRequestCount > 1) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
+    }
+    if (executed.status === 'OUTCOME_UNCERTAIN') {
+      throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
+    }
+    if (executed.status === 'CANCELLED') {
+      throw new V2ProviderActionError('PROVIDER_ACTION_CANCELLED');
+    }
+    if (executed.status !== 'SUCCEEDED') {
+      throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
+    }
+    await this.#persistProviderOutput(lease.intent, executed.output);
+    return Object.freeze({
+      costAmountMicroUsd: executed.costAmountMicroUsd,
+      costState: executed.costState,
+      externalRequestCount: executed.externalRequestCount,
+      kind: lease.intent.kind,
+      status: 'SUCCEEDED',
+    });
+  }
+
+  async #providerInput(intent: V2ProviderActionIntent): Promise<Readonly<Record<string, unknown>>> {
+    const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
+    if (intent.kind === 'WEEKLY_PLAN') {
+      const plan = this.#facade.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: intent.weekKey,
+      }) as WeeklyPlan;
+      if (plan.revision !== intent.expectedRevision || plan.status !== 'DRAFT') {
+        throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['weeklyPlan']);
+      }
+      return Object.freeze({ persona, plan, weekKey: intent.weekKey });
+    }
+    if (intent.kind === 'CONTENT_PACKAGES') {
+      const plan = this.#facade.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: intent.weekKey,
+      }) as WeeklyPlan;
+      const existing = await this.#content.read(intent.weekKey);
+      if (
+        plan.revision !== intent.expectedPlanRevision ||
+        plan.status !== 'CONFIRMED' ||
+        intent.candidateIds.some((id) => !plan.candidates.some((item) => item.id === id)) ||
+        existing.packages.some((item) => intent.candidateIds.includes(item.candidateId))
+      ) {
+        throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['weeklyPlan']);
+      }
+      return Object.freeze({
+        candidates: plan.candidates.filter((item) => intent.candidateIds.includes(item.id)),
+        persona,
+        weekKey: intent.weekKey,
+      });
+    }
+    const workspace = await this.#interaction.read();
+    const item = workspace.items.find((candidate) => candidate.itemId === intent.itemId);
+    if (item === undefined || item.revision !== intent.expectedRevision || item.status !== 'NEW') {
+      throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['interaction']);
+    }
+    return Object.freeze({ interaction: item, persona });
+  }
+
+  async #persistProviderOutput(intent: V2ProviderActionIntent, output: unknown): Promise<void> {
+    if (typeof output !== 'object' || output === null || Array.isArray(output)) {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID');
+    }
+    const value = output as Readonly<Record<string, unknown>>;
+    if (intent.kind === 'WEEKLY_PLAN') {
+      if (Object.keys(value).length !== 1 || !('candidates' in value))
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
+      this.#facade.applyGeneratedWeeklyPlan(
+        intent.weekKey,
+        intent.expectedRevision,
+        value.candidates,
+      );
+      return;
+    }
+    if (intent.kind === 'CONTENT_PACKAGES') {
+      if (
+        Object.keys(value).length !== 1 ||
+        !Array.isArray(value.packages) ||
+        value.packages.length !== 3
+      ) {
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+      }
+      let fields;
+      try {
+        fields = value.packages.map(parseContentPackageFields);
+      } catch {
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+      }
+      const plan = this.#facade.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: intent.weekKey,
+      }) as WeeklyPlan;
+      await this.#content.generateFromFields(
+        {
+          action: 'GENERATE_CONTENT_PACKAGES',
+          candidateIds: intent.candidateIds,
+          expectedPlanRevision: intent.expectedPlanRevision,
+          idempotencyKey: intent.idempotencyKey,
+          weekKey: intent.weekKey,
+        },
+        plan,
+        fields,
+      );
+      return;
+    }
+    if (Object.keys(value).length !== 1 || typeof value.replyText !== 'string') {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['replyText']);
+    }
+    await this.#interaction.generateFromReply(
+      {
+        action: 'GENERATE_REPLY_SUGGESTION',
+        expectedRevision: intent.expectedRevision,
+        idempotencyKey: intent.idempotencyKey,
+        itemId: intent.itemId,
+      },
+      value.replyText,
+    );
+  }
+
+  #removeExpiredProviderPreviews(): void {
+    const now = Date.now();
+    for (const [token, lease] of this.#providerPreviews) {
+      if (lease.expiresAtMs < now) this.#providerPreviews.delete(token);
+    }
   }
 }
 
@@ -193,7 +418,16 @@ export function registerV2Ipc(options: {
   readonly getWindow: () => BrowserWindow | null;
   readonly runtime: V2DesktopRuntime;
 }): () => void {
-  const handle = (channel: string, action: (input: unknown) => Promise<unknown>): void => {
+  const caller = (event: IpcMainInvokeEvent): V2ActionCaller => ({
+    senderId: event.sender.id,
+    windowId: options.getWindow()?.id ?? -1,
+  });
+  ipcMain.removeHandler(V2_IPC_CHANNELS.read);
+  ipcMain.removeHandler(V2_IPC_CHANNELS.mutate);
+  const register = (
+    channel: string,
+    action: (input: unknown, caller: V2ActionCaller) => Promise<unknown>,
+  ): void => {
     ipcMain.handle(
       channel,
       async (event, ...args: readonly unknown[]): Promise<V2Result<unknown>> => {
@@ -204,16 +438,19 @@ export function registerV2Ipc(options: {
           return { error: toV2Exception(new V2ContractError('INVALID_REQUEST')), ok: false };
         }
         try {
-          return { ok: true, value: await action(args[0]) };
+          return { ok: true, value: await action(args[0], caller(event)) };
         } catch (error) {
           return { error: toV2Exception(error), ok: false };
         }
       },
     );
   };
-
-  handle(V2_IPC_CHANNELS.read, (input) => options.runtime.read(input));
-  handle(V2_IPC_CHANNELS.mutate, (input) => options.runtime.mutate(input));
+  register(V2_IPC_CHANNELS.read, (input, requestCaller) =>
+    options.runtime.read(input, requestCaller),
+  );
+  register(V2_IPC_CHANNELS.mutate, (input, requestCaller) =>
+    options.runtime.mutate(input, requestCaller),
+  );
   return () => {
     ipcMain.removeHandler(V2_IPC_CHANNELS.read);
     ipcMain.removeHandler(V2_IPC_CHANNELS.mutate);

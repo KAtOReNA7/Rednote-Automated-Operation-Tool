@@ -97,6 +97,18 @@
   .v2-select-post { width: 100%; justify-content: flex-start; margin-top: 9px; padding: 5px 0 0; }
   .v2-quick-actions { display: grid; gap: 10px; }
   .v2-quick-actions .v2-button { width: 100%; }
+  .v2-provider-action { display: grid; gap: 10px; }
+  .v2-provider-preview { min-width: 320px; padding: 16px; }
+  .v2-provider-preview > p { margin-top: 6px; color: var(--v2-muted); line-height: 1.6; }
+  .v2-provider-preview dl { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 16px; margin: 14px 0; }
+  .v2-provider-preview dl div { display: flex; justify-content: space-between; gap: 8px; }
+  .v2-provider-preview :is(dt, dd) { margin: 0; }
+  .v2-provider-preview dt { color: var(--v2-muted); }
+  .v2-provider-preview-actions { display: flex; justify-content: flex-end; gap: 8px; }
+  .v2-provider-message { display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px solid var(--v2-line); border-radius: 8px; background: var(--v2-soft); padding: 10px 12px; font-size: 12px; }
+  .v2-provider-message button { border: 0; background: transparent; color: var(--v2-red); font-weight: 700; }
+  .v2-provider-action[data-status='BLOCKED'] .v2-provider-message,
+  .v2-provider-action[data-status='UNCERTAIN'] .v2-provider-message { border-color: #e6c6bd; background: #fff8f5; color: var(--v2-red); }
   .v2-batch-bar { position: fixed; z-index: 45; right: 28px; bottom: 22px; left: 246px; min-height: 72px; display: flex; align-items: center; justify-content: flex-end; gap: 8px; border: 1px solid #3d3935; border-radius: 12px; background: #292623; padding: 12px 16px; color: white; box-shadow: 0 15px 40px rgb(30 26 23 / 30%); }
   .v2-batch-bar > div { display: flex; align-items: center; gap: 10px; margin-right: auto; }
   .v2-batch-bar > div span { display: grid; }

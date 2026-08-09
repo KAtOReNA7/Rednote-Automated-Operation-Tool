@@ -525,7 +525,7 @@ describe('V2-R05 interaction renderer and managed files', () => {
     const user = userEvent.setup();
     render(<V2App />);
     expect(await screen.findByText('尚无本地互动')).toBeVisible();
-    expect(screen.getByText('本地 Scripted 建议，不是模型生成；系统不会发送消息。')).toBeVisible();
+    expect(screen.getByText('回复建议仅在你预览并确认后生成；系统不会发送消息。')).toBeVisible();
     await user.type(screen.getByLabelText('粘贴一条评论或私信'), '键盘录入评论');
     await user.click(screen.getByRole('button', { name: '保存本地互动' }));
     expect((await screen.findAllByText('键盘录入评论')).length).toBeGreaterThan(0);

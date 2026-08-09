@@ -192,6 +192,11 @@ import { DesktopCopyRuntime } from './copy-runtime.js';
 import { DesktopFactMappingRuntime } from './fact-mapping-runtime.js';
 import { DesktopReadingAuthenticityRuntime } from './reading-authenticity-runtime.js';
 import { DesktopSpoilerQualityRuntime } from './spoiler-quality-runtime.js';
+import { V2ProviderRuntime } from './v2-provider-runtime.js';
+import type {
+  V2ProviderActionExecutionRequest,
+  V2ProviderActionExecutionResult,
+} from '@mystery-operations/v2';
 import {
   disabledLocalApiSmoke,
   type LocalApiSmokeReport,
@@ -246,6 +251,7 @@ interface ActiveProject {
   readonly search: DesktopSearchRuntime;
   readonly service: SettingsService;
   readonly topics: DesktopTopicRuntime;
+  readonly v2Provider: V2ProviderRuntime;
 }
 
 export class DesktopSettingsRuntime {
@@ -283,6 +289,23 @@ export class DesktopSettingsRuntime {
     const root = await openProjectDataRoot(this.#locatorState.record.activeDataRoot);
     this.#active = await this.#openActiveProject(root);
     await this.#localApi.attachProject(this.#active.database, this.#active.clipper);
+  }
+
+  public async executeV2ProviderAction(
+    request: V2ProviderActionExecutionRequest,
+  ): Promise<V2ProviderActionExecutionResult> {
+    if (this.#active === null) {
+      return {
+        costAmountMicroUsd: null,
+        costState: 'NOT_INCURRED',
+        externalRequestCount: 0,
+        outcomeCertainty: 'NOT_SENT',
+        output: null,
+        stableErrorCode: 'SETUP_NOT_INITIALIZED',
+        status: 'BLOCKED',
+      };
+    }
+    return this.#active.v2Provider.execute(request);
   }
 
   public async runIsolatedSmoke(
@@ -1160,6 +1183,13 @@ export class DesktopSettingsRuntime {
         }
       },
     );
+    const v2Provider = new V2ProviderRuntime({
+      accounting: accountingRepository,
+      capabilities,
+      credentials: this.#credentials,
+      root,
+      settings: repository,
+    });
     const search = new DesktopSearchRuntime(database);
     const clipper = new DesktopBrowserClipRuntime(database, root);
     const fetch = new DesktopFetchRuntime(database, root);
@@ -1201,6 +1231,7 @@ export class DesktopSettingsRuntime {
       search,
       service,
       topics,
+      v2Provider,
     };
   }
 

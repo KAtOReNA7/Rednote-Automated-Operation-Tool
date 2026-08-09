@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
 import { type V2Session, withPersistedContentPackages } from '../mock-provider.js';
+import { ProviderActionControl } from '../provider-action-control.js';
 
 interface EditableFields {
   readonly body: string;
@@ -88,12 +89,10 @@ export function ContentPage(): React.JSX.Element {
       setBusy(false);
     }
   };
-  const generate = (): void => {
+  const generateScripted = (): void => {
     void run(async () => {
       const bridge = window.rednoteV2;
       if (bridge === undefined) return fail('本机内容桥接不可用，未生成内容包。');
-      if (session.planStatus !== 'CONFIRMED') return fail('请先锁定周计划，再生成内容包。');
-      if (selectedIds.length !== 3) return fail('请从已锁定计划中明确选择 3 项。');
       const result = await bridge.generateContentPackages({
         candidateIds: selectedIds,
         expectedPlanRevision: session.planRevision,
@@ -199,9 +198,32 @@ export function ContentPage(): React.JSX.Element {
       <PageHeader
         actions={
           session.content.length === 0 ? (
-            <Button disabled={busy} icon="sparkle" onClick={generate} tone="primary">
-              生成 3 个内容包 {selectedIds.length > 0 ? `(${selectedIds.length}/3)` : ''}
-            </Button>
+            window.rednoteV2?.previewProviderAction === undefined ? (
+              <Button disabled={busy} icon="sparkle" onClick={generateScripted} tone="primary">
+                生成 3 个内容包 {selectedIds.length > 0 ? `(${selectedIds.length}/3)` : ''}
+              </Button>
+            ) : (
+              <ProviderActionControl
+                disabled={busy || session.planStatus !== 'CONFIRMED' || selectedIds.length !== 3}
+                intent={{
+                  candidateIds: selectedIds,
+                  expectedPlanRevision: session.planRevision,
+                  idempotencyKey: stableKey('content', [
+                    session.weekKey,
+                    ...selectedIds.slice().sort(),
+                  ]),
+                  kind: 'CONTENT_PACKAGES',
+                  weekKey: session.weekKey,
+                }}
+                label={`预览生成内容包 (${selectedIds.length}/3)`}
+                onSuccess={async () => {
+                  const result = await window.rednoteV2?.readContentPackages({
+                    weekKey: session.weekKey,
+                  });
+                  if (result?.ok === true) applyWorkspace(result.value);
+                }}
+              />
+            )
           ) : (
             <>
               {exportId === '' ? null : (

@@ -13,6 +13,8 @@ import {
   type MetricSnapshot,
   type MetricsReview,
   type PlanReschedulePreview,
+  type V2ProviderActionPreview,
+  type V2ProviderActionResult,
   type V2Bridge,
   type V2Result,
   type WeeklyPlan,
@@ -30,6 +32,8 @@ const bridge: V2Bridge = Object.freeze({
       action: 'CONFIRM_PLAN_CANDIDATES',
       ...input,
     }),
+  confirmProviderAction: (input: Parameters<NonNullable<V2Bridge['confirmProviderAction']>>[0]) =>
+    invoke<V2ProviderActionResult>('mutate', { action: 'CONFIRM_PROVIDER_ACTION', ...input }),
   confirmReplySuggestions: (input: Parameters<V2Bridge['confirmReplySuggestions']>[0]) =>
     invoke<InteractionWorkspace>('mutate', { action: 'CONFIRM_REPLY_SUGGESTIONS', ...input }),
   createInteraction: (input: Parameters<V2Bridge['createInteraction']>[0]) =>
@@ -54,6 +58,8 @@ const bridge: V2Bridge = Object.freeze({
       view: 'PLAN_RESCHEDULE_PREVIEW',
       ...input,
     }),
+  previewProviderAction: (input: Parameters<NonNullable<V2Bridge['previewProviderAction']>>[0]) =>
+    invoke<V2ProviderActionPreview>('read', { intent: input, view: 'PROVIDER_ACTION_PREVIEW' }),
   exportContentPackages: (input: Parameters<V2Bridge['exportContentPackages']>[0]) =>
     invoke<ContentExportResult>('mutate', { action: 'EXPORT_CONTENT_PACKAGES', ...input }),
   openContentExport: (input: Parameters<V2Bridge['openContentExport']>[0]) =>

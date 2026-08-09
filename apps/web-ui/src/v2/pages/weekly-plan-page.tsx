@@ -1,5 +1,6 @@
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
 import { withPersistedWeeklyPlan } from '../mock-provider.js';
+import { ProviderActionControl } from '../provider-action-control.js';
 
 const dayOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const;
 
@@ -93,20 +94,13 @@ export function WeeklyPlanPage(): React.JSX.Element {
       clearSelection();
     });
   };
-  const generate = (): void => {
+  const generateScripted = (): void => {
     const bridge = window.rednoteV2;
-    if (bridge === undefined) {
-      notify('本机周计划桥接不可用，未生成计划。');
-      return;
-    }
+    if (bridge === undefined) return;
     void bridge
       .generateWeeklyPlan({ expectedRevision: session.planRevision, weekKey: session.weekKey })
       .then((result) => {
-        if (!result.ok) {
-          notify(result.error.message);
-          if (result.error.code === 'REVISION_CONFLICT') reloadAfterConflict();
-          return;
-        }
+        if (!result.ok) return notify(result.error.message);
         setSession((current) => withPersistedWeeklyPlan(current, result.value));
         notify(`已按保存的人设生成 ${result.value.candidates.length} 篇确定性计划，模型调用为 0。`);
       });
@@ -141,9 +135,27 @@ export function WeeklyPlanPage(): React.JSX.Element {
     <div className="v2-page v2-weekly-page">
       <PageHeader
         actions={
-          <Button disabled={locked} icon="sparkle" onClick={generate} tone="primary">
-            生成下周计划
-          </Button>
+          window.rednoteV2?.previewProviderAction === undefined ? (
+            <Button disabled={locked} icon="sparkle" onClick={generateScripted} tone="primary">
+              生成下周计划
+            </Button>
+          ) : (
+            <ProviderActionControl
+              disabled={locked}
+              intent={{
+                expectedRevision: session.planRevision,
+                kind: 'WEEKLY_PLAN',
+                weekKey: session.weekKey,
+              }}
+              label="预览生成下周计划"
+              onSuccess={async () => {
+                const result = await window.rednoteV2?.readWeeklyPlan({ weekKey: session.weekKey });
+                if (result?.ok === true) {
+                  setSession((current) => withPersistedWeeklyPlan(current, result.value));
+                }
+              }}
+            />
+          )
         }
         description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
         eyebrow="7月27日—8月2日"

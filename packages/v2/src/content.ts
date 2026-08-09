@@ -297,6 +297,34 @@ export class V2ContentApplication {
     if (selectedExisting.length === 3) return this.#workspace(request.weekKey, existing);
     if (selectedExisting.length !== 0) throw new V2ContentError('REVISION_CONFLICT', ['packages']);
     const generated = this.#provider.generate(request.candidateIds, persona, plan);
+    return this.generateFromFields(request, plan, generated);
+  }
+
+  public async generateFromFields(
+    request: Extract<ContentMutationRequest, { readonly action: 'GENERATE_CONTENT_PACKAGES' }>,
+    plan: WeeklyPlan,
+    fields: readonly ContentPackageFields[],
+  ): Promise<ContentWorkspace> {
+    if (
+      plan.status !== 'CONFIRMED' ||
+      plan.revision !== request.expectedPlanRevision ||
+      plan.weekKey !== request.weekKey
+    ) {
+      throw new V2ContentError(
+        plan.status === 'CONFIRMED' ? 'REVISION_CONFLICT' : 'CONTENT_NOT_READY',
+        ['weeklyPlan'],
+      );
+    }
+    if (fields.length !== request.candidateIds.length || fields.length !== 3) {
+      throw new V2ContentError('INVALID_REQUEST', ['packages']);
+    }
+    const existing = this.#repository.list(request.weekKey);
+    const selectedExisting = existing.filter(({ candidateId }) =>
+      request.candidateIds.includes(candidateId),
+    );
+    if (selectedExisting.length === 3) return this.#workspace(request.weekKey, existing);
+    if (selectedExisting.length !== 0) throw new V2ContentError('REVISION_CONFLICT', ['packages']);
+    const generated = fields.map(parseContentPackageFields);
     const records: NewContentVersionRecord[] = [];
     for (const [index, fields] of generated.entries()) {
       const candidateId = request.candidateIds[index];

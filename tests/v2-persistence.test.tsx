@@ -499,6 +499,7 @@ describe('V2 Electron boundary', () => {
     expect(Object.keys(exposed).sort()).toEqual([
       'approveContentPackages',
       'confirmPlanCandidates',
+      'confirmProviderAction',
       'confirmReplySuggestions',
       'createInteraction',
       'decideStrategyRecommendation',
@@ -512,6 +513,7 @@ describe('V2 Electron boundary', () => {
       'openContentExport',
       'previewInteractionDelete',
       'previewPlanReschedule',
+      'previewProviderAction',
       'readContentPackages',
       'readInteractions',
       'readMetricsReview',
@@ -541,6 +543,20 @@ describe('V2 Electron boundary', () => {
       staggerMinutes: 0,
       time: '18:30',
       weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    const previewProviderAction = exposed.previewProviderAction;
+    const confirmProviderAction = exposed.confirmProviderAction;
+    if (previewProviderAction === undefined || confirmProviderAction === undefined) {
+      throw new Error('R07 provider action bridge missing.');
+    }
+    await previewProviderAction({
+      expectedRevision: 0,
+      kind: 'WEEKLY_PLAN',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    await confirmProviderAction({
+      confirmation: 'RUN_PROVIDER_ACTION',
+      previewToken: 'r07-preview-token',
     });
     await exposed.updatePersona({ expectedRevision: 0, persona: DEFAULT_ACCOUNT_PERSONA });
     await exposed.generateWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });

@@ -11,6 +11,7 @@ import {
 import {
   V2InteractionError,
   isInteractionMutationRequest,
+  normalizeInteractionText,
   parseInteractionMutationRequest,
   parseInteractionReadRequest,
   utf8Bytes,
@@ -31,9 +32,21 @@ import {
   type MetricsReview,
   type StrategyDecisionStatus,
 } from './metrics.js';
+import {
+  V2ProviderActionError,
+  parseV2ProviderActionConfirmation,
+  parseV2ProviderActionIntent,
+  type V2ProviderActionKind,
+  type V2ProviderActionConfirmation,
+  type V2ProviderActionErrorCode,
+  type V2ProviderActionIntent,
+  type V2ProviderActionPreview,
+  type V2ProviderActionResult,
+} from './provider-actions.js';
 
 export * from './content.js';
 export * from './interaction.js';
+export * from './provider-actions.js';
 
 export const V2_SCHEMA_VERSION = 1 as const;
 export const V2_DEFAULT_WEEK_KEY = '2026-W31' as const;
@@ -142,6 +155,7 @@ export type V2ReadRequest =
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
   | { readonly view: 'METRICS_REVIEW'; readonly snapshotWindow: MetricWindow }
+  | { readonly intent: V2ProviderActionIntent; readonly view: 'PROVIDER_ACTION_PREVIEW' }
   | InteractionReadRequest;
 
 export type V2MutationRequest =
@@ -183,6 +197,7 @@ export type V2MutationRequest =
       readonly expectedRevision: number;
       readonly weekKey: string;
     }
+  | V2ProviderActionConfirmation
   | ContentMutationRequest
   | InteractionMutationRequest;
 
@@ -191,6 +206,7 @@ export interface V2ExceptionSummary {
   readonly code:
     | V2ContentErrorCode
     | V2InteractionErrorCode
+    | V2ProviderActionErrorCode
     | 'PERSISTENCE_UNAVAILABLE'
     | 'PLAN_CONFLICT'
     | 'PLAN_LOCKED';
@@ -228,6 +244,10 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
+  readonly confirmProviderAction?: (input: {
+    readonly confirmation: 'RUN_PROVIDER_ACTION';
+    readonly previewToken: string;
+  }) => Promise<V2Result<V2ProviderActionResult>>;
   readonly confirmReplySuggestions: InteractionCall<
     'CONFIRM_REPLY_SUGGESTIONS',
     InteractionWorkspace
@@ -249,6 +269,9 @@ export interface V2Bridge {
   readonly previewPlanReschedule: (
     input: PlanRescheduleFields,
   ) => Promise<V2Result<PlanReschedulePreview>>;
+  readonly previewProviderAction?: (
+    input: V2ProviderActionIntent,
+  ) => Promise<V2Result<V2ProviderActionPreview>>;
   readonly exportContentPackages: (
     input: ContentInput<'EXPORT_CONTENT_PACKAGES'>,
   ) => Promise<V2Result<ContentExportResult>>;
@@ -506,6 +529,55 @@ export function parseWeeklyPlan(value: unknown): WeeklyPlan {
   };
 }
 
+export function parseV2ProviderActionOutput(
+  kind: V2ProviderActionKind,
+  value: unknown,
+): Readonly<Record<string, unknown>> {
+  if (!isRecord(value)) throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID');
+  if (kind === 'WEEKLY_PLAN') {
+    if (!exactKeys(value, ['candidates']) || !Array.isArray(value.candidates))
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
+    try {
+      const candidates = value.candidates.map(parseCandidate);
+      parseWeeklyPlan({
+        candidates,
+        revision: 0,
+        schemaVersion: V2_SCHEMA_VERSION,
+        status: 'DRAFT',
+        weekKey: V2_DEFAULT_WEEK_KEY,
+      });
+      return Object.freeze({ candidates: Object.freeze(candidates) });
+    } catch {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
+    }
+  }
+  if (kind === 'CONTENT_PACKAGES') {
+    if (
+      !exactKeys(value, ['packages']) ||
+      !Array.isArray(value.packages) ||
+      value.packages.length !== 3
+    ) {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+    }
+    try {
+      return Object.freeze({
+        packages: Object.freeze(value.packages.map(parseContentPackageFields)),
+      });
+    } catch {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+    }
+  }
+  if (!exactKeys(value, ['replyText']))
+    throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['replyText']);
+  try {
+    return Object.freeze({
+      replyText: normalizeInteractionText(value.replyText, 4_000, 'replyText'),
+    });
+  } catch {
+    throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['replyText']);
+  }
+}
+
 function candidateIds(value: unknown): readonly string[] {
   if (!Array.isArray(value) || value.length === 0 || value.length > V2_LIMITS.candidateCount) {
     throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
@@ -633,6 +705,9 @@ export function parseContentMutationRequest(value: unknown): ContentMutationRequ
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.view === 'PROVIDER_ACTION_PREVIEW' && exactKeys(value, ['intent', 'view'])) {
+    return { intent: parseV2ProviderActionIntent(value.intent), view: value.view };
+  }
   if (value.view === 'INTERACTIONS' || value.view === 'INTERACTION_DELETE_PREVIEW')
     return parseInteractionReadRequest(value);
   if (value.view === 'ACCOUNT_PERSONA' && exactKeys(value, ['view'])) {
@@ -670,6 +745,9 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.action === 'CONFIRM_PROVIDER_ACTION') {
+    return parseV2ProviderActionConfirmation(value);
+  }
   if (
     value.action === 'SAVE_METRIC_SNAPSHOTS' &&
     exactKeys(value, ['action', 'snapshots']) &&
@@ -1065,7 +1143,8 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
-    if (request.view === 'METRICS_REVIEW') throw new V2ContractError('INVALID_REQUEST');
+    if (request.view === 'METRICS_REVIEW' || request.view === 'PROVIDER_ACTION_PREVIEW')
+      throw new V2ContractError('INVALID_REQUEST');
     if (
       request.view === 'CONTENT_PACKAGES' ||
       request.view === 'INTERACTIONS' ||
@@ -1084,7 +1163,8 @@ export class V2ApplicationFacade {
     }
     if (
       request.action === 'SAVE_METRIC_SNAPSHOTS' ||
-      request.action === 'DECIDE_STRATEGY_RECOMMENDATION'
+      request.action === 'DECIDE_STRATEGY_RECOMMENDATION' ||
+      request.action === 'CONFIRM_PROVIDER_ACTION'
     )
       throw new V2ContractError('INVALID_REQUEST');
     if (
@@ -1184,6 +1264,30 @@ export class V2ApplicationFacade {
     );
   }
 
+  public applyGeneratedWeeklyPlan(
+    week: string,
+    expectedRevision: number,
+    candidatesValue: unknown,
+  ): WeeklyPlan {
+    const current = this.#readPlan(week);
+    this.#assertRevision(current, expectedRevision);
+    this.#assertDraft(current);
+    if (!Array.isArray(candidatesValue)) {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
+    }
+    let generated: readonly PlanCandidate[];
+    try {
+      generated = candidatesValue.map(parseCandidate);
+      parseWeeklyPlan({ ...current, candidates: generated, status: 'DRAFT' });
+    } catch {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
+    }
+    return this.#repository.saveWeeklyPlan(
+      parseWeeklyPlan({ ...current, candidates: generated, status: 'DRAFT' }),
+      expectedRevision,
+    );
+  }
+
   #assertDraft(plan: WeeklyPlan): void {
     if (plan.status === 'CONFIRMED') {
       throw new V2ContractError('PLAN_LOCKED', ['weeklyPlan']);
@@ -1205,6 +1309,26 @@ export class V2ApplicationFacade {
 }
 
 export function toV2Exception(error: unknown): V2ExceptionSummary {
+  if (error instanceof V2ProviderActionError) {
+    const messages: Readonly<Record<V2ProviderActionErrorCode, string>> = Object.freeze({
+      PROVIDER_ACTION_BLOCKED: '当前模型设置、能力或业务状态不满足本次操作。',
+      PROVIDER_ACTION_CANCELLED: '本次模型操作已取消，未写入业务结果。',
+      PROVIDER_ACTION_STALE: '预览后业务数据已变化，请重新预览。',
+      PROVIDER_ACTION_TOKEN_INVALID: '确认已失效或已使用，请重新预览。',
+      PROVIDER_ACTION_UNCERTAIN: '请求结果不确定，系统未写入业务结果，请先检查本地账本。',
+      PROVIDER_OUTPUT_INVALID: '模型结果不符合严格合同，系统未写入业务结果。',
+    });
+    return {
+      affectedFields: error.affectedFields,
+      code: error.code,
+      message: messages[error.code],
+      severity: error.code === 'PROVIDER_ACTION_STALE' ? 'WARNING' : 'ERROR',
+      suggestedAction:
+        error.code === 'PROVIDER_ACTION_UNCERTAIN'
+          ? '打开设置与模型账本核对后再决定'
+          : '检查设置后重新预览',
+    };
+  }
   if (error instanceof V2InteractionError) {
     const messages = Object.freeze({
       INTERACTION_CORRUPT: '本地互动文件缺失或校验失败，未执行操作。',

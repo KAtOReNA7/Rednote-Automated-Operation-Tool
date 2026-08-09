@@ -13,6 +13,8 @@ declare global {
   type V2InteractionStatusContract = Exclude<V2.InteractionStatus, 'DELETED'>;
   type V2InteractionWorkspaceContract = V2.InteractionWorkspace;
   type V2MetricsReviewContract = V2.MetricsReview;
+  type V2ProviderActionIntentContract = V2.V2ProviderActionIntent;
+  type V2ProviderActionPreviewContract = V2.V2ProviderActionPreview;
 
   interface Window {
     readonly rednoteDesktop?: DesktopBridge;
