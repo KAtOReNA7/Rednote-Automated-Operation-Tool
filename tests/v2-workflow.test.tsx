@@ -131,6 +131,6 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByText(/账号名称未填写/u)).toBeVisible();
     await user.type(name, '雾灯书页·本机');
     await user.click(screen.getByRole('button', { name: '保存人设' }));
-    expect(await screen.findByText(/本机设置桥接不可用/u)).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/本机设置桥接不可用/u);
   });
 });
