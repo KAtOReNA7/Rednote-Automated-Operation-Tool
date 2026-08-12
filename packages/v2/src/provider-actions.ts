@@ -61,6 +61,8 @@ export interface V2ProviderActionPreview {
   readonly budgetState: V2BudgetState;
   readonly canConfirm: boolean;
   readonly capabilityState: V2StructuredJsonState;
+  readonly configFingerprint: string | null;
+  readonly credentialBinding: string | null;
   readonly credentialState: V2CredentialState;
   readonly expiresAt: string;
   readonly feeEstimateMicroUsd: string | null;
@@ -71,6 +73,18 @@ export interface V2ProviderActionPreview {
   readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly previewToken: string | null;
   readonly providerConfigured: boolean;
+  /** Opaque local snapshot used to bind a preview to its later confirmation. */
+  readonly readinessBinding: string;
+  readonly reasonCode:
+    | 'BUDGET_HARD_STOP'
+    | 'CAPABILITY_STALE'
+    | 'CAPABILITY_UNKNOWN'
+    | 'CAPABILITY_UNSUPPORTED'
+    | 'CREDENTIAL_NOT_CONFIGURED'
+    | 'PROVIDER_NOT_CONFIGURED'
+    | 'READY'
+    | 'UNKNOWN_FEE_CONSENT_REQUIRED';
+  readonly reasonMessage: string;
   readonly unknownCostApproved?: boolean;
   readonly requestCount: 1;
   readonly searchEnabled: false;
@@ -131,11 +145,26 @@ export interface V2ProviderActionResult {
 }
 
 export type V2ProviderActionErrorCode =
+  | 'BUDGET_HARD_STOP'
+  | 'CAPABILITY_STALE'
+  | 'CAPABILITY_UNKNOWN'
+  | 'CAPABILITY_UNSUPPORTED'
+  | 'CREDENTIAL_NOT_CONFIGURED'
+  | 'PROVIDER_NOT_CONFIGURED'
   | 'PROVIDER_ACTION_BLOCKED'
   | 'PROVIDER_ACTION_CANCELLED'
+  | 'PROVIDER_ACTION_CONFIG_CHANGED'
+  | 'PROVIDER_ACTION_CREDENTIAL_CHANGED'
+  | 'PROVIDER_ACTION_EXPIRED'
+  | 'PROVIDER_ACTION_REPLAYED'
+  | 'PROVIDER_ACTION_SOURCE_CHANGED'
   | 'PROVIDER_ACTION_STALE'
+  | 'PROVIDER_ACTION_TARGET_WEEK_CHANGED'
   | 'PROVIDER_ACTION_TOKEN_INVALID'
   | 'PROVIDER_ACTION_UNCERTAIN'
+  | 'PROVIDER_ACTION_UNKNOWN_FEE_CONSENT_REQUIRED'
+  | 'PROVIDER_ACTION_BUDGET_HARD_STOP'
+  | 'UNKNOWN_FEE_CONSENT_REQUIRED'
   | 'PROVIDER_OUTPUT_INVALID';
 
 export class V2ProviderActionError extends Error {

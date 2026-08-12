@@ -183,21 +183,26 @@ export class SqliteModelExecutionPersistence implements ModelExecutionPersistenc
       priceSchedule === null ? null : calculateUserPriceTableCost(upperUsage, priceSchedule);
     if (estimated?.amountMicroUsd === null || estimated === null) {
       const policy = this.#repository.findApplicableUnitPolicy(request.taskKind, request.modelRole);
-      assertDemandCoveredByUnitPolicy(
-        request.unitDemandUpperBound,
-        policy === null
-          ? null
-          : {
-              maxExternalCallsMonthly: policy.maxExternalCallsMonthly,
-              maxExternalCallsWeekly: policy.maxExternalCallsWeekly,
-              maxImageGenerationCalls: policy.maxImageGenerationCalls,
-              maxImages: policy.maxImages,
-              maxInputTokens: policy.maxInputTokens,
-              maxOutputTokens: policy.maxOutputTokens,
-              maxToolCalls: policy.maxToolCalls,
-              maxWebSearchCalls: policy.maxWebSearchCalls,
-            },
-      );
+      if (policy === null && request.userApprovedUnknownCost === true) {
+        // An explicit, one-request confirmation is the bounded fallback when no
+        // price or unit policy is configured. The repository still records it.
+      } else {
+        assertDemandCoveredByUnitPolicy(
+          request.unitDemandUpperBound,
+          policy === null
+            ? null
+            : {
+                maxExternalCallsMonthly: policy.maxExternalCallsMonthly,
+                maxExternalCallsWeekly: policy.maxExternalCallsWeekly,
+                maxImageGenerationCalls: policy.maxImageGenerationCalls,
+                maxImages: policy.maxImages,
+                maxInputTokens: policy.maxInputTokens,
+                maxOutputTokens: policy.maxOutputTokens,
+                maxToolCalls: policy.maxToolCalls,
+                maxWebSearchCalls: policy.maxWebSearchCalls,
+              },
+        );
+      }
     }
     const started = this.#repository.reserveAndCreateRun({
       billingMonth: utcBillingMonth(now),

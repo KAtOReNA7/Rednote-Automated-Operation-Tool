@@ -426,12 +426,17 @@ export class DesktopSettingsRuntime {
         budgetState: 'UNKNOWN',
         canConfirm: false,
         capabilityState: 'UNKNOWN',
+        configFingerprint: null,
+        credentialBinding: null,
         credentialState: 'NOT_CONFIGURED',
         feeEstimateMicroUsd: null,
         modelId: null,
         modelSlot: request.modelSlot,
         protocolMode: null,
         providerConfigured: false,
+        readinessBinding: 'settings-unavailable',
+        reasonCode: 'PROVIDER_NOT_CONFIGURED',
+        reasonMessage: '本地设置项目尚未就绪。',
         unknownCostApproved: request.userApprovedUnknownCost === true,
       };
     }

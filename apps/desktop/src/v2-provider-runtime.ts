@@ -35,6 +35,8 @@ import {
   utcBillingMonth,
 } from '@mystery-operations/workflows';
 
+import { createHash } from 'node:crypto';
+
 import type { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import type { ElectronCredentialStore } from './credential-store.js';
 import type { V2ProviderExecutionPort } from './v2-runtime.js';
@@ -100,6 +102,10 @@ function imageDemandUpperBound(input: Readonly<Record<string, unknown>>) {
     toolCalls: 0,
     webSearchCalls: 0,
   });
+}
+
+function opaqueBinding(value: string | null): string | null {
+  return value === null ? null : createHash('sha256').update(value).digest('hex');
 }
 
 export class V2ProviderRuntime implements V2ProviderExecutionPort {
@@ -277,6 +283,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
           : ('UNKNOWN' as const);
     let feeEstimateMicroUsd: string | null = null;
     let budgetState: V2ProviderActionReadiness['budgetState'] = 'UNKNOWN';
+    let rawConfigFingerprint: string | null = null;
     if (providerConfigured && modelId !== null && capability.protocolMode !== null) {
       let fingerprint: string | null;
       try {
@@ -284,6 +291,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       } catch {
         fingerprint = null;
       }
+      rawConfigFingerprint = fingerprint;
       if (fingerprint !== null) {
         const schedule = this.#accounting.getActivePriceSchedule(
           fingerprint,
@@ -327,6 +335,54 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         }
       }
     }
+    const summary = this.#accounting.budgetSummary(utcBillingMonth(new Date()));
+    if (summary.hardStop) budgetState = 'BLOCKED';
+    const reasonCode = !providerConfigured
+      ? 'PROVIDER_NOT_CONFIGURED'
+      : credentialState !== 'CONFIGURED'
+        ? 'CREDENTIAL_NOT_CONFIGURED'
+        : capabilityState === 'STALE'
+          ? 'CAPABILITY_STALE'
+          : capabilityState === 'UNSUPPORTED'
+            ? 'CAPABILITY_UNSUPPORTED'
+            : capabilityState !== 'SUPPORTED'
+              ? 'CAPABILITY_UNKNOWN'
+              : budgetState === 'BLOCKED'
+                ? 'BUDGET_HARD_STOP'
+                : feeEstimateMicroUsd === null && !request.userApprovedUnknownCost
+                  ? 'UNKNOWN_FEE_CONSENT_REQUIRED'
+                  : 'READY';
+    const reasonMessage =
+      reasonCode === 'READY'
+        ? '可以确认并执行本次受控请求。'
+        : reasonCode === 'BUDGET_HARD_STOP'
+          ? '本地预算硬上限不允许本次调用。'
+          : reasonCode === 'UNKNOWN_FEE_CONSENT_REQUIRED'
+            ? '费用未知；请勾选后仅授权本次最多 1 个请求。'
+            : reasonCode === 'CAPABILITY_STALE'
+              ? '能力证据已过期，请重新验证。'
+              : reasonCode === 'CAPABILITY_UNSUPPORTED'
+                ? '当前模型不支持所需能力。'
+                : reasonCode === 'CAPABILITY_UNKNOWN'
+                  ? '所需能力尚未验证。'
+                  : reasonCode === 'CREDENTIAL_NOT_CONFIGURED'
+                    ? '凭据尚未配置或需要重新认证。'
+                    : 'Provider、Base URL 或模型槽尚未配置完整。';
+    const configFingerprint = opaqueBinding(rawConfigFingerprint);
+    const credentialBinding = opaqueBinding(
+      credentialState === 'CONFIGURED' ? (credential.updatedAt ?? 'configured') : null,
+    );
+    const readinessBinding = opaqueBinding(
+      JSON.stringify({
+        capabilityState,
+        configFingerprint,
+        credentialBinding,
+        feeEstimateMicroUsd,
+        modelId,
+        protocolMode: capability.protocolMode,
+        providerConfigured,
+      }),
+    ) as string;
     const blockReasons = [
       ...(providerConfigured ? [] : ['Provider、Base URL 或模型槽尚未配置完整。']),
       ...(credentialState === 'CONFIGURED'
@@ -349,20 +405,19 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     return Object.freeze({
       blockReasons: Object.freeze(blockReasons),
       budgetState,
-      canConfirm:
-        providerConfigured &&
-        credentialState === 'CONFIGURED' &&
-        capabilityState === 'SUPPORTED' &&
-        (feeEstimateMicroUsd !== null
-          ? budgetState === 'ALLOWED'
-          : request.userApprovedUnknownCost === true),
+      canConfirm: reasonCode === 'READY',
       capabilityState,
+      configFingerprint,
+      credentialBinding,
       credentialState,
       feeEstimateMicroUsd,
       modelId,
       modelSlot: request.modelSlot,
       protocolMode: capability.protocolMode,
       providerConfigured,
+      readinessBinding,
+      reasonCode,
+      reasonMessage,
       unknownCostApproved: request.userApprovedUnknownCost === true,
     });
   }

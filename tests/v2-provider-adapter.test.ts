@@ -29,20 +29,34 @@ afterEach(() => {
 
 class ScriptedProviderExecution {
   readonly calls: V2ProviderActionExecutionRequest[] = [];
+  approvalRequired = false;
+  configFingerprint = 'fixture-config';
+  credentialBinding = 'fixture-credential';
   protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' = 'RESPONSES';
 
   public async inspect(request: Omit<V2ProviderActionExecutionRequest, 'executionId'>) {
     return {
-      blockReasons: [],
+      blockReasons:
+        this.approvalRequired && request.userApprovedUnknownCost !== true
+          ? ['approval required']
+          : [],
       budgetState: 'ALLOWED' as const,
-      canConfirm: true,
+      canConfirm: !this.approvalRequired || request.userApprovedUnknownCost === true,
       capabilityState: 'SUPPORTED' as const,
+      configFingerprint: this.configFingerprint,
+      credentialBinding: this.credentialBinding,
       credentialState: 'CONFIGURED' as const,
       feeEstimateMicroUsd: '1000',
       modelId: request.modelSlot === 'research' ? 'research-test' : 'writing-test',
       modelSlot: request.modelSlot,
       protocolMode: this.protocolMode,
       providerConfigured: true,
+      readinessBinding: `fixture-${this.protocolMode}-${this.configFingerprint}-${this.credentialBinding}`,
+      reasonCode:
+        this.approvalRequired && request.userApprovedUnknownCost !== true
+          ? ('UNKNOWN_FEE_CONSENT_REQUIRED' as const)
+          : ('READY' as const),
+      reasonMessage: 'fixture',
     };
   }
 
@@ -359,6 +373,135 @@ describe('V2 R07 controlled provider adapter', () => {
         ['REPLY_SUGGESTION', 'writing'],
         ['WEEKLY_PLAN', 'research'],
       ]);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it('keeps unknown-cost confirmation and its bound readiness snapshot in parity', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r07-parity-'));
+    temporaryRoots.push(root);
+    const provider = new ScriptedProviderExecution();
+    provider.approvalRequired = true;
+    const runtime = await V2DesktopRuntime.open(root, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      providerExecution: provider,
+    });
+    const caller = { senderId: 7, windowId: 11 };
+    try {
+      const plan = (await runtime.read({ view: 'WEEKLY_PLAN', weekKey: '2026-W34' })) as WeeklyPlan;
+      const blocked = (await runtime.read(
+        {
+          intent: { expectedRevision: plan.revision, kind: 'WEEKLY_PLAN', weekKey: plan.weekKey },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      expect(blocked).toMatchObject({
+        canConfirm: false,
+        previewToken: null,
+        reasonCode: 'UNKNOWN_FEE_CONSENT_REQUIRED',
+      });
+      expect(provider.calls).toHaveLength(0);
+
+      const approved = (await runtime.read(
+        {
+          intent: {
+            expectedRevision: plan.revision,
+            kind: 'WEEKLY_PLAN',
+            userApprovedUnknownCost: true,
+            weekKey: plan.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      await runtime.mutate(
+        {
+          action: 'CONFIRM_PROVIDER_ACTION',
+          confirmation: 'RUN_PROVIDER_ACTION',
+          previewToken: approved.previewToken,
+        },
+        caller,
+      );
+      expect(provider.calls).toHaveLength(1);
+      expect(provider.calls[0]).toMatchObject({
+        kind: 'WEEKLY_PLAN',
+        userApprovedUnknownCost: true,
+      });
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_PROVIDER_ACTION',
+            confirmation: 'RUN_PROVIDER_ACTION',
+            previewToken: approved.previewToken,
+          },
+          caller,
+        ),
+      ).rejects.toMatchObject({ code: 'PROVIDER_ACTION_REPLAYED' });
+      expect(provider.calls).toHaveLength(1);
+      expect(
+        (await runtime.read({ view: 'WEEKLY_PLAN', weekKey: '2026-W33' })) as WeeklyPlan,
+      ).toMatchObject({
+        revision: 0,
+        weekKey: '2026-W33',
+      });
+
+      const refreshed = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W34',
+      })) as WeeklyPlan;
+      const stale = (await runtime.read(
+        {
+          intent: {
+            expectedRevision: refreshed.revision,
+            kind: 'WEEKLY_PLAN',
+            userApprovedUnknownCost: true,
+            weekKey: refreshed.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      provider.configFingerprint = 'changed-config';
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_PROVIDER_ACTION',
+            confirmation: 'RUN_PROVIDER_ACTION',
+            previewToken: stale.previewToken,
+          },
+          caller,
+        ),
+      ).rejects.toMatchObject({ code: 'PROVIDER_ACTION_CONFIG_CHANGED' });
+      expect(provider.calls).toHaveLength(1);
+
+      provider.configFingerprint = 'fixture-config';
+      const credentialChanged = (await runtime.read(
+        {
+          intent: {
+            expectedRevision: refreshed.revision,
+            kind: 'WEEKLY_PLAN',
+            userApprovedUnknownCost: true,
+            weekKey: refreshed.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      provider.credentialBinding = 'changed-credential';
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_PROVIDER_ACTION',
+            confirmation: 'RUN_PROVIDER_ACTION',
+            previewToken: credentialChanged.previewToken,
+          },
+          caller,
+        ),
+      ).rejects.toMatchObject({ code: 'PROVIDER_ACTION_CREDENTIAL_CHANGED' });
+      expect(provider.calls).toHaveLength(1);
     } finally {
       runtime.close();
     }
