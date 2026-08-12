@@ -144,6 +144,10 @@ export function ProviderActionControl({
               <dd>{capabilityLabels[preview.capabilityState]}</dd>
             </div>
             <div>
+              <dt>执行协议</dt>
+              <dd>{preview.protocolMode ?? '未选择'}</dd>
+            </div>
+            <div>
               <dt>外部请求</dt>
               <dd>最多 1 次</dd>
             </div>

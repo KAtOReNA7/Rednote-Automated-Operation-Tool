@@ -77,7 +77,24 @@ function assertSelection(selection: CapabilityProbeSelection): readonly ProbeCap
   if (selection.profile === 'CUSTOM' && unique.length === 0) {
     throw new TypeError('CUSTOM capability probes require at least one capability.');
   }
+  const structuredModes = selection.structuredProtocolModes ?? ['RESPONSES'];
+  if (
+    structuredModes.length === 0 ||
+    structuredModes.some((mode) => mode !== 'RESPONSES' && mode !== 'CHAT_COMPLETIONS') ||
+    new Set(structuredModes).size !== structuredModes.length
+  ) {
+    throw new TypeError('Unsupported structured protocol mode selection.');
+  }
   return unique;
+}
+
+function structuredProtocolModes(
+  selection: CapabilityProbeSelection,
+): readonly ('CHAT_COMPLETIONS' | 'RESPONSES')[] {
+  const selected = new Set(selection.structuredProtocolModes ?? ['RESPONSES']);
+  return Object.freeze(
+    (['RESPONSES', 'CHAT_COMPLETIONS'] as const).filter((mode) => selected.has(mode)),
+  );
 }
 
 function configuredModels(
@@ -194,7 +211,9 @@ export function buildCapabilityProbePlan(
       append('TEXT', 'text', 'CHAT_COMPLETIONS', model.id, model.slots);
     }
     if (enabled.has('structuredJson')) {
-      append('STRUCTURED', 'structuredJson', 'RESPONSES', model.id, model.slots);
+      for (const mode of structuredProtocolModes(selection)) {
+        append('STRUCTURED', 'structuredJson', mode, model.id, model.slots);
+      }
     }
     if (enabled.has('vision')) {
       append('VISION', 'vision', 'RESPONSES', model.id, model.slots);

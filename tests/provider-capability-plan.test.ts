@@ -125,6 +125,74 @@ describe('Issue 013 immutable capability probe plans', () => {
     expect(deduplicated.steps[1]).toMatchObject({ kind: 'IMAGE', modelSlots: ['IMAGE'] });
   });
 
+  it('keeps historical structured probing by default and lets R07 request both protocols', () => {
+    const historical = buildCapabilityProbePlan(snapshot(), {
+      includeToolCalling: false,
+      profile: 'CUSTOM',
+      selectedCapabilities: ['structuredJson'],
+    });
+    expect(historical.steps.map((step) => step.protocolMode)).toEqual([
+      'RESPONSES',
+      'RESPONSES',
+      'RESPONSES',
+    ]);
+
+    const r07 = buildCapabilityProbePlan(
+      {
+        ...snapshot(),
+        models: {
+          ...snapshot().models,
+          writing: snapshot().models.research,
+        },
+      },
+      {
+        includeToolCalling: false,
+        profile: 'CUSTOM',
+        selectedCapabilities: ['structuredJson', 'imageGeneration'],
+        structuredProtocolModes: ['CHAT_COMPLETIONS', 'RESPONSES'],
+        targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+      },
+    );
+    expect(r07.steps.map((step) => [step.kind, step.protocolMode])).toEqual([
+      ['STRUCTURED', 'RESPONSES'],
+      ['STRUCTURED', 'CHAT_COMPLETIONS'],
+      ['IMAGE', 'NOT_APPLICABLE'],
+    ]);
+    expect(r07.steps[0]?.modelSlots).toEqual(['RESEARCH', 'WRITING']);
+    expect(r07.steps[1]?.modelSlots).toEqual(['RESEARCH', 'WRITING']);
+    const responsesStep = r07.steps[0];
+    const chatStep = r07.steps[1];
+    const imageStep = r07.steps[2];
+    if (responsesStep === undefined || chatStep === undefined || imageStep === undefined) {
+      throw new Error('Expected the fixed three-step R07 probe plan.');
+    }
+    expect(capabilityProbeRequestBody(responsesStep)).toMatchObject({
+      input: 'Return the requested JSON object.',
+      max_output_tokens: 256,
+      store: false,
+      text: { format: { type: 'json_schema' } },
+    });
+    expect(capabilityProbeRequestBody(responsesStep)).not.toHaveProperty('temperature');
+    expect(capabilityProbeRequestBody(responsesStep)).not.toHaveProperty('messages');
+    expect(capabilityProbeRequestBody(responsesStep)).not.toHaveProperty('response_format');
+    expect(capabilityProbeRequestBody(chatStep)).toMatchObject({
+      max_completion_tokens: 256,
+      messages: [{ content: 'Return the requested JSON object.', role: 'user' }],
+      response_format: { json_schema: { strict: true }, type: 'json_schema' },
+    });
+    expect(capabilityProbeRequestBody(chatStep)).not.toHaveProperty('input');
+    expect(capabilityProbeRequestBody(chatStep)).not.toHaveProperty('text');
+    expect(capabilityProbeRequestBody(chatStep)).not.toHaveProperty('temperature');
+    expect(capabilityProbeRequestBody(chatStep)).not.toHaveProperty('max_tokens');
+    expect(capabilityProbeRequestBody(imageStep)).toEqual({
+      model: snapshot().models.image,
+      n: 1,
+      prompt: 'A single plain blue square on a white background.',
+      quality: 'low',
+      size: '1024x1024',
+    });
+  });
+
   it('rejects an image capability selection without an image model', () => {
     expect(() =>
       buildCapabilityProbePlan(

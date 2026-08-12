@@ -35,6 +35,7 @@ const probeSummaryLabel = {
 function ProviderSettings(): React.JSX.Element {
   const { notify } = useV2Controller();
   const [view, setView] = useState<V2ProviderSettingsViewContract | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [baseUrl, setBaseUrl] = useState('');
   const [researchModel, setResearchModel] = useState('');
   const [writingModel, setWritingModel] = useState('');
@@ -56,10 +57,24 @@ function ProviderSettings(): React.JSX.Element {
     setImageModel(next.image?.modelId ?? '');
   };
   const load = async (): Promise<void> => {
-    const result = await window.rednoteV2?.readProviderSettings?.();
-    if (result === undefined) return notify('本机设置桥接不可用，无法读取 AI 服务设置。');
-    if (!result.ok) return notify(result.error.message);
-    apply(result.value);
+    setLoadError(null);
+    try {
+      const result = await window.rednoteV2?.readProviderSettings?.();
+      if (result === undefined) {
+        const message = '本机设置桥接不可用，无法读取 AI 服务设置。';
+        setLoadError(message);
+        return notify(message);
+      }
+      if (!result.ok) {
+        setLoadError(result.error.message);
+        return notify(result.error.message);
+      }
+      apply(result.value);
+    } catch {
+      const message = '本机设置读取失败，请重试或重新启动应用。';
+      setLoadError(message);
+      notify(message);
+    }
   };
   useEffect(() => {
     void load();
@@ -189,7 +204,12 @@ function ProviderSettings(): React.JSX.Element {
           <p>连接既有本机 Provider、凭据、能力检查与费用账本。</p>
         </div>
       </div>
-      {view === null ? (
+      {loadError !== null ? (
+        <div role="alert">
+          <p>{loadError}</p>
+          <Button onClick={() => void load()}>重试读取 AI 设置</Button>
+        </div>
+      ) : view === null ? (
         <p role="status">正在读取本机设置；不可用时不会生成模拟结果。</p>
       ) : (
         <>
@@ -219,7 +239,12 @@ function ProviderSettings(): React.JSX.Element {
           </label>
           <label className="v2-field">
             <span>图片模型 ID</span>
-            <input onChange={(event) => setImageModel(event.target.value)} value={imageModel} />
+            <input
+              aria-label="图片模型 ID"
+              onChange={(event) => setImageModel(event.target.value)}
+              value={imageModel}
+            />
+            <small>必须是中转站明确支持 OpenAI Images Generations 接口的模型 ID。</small>
           </label>
           <Button onClick={() => void save()} tone="primary">
             保存 AI 服务设置
@@ -256,11 +281,16 @@ function ProviderSettings(): React.JSX.Element {
           <hr />
           <h3>R07 所需能力</h3>
           <p>
-            研究槽：{capabilityLabel[view.research.state]} · 写作槽：
-            {capabilityLabel[view.writing.state]} · 图片槽 imageGeneration：
-            {capabilityLabel[view.image?.state ?? 'UNKNOWN']}
+            研究槽：{capabilityLabel[view.research.state]}
+            {view.research.protocolMode === null ? '' : ` · ${view.research.protocolMode}`} ·
+            写作槽：
+            {capabilityLabel[view.writing.state]}
+            {view.writing.protocolMode === null ? '' : ` · ${view.writing.protocolMode}`} · 图片槽
+            imageGeneration：{capabilityLabel[view.image?.state ?? 'UNKNOWN']}
           </p>
-          <p>能力检查只会在你预览并明确确认后启动，不会自动探测。</p>
+          <p>
+            能力检查只会在你预览并明确确认后启动。文本单次最长90秒、图片单次最长120秒、不会自动重试。
+          </p>
           <Button onClick={() => void previewProbe()}>验证 R07 所需能力</Button>
           {probeProgress === null ? null : (
             <p role="status">
@@ -281,6 +311,7 @@ function ProviderSettings(): React.JSX.Element {
                 {probe.searchEnabled ? '开启' : '关闭'} · Fetch：
                 {probe.fetchEnabled ? '开启' : '关闭'}
               </p>
+              <p>文本单次最长90秒、图片单次最长120秒、不会自动重试。</p>
               {view.credentialState === 'CONFIGURED' ? null : (
                 <p className="v2-form-error">凭据未配置或需重新认证，请先在上方保存凭据。</p>
               )}
@@ -332,6 +363,10 @@ function ProviderSettings(): React.JSX.Element {
                     <br />
                     {step.reason}
                     {step.httpStatus === null ? '' : ` HTTP ${step.httpStatus}`}
+                    {step.errorCode == null ? '' : ` · code=${step.errorCode}`}
+                    {step.errorType == null ? '' : ` · type=${step.errorType}`}
+                    {step.errorParam == null ? '' : ` · param=${step.errorParam}`}
+                    {step.requestId == null ? '' : ` · requestId=${step.requestId}`}
                     {step.deduplicated
                       ? `；同一请求已去重并映射到 ${step.mappedSlots.join('、')}`
                       : ''}

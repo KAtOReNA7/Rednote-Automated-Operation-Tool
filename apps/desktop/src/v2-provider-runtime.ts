@@ -18,6 +18,7 @@ import { ModelResultCacheStore, type ProjectDataRoot } from '@mystery-operations
 import {
   V2_PROVIDER_OUTPUT_JSON_SCHEMAS,
   parseV2ProviderActionOutput,
+  selectV2StructuredProtocol,
   type V2ProviderActionExecutionRequest,
   type V2ProviderActionExecutionResult,
   type V2ProviderActionKind,
@@ -152,7 +153,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         },
         request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson',
       );
-      if (capability.protocolMode === 'NOT_APPLICABLE') {
+      if (capability.protocolMode === null) {
         throw new Error('PROVIDER_PROTOCOL_NOT_CONFIGURED');
       }
       protocolMode = capability.protocolMode;
@@ -259,7 +260,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
               request.kind === 'CONTENT_COVER'
                 ? ('imageGeneration' as const)
                 : ('structuredJson' as const),
-            protocolMode: 'NOT_APPLICABLE' as const,
+            protocolMode: null,
             stale: false,
             state: 'UNKNOWN' as const,
           }
@@ -276,7 +277,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
           : ('UNKNOWN' as const);
     let feeEstimateMicroUsd: string | null = null;
     let budgetState: V2ProviderActionReadiness['budgetState'] = 'UNKNOWN';
-    if (providerConfigured && modelId !== null && capability.protocolMode !== 'NOT_APPLICABLE') {
+    if (providerConfigured && modelId !== null && capability.protocolMode !== null) {
       let fingerprint: string | null;
       try {
         fingerprint = this.#capabilities.getConfigFingerprint();
@@ -360,6 +361,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       feeEstimateMicroUsd,
       modelId,
       modelSlot: request.modelSlot,
+      protocolMode: capability.protocolMode,
       providerConfigured,
       unknownCostApproved: request.userApprovedUnknownCost === true,
     });
@@ -485,30 +487,64 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         : request.modelSlot === 'image'
           ? 'IMAGE'
           : 'WRITING';
-    const entry = this.#capabilities
+    const entries = this.#capabilities
       .getState()
-      .entries.find(
+      .entries.filter(
         (candidate) =>
           candidate.capability === capability &&
           candidate.modelId === request.modelId &&
           candidate.modelSlot === modelSlot,
       );
-    if (entry === undefined) {
+    if (capability !== 'imageGeneration') {
+      const selected = selectV2StructuredProtocol(
+        entries
+          .filter(
+            (candidate) =>
+              candidate.protocolMode === 'RESPONSES' ||
+              candidate.protocolMode === 'CHAT_COMPLETIONS',
+          )
+          .map((candidate) => ({
+            protocolMode: candidate.protocolMode as 'CHAT_COMPLETIONS' | 'RESPONSES',
+            stale: candidate.stale,
+            state: candidate.state,
+          })),
+      );
       return {
-        capability:
-          capability === 'imageGeneration'
-            ? ('imageGeneration' as const)
-            : ('structuredJson' as const),
-        protocolMode: 'NOT_APPLICABLE' as const,
-        stale: false,
+        capability: 'structuredJson' as const,
+        protocolMode: selected.protocolMode,
+        stale: selected.state === 'STALE',
+        state: selected.state === 'STALE' ? ('UNKNOWN' as const) : selected.state,
+      };
+    }
+    const currentEntries = entries.filter((candidate) => !candidate.stale);
+    const supported =
+      currentEntries.find(
+        (candidate) => candidate.state === 'SUPPORTED' && candidate.protocolMode === 'RESPONSES',
+      ) ??
+      currentEntries.find(
+        (candidate) =>
+          candidate.state === 'SUPPORTED' && candidate.protocolMode === 'CHAT_COMPLETIONS',
+      ) ??
+      currentEntries.find((candidate) => candidate.state === 'SUPPORTED');
+    if (currentEntries.length === 0) {
+      return {
+        capability: 'imageGeneration' as const,
+        protocolMode: null,
+        stale: entries.length > 0,
         state: 'UNKNOWN' as const,
       };
     }
+    const state =
+      supported !== undefined
+        ? ('SUPPORTED' as const)
+        : currentEntries.every((candidate) => candidate.state === 'UNSUPPORTED')
+          ? ('UNSUPPORTED' as const)
+          : ('UNKNOWN' as const);
     return {
-      capability: entry.capability,
-      protocolMode: entry.protocolMode,
-      stale: entry.stale,
-      state: entry.state,
+      capability: 'imageGeneration' as const,
+      protocolMode: supported === undefined ? null : ('IMAGES_GENERATIONS' as const),
+      stale: false,
+      state,
     };
   }
 

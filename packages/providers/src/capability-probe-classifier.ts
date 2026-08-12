@@ -30,6 +30,36 @@ function record(value: unknown): Readonly<Record<string, unknown>> | null {
     : null;
 }
 
+function safeErrorField(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const filtered = [...value]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join('')
+    .trim()
+    .slice(0, 128);
+  return filtered.length === 0 ? undefined : filtered;
+}
+
+function httpSafeDetails(response: CapabilityProbeResponse, parsed: unknown): ProbeSafeDetails {
+  const error = record(record(parsed)?.error);
+  const errorCode = safeErrorField(error?.code);
+  const errorParam = safeErrorField(error?.param);
+  const errorType = safeErrorField(error?.type);
+  const requestId = safeErrorField(
+    response.headers['x-request-id'] ?? response.headers['request-id'],
+  );
+  return {
+    ...(errorCode === undefined ? {} : { errorCode }),
+    ...(errorParam === undefined ? {} : { errorParam }),
+    ...(errorType === undefined ? {} : { errorType }),
+    ...(requestId === undefined ? {} : { requestId }),
+    status: response.status,
+  };
+}
+
 function array(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
 }
@@ -170,17 +200,25 @@ function httpFailure(
     return null;
   }
   if (response.status === 401) {
-    return observation(step, now, 'AUTHENTICATION_REJECTED', 'UNKNOWN', {
-      status: response.status,
-    });
+    return observation(
+      step,
+      now,
+      'AUTHENTICATION_REJECTED',
+      'UNKNOWN',
+      httpSafeDetails(response, parsed),
+    );
   }
   if (response.status === 403) {
-    return observation(step, now, 'PERMISSION_REJECTED', 'UNKNOWN', {
-      status: response.status,
-    });
+    return observation(
+      step,
+      now,
+      'PERMISSION_REJECTED',
+      'UNKNOWN',
+      httpSafeDetails(response, parsed),
+    );
   }
   if (response.status === 429) {
-    return observation(step, now, 'RATE_LIMITED', 'UNKNOWN', { status: response.status });
+    return observation(step, now, 'RATE_LIMITED', 'UNKNOWN', httpSafeDetails(response, parsed));
   }
   if (response.status === 404) {
     const error = record(record(parsed)?.error);
@@ -188,18 +226,18 @@ function httpFailure(
     const type = typeof error?.type === 'string' ? error.type.toLowerCase() : '';
     if (/(model[_-]?(not[_-]?found|unavailable)|unknown[_-]?model)/u.test(`${code} ${type}`)) {
       return observation(step, now, 'AMBIGUOUS_OUTCOME', 'UNKNOWN', {
+        ...httpSafeDetails(response, parsed),
         modelNotFound: 1,
-        status: response.status,
       });
     }
   }
   const negative = explicitNegativeReason(response.status, parsed);
   if (negative !== null) {
-    return observation(step, now, negative, 'UNSUPPORTED', { status: response.status });
+    return observation(step, now, negative, 'UNSUPPORTED', httpSafeDetails(response, parsed));
   }
   return observation(step, now, 'AMBIGUOUS_OUTCOME', 'UNKNOWN', {
+    ...httpSafeDetails(response, parsed),
     ...(response.status === 404 ? { endpointNotFound: 1 } : {}),
-    status: response.status,
   });
 }
 

@@ -68,6 +68,7 @@ export interface V2ProviderActionPreview {
   readonly kind: V2ProviderActionKind;
   readonly modelId: string | null;
   readonly modelSlot: V2ProviderModelSlot;
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly previewToken: string | null;
   readonly providerConfigured: boolean;
   readonly unknownCostApproved?: boolean;
@@ -423,8 +424,47 @@ export type V2CredentialState = 'CONFIGURED' | 'NOT_CONFIGURED' | 'REAUTH_REQUIR
 export type V2StructuredJsonState = 'STALE' | 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
 export type V2BudgetState = 'ALLOWED' | 'BLOCKED' | 'UNKNOWN';
 
+export interface V2StructuredProtocolCandidate {
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES';
+  readonly stale: boolean;
+  readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+}
+
+export function selectV2StructuredProtocol(
+  candidates: readonly V2StructuredProtocolCandidate[],
+): Readonly<{
+  protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' | null;
+  state: V2StructuredJsonState;
+}> {
+  const current = candidates.filter((candidate) => !candidate.stale);
+  if (current.length === 0) {
+    return Object.freeze({
+      protocolMode: null,
+      state: candidates.length > 0 ? ('STALE' as const) : ('UNKNOWN' as const),
+    });
+  }
+  const supported =
+    current.find(
+      (candidate) => candidate.state === 'SUPPORTED' && candidate.protocolMode === 'RESPONSES',
+    ) ??
+    current.find(
+      (candidate) =>
+        candidate.state === 'SUPPORTED' && candidate.protocolMode === 'CHAT_COMPLETIONS',
+    );
+  return Object.freeze({
+    protocolMode: supported?.protocolMode ?? null,
+    state:
+      supported !== undefined
+        ? ('SUPPORTED' as const)
+        : current.every((candidate) => candidate.state === 'UNSUPPORTED')
+          ? ('UNSUPPORTED' as const)
+          : ('UNKNOWN' as const),
+  });
+}
+
 export interface V2CapabilitySlotView {
   readonly modelId: string | null;
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly state: V2StructuredJsonState;
 }
 export interface V2CapabilityProbeProgress {
@@ -447,11 +487,15 @@ export interface V2CapabilityProbeStepDiagnostic {
   readonly capability: 'imageGeneration' | 'structuredJson';
   readonly deduplicated: boolean;
   readonly diagnosticCode: string;
+  readonly errorCode?: string | null;
+  readonly errorParam?: string | null;
+  readonly errorType?: string | null;
   readonly httpStatus: number | null;
   readonly mappedSlots: readonly V2ProviderModelSlot[];
   readonly modelId: string;
   readonly observedAt: string | null;
-  readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
+  readonly requestId?: string | null;
   readonly reason: string;
   readonly sent: boolean;
   readonly stale: boolean;

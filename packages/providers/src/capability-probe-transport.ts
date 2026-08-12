@@ -21,6 +21,8 @@ const ALLOWED_PATHS = new Set([
 const ALLOWED_RESPONSE_HEADERS = Object.freeze([
   'allow',
   'content-type',
+  'request-id',
+  'x-request-id',
   'x-batch-capabilities',
   'x-ratelimit-limit-requests',
   'x-ratelimit-limit-tokens',
@@ -131,6 +133,10 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
       }
       const chunks: Uint8Array[] = [];
       let total = 0;
+      const maxResponseBodyBytes =
+        request.path === '/images/generations'
+          ? CAPABILITY_PROBE_LIMITS.maxImageResponseBodyBytes
+          : CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes;
       try {
         while (true) {
           const next = await reader.read();
@@ -138,7 +144,7 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
             break;
           }
           total += next.value.byteLength;
-          if (total > CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes) {
+          if (total > maxResponseBodyBytes) {
             await reader.cancel().catch(() => undefined);
             throw errorWithCode('Capability probe response body is too large.', 'EBODYSIZE');
           }

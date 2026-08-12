@@ -129,6 +129,11 @@ export class ProviderCapabilityRuntime {
         includeToolCalling: selection.includeToolCalling,
         profile: selection.profile,
         selectedCapabilities: Object.freeze([...selection.selectedCapabilities]),
+        ...(selection.structuredProtocolModes === undefined
+          ? {}
+          : {
+              structuredProtocolModes: Object.freeze([...selection.structuredProtocolModes]),
+            }),
         ...(selection.targetModelSlots === undefined
           ? {}
           : { targetModelSlots: Object.freeze([...selection.targetModelSlots]) }),
@@ -442,12 +447,28 @@ export class ProviderCapabilityRuntime {
       { modelId: snapshot.models.review, slot: 'REVIEW' },
       { modelId: snapshot.models.image, slot: 'IMAGE' },
     ];
+    const plannedStructuredModes = Object.freeze(
+      [
+        ...new Set(
+          plan.steps
+            .filter((step) => step.capability === 'structuredJson')
+            .map((step) => step.protocolMode),
+        ),
+      ].filter(
+        (mode): mode is 'CHAT_COMPLETIONS' | 'RESPONSES' =>
+          mode === 'RESPONSES' || mode === 'CHAT_COMPLETIONS',
+      ),
+    );
     const modesFor = (capability: ProbeCapability): readonly ProbeProtocolMode[] =>
       capability === 'text' || capability === 'usage'
         ? ['RESPONSES', 'CHAT_COMPLETIONS']
-        : capability === 'batch' || capability === 'imageGeneration'
-          ? ['NOT_APPLICABLE']
-          : ['RESPONSES'];
+        : capability === 'structuredJson'
+          ? plannedStructuredModes.length === 0
+            ? ['RESPONSES']
+            : plannedStructuredModes
+          : capability === 'batch' || capability === 'imageGeneration'
+            ? ['NOT_APPLICABLE']
+            : ['RESPONSES'];
     for (const mapping of mappings) {
       if (mapping.modelId === null && mapping.slot !== 'PROVIDER') {
         continue;

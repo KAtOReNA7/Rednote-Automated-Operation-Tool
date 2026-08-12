@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 import {
+  CAPABILITY_PROBE_LIMITS,
   NodeFetchCapabilityProbeTransport,
   capabilityProbeModelMetadataUrl,
   capabilityProbeUrl,
@@ -64,5 +65,27 @@ describe('Issue 013 fixed capability probe transport', () => {
         timeoutMs: 1000,
       }),
     ).rejects.toThrow(/invalid/iu);
+  });
+
+  it('allows larger bounded image bodies while keeping text at the original limit', async () => {
+    const body = 'x'.repeat(CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes + 1);
+    const transport = new NodeFetchCapabilityProbeTransport(
+      async () =>
+        new Response(body, { headers: { 'content-type': 'application/json' }, status: 200 }),
+    );
+    const base = {
+      baseUrl: 'http://127.0.0.1:43119/v1',
+      body: {},
+      credential: syntheticInvalidCredential(),
+      method: 'POST' as const,
+      signal: new AbortController().signal,
+      timeoutMs: 1000,
+    };
+    await expect(transport.request({ ...base, path: '/responses' })).rejects.toMatchObject({
+      code: 'EBODYSIZE',
+    });
+    await expect(
+      transport.request({ ...base, path: '/images/generations' }),
+    ).resolves.toMatchObject({ status: 200 });
   });
 });

@@ -109,6 +109,7 @@ const unavailableProviderExecution: V2ProviderExecutionPort = {
     feeEstimateMicroUsd: null,
     modelId: null,
     modelSlot: request.modelSlot,
+    protocolMode: null,
     providerConfigured: false,
     unknownCostApproved: request.userApprovedUnknownCost === true,
   }),
@@ -378,6 +379,7 @@ export class V2DesktopRuntime {
           credentialState: readiness.credentialState,
           feeEstimateMicroUsd: readiness.feeEstimateMicroUsd,
           modelId: readiness.modelId,
+          protocolMode: readiness.protocolMode,
           providerConfigured: readiness.providerConfigured,
         }),
       });
@@ -425,6 +427,7 @@ export class V2DesktopRuntime {
       credentialState: currentReadiness.credentialState,
       feeEstimateMicroUsd: currentReadiness.feeEstimateMicroUsd,
       modelId: currentReadiness.modelId,
+      protocolMode: currentReadiness.protocolMode,
       providerConfigured: currentReadiness.providerConfigured,
     });
     if (

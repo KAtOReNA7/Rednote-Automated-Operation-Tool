@@ -80,6 +80,37 @@ describe('Issue 013 conservative capability classifier', () => {
     });
   });
 
+  it('keeps HTTP 400 parameter rejection unknown with bounded safe diagnostics only', () => {
+    const observed = classifyCapabilityProbeResponse(
+      STEP,
+      {
+        body: JSON.stringify({
+          error: {
+            code: 'invalid_parameter\nignored',
+            message: 'raw secret-like response detail',
+            param: 'response_format',
+            type: 'invalid_request_error',
+          },
+        }),
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_fixture_123' },
+        status: 400,
+      },
+      NOW,
+    )[0];
+    expect(observed).toMatchObject({
+      reasonCode: 'AMBIGUOUS_OUTCOME',
+      safeDetails: {
+        errorCode: 'invalid_parameterignored',
+        errorParam: 'response_format',
+        errorType: 'invalid_request_error',
+        requestId: 'req_fixture_123',
+        status: 400,
+      },
+      state: 'UNKNOWN',
+    });
+    expect(JSON.stringify(observed)).not.toContain('raw secret-like response detail');
+  });
+
   it('classifies model identity, model lookup, and route mismatches without raw payloads', () => {
     expect(
       classifyCapabilityProbeResponse(

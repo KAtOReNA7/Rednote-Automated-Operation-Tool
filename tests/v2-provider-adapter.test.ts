@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   parseV2ProviderActionIntent,
   parseV2ProviderActionOutput,
+  selectV2StructuredProtocol,
   type V2ProviderActionExecutionRequest,
   type V2ProviderActionExecutionResult,
   type V2ProviderActionPreview,
@@ -28,6 +29,7 @@ afterEach(() => {
 
 class ScriptedProviderExecution {
   readonly calls: V2ProviderActionExecutionRequest[] = [];
+  protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' = 'RESPONSES';
 
   public async inspect(request: Omit<V2ProviderActionExecutionRequest, 'executionId'>) {
     return {
@@ -39,6 +41,7 @@ class ScriptedProviderExecution {
       feeEstimateMicroUsd: '1000',
       modelId: request.modelSlot === 'research' ? 'research-test' : 'writing-test',
       modelSlot: request.modelSlot,
+      protocolMode: this.protocolMode,
       providerConfigured: true,
     };
   }
@@ -90,6 +93,30 @@ class ScriptedProviderExecution {
 }
 
 describe('V2 R07 controlled provider adapter', () => {
+  it('selects a current supported structured protocol deterministically', () => {
+    expect(
+      selectV2StructuredProtocol([
+        { protocolMode: 'CHAT_COMPLETIONS', stale: false, state: 'SUPPORTED' },
+        { protocolMode: 'RESPONSES', stale: false, state: 'SUPPORTED' },
+      ]),
+    ).toEqual({ protocolMode: 'RESPONSES', state: 'SUPPORTED' });
+    expect(
+      selectV2StructuredProtocol([
+        { protocolMode: 'RESPONSES', stale: false, state: 'UNSUPPORTED' },
+        { protocolMode: 'CHAT_COMPLETIONS', stale: false, state: 'SUPPORTED' },
+      ]),
+    ).toEqual({ protocolMode: 'CHAT_COMPLETIONS', state: 'SUPPORTED' });
+    expect(
+      selectV2StructuredProtocol([
+        { protocolMode: 'RESPONSES', stale: false, state: 'UNSUPPORTED' },
+        { protocolMode: 'CHAT_COMPLETIONS', stale: false, state: 'UNKNOWN' },
+      ]),
+    ).toEqual({ protocolMode: null, state: 'UNKNOWN' });
+    expect(
+      selectV2StructuredProtocol([{ protocolMode: 'RESPONSES', stale: true, state: 'SUPPORTED' }]),
+    ).toEqual({ protocolMode: null, state: 'STALE' });
+  });
+
   it('accepts exactly one or three append-only copy targets and matching outputs', () => {
     const item = (suffix: number) => ({
       expectedRevision: suffix,
@@ -161,6 +188,7 @@ describe('V2 R07 controlled provider adapter', () => {
       expect(planPreview).toMatchObject({
         fetchEnabled: false,
         modelSlot: 'research',
+        protocolMode: 'RESPONSES',
         requestCount: 1,
         searchEnabled: false,
       });
@@ -187,11 +215,35 @@ describe('V2 R07 controlled provider adapter', () => {
         },
         caller,
       )) as V2ProviderActionPreview;
+      provider.protocolMode = 'CHAT_COMPLETIONS';
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_PROVIDER_ACTION',
+            confirmation: 'RUN_PROVIDER_ACTION',
+            previewToken: retryPreview.previewToken,
+          },
+          caller,
+        ),
+      ).rejects.toMatchObject({ code: 'PROVIDER_ACTION_STALE' });
+      expect(provider.calls).toHaveLength(0);
+      const executionPreview = (await runtime.read(
+        {
+          intent: {
+            expectedRevision: initial.revision,
+            kind: 'WEEKLY_PLAN',
+            weekKey: initial.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      expect(executionPreview.protocolMode).toBe('CHAT_COMPLETIONS');
       await runtime.mutate(
         {
           action: 'CONFIRM_PROVIDER_ACTION',
           confirmation: 'RUN_PROVIDER_ACTION',
-          previewToken: retryPreview.previewToken,
+          previewToken: executionPreview.previewToken,
         },
         caller,
       );

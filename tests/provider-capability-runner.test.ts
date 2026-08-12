@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  CAPABILITY_PROBE_LIMITS,
   CAPABILITY_PROBE_MARKERS,
   CapabilityProbeRunner,
   NodeFetchCapabilityProbeTransport,
   buildCapabilityProbePlan,
+  capabilityProbeStepTimeoutMs,
 } from '../packages/providers/src/index.js';
 import {
   startCapabilityProbeFixture,
@@ -12,6 +14,82 @@ import {
 } from './support/capability-probe-fixture.js';
 
 describe('Issue 013 serial no-retry capability runner', () => {
+  it('uses protocol-compatible per-step timeout budgets and a sufficient run deadline', () => {
+    expect(CAPABILITY_PROBE_LIMITS.runDeadlineMs).toBe(315_000);
+    expect(
+      capabilityProbeStepTimeoutMs({
+        capability: 'structuredJson',
+        id: 'structured-timeout',
+        kind: 'STRUCTURED',
+        modelId: 'fixture-model',
+        modelSlots: ['RESEARCH'],
+        protocolMode: 'RESPONSES',
+      }),
+    ).toBe(90_000);
+    expect(
+      capabilityProbeStepTimeoutMs({
+        capability: 'imageGeneration',
+        id: 'image-timeout',
+        kind: 'IMAGE',
+        modelId: 'fixture-image',
+        modelSlots: ['IMAGE'],
+        protocolMode: 'NOT_APPLICABLE',
+      }),
+    ).toBe(120_000);
+  });
+
+  it('passes 90s, 90s and 120s serial timeouts without retrying', async () => {
+    const timeouts: number[] = [];
+    const runner = new CapabilityProbeRunner({
+      request: async (request) => {
+        timeouts.push(request.timeoutMs);
+        return request.path === '/images/generations'
+          ? { body: '{"data":[]}', headers: { 'content-type': 'application/json' }, status: 200 }
+          : {
+              body: JSON.stringify({
+                output_text: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }),
+                choices: [
+                  {
+                    message: {
+                      content: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }),
+                    },
+                  },
+                ],
+              }),
+              headers: { 'content-type': 'application/json' },
+              status: 200,
+            };
+      },
+    });
+    const plan = buildCapabilityProbePlan(
+      {
+        baseUrl: 'http://127.0.0.1:43119/v1',
+        credentialBindingVersion: 1,
+        models: {
+          image: 'fixture-image',
+          provider: 'shared',
+          research: 'shared',
+          review: 'review',
+          writing: 'shared',
+        },
+        protocol: 'OPENAI_COMPATIBLE',
+        settingsRevision: 1,
+      },
+      {
+        includeToolCalling: false,
+        profile: 'CUSTOM',
+        selectedCapabilities: ['structuredJson', 'imageGeneration'],
+        structuredProtocolModes: ['RESPONSES', 'CHAT_COMPLETIONS'],
+        targetModelSlots: ['RESEARCH', 'WRITING', 'IMAGE'],
+      },
+    );
+    await runner.run(plan, 'http://127.0.0.1:43119/v1', syntheticInvalidCredential(), {
+      isConfigCurrent: () => true,
+      runId: 'probe-timeouts-0001',
+      signal: new AbortController().signal,
+    });
+    expect(timeouts).toEqual([90_000, 90_000, 120_000]);
+  });
   it('deduplicates shared text slots and keeps a URL-only image result inconclusive', async () => {
     const paths: string[] = [];
     const runner = new CapabilityProbeRunner({

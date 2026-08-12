@@ -16,7 +16,12 @@ import {
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(import.meta.dirname, '..');
 const buildDirectory = join(projectRoot, '.vite');
-const outputDirectory = join(projectRoot, 'out');
+const outputVariant = process.env.REDNOTE_PACKAGE_OUTPUT_VARIANT;
+if (outputVariant !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(outputVariant)) {
+  throw new Error('Package output variant must be a finite safe directory name.');
+}
+const outputDirectory =
+  outputVariant === undefined ? join(projectRoot, 'out') : join(projectRoot, 'out', outputVariant);
 const packagingScratchDirectory = await mkdtemp(join(projectRoot, '.rednote-package-'));
 process.env.TEMP = packagingScratchDirectory;
 process.env.TMP = packagingScratchDirectory;

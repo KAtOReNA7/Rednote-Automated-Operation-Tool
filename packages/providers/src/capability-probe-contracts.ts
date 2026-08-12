@@ -103,6 +103,7 @@ export interface CapabilityProbeSelection {
   readonly includeToolCalling: boolean;
   readonly profile: ProbeProfile;
   readonly selectedCapabilities: readonly ProbeCapability[];
+  readonly structuredProtocolModes?: readonly ('CHAT_COMPLETIONS' | 'RESPONSES')[];
   readonly targetModelSlots?: readonly ProbeModelSlot[];
 }
 
@@ -140,12 +141,16 @@ export interface CapabilityProbePlan {
 export interface ProbeSafeDetails {
   readonly citationCount?: number;
   readonly endpointNotFound?: number;
+  readonly errorCode?: string;
+  readonly errorParam?: string;
+  readonly errorType?: string;
   readonly eventCount?: number;
   readonly imageCount?: number;
   readonly inputTokens?: number;
   readonly modelIdMismatch?: number;
   readonly modelNotFound?: number;
   readonly outputTokens?: number;
+  readonly requestId?: string;
   readonly status?: number;
   readonly totalTokens?: number;
 }
@@ -221,10 +226,13 @@ export interface CapabilityProbeRunnerOptions {
 }
 
 export const CAPABILITY_PROBE_LIMITS = Object.freeze({
+  imageStepTimeoutMs: 120_000,
   maxExternalRequests: 32,
+  maxImageResponseBodyBytes: 8 * 1024 * 1024,
   maxResponseBodyBytes: 2 * 1024 * 1024,
   maxResponseHeaderBytes: 32 * 1024,
-  runDeadlineMs: 120_000,
+  runDeadlineMs: 315_000,
   startTokenTtlMs: 5 * 60 * 1_000,
   stepTimeoutMs: 20_000,
+  structuredStepTimeoutMs: 90_000,
 } as const);

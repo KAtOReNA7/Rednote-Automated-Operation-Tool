@@ -81,7 +81,7 @@ export {
   normalizeCapabilityProbeBaseUrl,
 } from './capability-probe-plan.js';
 export { capabilityProbeRequestBody } from './capability-probe-payloads.js';
-export { CapabilityProbeRunner } from './capability-probe-runner.js';
+export { capabilityProbeStepTimeoutMs, CapabilityProbeRunner } from './capability-probe-runner.js';
 export {
   capabilityProbeModelMetadataUrl,
   capabilityProbeUrl,
