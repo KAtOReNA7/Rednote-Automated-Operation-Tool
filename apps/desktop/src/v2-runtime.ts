@@ -36,6 +36,7 @@ import {
   type V2ProviderSettingsDraft,
   type V2ProviderSettingsView,
   type V2Result,
+  weekDateRange,
   type WeeklyPlan,
 } from '@mystery-operations/v2';
 
@@ -384,6 +385,8 @@ export class V2DesktopRuntime {
         }),
       });
     }
+    const targetWeekKey = intent.kind === 'WEEKLY_PLAN' ? intent.weekKey : null;
+    const targetWeek = targetWeekKey === null ? null : weekDateRange(targetWeekKey);
     return Object.freeze({
       ...readiness,
       blockReasons:
@@ -398,6 +401,13 @@ export class V2DesktopRuntime {
       requestCount: 1,
       searchEnabled: false,
       summary: providerActionSummary(intent.kind),
+      ...(targetWeek === null
+        ? {}
+        : {
+            targetEndDate: targetWeek.endDate,
+            targetStartDate: targetWeek.startDate,
+            targetWeekKey: targetWeekKey as string,
+          }),
     });
   }
 

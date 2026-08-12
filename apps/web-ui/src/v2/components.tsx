@@ -19,6 +19,70 @@ import {
 } from './mock-provider.js';
 import { V2_ROUTES, toV2Hash, type V2RouteId } from './routes.js';
 
+export interface WeekIdentity {
+  readonly endDate: string;
+  readonly startDate: string;
+  readonly weekKey: string;
+}
+
+function isoDate(value: Date): string {
+  return value.toISOString().slice(0, 10);
+}
+
+export function weekKeyForDate(date: string): string {
+  const target = new Date(`${date}T00:00:00Z`);
+  target.setUTCDate(target.getUTCDate() + 3 - ((target.getUTCDay() + 6) % 7));
+  const first = new Date(Date.UTC(target.getUTCFullYear(), 0, 4));
+  first.setUTCDate(first.getUTCDate() + 3 - ((first.getUTCDay() + 6) % 7));
+  const week = 1 + Math.round((target.getTime() - first.getTime()) / 604_800_000);
+  return `${target.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+}
+
+export function weekIdentity(weekKey: string): WeekIdentity {
+  const [, yearText, weekText] = /^(\d{4})-W(\d{2})$/u.exec(weekKey) ?? [];
+  const year = Number(yearText);
+  const week = Number(weekText);
+  if (!Number.isInteger(year) || !Number.isInteger(week) || week < 1 || week > 53)
+    throw new Error('Invalid ISO week key.');
+  const januaryFourth = new Date(Date.UTC(year, 0, 4));
+  const monday = new Date(januaryFourth);
+  monday.setUTCDate(
+    januaryFourth.getUTCDate() - ((januaryFourth.getUTCDay() + 6) % 7) + (week - 1) * 7,
+  );
+  const thursday = new Date(monday);
+  thursday.setUTCDate(monday.getUTCDate() + 3);
+  if (weekKeyForDate(isoDate(thursday)) !== weekKey) throw new Error('Invalid ISO week key.');
+  const sunday = new Date(monday);
+  sunday.setUTCDate(monday.getUTCDate() + 6);
+  return Object.freeze({ endDate: isoDate(sunday), startDate: isoDate(monday), weekKey });
+}
+
+export function currentShanghaiWeekIdentity(now = new Date()): WeekIdentity {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+  }).formatToParts(now);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value ?? '';
+  return weekIdentity(weekKeyForDate(`${part('year')}-${part('month')}-${part('day')}`));
+}
+
+export function nextWeekIdentity(identity: WeekIdentity): WeekIdentity {
+  const monday = new Date(`${identity.startDate}T00:00:00Z`);
+  monday.setUTCDate(monday.getUTCDate() + 7);
+  return weekIdentity(weekKeyForDate(isoDate(monday)));
+}
+
+export function isPlanWeekConsistent(plan: {
+  readonly weekKey: string;
+  readonly candidates: readonly { readonly date: string }[];
+}): boolean {
+  return plan.candidates.every(
+    ({ date }) => /^\d{4}-\d{2}-\d{2}$/u.test(date) && weekKeyForDate(date) === plan.weekKey,
+  );
+}
+
 export type PlanFilter = 'all' | 'pending' | 'conflict';
 export interface ReviewItem {
   readonly kind: '内容' | '排程' | '互动';
@@ -127,27 +191,26 @@ export function AppFrame({
   readonly notify: (message: string) => void;
 }): React.JSX.Element {
   const { session } = useV2Controller();
-  const [providerStatus, setProviderStatus] = useState<'PENDING' | 'READY' | 'UNAVAILABLE'>(
-    window.rednoteV2 === undefined ? 'UNAVAILABLE' : 'PENDING',
-  );
+  const [providerStatus, setProviderStatus] = useState<
+    'CONFIGURE' | 'READY' | 'UNAVAILABLE' | 'VERIFY'
+  >(window.rednoteV2 === undefined ? 'UNAVAILABLE' : 'CONFIGURE');
   useEffect(() => {
     const bridge = window.rednoteV2;
     if (bridge === undefined) return;
-    if (bridge.readProviderSettings === undefined) return setProviderStatus('PENDING');
+    if (bridge.readProviderSettings === undefined) return setProviderStatus('CONFIGURE');
     void bridge.readProviderSettings().then((result) => {
-      if (!result.ok) return setProviderStatus('PENDING');
+      if (!result.ok) return setProviderStatus('CONFIGURE');
       const settings = result.value;
       setProviderStatus(
         settings.providerConfigured &&
           settings.credentialState === 'CONFIGURED' &&
           settings.research.state === 'SUPPORTED' &&
           settings.writing.state === 'SUPPORTED' &&
-          settings.accounting.priceReadyForWeeklyPlan &&
-          settings.accounting.priceReadyForContent &&
-          settings.accounting.priceReadyForReply &&
-          !settings.accounting.hardStop
+          settings.image?.state === 'SUPPORTED'
           ? 'READY'
-          : 'PENDING',
+          : settings.providerConfigured && settings.credentialState === 'CONFIGURED'
+            ? 'VERIFY'
+            : 'CONFIGURE',
       );
     });
   }, [activeRoute]);
@@ -161,9 +224,11 @@ export function AppFrame({
         <strong className="v2-mock-label">
           {providerStatus === 'READY'
             ? '本地工作区已连接 · AI 服务已就绪'
-            : providerStatus === 'PENDING'
-              ? '本地工作区已连接 · AI 服务待配置'
-              : '本地工作区未连接 · AI 服务不可用'}
+            : providerStatus === 'VERIFY'
+              ? '本地工作区已连接 · AI 能力待验证'
+              : providerStatus === 'CONFIGURE'
+                ? '本地工作区已连接 · AI 服务待配置'
+                : '本地工作区未连接 · AI 服务不可用'}
         </strong>
       </header>
       <div className="v2-app-body">

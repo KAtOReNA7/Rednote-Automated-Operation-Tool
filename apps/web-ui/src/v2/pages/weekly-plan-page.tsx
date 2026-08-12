@@ -1,6 +1,15 @@
 import { useEffect, useState } from 'react';
 
-import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
+import {
+  Button,
+  Icon,
+  PageHeader,
+  StatusPill,
+  currentShanghaiWeekIdentity,
+  isPlanWeekConsistent,
+  nextWeekIdentity,
+  useV2Controller,
+} from '../components.js';
 import { withPersistedWeeklyPlan } from '../mock-provider.js';
 import { ProviderActionControl } from '../provider-action-control.js';
 
@@ -12,26 +21,17 @@ function shortDate(value: string): string {
   return `${String(Number(month))}/${String(Number(day))}`;
 }
 
-function nextWeekKey(value: string): string {
-  const year = Number(value.slice(0, 4));
-  const week = Number(value.slice(6));
-  const januaryFourth = new Date(Date.UTC(year, 0, 4));
-  const monday = new Date(januaryFourth);
-  monday.setUTCDate(januaryFourth.getUTCDate() - ((januaryFourth.getUTCDay() + 6) % 7) + week * 7);
-  const thursday = new Date(monday);
-  thursday.setUTCDate(monday.getUTCDate() + 3);
-  const weekYear = thursday.getUTCFullYear();
-  const firstThursday = new Date(Date.UTC(weekYear, 0, 4));
-  firstThursday.setUTCDate(firstThursday.getUTCDate() + ((4 - firstThursday.getUTCDay() + 7) % 7));
-  const weekNumber = 1 + Math.round((thursday.getTime() - firstThursday.getTime()) / 604_800_000);
-  return `${weekYear}-W${String(weekNumber).padStart(2, '0')}`;
-}
-
 export function WeeklyPlanPage(): React.JSX.Element {
   const { notify, openDate, session, setSession, setUi, ui } = useV2Controller();
   const { planFilter: filter, planSelectedIds: selectedIds } = ui;
+  const currentWeek = currentShanghaiWeekIdentity();
+  const nextWeek = nextWeekIdentity(currentWeek);
   const locked = session.planStatus === 'CONFIRMED';
-  const targetWeekKey = locked ? nextWeekKey(session.weekKey) : session.weekKey;
+  const planConsistent = isPlanWeekConsistent({
+    candidates: session.plan,
+    weekKey: session.weekKey,
+  });
+  const targetWeekKey = nextWeek.weekKey;
   const [targetPlan, setTargetPlan] = useState<{
     readonly revision: number;
     readonly weekKey: string;
@@ -157,7 +157,9 @@ export function WeeklyPlanPage(): React.JSX.Element {
       <PageHeader
         actions={
           <ProviderActionControl
-            disabled={window.rednoteV2 !== undefined && targetRevision === null}
+            disabled={
+              window.rednoteV2 !== undefined && (targetRevision === null || !planConsistent)
+            }
             disabledReason="正在读取目标周的真实 revision。"
             intent={{
               expectedRevision: targetRevision ?? 0,
@@ -173,9 +175,21 @@ export function WeeklyPlanPage(): React.JSX.Element {
           />
         }
         description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
-        eyebrow={`目标周 ${targetWeekKey}${locked ? '（当前周已锁定）' : ''}`}
+        eyebrow={`当前周 ${currentWeek.weekKey} · ${currentWeek.startDate} 至 ${currentWeek.endDate}`}
         title="本周计划"
       />
+      {!planConsistent ? (
+        <section className="v2-locked-banner" role="alert">
+          <Icon name="warning-circle" />
+          <div>
+            <strong>本地计划日期与周标识不一致</strong>
+            <p>请使用现有日期编辑并保存后再生成；系统不会猜测或覆盖你的计划。</p>
+          </div>
+        </section>
+      ) : null}
+      <p className="v2-plan-boundary">
+        下周预览目标：{nextWeek.weekKey} · {nextWeek.startDate} 至 {nextWeek.endDate}。
+      </p>
       <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
       {locked ? (
         <section className="v2-locked-banner" role="status">

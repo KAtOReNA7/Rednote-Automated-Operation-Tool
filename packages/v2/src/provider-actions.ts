@@ -75,6 +75,9 @@ export interface V2ProviderActionPreview {
   readonly requestCount: 1;
   readonly searchEnabled: false;
   readonly summary: string;
+  readonly targetEndDate?: string;
+  readonly targetStartDate?: string;
+  readonly targetWeekKey?: string;
 }
 
 export type V2ProviderActionReadiness = Omit<

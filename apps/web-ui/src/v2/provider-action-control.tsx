@@ -123,6 +123,14 @@ export function ProviderActionControl({
           <strong>调用前预览</strong>
           <p>{preview.summary}</p>
           <dl>
+            {preview.targetWeekKey === undefined ? null : (
+              <div>
+                <dt>目标周</dt>
+                <dd>
+                  {preview.targetWeekKey} · {preview.targetStartDate} 至 {preview.targetEndDate}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Provider</dt>
               <dd>{preview.providerConfigured ? '已配置' : '未配置'}</dd>

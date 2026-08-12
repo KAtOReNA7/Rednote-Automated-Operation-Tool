@@ -9,6 +9,7 @@ import {
   V2ControllerContext,
   type ReviewItem,
   type V2UiState,
+  currentShanghaiWeekIdentity,
 } from './components.js';
 import {
   v2MockProvider,
@@ -30,7 +31,8 @@ import { SettingsPage } from './pages/settings-page.js';
 import { WeeklyPlanPage } from './pages/weekly-plan-page.js';
 
 const V2_SMOKE_PREFIX = '__V2_R01_SMOKE__:';
-const V2_DEFAULT_WEEK_KEY = '2026-W31';
+const currentWeekKey = (): string => currentShanghaiWeekIdentity().weekKey;
+const V2_SMOKE_WEEK_KEY = '2026-W31';
 
 function restoreSession(
   session: V2Session,
@@ -109,8 +111,8 @@ export function V2App(): React.JSX.Element {
     let cancelled = false;
     void Promise.all([
       bridge.readPersona(),
-      bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
-      bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY }),
+      bridge.readWeeklyPlan({ weekKey: currentWeekKey() }),
+      bridge.readContentPackages({ weekKey: currentWeekKey() }),
       bridge.readInteractions(),
     ]).then(([persona, plan, content, interactions]) => {
       if (cancelled || !persona.ok || !plan.ok || !content.ok || !interactions.ok) return;
@@ -136,22 +138,22 @@ export function V2App(): React.JSX.Element {
     void (async () => {
       if (bridge === undefined) throw new Error('V2 bridge unavailable');
       const [planRead, contentRead] = await Promise.all([
-        bridge.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY }),
-        bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY }),
+        bridge.readWeeklyPlan({ weekKey: V2_SMOKE_WEEK_KEY }),
+        bridge.readContentPackages({ weekKey: V2_SMOKE_WEEK_KEY }),
       ]);
       if (!planRead.ok || !contentRead.ok) throw new Error('V2 read failed');
       let packages = contentRead.value.packages;
       if (packages.length === 0) {
         const locked = await bridge.lockWeeklyPlan({
           expectedRevision: planRead.value.revision,
-          weekKey: V2_DEFAULT_WEEK_KEY,
+          weekKey: V2_SMOKE_WEEK_KEY,
         });
         if (!locked.ok) throw new Error('V2 setup failed');
         const generated = await bridge.generateContentPackages({
           candidateIds: ['mon-1', 'tue-2', 'sun-2'],
           expectedPlanRevision: locked.value.revision,
           idempotencyKey: 'content-r04-smoke',
-          weekKey: V2_DEFAULT_WEEK_KEY,
+          weekKey: V2_SMOKE_WEEK_KEY,
         });
         if (!generated.ok || generated.value.packages[0] === undefined)
           throw new Error('V2 generation failed');
@@ -162,7 +164,7 @@ export function V2App(): React.JSX.Element {
           fields: { ...first.fields, title: `${first.fields.title}（smoke 修订）` },
           packageId: first.id,
         });
-        const refreshed = await bridge.readContentPackages({ weekKey: V2_DEFAULT_WEEK_KEY });
+        const refreshed = await bridge.readContentPackages({ weekKey: V2_SMOKE_WEEK_KEY });
         if (!saved.ok || !refreshed.ok) throw new Error('V2 edit failed');
         packages = refreshed.value.packages;
       }

@@ -966,7 +966,10 @@ function dateText(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function mondayOfIsoWeek(value: string): Date {
+export function weekDateRange(value: string): {
+  readonly endDate: string;
+  readonly startDate: string;
+} {
   const validated = weekKey(value);
   const year = Number(validated.slice(0, 4));
   const week = Number(validated.slice(6));
@@ -976,7 +979,13 @@ function mondayOfIsoWeek(value: string): Date {
   if (isoWeekKey(januaryFourth) !== validated) {
     throw new V2ContractError('INVALID_REQUEST', ['weekKey']);
   }
-  return januaryFourth;
+  const sunday = new Date(januaryFourth);
+  sunday.setUTCDate(januaryFourth.getUTCDate() + 6);
+  return Object.freeze({ endDate: dateText(sunday), startDate: dateText(januaryFourth) });
+}
+
+function mondayOfIsoWeek(value: string): Date {
+  return new Date(`${weekDateRange(value).startDate}T00:00:00.000Z`);
 }
 
 function isoWeekKey(date: Date): string {
@@ -1391,8 +1400,16 @@ export class V2ApplicationFacade {
   }
 
   #readPlan(requestedWeekKey: string): WeeklyPlan {
+    const monday = mondayOfIsoWeek(requestedWeekKey);
     return this.#repository.getOrCreateWeeklyPlan(
-      { ...DEFAULT_WEEKLY_PLAN, weekKey: requestedWeekKey },
+      {
+        ...DEFAULT_WEEKLY_PLAN,
+        candidates: DEFAULT_WEEKLY_PLAN.candidates.map((candidate, index) => ({
+          ...candidate,
+          date: dateText(new Date(monday.getTime() + Math.floor(index / 3) * 86_400_000)),
+        })),
+        weekKey: requestedWeekKey,
+      },
       DEFAULT_ACCOUNT_PERSONA,
     );
   }
