@@ -50,9 +50,11 @@ function projectProgress(content: string): ProjectProgress | null {
 }
 
 describe('repository-facing documentation', () => {
-  it('keeps the README focused on the accepted V2 path and links legacy details instead', () => {
-    expect(readme).toContain('V2-R01—R05 已验收');
-    expect(readme).toMatch(/下一步(?:是)?\s*V2-R06/u);
+  it('keeps the README focused on the current V2 path and links legacy details instead', () => {
+    expect(readme).toContain('V2-R01—R06 已验收');
+    expect(readme).toMatch(/R07.+兼容修复与.+复验中/u);
+    expect(readme).toMatch(/R07.+验收后.+V2-D-FINAL/su);
+    expect(readme).not.toMatch(/R07.{0,12}已验收/u);
     expect(readme).toContain('V2-D-FINAL');
     expect(readme).toContain('R07');
     expect(readme).toContain('R08');
