@@ -55,6 +55,7 @@ export function encodeChatCompletionsText(
   const body: Record<string, JsonObject[keyof JsonObject]> = {
     messages: chatTextMessages(request),
     model: context.modelId,
+    stream: false,
     ...optionsToJson(request.options, 'CHAT_COMPLETIONS'),
   };
   if (schema !== undefined) {

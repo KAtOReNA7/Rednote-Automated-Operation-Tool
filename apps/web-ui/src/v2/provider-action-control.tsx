@@ -123,6 +123,14 @@ export function ProviderActionControl({
           <strong>调用前预览</strong>
           <p>{preview.summary}</p>
           <dl>
+            {preview.targetWeekKey === undefined ? null : (
+              <div>
+                <dt>目标周</dt>
+                <dd>
+                  {preview.targetWeekKey} · {preview.targetStartDate} 至 {preview.targetEndDate}
+                </dd>
+              </div>
+            )}
             <div>
               <dt>Provider</dt>
               <dd>{preview.providerConfigured ? '已配置' : '未配置'}</dd>
@@ -142,6 +150,10 @@ export function ProviderActionControl({
             <div>
               <dt>结构化输出</dt>
               <dd>{capabilityLabels[preview.capabilityState]}</dd>
+            </div>
+            <div>
+              <dt>执行协议</dt>
+              <dd>{preview.protocolMode ?? '未选择'}</dd>
             </div>
             <div>
               <dt>外部请求</dt>
@@ -169,6 +181,7 @@ export function ProviderActionControl({
           {preview.blockReasons.length === 0 ? null : (
             <div className="v2-provider-blockers" role="alert">
               <strong>暂时不能执行</strong>
+              <p>{preview.reasonMessage}</p>
               <ul>
                 {preview.blockReasons.map((reason) => (
                   <li key={reason}>{reason}</li>

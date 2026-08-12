@@ -231,6 +231,7 @@ async function startV2Application(
     nodeVersion: process.versions.node,
   });
   await settingsRuntime.initialize();
+  await settingsRuntime.ensureV2Project(join(app.getPath('userData'), 'v2-project-data'));
   const runtime = await V2DesktopRuntime.open(app.getPath('userData'), {
     providerExecution: {
       execute: (request) => settingsRuntime.executeV2ProviderAction(request),

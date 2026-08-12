@@ -430,26 +430,27 @@ export class SqliteModelAccountingRepository {
       const settings = this.#database
         .prepare(`SELECT monthly_hard_limit_cents FROM app_settings WHERE id='app'`)
         .get() as RunRow;
-      if (input.reservedAmountMicroUsd !== null) {
-        const known = this.#database
-          .prepare(
-            `SELECT coalesce(sum(amount_microusd),0) AS value FROM cost_ledger
+      const known = this.#database
+        .prepare(
+          `SELECT coalesce(sum(amount_microusd),0) AS value FROM cost_ledger
              WHERE billing_month=? AND amount_microusd IS NOT NULL`,
-          )
-          .get(input.billingMonth) as RunRow;
-        const held = this.#database
-          .prepare(
-            `SELECT coalesce(sum(reserved_amount_microusd),0) AS value
+        )
+        .get(input.billingMonth) as RunRow;
+      const held = this.#database
+        .prepare(
+          `SELECT coalesce(sum(reserved_amount_microusd),0) AS value
              FROM model_budget_reservations WHERE billing_month=?
                AND status IN ('ACTIVE','UNCERTAIN_COMMITTED')
                AND reserved_amount_microusd IS NOT NULL`,
-          )
-          .get(input.billingMonth) as RunRow;
-        const hard = (settings.monthly_hard_limit_cents as number) * 10_000;
-        if (
-          (known.value as number) + (held.value as number) + input.reservedAmountMicroUsd >=
-          hard
-        ) {
+        )
+        .get(input.billingMonth) as RunRow;
+      const hard = (settings.monthly_hard_limit_cents as number) * 10_000;
+      const committed = (known.value as number) + (held.value as number);
+      if (committed >= hard) {
+        throw new Error('BUDGET_HARD_LIMIT_REACHED');
+      }
+      if (input.reservedAmountMicroUsd !== null) {
+        if (committed + input.reservedAmountMicroUsd >= hard) {
           throw new Error('BUDGET_HARD_LIMIT_REACHED');
         }
       } else if (

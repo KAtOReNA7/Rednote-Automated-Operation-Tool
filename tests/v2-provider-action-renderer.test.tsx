@@ -28,6 +28,29 @@ function expose(methods: Partial<V2Bridge>): void {
 }
 
 describe('V2 R07 provider action renderer', () => {
+  it('shows a retryable error instead of an endless provider-settings loader', async () => {
+    expose({
+      ...createMemoryV2Bridge(),
+      readProviderSettings: async () => ({
+        error: {
+          affectedFields: [],
+          code: 'SETTINGS_NOT_READY',
+          message: '本地项目数据尚未就绪。',
+          severity: 'WARNING',
+          suggestedAction: '重试读取',
+        },
+        ok: false,
+      }),
+    });
+    window.history.replaceState(null, '', '#/v2/settings');
+    const user = userEvent.setup();
+    render(<V2App />);
+    expect(await screen.findByRole('alert')).toHaveTextContent('本地项目数据尚未就绪。');
+    expect(screen.queryByText(/正在读取本机设置/)).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '重试读取 AI 设置' }));
+    expect(screen.getByRole('alert')).toBeVisible();
+  });
+
   it('requires preview and explicit confirmation and lets the user cancel without execution', async () => {
     const previewProviderAction = vi.fn(
       async (input) =>
@@ -40,6 +63,8 @@ describe('V2 R07 provider action renderer', () => {
             budgetState: 'UNKNOWN',
             canConfirm: input.userApprovedUnknownCost === true,
             capabilityState: 'SUPPORTED',
+            configFingerprint: 'fixture-config',
+            credentialBinding: 'fixture-credential',
             credentialState: 'CONFIGURED',
             expiresAt: '2026-08-09T12:02:00.000Z',
             feeEstimateMicroUsd: null,
@@ -47,8 +72,12 @@ describe('V2 R07 provider action renderer', () => {
             kind: 'WEEKLY_PLAN',
             modelId: 'research-model',
             modelSlot: 'research',
+            protocolMode: 'CHAT_COMPLETIONS',
             previewToken: input.userApprovedUnknownCost ? 'preview-token' : null,
             providerConfigured: true,
+            readinessBinding: 'fixture-ready',
+            reasonCode: input.userApprovedUnknownCost ? 'READY' : 'UNKNOWN_FEE_CONSENT_REQUIRED',
+            reasonMessage: 'fixture',
             requestCount: 1,
             searchEnabled: false,
             summary: '使用 research 模型槽生成下一周计划候选。',
@@ -115,11 +144,11 @@ describe('V2 R07 provider action renderer', () => {
       credentialState: 'NOT_CONFIGURED',
       providerBaseUrl: 'https://provider.example/v1',
       providerConfigured: true,
-      research: { modelId: 'research-v1', state: 'STALE' },
+      research: { modelId: 'research-v1', protocolMode: null, state: 'STALE' },
       revision: 1,
       setupAvailable: true,
-      writing: { modelId: 'writing-v1', state: 'UNSUPPORTED' },
-      image: { modelId: 'image-v1', state: 'UNKNOWN' },
+      writing: { modelId: 'writing-v1', protocolMode: null, state: 'UNSUPPORTED' },
+      image: { modelId: 'image-v1', protocolMode: null, state: 'UNKNOWN' },
     };
     const updateProviderSettings = vi.fn(async (input) => {
       settings = {
@@ -129,7 +158,7 @@ describe('V2 R07 provider action renderer', () => {
         revision: settings.revision + 1,
         writing: { ...settings.writing, modelId: input.writingModelId },
         image: {
-          ...(settings.image ?? { state: 'UNKNOWN' as const }),
+          ...(settings.image ?? { protocolMode: null, state: 'UNKNOWN' as const }),
           modelId: input.imageModelId,
         },
       };
@@ -318,13 +347,17 @@ describe('V2 R07 provider action renderer', () => {
           {
             capability: 'imageGeneration',
             deduplicated: false,
-            diagnosticCode: 'OUTPUT_VARIANT_UNSUPPORTED',
-            httpStatus: 200,
+            diagnosticCode: 'AMBIGUOUS_OUTCOME',
+            errorCode: 'invalid_parameter',
+            errorParam: 'size',
+            errorType: 'invalid_request_error',
+            httpStatus: 400,
             mappedSlots: ['image'],
             modelId: 'image-model',
             observedAt: '2026-08-10T00:00:02.000Z',
             protocolMode: 'NOT_APPLICABLE',
-            reason: '图片仅返回 URL，未提供允许的 inline 图片证据。',
+            reason: 'Provider 拒绝了请求参数（HTTP 400）；能力保持未知。',
+            requestId: 'req_fixture_123',
             sent: true,
             stale: false,
             state: 'UNKNOWN',
@@ -333,13 +366,13 @@ describe('V2 R07 provider action renderer', () => {
         summaryState: 'PARTIAL',
       },
       credentialState: 'CONFIGURED',
-      image: { modelId: 'image-model', state: 'UNKNOWN' },
+      image: { modelId: 'image-model', protocolMode: null, state: 'UNKNOWN' },
       providerBaseUrl: 'https://provider.example/v1',
       providerConfigured: true,
-      research: { modelId: 'shared-model', state: 'SUPPORTED' },
+      research: { modelId: 'shared-model', protocolMode: 'RESPONSES', state: 'SUPPORTED' },
       revision: 1,
       setupAvailable: true,
-      writing: { modelId: 'shared-model', state: 'SUPPORTED' },
+      writing: { modelId: 'shared-model', protocolMode: 'RESPONSES', state: 'SUPPORTED' },
     };
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -356,7 +389,10 @@ describe('V2 R07 provider action renderer', () => {
     expect(await screen.findByText(/部分完成：仍有能力保持未知/)).toBeVisible();
     expect(screen.getByText(/research \+ writing/)).toBeVisible();
     expect(screen.getByText(/同一请求已去重并映射到 research、writing/)).toBeVisible();
-    expect(screen.getByText(/图片仅返回 URL/)).toBeVisible();
+    expect(screen.getByText(/Provider 拒绝了请求参数/)).toBeVisible();
+    expect(screen.getByText(/code=invalid_parameter/)).toBeVisible();
+    expect(screen.getByText(/param=size/)).toBeVisible();
+    expect(screen.getByText(/requestId=req_fixture_123/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: '复制脱敏诊断' }));
     expect(writeText).toHaveBeenCalledWith(diagnosticText);
     expect(diagnosticText).not.toMatch(
@@ -371,8 +407,8 @@ describe('V2 R07 provider action renderer', () => {
         steps: settings.capabilityProbe.steps.map((step) => ({ ...step, state: 'UNKNOWN' })),
         summaryState: 'NONE_CONFIRMED',
       },
-      research: { modelId: 'shared-model', state: 'UNKNOWN' },
-      writing: { modelId: 'shared-model', state: 'UNKNOWN' },
+      research: { modelId: 'shared-model', protocolMode: null, state: 'UNKNOWN' },
+      writing: { modelId: 'shared-model', protocolMode: null, state: 'UNKNOWN' },
     };
     render(<V2App />);
     expect(await screen.findByText('未确认任何能力')).toBeVisible();
@@ -387,6 +423,8 @@ describe('V2 R07 provider action renderer', () => {
         budgetState: 'ALLOWED',
         canConfirm: true,
         capabilityState: 'SUPPORTED',
+        configFingerprint: 'fixture-config',
+        credentialBinding: 'fixture-credential',
         credentialState: 'CONFIGURED',
         expiresAt: '2026-08-09T12:02:00.000Z',
         feeEstimateMicroUsd: '4200',
@@ -394,8 +432,12 @@ describe('V2 R07 provider action renderer', () => {
         kind: 'REPLY_SUGGESTION',
         modelId: 'writing-model',
         modelSlot: 'writing',
+        protocolMode: 'RESPONSES',
         previewToken: 'preview-token',
         providerConfigured: true,
+        readinessBinding: 'fixture-ready',
+        reasonCode: 'READY',
+        reasonMessage: 'ready',
         requestCount: 1,
         searchEnabled: false,
         summary: '生成回复建议。',

@@ -5,6 +5,12 @@ import {
   type CapabilityProbeTransport,
 } from './capability-probe-contracts.js';
 import { normalizeCapabilityProbeBaseUrl } from './capability-probe-plan.js';
+import {
+  normalizeOpenAICompatibleResponse,
+  OpenAIResponseNormalizationError,
+  safeReceivedContentType,
+  type OpenAIResponseTransportVariant,
+} from './openai-response-normalizer.js';
 
 export type CapabilityProbeFetch = (
   input: string | URL | globalThis.Request,
@@ -21,6 +27,8 @@ const ALLOWED_PATHS = new Set([
 const ALLOWED_RESPONSE_HEADERS = Object.freeze([
   'allow',
   'content-type',
+  'request-id',
+  'x-request-id',
   'x-batch-capabilities',
   'x-ratelimit-limit-requests',
   'x-ratelimit-limit-tokens',
@@ -97,8 +105,12 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
         credentials: 'omit',
         headers: {
           Accept:
-            request.path === '/responses'
-              ? 'application/json, text/event-stream'
+            request.body !== null &&
+            typeof request.body === 'object' &&
+            !Array.isArray(request.body) &&
+            'stream' in request.body &&
+            request.body.stream === true
+              ? 'text/event-stream'
               : 'application/json',
           Authorization: `Bearer ${request.credential}`,
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -131,6 +143,10 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
       }
       const chunks: Uint8Array[] = [];
       let total = 0;
+      const maxResponseBodyBytes =
+        request.path === '/images/generations'
+          ? CAPABILITY_PROBE_LIMITS.maxImageResponseBodyBytes
+          : CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes;
       try {
         while (true) {
           const next = await reader.read();
@@ -138,7 +154,7 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
             break;
           }
           total += next.value.byteLength;
-          if (total > CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes) {
+          if (total > maxResponseBodyBytes) {
             await reader.cancel().catch(() => undefined);
             throw errorWithCode('Capability probe response body is too large.', 'EBODYSIZE');
           }
@@ -153,10 +169,38 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
         bytes.set(chunk, offset);
         offset += chunk.byteLength;
       }
+      let decodedBody = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      let receivedContentType = safeReceivedContentType(headers['content-type']);
+      let transportVariant: OpenAIResponseTransportVariant = 'REJECTED';
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        (request.path === '/responses' || request.path === '/chat/completions')
+      ) {
+        try {
+          const normalized = normalizeOpenAICompatibleResponse({
+            body: decodedBody,
+            contentType: headers['content-type'],
+            maxBodyBytes: CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes,
+            protocol: request.path === '/chat/completions' ? 'CHAT_COMPLETIONS' : 'RESPONSES',
+          });
+          decodedBody = normalized.body;
+          receivedContentType = normalized.receivedContentType;
+          transportVariant = normalized.transportVariant;
+        } catch (error) {
+          if (error instanceof OpenAIResponseNormalizationError) {
+            receivedContentType = error.receivedContentType;
+          } else {
+            throw error;
+          }
+        }
+      }
       return {
-        body: new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+        body: decodedBody,
         headers,
+        receivedContentType,
         status: response.status,
+        transportVariant,
       };
     } catch (error) {
       if (controller.signal.aborted) {

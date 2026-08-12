@@ -80,6 +80,37 @@ describe('Issue 013 conservative capability classifier', () => {
     });
   });
 
+  it('keeps HTTP 400 parameter rejection unknown with bounded safe diagnostics only', () => {
+    const observed = classifyCapabilityProbeResponse(
+      STEP,
+      {
+        body: JSON.stringify({
+          error: {
+            code: 'invalid_parameter\nignored',
+            message: 'raw secret-like response detail',
+            param: 'response_format',
+            type: 'invalid_request_error',
+          },
+        }),
+        headers: { 'content-type': 'application/json', 'x-request-id': 'req_fixture_123' },
+        status: 400,
+      },
+      NOW,
+    )[0];
+    expect(observed).toMatchObject({
+      reasonCode: 'AMBIGUOUS_OUTCOME',
+      safeDetails: {
+        errorCode: 'invalid_parameterignored',
+        errorParam: 'response_format',
+        errorType: 'invalid_request_error',
+        requestId: 'req_fixture_123',
+        status: 400,
+      },
+      state: 'UNKNOWN',
+    });
+    expect(JSON.stringify(observed)).not.toContain('raw secret-like response detail');
+  });
+
   it('classifies model identity, model lookup, and route mismatches without raw payloads', () => {
     expect(
       classifyCapabilityProbeResponse(
@@ -130,6 +161,49 @@ describe('Issue 013 conservative capability classifier', () => {
     expect(
       classifyCapabilityProbeFailure(STEP, Object.assign(new Error(), { code: 'ENOTFOUND' }), NOW),
     ).toMatchObject({ reasonCode: 'NETWORK_UNREACHABLE', state: 'UNKNOWN' });
+  });
+
+  it.each([
+    [
+      'RESPONSES',
+      'text/plain',
+      { output_text: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }) },
+    ],
+    [
+      'CHAT_COMPLETIONS',
+      'application/octet-stream',
+      {
+        choices: [
+          { message: { content: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }) } },
+        ],
+      },
+    ],
+  ] as const)(
+    'accepts strongly verified %s JSON under safe nonstandard MIME',
+    (protocolMode, contentType, body) => {
+      const observed = classifyCapabilityProbeResponse(
+        { ...STEP, capability: 'structuredJson', kind: 'STRUCTURED', protocolMode },
+        response(200, body, contentType),
+        NOW,
+      )[0];
+      expect(observed).toMatchObject({
+        safeDetails: {
+          receivedContentType: contentType,
+          transportVariant: 'NONSTANDARD_MIME_JSON',
+        },
+        state: 'SUPPORTED',
+      });
+    },
+  );
+
+  it('never treats a 2xx error envelope as structured capability evidence', () => {
+    expect(
+      classifyCapabilityProbeResponse(
+        { ...STEP, capability: 'structuredJson', kind: 'STRUCTURED' },
+        response(200, { error: { code: 'relay_error' } }, 'text/plain'),
+        NOW,
+      )[0],
+    ).toMatchObject({ state: 'UNKNOWN' });
   });
 
   it('never downloads URL-only image output', () => {

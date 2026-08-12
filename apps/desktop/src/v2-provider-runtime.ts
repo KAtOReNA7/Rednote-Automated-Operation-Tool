@@ -18,6 +18,7 @@ import { ModelResultCacheStore, type ProjectDataRoot } from '@mystery-operations
 import {
   V2_PROVIDER_OUTPUT_JSON_SCHEMAS,
   parseV2ProviderActionOutput,
+  selectV2StructuredProtocol,
   type V2ProviderActionExecutionRequest,
   type V2ProviderActionExecutionResult,
   type V2ProviderActionKind,
@@ -33,6 +34,8 @@ import {
   type UsageObservationV1,
   utcBillingMonth,
 } from '@mystery-operations/workflows';
+
+import { createHash } from 'node:crypto';
 
 import type { ProviderCapabilityRuntime } from './provider-capability-runtime.js';
 import type { ElectronCredentialStore } from './credential-store.js';
@@ -101,6 +104,10 @@ function imageDemandUpperBound(input: Readonly<Record<string, unknown>>) {
   });
 }
 
+function opaqueBinding(value: string | null): string | null {
+  return value === null ? null : createHash('sha256').update(value).digest('hex');
+}
+
 export class V2ProviderRuntime implements V2ProviderExecutionPort {
   readonly #accounting: SqliteModelAccountingRepository;
   readonly #capabilities: ProviderCapabilityRuntime;
@@ -152,7 +159,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         },
         request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson',
       );
-      if (capability.protocolMode === 'NOT_APPLICABLE') {
+      if (capability.protocolMode === null) {
         throw new Error('PROVIDER_PROTOCOL_NOT_CONFIGURED');
       }
       protocolMode = capability.protocolMode;
@@ -259,7 +266,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
               request.kind === 'CONTENT_COVER'
                 ? ('imageGeneration' as const)
                 : ('structuredJson' as const),
-            protocolMode: 'NOT_APPLICABLE' as const,
+            protocolMode: null,
             stale: false,
             state: 'UNKNOWN' as const,
           }
@@ -276,13 +283,15 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
           : ('UNKNOWN' as const);
     let feeEstimateMicroUsd: string | null = null;
     let budgetState: V2ProviderActionReadiness['budgetState'] = 'UNKNOWN';
-    if (providerConfigured && modelId !== null && capability.protocolMode !== 'NOT_APPLICABLE') {
+    let rawConfigFingerprint: string | null = null;
+    if (providerConfigured && modelId !== null && capability.protocolMode !== null) {
       let fingerprint: string | null;
       try {
         fingerprint = this.#capabilities.getConfigFingerprint();
       } catch {
         fingerprint = null;
       }
+      rawConfigFingerprint = fingerprint;
       if (fingerprint !== null) {
         const schedule = this.#accounting.getActivePriceSchedule(
           fingerprint,
@@ -326,6 +335,54 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         }
       }
     }
+    const summary = this.#accounting.budgetSummary(utcBillingMonth(new Date()));
+    if (summary.hardStop) budgetState = 'BLOCKED';
+    const reasonCode = !providerConfigured
+      ? 'PROVIDER_NOT_CONFIGURED'
+      : credentialState !== 'CONFIGURED'
+        ? 'CREDENTIAL_NOT_CONFIGURED'
+        : capabilityState === 'STALE'
+          ? 'CAPABILITY_STALE'
+          : capabilityState === 'UNSUPPORTED'
+            ? 'CAPABILITY_UNSUPPORTED'
+            : capabilityState !== 'SUPPORTED'
+              ? 'CAPABILITY_UNKNOWN'
+              : budgetState === 'BLOCKED'
+                ? 'BUDGET_HARD_STOP'
+                : feeEstimateMicroUsd === null && !request.userApprovedUnknownCost
+                  ? 'UNKNOWN_FEE_CONSENT_REQUIRED'
+                  : 'READY';
+    const reasonMessage =
+      reasonCode === 'READY'
+        ? '可以确认并执行本次受控请求。'
+        : reasonCode === 'BUDGET_HARD_STOP'
+          ? '本地预算硬上限不允许本次调用。'
+          : reasonCode === 'UNKNOWN_FEE_CONSENT_REQUIRED'
+            ? '费用未知；请勾选后仅授权本次最多 1 个请求。'
+            : reasonCode === 'CAPABILITY_STALE'
+              ? '能力证据已过期，请重新验证。'
+              : reasonCode === 'CAPABILITY_UNSUPPORTED'
+                ? '当前模型不支持所需能力。'
+                : reasonCode === 'CAPABILITY_UNKNOWN'
+                  ? '所需能力尚未验证。'
+                  : reasonCode === 'CREDENTIAL_NOT_CONFIGURED'
+                    ? '凭据尚未配置或需要重新认证。'
+                    : 'Provider、Base URL 或模型槽尚未配置完整。';
+    const configFingerprint = opaqueBinding(rawConfigFingerprint);
+    const credentialBinding = opaqueBinding(
+      credentialState === 'CONFIGURED' ? (credential.updatedAt ?? 'configured') : null,
+    );
+    const readinessBinding = opaqueBinding(
+      JSON.stringify({
+        capabilityState,
+        configFingerprint,
+        credentialBinding,
+        feeEstimateMicroUsd,
+        modelId,
+        protocolMode: capability.protocolMode,
+        providerConfigured,
+      }),
+    ) as string;
     const blockReasons = [
       ...(providerConfigured ? [] : ['Provider、Base URL 或模型槽尚未配置完整。']),
       ...(credentialState === 'CONFIGURED'
@@ -348,19 +405,19 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     return Object.freeze({
       blockReasons: Object.freeze(blockReasons),
       budgetState,
-      canConfirm:
-        providerConfigured &&
-        credentialState === 'CONFIGURED' &&
-        capabilityState === 'SUPPORTED' &&
-        (feeEstimateMicroUsd !== null
-          ? budgetState === 'ALLOWED'
-          : request.userApprovedUnknownCost === true),
+      canConfirm: reasonCode === 'READY',
       capabilityState,
+      configFingerprint,
+      credentialBinding,
       credentialState,
       feeEstimateMicroUsd,
       modelId,
       modelSlot: request.modelSlot,
+      protocolMode: capability.protocolMode,
       providerConfigured,
+      readinessBinding,
+      reasonCode,
+      reasonMessage,
       unknownCostApproved: request.userApprovedUnknownCost === true,
     });
   }
@@ -485,30 +542,64 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         : request.modelSlot === 'image'
           ? 'IMAGE'
           : 'WRITING';
-    const entry = this.#capabilities
+    const entries = this.#capabilities
       .getState()
-      .entries.find(
+      .entries.filter(
         (candidate) =>
           candidate.capability === capability &&
           candidate.modelId === request.modelId &&
           candidate.modelSlot === modelSlot,
       );
-    if (entry === undefined) {
+    if (capability !== 'imageGeneration') {
+      const selected = selectV2StructuredProtocol(
+        entries
+          .filter(
+            (candidate) =>
+              candidate.protocolMode === 'RESPONSES' ||
+              candidate.protocolMode === 'CHAT_COMPLETIONS',
+          )
+          .map((candidate) => ({
+            protocolMode: candidate.protocolMode as 'CHAT_COMPLETIONS' | 'RESPONSES',
+            stale: candidate.stale,
+            state: candidate.state,
+          })),
+      );
       return {
-        capability:
-          capability === 'imageGeneration'
-            ? ('imageGeneration' as const)
-            : ('structuredJson' as const),
-        protocolMode: 'NOT_APPLICABLE' as const,
-        stale: false,
+        capability: 'structuredJson' as const,
+        protocolMode: selected.protocolMode,
+        stale: selected.state === 'STALE',
+        state: selected.state === 'STALE' ? ('UNKNOWN' as const) : selected.state,
+      };
+    }
+    const currentEntries = entries.filter((candidate) => !candidate.stale);
+    const supported =
+      currentEntries.find(
+        (candidate) => candidate.state === 'SUPPORTED' && candidate.protocolMode === 'RESPONSES',
+      ) ??
+      currentEntries.find(
+        (candidate) =>
+          candidate.state === 'SUPPORTED' && candidate.protocolMode === 'CHAT_COMPLETIONS',
+      ) ??
+      currentEntries.find((candidate) => candidate.state === 'SUPPORTED');
+    if (currentEntries.length === 0) {
+      return {
+        capability: 'imageGeneration' as const,
+        protocolMode: null,
+        stale: entries.length > 0,
         state: 'UNKNOWN' as const,
       };
     }
+    const state =
+      supported !== undefined
+        ? ('SUPPORTED' as const)
+        : currentEntries.every((candidate) => candidate.state === 'UNSUPPORTED')
+          ? ('UNSUPPORTED' as const)
+          : ('UNKNOWN' as const);
     return {
-      capability: entry.capability,
-      protocolMode: entry.protocolMode,
-      stale: entry.stale,
-      state: entry.state,
+      capability: 'imageGeneration' as const,
+      protocolMode: supported === undefined ? null : ('IMAGES_GENERATIONS' as const),
+      stale: false,
+      state,
     };
   }
 

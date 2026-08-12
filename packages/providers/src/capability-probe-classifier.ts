@@ -5,6 +5,10 @@ import {
   type ProbeReasonCode,
   type ProbeSafeDetails,
 } from './capability-probe-contracts.js';
+import {
+  normalizeOpenAICompatibleResponse,
+  OpenAIResponseNormalizationError,
+} from './openai-response-normalizer.js';
 
 const TEXT_MARKER = 'REDNOTE_CAPABILITY_OK';
 const STRUCTURED_MARKER = 'REDNOTE_STRUCTURED_OK';
@@ -28,6 +32,36 @@ function record(value: unknown): Readonly<Record<string, unknown>> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
     ? (value as Readonly<Record<string, unknown>>)
     : null;
+}
+
+function safeErrorField(value: unknown): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const filtered = [...value]
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return code > 31 && code !== 127;
+    })
+    .join('')
+    .trim()
+    .slice(0, 128);
+  return filtered.length === 0 ? undefined : filtered;
+}
+
+function httpSafeDetails(response: CapabilityProbeResponse, parsed: unknown): ProbeSafeDetails {
+  const error = record(record(parsed)?.error);
+  const errorCode = safeErrorField(error?.code);
+  const errorParam = safeErrorField(error?.param);
+  const errorType = safeErrorField(error?.type);
+  const requestId = safeErrorField(
+    response.headers['x-request-id'] ?? response.headers['request-id'],
+  );
+  return {
+    ...(errorCode === undefined ? {} : { errorCode }),
+    ...(errorParam === undefined ? {} : { errorParam }),
+    ...(errorType === undefined ? {} : { errorType }),
+    ...(requestId === undefined ? {} : { requestId }),
+    status: response.status,
+  };
 }
 
 function array(value: unknown): readonly unknown[] {
@@ -170,17 +204,25 @@ function httpFailure(
     return null;
   }
   if (response.status === 401) {
-    return observation(step, now, 'AUTHENTICATION_REJECTED', 'UNKNOWN', {
-      status: response.status,
-    });
+    return observation(
+      step,
+      now,
+      'AUTHENTICATION_REJECTED',
+      'UNKNOWN',
+      httpSafeDetails(response, parsed),
+    );
   }
   if (response.status === 403) {
-    return observation(step, now, 'PERMISSION_REJECTED', 'UNKNOWN', {
-      status: response.status,
-    });
+    return observation(
+      step,
+      now,
+      'PERMISSION_REJECTED',
+      'UNKNOWN',
+      httpSafeDetails(response, parsed),
+    );
   }
   if (response.status === 429) {
-    return observation(step, now, 'RATE_LIMITED', 'UNKNOWN', { status: response.status });
+    return observation(step, now, 'RATE_LIMITED', 'UNKNOWN', httpSafeDetails(response, parsed));
   }
   if (response.status === 404) {
     const error = record(record(parsed)?.error);
@@ -188,18 +230,18 @@ function httpFailure(
     const type = typeof error?.type === 'string' ? error.type.toLowerCase() : '';
     if (/(model[_-]?(not[_-]?found|unavailable)|unknown[_-]?model)/u.test(`${code} ${type}`)) {
       return observation(step, now, 'AMBIGUOUS_OUTCOME', 'UNKNOWN', {
+        ...httpSafeDetails(response, parsed),
         modelNotFound: 1,
-        status: response.status,
       });
     }
   }
   const negative = explicitNegativeReason(response.status, parsed);
   if (negative !== null) {
-    return observation(step, now, negative, 'UNSUPPORTED', { status: response.status });
+    return observation(step, now, negative, 'UNSUPPORTED', httpSafeDetails(response, parsed));
   }
   return observation(step, now, 'AMBIGUOUS_OUTCOME', 'UNKNOWN', {
+    ...httpSafeDetails(response, parsed),
     ...(response.status === 404 ? { endpointNotFound: 1 } : {}),
-    status: response.status,
   });
 }
 
@@ -323,19 +365,10 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
   response: CapabilityProbeResponse,
   now: string,
 ): readonly CapabilityProbeObservation[] {
-  const contentType = response.headers['content-type'] ?? '';
-  if (
-    response.status >= 200 &&
-    response.status < 300 &&
-    step.kind !== 'STREAMING' &&
-    step.kind !== 'BATCH_METADATA' &&
-    !/^application\/json(?:\s*;|$)/iu.test(contentType)
-  ) {
-    return [observation(step, now, 'INVALID_CONTENT_TYPE', 'UNKNOWN')];
-  }
+  const contentType = response.headers['content-type'];
   if (step.kind === 'STREAMING') {
     const supported =
-      /^text\/event-stream(?:\s*;|$)/iu.test(contentType) &&
+      /^text\/event-stream(?:\s*;|$)/iu.test(contentType ?? '') &&
       /data:\s*\{[\s\S]*\}/u.test(response.body);
     return [
       supported
@@ -355,7 +388,51 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
     ];
   }
 
-  const parsed = parseJson(response.body);
+  let normalizedBody = response.body;
+  let transportDetails: ProbeSafeDetails = {};
+  if (
+    response.status >= 200 &&
+    response.status < 300 &&
+    (step.kind === 'STRUCTURED' || step.kind === 'TEXT' || step.kind === 'VISION')
+  ) {
+    try {
+      if (response.transportVariant !== undefined && response.receivedContentType !== undefined) {
+        transportDetails = {
+          receivedContentType: response.receivedContentType,
+          transportVariant: response.transportVariant,
+        };
+      } else {
+        const normalized = normalizeOpenAICompatibleResponse({
+          body: response.body,
+          contentType,
+          maxBodyBytes: 2 * 1024 * 1024,
+          protocol: step.protocolMode === 'CHAT_COMPLETIONS' ? 'CHAT_COMPLETIONS' : 'RESPONSES',
+        });
+        normalizedBody = normalized.body;
+        transportDetails = {
+          receivedContentType: normalized.receivedContentType,
+          transportVariant: normalized.transportVariant,
+        };
+      }
+    } catch (error) {
+      if (error instanceof OpenAIResponseNormalizationError) {
+        return [
+          observation(
+            step,
+            now,
+            error.reason === 'INVALID_CONTENT_TYPE' ? 'INVALID_CONTENT_TYPE' : 'INVALID_JSON',
+            'UNKNOWN',
+            {
+              receivedContentType: error.receivedContentType,
+              transportVariant: 'REJECTED',
+            },
+          ),
+        ];
+      }
+      return [observation(step, now, 'INVALID_RESPONSE', 'UNKNOWN')];
+    }
+  }
+  const parsed = parseJson(normalizedBody);
   const failure = httpFailure(step, response, parsed.value, now);
   if (failure !== null) {
     return [failure];
@@ -411,8 +488,8 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
     const structured = parseJson(text);
     primary =
       structured.ok && record(structured.value)?.marker === STRUCTURED_MARKER
-        ? observation(step, now, 'NOT_PROBED', 'SUPPORTED')
-        : observation(step, now, 'SCHEMA_MISMATCH', 'UNKNOWN');
+        ? observation(step, now, 'NOT_PROBED', 'SUPPORTED', transportDetails)
+        : observation(step, now, 'SCHEMA_MISMATCH', 'UNKNOWN', transportDetails);
   } else if (step.kind === 'VISION') {
     primary = text.includes(VISION_MARKER)
       ? observation(step, now, 'NOT_PROBED', 'SUPPORTED')

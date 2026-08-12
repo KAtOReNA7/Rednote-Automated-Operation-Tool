@@ -61,6 +61,8 @@ export interface V2ProviderActionPreview {
   readonly budgetState: V2BudgetState;
   readonly canConfirm: boolean;
   readonly capabilityState: V2StructuredJsonState;
+  readonly configFingerprint: string | null;
+  readonly credentialBinding: string | null;
   readonly credentialState: V2CredentialState;
   readonly expiresAt: string;
   readonly feeEstimateMicroUsd: string | null;
@@ -68,12 +70,28 @@ export interface V2ProviderActionPreview {
   readonly kind: V2ProviderActionKind;
   readonly modelId: string | null;
   readonly modelSlot: V2ProviderModelSlot;
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly previewToken: string | null;
   readonly providerConfigured: boolean;
+  /** Opaque local snapshot used to bind a preview to its later confirmation. */
+  readonly readinessBinding: string;
+  readonly reasonCode:
+    | 'BUDGET_HARD_STOP'
+    | 'CAPABILITY_STALE'
+    | 'CAPABILITY_UNKNOWN'
+    | 'CAPABILITY_UNSUPPORTED'
+    | 'CREDENTIAL_NOT_CONFIGURED'
+    | 'PROVIDER_NOT_CONFIGURED'
+    | 'READY'
+    | 'UNKNOWN_FEE_CONSENT_REQUIRED';
+  readonly reasonMessage: string;
   readonly unknownCostApproved?: boolean;
   readonly requestCount: 1;
   readonly searchEnabled: false;
   readonly summary: string;
+  readonly targetEndDate?: string;
+  readonly targetStartDate?: string;
+  readonly targetWeekKey?: string;
 }
 
 export type V2ProviderActionReadiness = Omit<
@@ -127,11 +145,26 @@ export interface V2ProviderActionResult {
 }
 
 export type V2ProviderActionErrorCode =
+  | 'BUDGET_HARD_STOP'
+  | 'CAPABILITY_STALE'
+  | 'CAPABILITY_UNKNOWN'
+  | 'CAPABILITY_UNSUPPORTED'
+  | 'CREDENTIAL_NOT_CONFIGURED'
+  | 'PROVIDER_NOT_CONFIGURED'
   | 'PROVIDER_ACTION_BLOCKED'
   | 'PROVIDER_ACTION_CANCELLED'
+  | 'PROVIDER_ACTION_CONFIG_CHANGED'
+  | 'PROVIDER_ACTION_CREDENTIAL_CHANGED'
+  | 'PROVIDER_ACTION_EXPIRED'
+  | 'PROVIDER_ACTION_REPLAYED'
+  | 'PROVIDER_ACTION_SOURCE_CHANGED'
   | 'PROVIDER_ACTION_STALE'
+  | 'PROVIDER_ACTION_TARGET_WEEK_CHANGED'
   | 'PROVIDER_ACTION_TOKEN_INVALID'
   | 'PROVIDER_ACTION_UNCERTAIN'
+  | 'PROVIDER_ACTION_UNKNOWN_FEE_CONSENT_REQUIRED'
+  | 'PROVIDER_ACTION_BUDGET_HARD_STOP'
+  | 'UNKNOWN_FEE_CONSENT_REQUIRED'
   | 'PROVIDER_OUTPUT_INVALID';
 
 export class V2ProviderActionError extends Error {
@@ -423,8 +456,47 @@ export type V2CredentialState = 'CONFIGURED' | 'NOT_CONFIGURED' | 'REAUTH_REQUIR
 export type V2StructuredJsonState = 'STALE' | 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
 export type V2BudgetState = 'ALLOWED' | 'BLOCKED' | 'UNKNOWN';
 
+export interface V2StructuredProtocolCandidate {
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES';
+  readonly stale: boolean;
+  readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+}
+
+export function selectV2StructuredProtocol(
+  candidates: readonly V2StructuredProtocolCandidate[],
+): Readonly<{
+  protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' | null;
+  state: V2StructuredJsonState;
+}> {
+  const current = candidates.filter((candidate) => !candidate.stale);
+  if (current.length === 0) {
+    return Object.freeze({
+      protocolMode: null,
+      state: candidates.length > 0 ? ('STALE' as const) : ('UNKNOWN' as const),
+    });
+  }
+  const supported =
+    current.find(
+      (candidate) => candidate.state === 'SUPPORTED' && candidate.protocolMode === 'RESPONSES',
+    ) ??
+    current.find(
+      (candidate) =>
+        candidate.state === 'SUPPORTED' && candidate.protocolMode === 'CHAT_COMPLETIONS',
+    );
+  return Object.freeze({
+    protocolMode: supported?.protocolMode ?? null,
+    state:
+      supported !== undefined
+        ? ('SUPPORTED' as const)
+        : current.every((candidate) => candidate.state === 'UNSUPPORTED')
+          ? ('UNSUPPORTED' as const)
+          : ('UNKNOWN' as const),
+  });
+}
+
 export interface V2CapabilitySlotView {
   readonly modelId: string | null;
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly state: V2StructuredJsonState;
 }
 export interface V2CapabilityProbeProgress {
@@ -447,15 +519,22 @@ export interface V2CapabilityProbeStepDiagnostic {
   readonly capability: 'imageGeneration' | 'structuredJson';
   readonly deduplicated: boolean;
   readonly diagnosticCode: string;
+  readonly errorCode?: string | null;
+  readonly errorParam?: string | null;
+  readonly errorType?: string | null;
   readonly httpStatus: number | null;
   readonly mappedSlots: readonly V2ProviderModelSlot[];
   readonly modelId: string;
   readonly observedAt: string | null;
-  readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+  readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
+  readonly receivedContentType?: string | null;
+  readonly requestId?: string | null;
   readonly reason: string;
   readonly sent: boolean;
   readonly stale: boolean;
   readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+  readonly transportVariant?:
+    'NONSTANDARD_MIME_JSON' | 'REJECTED' | 'SSE_NORMALIZED' | 'STANDARD_JSON' | null;
 }
 export interface V2CapabilityProbeRunDiagnostic {
   readonly completedAt: string | null;

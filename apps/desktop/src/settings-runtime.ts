@@ -7,6 +7,7 @@ import type {
   LocalApiStatusView,
   PairingView,
 } from '@mystery-operations/local-api';
+import { selectV2StructuredProtocol } from '@mystery-operations/v2';
 
 import {
   MIGRATIONS,
@@ -219,6 +220,7 @@ const V2_R07_PROBE_SELECTION = Object.freeze({
   includeToolCalling: false,
   profile: 'CUSTOM' as const,
   selectedCapabilities: Object.freeze(['structuredJson', 'imageGeneration'] as const),
+  structuredProtocolModes: Object.freeze(['RESPONSES', 'CHAT_COMPLETIONS'] as const),
   targetModelSlots: Object.freeze(['RESEARCH', 'WRITING', 'IMAGE'] as const),
 });
 
@@ -233,7 +235,16 @@ function v2ProbeDiagnosticCode(
   return entry.reasonCode;
 }
 
-function v2ProbeReason(code: string, sent: boolean): string {
+function v2ProbeReason(
+  code: string,
+  sent: boolean,
+  details?: {
+    readonly errorCode?: string;
+    readonly errorParam?: string;
+    readonly errorType?: string;
+    readonly status?: number;
+  },
+): string {
   if (!sent)
     return code === 'CONFIG_STALE' ? '配置在探测期间发生变化，该步骤未发送。' : '该步骤未发送。';
   const reasons: Readonly<Record<string, string>> = Object.freeze({
@@ -260,6 +271,14 @@ function v2ProbeReason(code: string, sent: boolean): string {
     TIMEOUT: '请求超时，能力保持未知。',
     TLS_FAILURE: 'TLS 连接或证书校验失败，能力保持未知。',
   });
+  if (code === 'AMBIGUOUS_OUTCOME' && details?.status === 400) {
+    const fields = [
+      details.errorCode === undefined ? null : `code=${details.errorCode}`,
+      details.errorType === undefined ? null : `type=${details.errorType}`,
+      details.errorParam === undefined ? null : `param=${details.errorParam}`,
+    ].filter((value): value is string => value !== null);
+    return `Provider 拒绝了请求参数（HTTP 400）${fields.length === 0 ? '' : `：${fields.join('，')}`}；能力保持未知。`;
+  }
   return reasons[code] ?? '请求已结束，但没有足够的允许证据确认能力。';
 }
 
@@ -352,6 +371,34 @@ export class DesktopSettingsRuntime {
     await this.#localApi.attachProject(this.#active.database, this.#active.clipper);
   }
 
+  public async ensureV2Project(rootPath: string): Promise<void> {
+    if (this.#active !== null) return;
+    const root = await initializeProjectDataRoot(rootPath);
+    const prepared = await this.#openActiveProject(root);
+    try {
+      const record = await this.#locator.activate(
+        {
+          databasePath: join(root.databaseDirectory, PROJECT_DATABASE_FILE),
+          displayPath: root.rootPath,
+          instanceId: root.marker.instanceId,
+          rootPath: root.rootPath,
+        },
+        null,
+        new Date().toISOString(),
+      );
+      await this.#localApi.attachProject(prepared.database, prepared.clipper);
+      this.#active = prepared;
+      this.#locatorState = {
+        displayPath: root.rootPath,
+        record,
+        status: 'READY',
+      };
+    } catch (error) {
+      prepared.database.close();
+      throw error;
+    }
+  }
+
   public async executeV2ProviderAction(
     request: V2ProviderActionExecutionRequest,
   ): Promise<V2ProviderActionExecutionResult> {
@@ -379,11 +426,17 @@ export class DesktopSettingsRuntime {
         budgetState: 'UNKNOWN',
         canConfirm: false,
         capabilityState: 'UNKNOWN',
+        configFingerprint: null,
+        credentialBinding: null,
         credentialState: 'NOT_CONFIGURED',
         feeEstimateMicroUsd: null,
         modelId: null,
         modelSlot: request.modelSlot,
+        protocolMode: null,
         providerConfigured: false,
+        readinessBinding: 'settings-unavailable',
+        reasonCode: 'PROVIDER_NOT_CONFIGURED',
+        reasonMessage: '本地设置项目尚未就绪。',
         unknownCostApproved: request.userApprovedUnknownCost === true,
       };
     }
@@ -428,7 +481,7 @@ export class DesktopSettingsRuntime {
       readonly capability: 'imageGeneration' | 'structuredJson';
       readonly modelId: string;
       readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
-      readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+      readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
     }[];
     try {
       planSteps = active.capabilities.describePlan(V2_R07_PROBE_SELECTION).steps.filter(
@@ -438,7 +491,7 @@ export class DesktopSettingsRuntime {
           readonly capability: 'imageGeneration' | 'structuredJson';
           readonly modelId: string;
           readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
-          readonly protocolMode: 'NOT_APPLICABLE' | 'RESPONSES';
+          readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
         } =>
           candidate.modelId !== null &&
           (candidate.capability === 'structuredJson' || candidate.capability === 'imageGeneration'),
@@ -463,7 +516,7 @@ export class DesktopSettingsRuntime {
           capability: entry.capability as 'imageGeneration' | 'structuredJson',
           modelId: entry.modelId,
           modelSlots: Object.freeze([...(existing?.modelSlots ?? []), modelSlot]),
-          protocolMode: entry.protocolMode as 'NOT_APPLICABLE' | 'RESPONSES',
+          protocolMode: entry.protocolMode as 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES',
         });
       }
       planSteps = Object.freeze([...grouped.values()]);
@@ -497,15 +550,21 @@ export class DesktopSettingsRuntime {
           capability: planned.capability,
           deduplicated: planned.modelSlots.length > 1,
           diagnosticCode,
+          errorCode: primary?.safeDetails.errorCode ?? null,
+          errorParam: primary?.safeDetails.errorParam ?? null,
+          errorType: primary?.safeDetails.errorType ?? null,
           httpStatus: primary?.safeDetails.status ?? null,
           mappedSlots: Object.freeze(planned.modelSlots.map(v2ProbeSlot)),
           modelId: planned.modelId,
           observedAt: primary?.observedAt ?? null,
           protocolMode: planned.protocolMode,
-          reason: v2ProbeReason(diagnosticCode, sent),
+          receivedContentType: primary?.safeDetails.receivedContentType ?? null,
+          reason: v2ProbeReason(diagnosticCode, sent, primary?.safeDetails),
+          requestId: primary?.safeDetails.requestId ?? null,
           sent,
           stale: matches.some((entry) => entry.stale) || capability.derivedState === 'STALE',
           state,
+          transportVariant: primary?.safeDetails.transportVariant ?? null,
         });
       }),
     );
@@ -551,7 +610,7 @@ export class DesktopSettingsRuntime {
             'Search=关闭 Fetch=关闭 fee=UNKNOWN',
             ...steps.map(
               (step) =>
-                `${step.mappedSlots.join('+')} model=${step.modelId} capability=${step.capability} protocol=${step.protocolMode} state=${step.state} code=${step.diagnosticCode} sent=${step.sent ? 'yes' : 'no'} stale=${step.stale ? 'yes' : 'no'} observedAt=${step.observedAt ?? '无'} reason=${step.reason}`,
+                `${step.mappedSlots.join('+')} model=${step.modelId} capability=${step.capability} protocol=${step.protocolMode} state=${step.state} code=${step.diagnosticCode} sent=${step.sent ? 'yes' : 'no'} stale=${step.stale ? 'yes' : 'no'} observedAt=${step.observedAt ?? '无'} receivedContentType=${step.receivedContentType ?? 'MISSING'} transportVariant=${step.transportVariant ?? 'REJECTED'}${step.httpStatus === null ? '' : ` responseStatus=${step.httpStatus}`}${step.errorCode == null ? '' : ` error.code=${step.errorCode}`}${step.errorType == null ? '' : ` error.type=${step.errorType}`}${step.errorParam == null ? '' : ` error.param=${step.errorParam}`}${step.requestId == null ? '' : ` requestId=${step.requestId}`} reason=${step.reason}`,
             ),
           ].join('\n');
     const slot = (
@@ -559,22 +618,57 @@ export class DesktopSettingsRuntime {
       modelId: string | null,
       capabilityName: 'imageGeneration' | 'structuredJson' = 'structuredJson',
     ) => {
-      const entry = capability.entries.find(
+      const entries = capability.entries.filter(
         (candidate) =>
           candidate.capability === capabilityName &&
           candidate.modelSlot === modelSlot &&
           candidate.modelId === modelId,
       );
+      if (capabilityName === 'structuredJson') {
+        const selected = selectV2StructuredProtocol(
+          entries
+            .filter(
+              (candidate) =>
+                candidate.protocolMode === 'RESPONSES' ||
+                candidate.protocolMode === 'CHAT_COMPLETIONS',
+            )
+            .map((candidate) => ({
+              protocolMode: candidate.protocolMode as 'CHAT_COMPLETIONS' | 'RESPONSES',
+              stale: candidate.stale,
+              state: candidate.state,
+            })),
+        );
+        return { modelId, protocolMode: selected.protocolMode, state: selected.state };
+      }
+      const currentEntries = entries.filter((candidate) => !candidate.stale);
+      const supported =
+        currentEntries.find(
+          (candidate) => candidate.state === 'SUPPORTED' && candidate.protocolMode === 'RESPONSES',
+        ) ??
+        currentEntries.find(
+          (candidate) =>
+            candidate.state === 'SUPPORTED' && candidate.protocolMode === 'CHAT_COMPLETIONS',
+        ) ??
+        currentEntries.find((candidate) => candidate.state === 'SUPPORTED');
+      const state =
+        supported !== undefined
+          ? ('SUPPORTED' as const)
+          : currentEntries.length > 0 &&
+              currentEntries.every((candidate) => candidate.state === 'UNSUPPORTED')
+            ? ('UNSUPPORTED' as const)
+            : ('UNKNOWN' as const);
       return {
         modelId,
+        protocolMode:
+          supported?.protocolMode === 'RESPONSES' || supported?.protocolMode === 'CHAT_COMPLETIONS'
+            ? supported.protocolMode
+            : supported?.protocolMode === 'NOT_APPLICABLE' && capabilityName === 'imageGeneration'
+              ? ('IMAGES_GENERATIONS' as const)
+              : null,
         state:
-          entry?.stale === true
+          currentEntries.length === 0 && (entries.length > 0 || capability.derivedState === 'STALE')
             ? ('STALE' as const)
-            : entry?.state === 'SUPPORTED'
-              ? ('SUPPORTED' as const)
-              : entry?.state === 'UNSUPPORTED'
-                ? ('UNSUPPORTED' as const)
-                : ('UNKNOWN' as const),
+            : state,
       };
     };
     return Object.freeze({

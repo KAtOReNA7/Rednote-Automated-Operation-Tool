@@ -7,7 +7,13 @@ import { userEvent } from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { V2App } from '../apps/web-ui/src/v2/app.js';
+import type * as V2Components from '../apps/web-ui/src/v2/components.js';
 import { createMemoryV2Bridge } from './support/v2-test-runtime.js';
+
+vi.mock('../apps/web-ui/src/v2/components.js', async (importOriginal) => {
+  const actual = await importOriginal<typeof V2Components>();
+  return { ...actual, currentShanghaiWeekIdentity: () => actual.weekIdentity('2026-W31') };
+});
 
 beforeEach(() => {
   window.history.replaceState(null, '', '#/v2/overview');
@@ -131,6 +137,6 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByText(/账号名称未填写/u)).toBeVisible();
     await user.type(name, '雾灯书页·本机');
     await user.click(screen.getByRole('button', { name: '保存人设' }));
-    expect(await screen.findByText(/本机设置桥接不可用/u)).toBeVisible();
+    expect(await screen.findByRole('alert')).toHaveTextContent(/本机设置桥接不可用/u);
   });
 });

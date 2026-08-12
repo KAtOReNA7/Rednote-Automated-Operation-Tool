@@ -45,6 +45,14 @@ function requestForStep(
   };
 }
 
+export function capabilityProbeStepTimeoutMs(step: CapabilityProbeStep): number {
+  return step.kind === 'STRUCTURED'
+    ? CAPABILITY_PROBE_LIMITS.structuredStepTimeoutMs
+    : step.kind === 'IMAGE'
+      ? CAPABILITY_PROBE_LIMITS.imageStepTimeoutMs
+      : CAPABILITY_PROBE_LIMITS.stepTimeoutMs;
+}
+
 function globalStopReason(
   observations: readonly CapabilityProbeObservation[],
   consecutiveInfrastructureFailures: number,
@@ -138,7 +146,7 @@ export class CapabilityProbeRunner {
             credential,
             step,
             options.signal,
-            Math.min(remaining, options.stepTimeoutMs ?? CAPABILITY_PROBE_LIMITS.stepTimeoutMs),
+            Math.min(remaining, options.stepTimeoutMs ?? capabilityProbeStepTimeoutMs(step)),
           ),
         );
         stepObservations = classifyCapabilityProbeResponse(step, response, now().toISOString());

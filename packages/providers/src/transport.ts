@@ -1,5 +1,10 @@
 import { ProviderError } from './errors.js';
 import { PROVIDER_LIMITS } from './response-limits.js';
+import {
+  normalizeOpenAICompatibleResponse,
+  OpenAIResponseNormalizationError,
+  type OpenAIResponseTransportVariant,
+} from './openai-response-normalizer.js';
 
 export const PROVIDER_ENDPOINTS = Object.freeze({
   CHAT_COMPLETIONS: '/chat/completions',
@@ -26,7 +31,9 @@ export interface HttpTransportResponse {
   readonly headers: Readonly<{
     contentType: string | null;
     providerRequestId: string | null;
+    receivedContentType?: string;
     retryAfter: string | null;
+    transportVariant?: OpenAIResponseTransportVariant;
   }>;
   readonly status: number;
 }
@@ -174,23 +181,49 @@ export class NodeFetchHttpTransport implements HttpTransport {
           retryDisposition: 'RETRY_MANUAL',
         });
       }
+      let body = await this.#readBody(response, request);
+      let receivedContentType = contentType ?? 'MISSING';
+      let transportVariant: OpenAIResponseTransportVariant = 'REJECTED';
       if (
         response.status >= 200 &&
         response.status < 300 &&
-        (contentType === null || !/^application\/json(?:\s*;|$)/iu.test(contentType))
+        request.endpoint !== 'IMAGES_GENERATIONS'
       ) {
-        await response.body?.cancel().catch(() => undefined);
-        throw new ProviderError('PROVIDER_INVALID_CONTENT_TYPE', {
-          causeCategory: 'CONTENT_TYPE',
-          modelId: request.modelId,
-          operation: request.operation,
-          outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
-          providerId: request.providerId,
-          requestId: request.requestId,
-          retryDisposition: 'RETRY_MANUAL',
-        });
+        try {
+          const normalized = normalizeOpenAICompatibleResponse({
+            body,
+            contentType,
+            maxBodyBytes: PROVIDER_LIMITS.maxResponseBodyBytes,
+            protocol: request.endpoint === 'CHAT_COMPLETIONS' ? 'CHAT_COMPLETIONS' : 'RESPONSES',
+          });
+          body = normalized.body;
+          receivedContentType = normalized.receivedContentType;
+          transportVariant = normalized.transportVariant;
+        } catch (error) {
+          if (error instanceof OpenAIResponseNormalizationError) {
+            throw new ProviderError(
+              error.reason === 'RESPONSE_TOO_LARGE'
+                ? 'PROVIDER_RESPONSE_TOO_LARGE'
+                : error.reason === 'INVALID_JSON' || error.reason === 'INVALID_SSE'
+                  ? 'PROVIDER_INVALID_JSON'
+                  : 'PROVIDER_INVALID_CONTENT_TYPE',
+              {
+                causeCategory: 'CONTENT_TYPE',
+                details: { receivedContentType: error.receivedContentType, transportVariant },
+                modelId: request.modelId,
+                operation: request.operation,
+                outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
+                providerId: request.providerId,
+                requestId: request.requestId,
+                retryDisposition: 'RETRY_MANUAL',
+              },
+            );
+          }
+          throw error;
+        }
+      } else if (response.status >= 200 && response.status < 300) {
+        transportVariant = 'STANDARD_JSON';
       }
-      const body = await this.#readBody(response, request);
       return {
         body,
         headers: Object.freeze({
@@ -199,7 +232,9 @@ export class NodeFetchHttpTransport implements HttpTransport {
             providerRequestId !== null && /^[A-Za-z0-9._:-]{1,128}$/u.test(providerRequestId)
               ? providerRequestId
               : null,
+          receivedContentType,
           retryAfter: retryAfter !== null && retryAfter.length <= 128 ? retryAfter : null,
+          transportVariant,
         }),
         status: response.status,
       };

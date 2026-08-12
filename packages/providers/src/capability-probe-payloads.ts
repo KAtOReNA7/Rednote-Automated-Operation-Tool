@@ -11,7 +11,7 @@ function responsesBase(modelId: string, input: JsonValue): Record<string, JsonVa
     max_output_tokens: 24,
     model: modelId,
     store: false,
-    temperature: 0,
+    stream: false,
   };
 }
 
@@ -20,7 +20,7 @@ function chatBase(modelId: string, content: JsonValue): Record<string, JsonValue
     max_tokens: 24,
     messages: [{ content, role: 'user' }],
     model: modelId,
-    temperature: 0,
+    stream: false,
   };
 }
 
@@ -34,19 +34,40 @@ export function capabilityProbeRequestBody(step: CapabilityProbeStep): JsonValue
       : responsesBase(step.modelId, `Return exactly ${CAPABILITY_PROBE_MARKERS.text}`);
   }
   if (step.kind === 'STRUCTURED') {
+    const schema = {
+      additionalProperties: false,
+      properties: {
+        marker: { const: CAPABILITY_PROBE_MARKERS.structured, type: 'string' },
+      },
+      required: ['marker'],
+      type: 'object',
+    };
+    if (step.protocolMode === 'CHAT_COMPLETIONS') {
+      return {
+        max_completion_tokens: 256,
+        messages: [{ content: 'Return the requested JSON object.', role: 'user' }],
+        model: step.modelId,
+        stream: false,
+        response_format: {
+          json_schema: {
+            name: 'rednote_capability_probe',
+            schema,
+            strict: true,
+          },
+          type: 'json_schema',
+        },
+      };
+    }
     return {
-      ...responsesBase(step.modelId, 'Return the requested JSON object.'),
+      input: 'Return the requested JSON object.',
+      max_output_tokens: 256,
+      model: step.modelId,
+      store: false,
+      stream: false,
       text: {
         format: {
           name: 'rednote_capability_probe',
-          schema: {
-            additionalProperties: false,
-            properties: {
-              marker: { const: CAPABILITY_PROBE_MARKERS.structured, type: 'string' },
-            },
-            required: ['marker'],
-            type: 'object',
-          },
+          schema,
           strict: true,
           type: 'json_schema',
         },
@@ -104,8 +125,7 @@ export function capabilityProbeRequestBody(step: CapabilityProbeStep): JsonValue
       n: 1,
       prompt: 'A single plain blue square on a white background.',
       quality: 'low',
-      response_format: 'b64_json',
-      size: '256x256',
+      size: '1024x1024',
     };
   }
   if (step.kind === 'STREAMING') {

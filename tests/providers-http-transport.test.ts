@@ -168,15 +168,42 @@ describe('Issue 012 Node fetch transport', () => {
     expect(result.headers).toEqual({
       contentType: 'application/json',
       providerRequestId: 'safe-request-id',
+      receivedContentType: 'application/json',
       retryAfter: '4',
+      transportVariant: 'REJECTED',
     });
     expect(JSON.stringify(result)).not.toContain('must-not-escape');
   });
 
-  it('rejects invalid success Content-Type and cancels the body', async () => {
+  it('accepts valid object JSON under text/plain and rejects non-JSON text', async () => {
     const fixture = await startFixture((_incoming, response) => {
       response.writeHead(200, { 'content-type': 'text/plain' });
+      response.end('{"output":[]}');
+    });
+    await expect(
+      new NodeFetchHttpTransport().request(request(fixture.baseUrl)),
+    ).resolves.toMatchObject({
+      headers: { receivedContentType: 'text/plain', transportVariant: 'NONSTANDARD_MIME_JSON' },
+    });
+    await closeFixture(fixture);
+
+    const rejected = await startFixture((_incoming, response) => {
+      response.writeHead(200, { 'content-type': 'text/plain' });
       response.end('vendor response body');
+    });
+    await expect(
+      new NodeFetchHttpTransport().request(request(rejected.baseUrl)),
+    ).rejects.toMatchObject({
+      code: 'PROVIDER_INVALID_JSON',
+      outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
+    });
+    await closeFixture(rejected);
+  });
+
+  it('rejects HTML success responses before codec processing', async () => {
+    const fixture = await startFixture((_incoming, response) => {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<html>{"output":[]}</html>');
     });
     await expect(
       new NodeFetchHttpTransport().request(request(fixture.baseUrl)),
@@ -184,6 +211,7 @@ describe('Issue 012 Node fetch transport', () => {
       code: 'PROVIDER_INVALID_CONTENT_TYPE',
       outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
     });
+    await closeFixture(fixture);
   });
 
   it('rejects an oversized request before opening a connection', async () => {

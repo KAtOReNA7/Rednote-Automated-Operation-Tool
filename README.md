@@ -2,8 +2,8 @@
   <a href="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml">
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
-  <img alt="V2 R05 accepted" src="https://img.shields.io/badge/V2--R05-已验收-2ea44f" />
-  <img alt="V2 R06 next" src="https://img.shields.io/badge/下一步-V2--R06-8b8b8b" />
+  <img alt="V2 R01 to R06 accepted" src="https://img.shields.io/badge/V2--R01%E2%80%94R06-用户已验收-2ea44f" />
+  <img alt="V2 R07 compatibility verification" src="https://img.shields.io/badge/V2--R07-兼容修复与复验中-2563eb" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Development preview" src="https://img.shields.io/badge/状态-开发预览版-c69026" />
 </p>
@@ -14,8 +14,9 @@
 一个桌面应用里，数据保存在本机，所有对外发布与发送动作仍由用户亲自在官方平台完成。
 
 > [!IMPORTANT]
-> 当前版本是**开发预览版**，不是可以直接投入日常运营的正式产品。V2-R01—R05 已验收；
-> 下一步是 V2-R06 数据复盘。真实模型、平台连接和最终视觉统一尚未完成。
+> 当前版本是**开发预览版**，不是可以直接投入日常运营的正式产品。V2-R01—R06 已获用户验收；
+> R07 功能已实现，图片能力已有支持证据，文本 structuredJson 仍在进行兼容修复与用户复验。
+> 当前立即下一步是完成 R07；验收后才进入 V2-D-FINAL，随后才是 R08。
 
 ## 现在能做什么
 
@@ -23,48 +24,48 @@
 - **本周计划**：生成确定性候选，按周查看，支持单选、批量选择、跨周和任意日期时间改期。
 - **内容包**：从已锁定计划生成 3 个本地 Scripted 内容包，编辑并保留版本，单篇或批量批准后导出。
 - **互动回复**：手动粘贴评论或私信，可关联已有内容包，生成可编辑的 Scripted 回复建议。
-- **本地恢复**：计划、内容包、互动记录和状态保存在本机 SQLite 与受控文件目录中。
+- **数据复盘**：为已批准内容包手工录入 24H、72H、7D 指标，查看单篇明细、本地汇总和确定性建议。
+- **受控 Provider**：配置研究、写作和图片模型槽；周计划、文案、封面和回复都先预览，再由用户逐次确认。
+- **本地恢复**：计划、内容包、互动、指标和状态保存在本机 SQLite 与受控文件目录中。
 
 内容包固定包含 6 项：封面、标题、正文、标签、建议发布时间、素材说明。**不包含置顶评论。**
-互动建议不是模型生成；软件不会读取平台收件箱，也不会替用户发送评论或私信。
+Scripted 流程仍可在没有外部服务时使用。受控 Provider 默认不会发起请求；费用未知时必须由用户
+明确确认。软件不会读取平台收件箱，也不会替用户发送评论或私信。
 
 ## 还不能做什么
 
 - 不能自动登录、发布、评论、私信或处理验证码与平台风控。
-- V2 尚未接入真实模型、搜索、图片生成、OCR 或真实业务 API。
-- 书库和数据复盘还没有完成 V2 业务迁移；V2-R06 将处理数据复盘。
-- R07 真实 adapter、V2-D-FINAL 最终视觉统一和 R08 默认入口切换尚未开始。
+- 受控模型和图片 Provider 已接线，但仓库测试不证明真实供应商的质量、稳定性或费用表现。
+- 搜索、页面抓取、OCR、平台指标导入和小红书业务 API 仍未接入 V2。
+- 书库核心业务尚未迁移到 V2；数据复盘目前只接受用户手工录入。
+- R07 真实文本端到端调用尚未通过用户复验；V2-D-FINAL 和 R08 因此尚未开始。
 - 目前没有正式安装器、自动更新或面向生产环境的发布版本。
 
 ## 当前页面
 
-| 页面     | 当前状态                                                  |
-| -------- | --------------------------------------------------------- |
-| 总览     | 展示本地计划、待处理内容和互动摘要                        |
-| 本周计划 | 已接通人设、批量选择、确认、锁定和自由日期时间            |
-| 内容     | 已接通三包生成、编辑、版本、批准和本地导出                |
-| 互动     | 已接通评论/私信粘贴、内容关联、建议确认和手动发送事实记录 |
-| 书库     | 页面已保留，核心业务尚未迁移到 V2                         |
-| 数据复盘 | 页面已保留，计划在 V2-R06 接通                            |
-| 设置     | 当前承载本地 workspace 与账号人设；更多设置仍在后续阶段   |
+| 页面     | 当前状态                                                            |
+| -------- | ------------------------------------------------------------------- |
+| 总览     | 展示真实的本地计划、待处理内容和互动摘要，不再展示模拟表现          |
+| 本周计划 | 已接通人设、批量选择、确认、锁定、自由日期时间和受控研究模型候选    |
+| 内容     | 已接通三包生成、编辑、版本、批准、导出，以及受控文案与封面新版本    |
+| 互动     | 已接通评论/私信粘贴、内容关联、Scripted/受控建议和手动发送事实记录  |
+| 书库     | 页面已保留，核心业务尚未迁移到 V2                                   |
+| 数据复盘 | 已接通手工指标录入、单篇明细、确定性汇总和策略决策                  |
+| 设置     | 已接通 workspace、人设、Provider 配置、凭据引用、能力探测和费用边界 |
 
 ## V2 开发进度
 
-| 阶段       | 用户结果                                             | 状态       |
-| ---------- | ---------------------------------------------------- | ---------- |
-| V2-R01     | Electron 七页产品壳与固定 Mock 流程                  | 已验收     |
-| V2-R02     | 本地 workspace 持久化与重启恢复                      | 已验收     |
-| V2-R03     | 账号人设、周计划、批量操作与自由日期时间             | 已验收     |
-| V2-R04     | 三个内容包、版本编辑、批量批准与本地导出             | 已验收     |
-| V2-R05     | 评论/私信导入、内容关联与 Scripted 回复建议          | 已验收     |
-| **V2-R06** | **数据导入、复盘与下一轮策略（具体范围需单独授权）** | **下一步** |
-| V2-R07     | 真实 adapter                                         | 未开始     |
-| V2-D-FINAL | 参考成熟商业产品，在 Figma 中统一七页视觉与交互      | 未开始     |
-| V2-R08     | V2 默认入口与旧产品归档                              | 未开始     |
+| 阶段       | 用户结果                                            | 当前结论                 |
+| ---------- | --------------------------------------------------- | ------------------------ |
+| V2-R01—R06 | 产品壳、持久化、内容运营闭环与本地数据复盘          | 用户已验收               |
+| **V2-R07** | **受控 Provider、能力探测、逐次预览确认和结果追溯** | **兼容修复与用户复验中** |
+| V2-D-FINAL | 在 Figma 中统一七页视觉、关键状态、响应式与交互细节 | R07 验收后开始           |
+| V2-R08     | 落地已验收设计、切换 V2 默认入口并处理旧界面归档    | D-FINAL 通过后实施       |
+| 发布准备   | 安装、升级、备份恢复、诊断和 Windows 端到端验收     | 范围尚未冻结             |
 
-当前视觉可以用于功能验证，但仍有明显设计债务。根据
-[最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)，R04—R07 优先完成本地功能闭环；
-R07 完成后、R08 之前再集中进入 Figma 设计与用户验收，不在每个功能阶段反复改版。
+当前视觉可以用于功能验证，但设计债务还没有收口。当前先完成 R07 文本响应兼容修复与用户复验；
+R07 获得验收后，再根据[最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)
+进入 V2-D-FINAL。此关未通过前，不实施 R08，也不把 V2 设为默认入口。
 
 ## 快速开始
 
@@ -120,14 +121,17 @@ flowchart LR
     IPC --> APP["Electron main / V2 application"]
     APP --> DB["本地 SQLite"]
     APP --> FILES["受控本地文件"]
-    APP -. 后续授权 .-> ADAPTERS["模型 / 数据 / 平台 adapter"]
+    APP --> REVIEW["本地指标 / 确定性复盘"]
+    APP --> CONTROL["能力、费用、预览与逐次确认"]
+    CONTROL --> PROVIDERS["受控模型 / 图片 Provider"]
+    APP -. 未接入 .-> PLATFORM["搜索 / OCR / 小红书平台"]
 ```
 
 主要代码位置：
 
 - `apps/desktop`：Electron 主进程、安全边界与打包。
 - `apps/web-ui`：V2 与旧版 React 界面。
-- `packages/v2`：V2 workspace、周计划、内容包和互动流程。
+- `packages/v2`：V2 workspace、周计划、内容包、互动、指标复盘和 Provider 动作合同。
 - `packages/db`、`packages/storage`：SQLite 与本地文件能力。
 - `docs`：产品合同、ADR、历史验收证据和任务指令。
 
@@ -146,6 +150,8 @@ Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferr
 - [开发路线图](./docs/product/xiaohongshu-development-roadmap-v1.md)
 - [V2 D01 设计基线](./docs/product/v2-d01-design-baseline.md)
 - [V2-R05 互动合同](./docs/product/v2-r05-interaction-contract.md)
+- [V2-R06 增量指令](./docs/instructions/v2/V2-R06-local-metrics-and-deterministic-review-Codex-instruction.txt)
+- [V2 最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)
 - [历史任务指令索引](./docs/instructions/README.md)
 - [贡献与代理规则](./AGENTS.md)
 
@@ -159,5 +165,5 @@ Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferr
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  V2-R01—R05 已验收，下一步 V2-R06；最终发布和互动发送始终由用户手动完成。
+  V2-R01—R06 已验收，R07 兼容修复与复验中；最终发布和互动发送始终由用户手动完成。
 </p>

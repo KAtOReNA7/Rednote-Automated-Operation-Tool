@@ -966,7 +966,10 @@ function dateText(date: Date): string {
   return date.toISOString().slice(0, 10);
 }
 
-function mondayOfIsoWeek(value: string): Date {
+export function weekDateRange(value: string): {
+  readonly endDate: string;
+  readonly startDate: string;
+} {
   const validated = weekKey(value);
   const year = Number(validated.slice(0, 4));
   const week = Number(validated.slice(6));
@@ -976,7 +979,13 @@ function mondayOfIsoWeek(value: string): Date {
   if (isoWeekKey(januaryFourth) !== validated) {
     throw new V2ContractError('INVALID_REQUEST', ['weekKey']);
   }
-  return januaryFourth;
+  const sunday = new Date(januaryFourth);
+  sunday.setUTCDate(januaryFourth.getUTCDate() + 6);
+  return Object.freeze({ endDate: dateText(sunday), startDate: dateText(januaryFourth) });
+}
+
+function mondayOfIsoWeek(value: string): Date {
+  return new Date(`${weekDateRange(value).startDate}T00:00:00.000Z`);
 }
 
 function isoWeekKey(date: Date): string {
@@ -1391,8 +1400,16 @@ export class V2ApplicationFacade {
   }
 
   #readPlan(requestedWeekKey: string): WeeklyPlan {
+    const monday = mondayOfIsoWeek(requestedWeekKey);
     return this.#repository.getOrCreateWeeklyPlan(
-      { ...DEFAULT_WEEKLY_PLAN, weekKey: requestedWeekKey },
+      {
+        ...DEFAULT_WEEKLY_PLAN,
+        candidates: DEFAULT_WEEKLY_PLAN.candidates.map((candidate, index) => ({
+          ...candidate,
+          date: dateText(new Date(monday.getTime() + Math.floor(index / 3) * 86_400_000)),
+        })),
+        weekKey: requestedWeekKey,
+      },
       DEFAULT_ACCOUNT_PERSONA,
     );
   }
@@ -1401,11 +1418,27 @@ export class V2ApplicationFacade {
 export function toV2Exception(error: unknown): V2ExceptionSummary {
   if (error instanceof V2ProviderActionError) {
     const messages: Readonly<Record<V2ProviderActionErrorCode, string>> = Object.freeze({
+      BUDGET_HARD_STOP: '本地预算硬上限已阻止本次调用。',
+      CAPABILITY_STALE: '能力证据已过期，请重新验证后再预览。',
+      CAPABILITY_UNKNOWN: '所需能力尚未验证，请先在设置中验证。',
+      CAPABILITY_UNSUPPORTED: '当前模型不支持所需能力，请前往设置。',
+      CREDENTIAL_NOT_CONFIGURED: '凭据尚未配置或需要重新认证，请前往设置。',
+      PROVIDER_NOT_CONFIGURED: 'Provider、Base URL 或模型槽尚未配置完整。',
       PROVIDER_ACTION_BLOCKED: '当前模型设置、能力或业务状态不满足本次操作。',
       PROVIDER_ACTION_CANCELLED: '本次模型操作已取消，未写入业务结果。',
+      PROVIDER_ACTION_CONFIG_CHANGED: '预览后 AI 配置已变化，请重新预览。',
+      PROVIDER_ACTION_CREDENTIAL_CHANGED: '预览后凭据状态已变化，请重新预览。',
+      PROVIDER_ACTION_EXPIRED: '确认已过期，请重新预览。',
+      PROVIDER_ACTION_REPLAYED: '该确认已使用，请重新预览。',
+      PROVIDER_ACTION_SOURCE_CHANGED: '预览后目标数据已变化，请重新预览。',
       PROVIDER_ACTION_STALE: '预览后业务数据已变化，请重新预览。',
+      PROVIDER_ACTION_TARGET_WEEK_CHANGED: '目标周已变化，请重新预览。',
       PROVIDER_ACTION_TOKEN_INVALID: '确认已失效或已使用，请重新预览。',
       PROVIDER_ACTION_UNCERTAIN: '请求结果不确定，系统未写入业务结果，请先检查本地账本。',
+      PROVIDER_ACTION_UNKNOWN_FEE_CONSENT_REQUIRED:
+        '费用未知，需重新预览并明确授权本次最多 1 个请求。',
+      PROVIDER_ACTION_BUDGET_HARD_STOP: '本地预算硬上限已阻止本次调用。',
+      UNKNOWN_FEE_CONSENT_REQUIRED: '费用未知，需重新预览并明确授权本次最多 1 个请求。',
       PROVIDER_OUTPUT_INVALID: '模型结果不符合严格合同，系统未写入业务结果。',
     });
     return {

@@ -36,6 +36,7 @@ import {
   type V2ProviderSettingsDraft,
   type V2ProviderSettingsView,
   type V2Result,
+  weekDateRange,
   type WeeklyPlan,
 } from '@mystery-operations/v2';
 
@@ -82,7 +83,7 @@ interface ProviderPreviewLease {
   readonly expiresAtMs: number;
   readonly intent: V2ProviderActionIntent;
   readonly inputHash: string;
-  readonly readinessBinding: string;
+  readonly readiness: V2ProviderActionReadiness;
 }
 
 function providerInputHash(input: Readonly<Record<string, unknown>>): string {
@@ -105,11 +106,17 @@ const unavailableProviderExecution: V2ProviderExecutionPort = {
     budgetState: 'UNKNOWN',
     canConfirm: false,
     capabilityState: 'UNKNOWN',
+    configFingerprint: null,
+    credentialBinding: null,
     credentialState: 'NOT_CONFIGURED',
     feeEstimateMicroUsd: null,
     modelId: null,
     modelSlot: request.modelSlot,
+    protocolMode: null,
     providerConfigured: false,
+    readinessBinding: 'unavailable',
+    reasonCode: 'PROVIDER_NOT_CONFIGURED',
+    reasonMessage: '本机 Provider runtime 不可用。',
     unknownCostApproved: request.userApprovedUnknownCost === true,
   }),
 };
@@ -147,6 +154,7 @@ export class V2DesktopRuntime {
   readonly #providerExecution: V2ProviderExecutionPort;
   readonly #settingsControl: V2SettingsControlPort;
   readonly #providerPreviews = new Map<string, ProviderPreviewLease>();
+  readonly #usedProviderPreviews = new Set<string>();
   #closed = false;
 
   private constructor(
@@ -315,6 +323,7 @@ export class V2DesktopRuntime {
     if (this.#closed) return;
     this.#database.close();
     this.#providerPreviews.clear();
+    this.#usedProviderPreviews.clear();
     this.#closed = true;
   }
 
@@ -373,15 +382,11 @@ export class V2DesktopRuntime {
         expiresAtMs,
         intent,
         inputHash: providerInputHash(input),
-        readinessBinding: JSON.stringify({
-          capabilityState: readiness.capabilityState,
-          credentialState: readiness.credentialState,
-          feeEstimateMicroUsd: readiness.feeEstimateMicroUsd,
-          modelId: readiness.modelId,
-          providerConfigured: readiness.providerConfigured,
-        }),
+        readiness,
       });
     }
+    const targetWeekKey = intent.kind === 'WEEKLY_PLAN' ? intent.weekKey : null;
+    const targetWeek = targetWeekKey === null ? null : weekDateRange(targetWeekKey);
     return Object.freeze({
       ...readiness,
       blockReasons:
@@ -396,6 +401,13 @@ export class V2DesktopRuntime {
       requestCount: 1,
       searchEnabled: false,
       summary: providerActionSummary(intent.kind),
+      ...(targetWeek === null
+        ? {}
+        : {
+            targetEndDate: targetWeek.endDate,
+            targetStartDate: targetWeek.startDate,
+            targetWeekKey: targetWeekKey as string,
+          }),
     });
   }
 
@@ -404,15 +416,16 @@ export class V2DesktopRuntime {
     caller: V2ActionCaller,
   ): Promise<V2ProviderActionResult> {
     const lease = this.#providerPreviews.get(previewToken);
-    this.#providerPreviews.delete(previewToken);
-    if (
-      lease === undefined ||
-      lease.expiresAtMs < Date.now() ||
-      lease.caller.senderId !== caller.senderId ||
-      lease.caller.windowId !== caller.windowId
-    ) {
+    if (lease === undefined) {
+      if (this.#usedProviderPreviews.has(previewToken))
+        throw new V2ProviderActionError('PROVIDER_ACTION_REPLAYED');
       throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
     }
+    this.#providerPreviews.delete(previewToken);
+    if (lease.expiresAtMs < Date.now()) throw new V2ProviderActionError('PROVIDER_ACTION_EXPIRED');
+    if (lease.caller.senderId !== caller.senderId || lease.caller.windowId !== caller.windowId)
+      throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+    this.#usedProviderPreviews.add(previewToken);
     const input = await this.#providerInput(lease.intent);
     const currentReadiness = await this.#providerExecution.inspect({
       input,
@@ -420,18 +433,23 @@ export class V2DesktopRuntime {
       modelSlot: providerActionModelSlot(lease.intent.kind),
       userApprovedUnknownCost: lease.intent.userApprovedUnknownCost === true,
     });
-    const currentBinding = JSON.stringify({
-      capabilityState: currentReadiness.capabilityState,
-      credentialState: currentReadiness.credentialState,
-      feeEstimateMicroUsd: currentReadiness.feeEstimateMicroUsd,
-      modelId: currentReadiness.modelId,
-      providerConfigured: currentReadiness.providerConfigured,
-    });
-    if (
-      !currentReadiness.canConfirm ||
-      providerInputHash(input) !== lease.inputHash ||
-      currentBinding !== lease.readinessBinding
-    )
+    if (!currentReadiness.canConfirm)
+      throw new V2ProviderActionError(
+        currentReadiness.reasonCode === 'BUDGET_HARD_STOP'
+          ? 'PROVIDER_ACTION_BUDGET_HARD_STOP'
+          : currentReadiness.reasonCode === 'UNKNOWN_FEE_CONSENT_REQUIRED'
+            ? 'PROVIDER_ACTION_UNKNOWN_FEE_CONSENT_REQUIRED'
+            : currentReadiness.reasonCode === 'READY'
+              ? 'PROVIDER_ACTION_BLOCKED'
+              : currentReadiness.reasonCode,
+      );
+    if (providerInputHash(input) !== lease.inputHash)
+      throw new V2ProviderActionError('PROVIDER_ACTION_SOURCE_CHANGED');
+    if (currentReadiness.configFingerprint !== lease.readiness.configFingerprint)
+      throw new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED');
+    if (currentReadiness.credentialBinding !== lease.readiness.credentialBinding)
+      throw new V2ProviderActionError('PROVIDER_ACTION_CREDENTIAL_CHANGED');
+    if (currentReadiness.readinessBinding !== lease.readiness.readinessBinding)
       throw new V2ProviderActionError('PROVIDER_ACTION_STALE');
     const executed = await this.#providerExecution.execute({
       executionId: `v2-r07-${randomUUID()}`,
@@ -449,9 +467,14 @@ export class V2DesktopRuntime {
     if (executed.status === 'CANCELLED') {
       throw new V2ProviderActionError('PROVIDER_ACTION_CANCELLED');
     }
-    if (executed.status !== 'SUCCEEDED') {
-      throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
-    }
+    if (executed.status !== 'SUCCEEDED')
+      throw new V2ProviderActionError(
+        executed.stableErrorCode === 'BUDGET_HARD_LIMIT_REACHED'
+          ? 'PROVIDER_ACTION_BUDGET_HARD_STOP'
+          : executed.stableErrorCode === 'BUDGET_UNPRICED_LIMIT_REQUIRED'
+            ? 'PROVIDER_ACTION_UNKNOWN_FEE_CONSENT_REQUIRED'
+            : 'PROVIDER_ACTION_BLOCKED',
+      );
     await this.#persistProviderOutput(lease.intent, executed.output, executed.modelRunId ?? null);
     return Object.freeze({
       costAmountMicroUsd: executed.costAmountMicroUsd,
