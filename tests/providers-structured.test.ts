@@ -66,6 +66,7 @@ describe('Issue 012 structured generation', () => {
       'response_format.json_schema.strict',
       true,
     );
+    expect(JSON.parse(transport.requests[0]?.body ?? '{}')).toHaveProperty('stream', false);
   });
 
   it('maps invalid JSON to a completed-invalid-output error without raw content', async () => {

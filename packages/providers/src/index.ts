@@ -58,6 +58,12 @@ export {
 } from './transport.js';
 export { applyUsageCapability, emptyProviderUsage, parseProviderUsage } from './usage.js';
 export {
+  normalizeOpenAICompatibleResponse,
+  OpenAIResponseNormalizationError,
+  OPENAI_RESPONSE_TRANSPORT_VARIANTS,
+  safeReceivedContentType,
+} from './openai-response-normalizer.js';
+export {
   CAPABILITY_PROBE_MARKERS,
   classifyCapabilityProbeFailure,
   classifyCapabilityProbeResponse,

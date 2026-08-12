@@ -53,6 +53,7 @@ export function encodeResponsesText(
   const body: Record<string, JsonObject[keyof JsonObject]> = {
     input: textInput(request),
     model: context.modelId,
+    stream: false,
     ...optionsToJson(request.options, 'RESPONSES'),
   };
   if (schema !== undefined) {

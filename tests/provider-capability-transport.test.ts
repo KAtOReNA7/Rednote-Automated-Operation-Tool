@@ -50,6 +50,28 @@ describe('Issue 013 fixed capability probe transport', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
   });
 
+  it('advertises JSON for non-streaming requests and event-stream only for streaming probes', async () => {
+    const accepts: string[] = [];
+    const transport = new NodeFetchCapabilityProbeTransport(async (_url, init) => {
+      accepts.push(new Headers(init?.headers).get('accept') ?? '');
+      return new Response('{"output":[]}', {
+        headers: { 'content-type': 'application/json' },
+        status: 200,
+      });
+    });
+    const base = {
+      baseUrl: 'http://127.0.0.1:43119/v1',
+      credential: syntheticInvalidCredential(),
+      method: 'POST' as const,
+      path: '/responses' as const,
+      signal: new AbortController().signal,
+      timeoutMs: 1000,
+    };
+    await transport.request({ ...base, body: { stream: false } });
+    await transport.request({ ...base, body: { stream: true } });
+    expect(accepts).toEqual(['application/json', 'text/event-stream']);
+  });
+
   it('permits Batch metadata only through OPTIONS or HEAD', async () => {
     const transport = new NodeFetchCapabilityProbeTransport(
       async () => new Response(null, { status: 204 }),

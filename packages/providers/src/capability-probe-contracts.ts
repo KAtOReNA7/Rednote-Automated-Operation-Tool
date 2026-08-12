@@ -151,8 +151,11 @@ export interface ProbeSafeDetails {
   readonly modelNotFound?: number;
   readonly outputTokens?: number;
   readonly requestId?: string;
+  readonly receivedContentType?: string;
   readonly status?: number;
   readonly totalTokens?: number;
+  readonly transportVariant?:
+    'NONSTANDARD_MIME_JSON' | 'REJECTED' | 'SSE_NORMALIZED' | 'STANDARD_JSON';
 }
 
 export interface CapabilityProbeObservation {
@@ -202,7 +205,10 @@ export interface CapabilityProbeRequest {
 export interface CapabilityProbeResponse {
   readonly body: string;
   readonly headers: Readonly<Record<string, string>>;
+  readonly receivedContentType?: string;
   readonly status: number;
+  readonly transportVariant?:
+    'NONSTANDARD_MIME_JSON' | 'REJECTED' | 'SSE_NORMALIZED' | 'STANDARD_JSON';
 }
 
 export interface CapabilityProbeTransport {

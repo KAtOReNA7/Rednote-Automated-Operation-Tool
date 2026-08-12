@@ -163,6 +163,49 @@ describe('Issue 013 conservative capability classifier', () => {
     ).toMatchObject({ reasonCode: 'NETWORK_UNREACHABLE', state: 'UNKNOWN' });
   });
 
+  it.each([
+    [
+      'RESPONSES',
+      'text/plain',
+      { output_text: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }) },
+    ],
+    [
+      'CHAT_COMPLETIONS',
+      'application/octet-stream',
+      {
+        choices: [
+          { message: { content: JSON.stringify({ marker: CAPABILITY_PROBE_MARKERS.structured }) } },
+        ],
+      },
+    ],
+  ] as const)(
+    'accepts strongly verified %s JSON under safe nonstandard MIME',
+    (protocolMode, contentType, body) => {
+      const observed = classifyCapabilityProbeResponse(
+        { ...STEP, capability: 'structuredJson', kind: 'STRUCTURED', protocolMode },
+        response(200, body, contentType),
+        NOW,
+      )[0];
+      expect(observed).toMatchObject({
+        safeDetails: {
+          receivedContentType: contentType,
+          transportVariant: 'NONSTANDARD_MIME_JSON',
+        },
+        state: 'SUPPORTED',
+      });
+    },
+  );
+
+  it('never treats a 2xx error envelope as structured capability evidence', () => {
+    expect(
+      classifyCapabilityProbeResponse(
+        { ...STEP, capability: 'structuredJson', kind: 'STRUCTURED' },
+        response(200, { error: { code: 'relay_error' } }, 'text/plain'),
+        NOW,
+      )[0],
+    ).toMatchObject({ state: 'UNKNOWN' });
+  });
+
   it('never downloads URL-only image output', () => {
     const imageStep: CapabilityProbeStep = {
       ...STEP,

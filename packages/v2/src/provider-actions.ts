@@ -495,11 +495,14 @@ export interface V2CapabilityProbeStepDiagnostic {
   readonly modelId: string;
   readonly observedAt: string | null;
   readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
+  readonly receivedContentType?: string | null;
   readonly requestId?: string | null;
   readonly reason: string;
   readonly sent: boolean;
   readonly stale: boolean;
   readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+  readonly transportVariant?:
+    'NONSTANDARD_MIME_JSON' | 'REJECTED' | 'SSE_NORMALIZED' | 'STANDARD_JSON' | null;
 }
 export interface V2CapabilityProbeRunDiagnostic {
   readonly completedAt: string | null;

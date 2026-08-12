@@ -383,25 +383,16 @@ export class OpenAICompatibleProvider
             timeoutMs: remainingMs,
           });
           this.#assertHttpStatus(response, context);
-          if (
-            Buffer.byteLength(response.body, 'utf8') > PROVIDER_LIMITS.maxResponseBodyBytes ||
-            (response.headers.contentType !== null &&
-              !/^application\/json(?:\s*;|$)/iu.test(response.headers.contentType))
-          ) {
-            throw new ProviderError(
-              Buffer.byteLength(response.body, 'utf8') > PROVIDER_LIMITS.maxResponseBodyBytes
-                ? 'PROVIDER_RESPONSE_TOO_LARGE'
-                : 'PROVIDER_INVALID_CONTENT_TYPE',
-              {
-                causeCategory: 'PROTOCOL',
-                modelId: context.modelId,
-                operation: context.operation,
-                outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
-                providerId: context.providerId,
-                requestId: context.requestId,
-                retryDisposition: 'RETRY_MANUAL',
-              },
-            );
+          if (Buffer.byteLength(response.body, 'utf8') > PROVIDER_LIMITS.maxResponseBodyBytes) {
+            throw new ProviderError('PROVIDER_RESPONSE_TOO_LARGE', {
+              causeCategory: 'PROTOCOL',
+              modelId: context.modelId,
+              operation: context.operation,
+              outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
+              providerId: context.providerId,
+              requestId: context.requestId,
+              retryDisposition: 'RETRY_MANUAL',
+            });
           }
           return Object.freeze({
             ...response,

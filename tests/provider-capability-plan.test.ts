@@ -170,6 +170,7 @@ describe('Issue 013 immutable capability probe plans', () => {
       input: 'Return the requested JSON object.',
       max_output_tokens: 256,
       store: false,
+      stream: false,
       text: { format: { type: 'json_schema' } },
     });
     expect(capabilityProbeRequestBody(responsesStep)).not.toHaveProperty('temperature');
@@ -179,6 +180,7 @@ describe('Issue 013 immutable capability probe plans', () => {
       max_completion_tokens: 256,
       messages: [{ content: 'Return the requested JSON object.', role: 'user' }],
       response_format: { json_schema: { strict: true }, type: 'json_schema' },
+      stream: false,
     });
     expect(capabilityProbeRequestBody(chatStep)).not.toHaveProperty('input');
     expect(capabilityProbeRequestBody(chatStep)).not.toHaveProperty('text');

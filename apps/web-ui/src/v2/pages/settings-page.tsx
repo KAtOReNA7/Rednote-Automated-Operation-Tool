@@ -367,6 +367,10 @@ function ProviderSettings(): React.JSX.Element {
                     {step.errorType == null ? '' : ` · type=${step.errorType}`}
                     {step.errorParam == null ? '' : ` · param=${step.errorParam}`}
                     {step.requestId == null ? '' : ` · requestId=${step.requestId}`}
+                    <br />
+                    receivedContentType={step.receivedContentType ?? 'MISSING'} · transportVariant=
+                    {step.transportVariant ?? 'REJECTED'} · responseStatus=
+                    {step.httpStatus ?? '未知'}
                     {step.deduplicated
                       ? `；同一请求已去重并映射到 ${step.mappedSlots.join('、')}`
                       : ''}

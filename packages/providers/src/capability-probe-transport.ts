@@ -5,6 +5,12 @@ import {
   type CapabilityProbeTransport,
 } from './capability-probe-contracts.js';
 import { normalizeCapabilityProbeBaseUrl } from './capability-probe-plan.js';
+import {
+  normalizeOpenAICompatibleResponse,
+  OpenAIResponseNormalizationError,
+  safeReceivedContentType,
+  type OpenAIResponseTransportVariant,
+} from './openai-response-normalizer.js';
 
 export type CapabilityProbeFetch = (
   input: string | URL | globalThis.Request,
@@ -99,8 +105,12 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
         credentials: 'omit',
         headers: {
           Accept:
-            request.path === '/responses'
-              ? 'application/json, text/event-stream'
+            request.body !== null &&
+            typeof request.body === 'object' &&
+            !Array.isArray(request.body) &&
+            'stream' in request.body &&
+            request.body.stream === true
+              ? 'text/event-stream'
               : 'application/json',
           Authorization: `Bearer ${request.credential}`,
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -159,10 +169,38 @@ export class NodeFetchCapabilityProbeTransport implements CapabilityProbeTranspo
         bytes.set(chunk, offset);
         offset += chunk.byteLength;
       }
+      let decodedBody = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
+      let receivedContentType = safeReceivedContentType(headers['content-type']);
+      let transportVariant: OpenAIResponseTransportVariant = 'REJECTED';
+      if (
+        response.status >= 200 &&
+        response.status < 300 &&
+        (request.path === '/responses' || request.path === '/chat/completions')
+      ) {
+        try {
+          const normalized = normalizeOpenAICompatibleResponse({
+            body: decodedBody,
+            contentType: headers['content-type'],
+            maxBodyBytes: CAPABILITY_PROBE_LIMITS.maxResponseBodyBytes,
+            protocol: request.path === '/chat/completions' ? 'CHAT_COMPLETIONS' : 'RESPONSES',
+          });
+          decodedBody = normalized.body;
+          receivedContentType = normalized.receivedContentType;
+          transportVariant = normalized.transportVariant;
+        } catch (error) {
+          if (error instanceof OpenAIResponseNormalizationError) {
+            receivedContentType = error.receivedContentType;
+          } else {
+            throw error;
+          }
+        }
+      }
       return {
-        body: new TextDecoder('utf-8', { fatal: true }).decode(bytes),
+        body: decodedBody,
         headers,
+        receivedContentType,
         status: response.status,
+        transportVariant,
       };
     } catch (error) {
       if (controller.signal.aborted) {

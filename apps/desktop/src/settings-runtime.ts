@@ -553,11 +553,13 @@ export class DesktopSettingsRuntime {
           modelId: planned.modelId,
           observedAt: primary?.observedAt ?? null,
           protocolMode: planned.protocolMode,
+          receivedContentType: primary?.safeDetails.receivedContentType ?? null,
           reason: v2ProbeReason(diagnosticCode, sent, primary?.safeDetails),
           requestId: primary?.safeDetails.requestId ?? null,
           sent,
           stale: matches.some((entry) => entry.stale) || capability.derivedState === 'STALE',
           state,
+          transportVariant: primary?.safeDetails.transportVariant ?? null,
         });
       }),
     );
@@ -603,7 +605,7 @@ export class DesktopSettingsRuntime {
             'Search=关闭 Fetch=关闭 fee=UNKNOWN',
             ...steps.map(
               (step) =>
-                `${step.mappedSlots.join('+')} model=${step.modelId} capability=${step.capability} protocol=${step.protocolMode} state=${step.state} code=${step.diagnosticCode} sent=${step.sent ? 'yes' : 'no'} stale=${step.stale ? 'yes' : 'no'} observedAt=${step.observedAt ?? '无'}${step.httpStatus === null ? '' : ` http=${step.httpStatus}`}${step.errorCode == null ? '' : ` error.code=${step.errorCode}`}${step.errorType == null ? '' : ` error.type=${step.errorType}`}${step.errorParam == null ? '' : ` error.param=${step.errorParam}`}${step.requestId == null ? '' : ` requestId=${step.requestId}`} reason=${step.reason}`,
+                `${step.mappedSlots.join('+')} model=${step.modelId} capability=${step.capability} protocol=${step.protocolMode} state=${step.state} code=${step.diagnosticCode} sent=${step.sent ? 'yes' : 'no'} stale=${step.stale ? 'yes' : 'no'} observedAt=${step.observedAt ?? '无'} receivedContentType=${step.receivedContentType ?? 'MISSING'} transportVariant=${step.transportVariant ?? 'REJECTED'}${step.httpStatus === null ? '' : ` responseStatus=${step.httpStatus}`}${step.errorCode == null ? '' : ` error.code=${step.errorCode}`}${step.errorType == null ? '' : ` error.type=${step.errorType}`}${step.errorParam == null ? '' : ` error.param=${step.errorParam}`}${step.requestId == null ? '' : ` requestId=${step.requestId}`} reason=${step.reason}`,
             ),
           ].join('\n');
     const slot = (

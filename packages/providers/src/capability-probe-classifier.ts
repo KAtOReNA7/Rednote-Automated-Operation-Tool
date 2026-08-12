@@ -5,6 +5,10 @@ import {
   type ProbeReasonCode,
   type ProbeSafeDetails,
 } from './capability-probe-contracts.js';
+import {
+  normalizeOpenAICompatibleResponse,
+  OpenAIResponseNormalizationError,
+} from './openai-response-normalizer.js';
 
 const TEXT_MARKER = 'REDNOTE_CAPABILITY_OK';
 const STRUCTURED_MARKER = 'REDNOTE_STRUCTURED_OK';
@@ -361,19 +365,10 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
   response: CapabilityProbeResponse,
   now: string,
 ): readonly CapabilityProbeObservation[] {
-  const contentType = response.headers['content-type'] ?? '';
-  if (
-    response.status >= 200 &&
-    response.status < 300 &&
-    step.kind !== 'STREAMING' &&
-    step.kind !== 'BATCH_METADATA' &&
-    !/^application\/json(?:\s*;|$)/iu.test(contentType)
-  ) {
-    return [observation(step, now, 'INVALID_CONTENT_TYPE', 'UNKNOWN')];
-  }
+  const contentType = response.headers['content-type'];
   if (step.kind === 'STREAMING') {
     const supported =
-      /^text\/event-stream(?:\s*;|$)/iu.test(contentType) &&
+      /^text\/event-stream(?:\s*;|$)/iu.test(contentType ?? '') &&
       /data:\s*\{[\s\S]*\}/u.test(response.body);
     return [
       supported
@@ -393,7 +388,51 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
     ];
   }
 
-  const parsed = parseJson(response.body);
+  let normalizedBody = response.body;
+  let transportDetails: ProbeSafeDetails = {};
+  if (
+    response.status >= 200 &&
+    response.status < 300 &&
+    (step.kind === 'STRUCTURED' || step.kind === 'TEXT' || step.kind === 'VISION')
+  ) {
+    try {
+      if (response.transportVariant !== undefined && response.receivedContentType !== undefined) {
+        transportDetails = {
+          receivedContentType: response.receivedContentType,
+          transportVariant: response.transportVariant,
+        };
+      } else {
+        const normalized = normalizeOpenAICompatibleResponse({
+          body: response.body,
+          contentType,
+          maxBodyBytes: 2 * 1024 * 1024,
+          protocol: step.protocolMode === 'CHAT_COMPLETIONS' ? 'CHAT_COMPLETIONS' : 'RESPONSES',
+        });
+        normalizedBody = normalized.body;
+        transportDetails = {
+          receivedContentType: normalized.receivedContentType,
+          transportVariant: normalized.transportVariant,
+        };
+      }
+    } catch (error) {
+      if (error instanceof OpenAIResponseNormalizationError) {
+        return [
+          observation(
+            step,
+            now,
+            error.reason === 'INVALID_CONTENT_TYPE' ? 'INVALID_CONTENT_TYPE' : 'INVALID_JSON',
+            'UNKNOWN',
+            {
+              receivedContentType: error.receivedContentType,
+              transportVariant: 'REJECTED',
+            },
+          ),
+        ];
+      }
+      return [observation(step, now, 'INVALID_RESPONSE', 'UNKNOWN')];
+    }
+  }
+  const parsed = parseJson(normalizedBody);
   const failure = httpFailure(step, response, parsed.value, now);
   if (failure !== null) {
     return [failure];
@@ -449,8 +488,8 @@ function classifyCapabilityProbeResponseWithoutRateLimits(
     const structured = parseJson(text);
     primary =
       structured.ok && record(structured.value)?.marker === STRUCTURED_MARKER
-        ? observation(step, now, 'NOT_PROBED', 'SUPPORTED')
-        : observation(step, now, 'SCHEMA_MISMATCH', 'UNKNOWN');
+        ? observation(step, now, 'NOT_PROBED', 'SUPPORTED', transportDetails)
+        : observation(step, now, 'SCHEMA_MISMATCH', 'UNKNOWN', transportDetails);
   } else if (step.kind === 'VISION') {
     primary = text.includes(VISION_MARKER)
       ? observation(step, now, 'NOT_PROBED', 'SUPPORTED')

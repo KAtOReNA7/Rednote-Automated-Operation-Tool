@@ -11,6 +11,7 @@ function responsesBase(modelId: string, input: JsonValue): Record<string, JsonVa
     max_output_tokens: 24,
     model: modelId,
     store: false,
+    stream: false,
   };
 }
 
@@ -19,6 +20,7 @@ function chatBase(modelId: string, content: JsonValue): Record<string, JsonValue
     max_tokens: 24,
     messages: [{ content, role: 'user' }],
     model: modelId,
+    stream: false,
   };
 }
 
@@ -45,6 +47,7 @@ export function capabilityProbeRequestBody(step: CapabilityProbeStep): JsonValue
         max_completion_tokens: 256,
         messages: [{ content: 'Return the requested JSON object.', role: 'user' }],
         model: step.modelId,
+        stream: false,
         response_format: {
           json_schema: {
             name: 'rednote_capability_probe',
@@ -60,6 +63,7 @@ export function capabilityProbeRequestBody(step: CapabilityProbeStep): JsonValue
       max_output_tokens: 256,
       model: step.modelId,
       store: false,
+      stream: false,
       text: {
         format: {
           name: 'rednote_capability_probe',
