@@ -59,6 +59,8 @@ const bridge: V2Bridge = Object.freeze({
     invoke<InteractionItem>('mutate', { action: 'GENERATE_REPLY_SUGGESTION', ...input }),
   lockWeeklyPlan: (input: Parameters<V2Bridge['lockWeeklyPlan']>[0]) =>
     invoke<WeeklyPlan>('mutate', { action: 'LOCK_WEEKLY_PLAN', ...input }),
+  unlockWeeklyPlan: (input: Parameters<V2Bridge['unlockWeeklyPlan']>[0]) =>
+    invoke<WeeklyPlan>('mutate', { action: 'UNLOCK_WEEKLY_PLAN', ...input }),
   previewPlanReschedule: (input: Parameters<V2Bridge['previewPlanReschedule']>[0]) =>
     invoke<PlanReschedulePreview>('read', {
       view: 'PLAN_RESCHEDULE_PREVIEW',

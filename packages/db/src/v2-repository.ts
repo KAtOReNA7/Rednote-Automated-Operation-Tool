@@ -444,6 +444,52 @@ export class SqliteV2Repository
     });
   }
 
+  public unlockWeeklyPlan(plan: WeeklyPlan, expectedRevision: number): WeeklyPlan {
+    const validated = parseWeeklyPlan(plan);
+    return runInTransaction(this.#database, () => {
+      const current = this.#requiredPlan(validated.weekKey);
+      if (current.revision !== expectedRevision || current.status !== 'CONFIRMED') {
+        throw new V2ContractError('REVISION_CONFLICT', ['weeklyPlan']);
+      }
+      const historyRow = this.#database
+        .prepare(
+          `SELECT locked_history_json FROM v2_weekly_plan_snapshots
+           WHERE workspace_id = ? AND week_key = ?`,
+        )
+        .get(this.#workspaceId, validated.weekKey) as { locked_history_json: string | null };
+      const history =
+        historyRow.locked_history_json === null ? [] : JSON.parse(historyRow.locked_history_json);
+      if (!Array.isArray(history)) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      const snapshot = {
+        candidates: current.candidates,
+        revision: current.revision,
+        status: current.status,
+      };
+      const nextHistory = JSON.stringify([...history, snapshot]);
+      if (Buffer.byteLength(nextHistory, 'utf8') > 32_768)
+        throw new V2ContractError('INVALID_REQUEST', ['weeklyPlan']);
+      const next = parseWeeklyPlan({ ...validated, revision: current.revision + 1 });
+      const result = this.#database
+        .prepare(
+          `UPDATE v2_weekly_plan_snapshots
+           SET plan_status = ?, candidates_json = ?, locked_history_json = ?, revision = ?, updated_at = ?
+           WHERE workspace_id = ? AND week_key = ? AND revision = ?`,
+        )
+        .run(
+          next.status,
+          candidatesJson(next),
+          nextHistory,
+          next.revision,
+          this.#timestamp(),
+          this.#workspaceId,
+          next.weekKey,
+          expectedRevision,
+        );
+      if (result.changes !== 1) throw new V2ContractError('REVISION_CONFLICT', ['weeklyPlan']);
+      return this.#requiredPlan(next.weekKey);
+    });
+  }
+
   public list(requestedWeekKey: string): readonly ContentVersionRecord[] {
     return this.#database
       .prepare(this.#contentSelect(`WHERE package.workspace_id = ? AND package.week_key = ?`))

@@ -70,6 +70,10 @@ export class MemoryV2Repository implements V2RepositoryPort {
     this.#plans.set(saved.weekKey, saved);
     return saved;
   }
+
+  public unlockWeeklyPlan(plan: WeeklyPlan, expectedRevision: number): WeeklyPlan {
+    return this.saveWeeklyPlan(plan, expectedRevision);
+  }
 }
 
 export function createMemoryV2Bridge(): V2Bridge {
@@ -112,6 +116,8 @@ export function createMemoryV2Bridge(): V2Bridge {
     }),
     lockWeeklyPlan: (input) =>
       run(() => facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    unlockWeeklyPlan: (input) =>
+      run(() => facade.mutate({ action: 'UNLOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     previewPlanReschedule: (input) =>
       run(
         () => facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview,

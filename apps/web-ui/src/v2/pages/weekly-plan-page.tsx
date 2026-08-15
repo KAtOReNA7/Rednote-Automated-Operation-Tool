@@ -21,6 +21,19 @@ function shortDate(value: string): string {
   return `${String(Number(month))}/${String(Number(day))}`;
 }
 
+function shanghaiDateText(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+  }).formatToParts(now);
+  const values = Object.fromEntries(
+    parts.filter(({ type }) => type !== 'literal').map(({ type, value }) => [type, value]),
+  );
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 export function WeeklyPlanPage(): React.JSX.Element {
   const { notify, openDate, session, setSession, setUi, ui } = useV2Controller();
   const { planFilter: filter, planSelectedIds: selectedIds } = ui;
@@ -32,6 +45,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
     weekKey: session.weekKey,
   });
   const targetWeekKey = nextWeek.weekKey;
+  const today = shanghaiDateText();
   const [targetPlan, setTargetPlan] = useState<{
     readonly revision: number;
     readonly weekKey: string;
@@ -49,6 +63,19 @@ export function WeeklyPlanPage(): React.JSX.Element {
   const pending = session.plan.filter(({ status }) => status === '待审批');
   const conflicts = session.plan.filter(({ status }) => status === '时间冲突');
   const skipped = session.plan.filter(({ status }) => status === '已跳过');
+  const activeByDay = dayOrder.map(
+    (day) => session.plan.filter((item) => item.day === day && item.status !== '已跳过').length,
+  );
+  const lockReasons = [
+    ...(session.plan.filter(({ status }) => status !== '已跳过').length === 21
+      ? []
+      : [
+          `还差${Math.max(0, 21 - session.plan.filter(({ status }) => status !== '已跳过').length)}篇`,
+        ]),
+    ...(activeByDay.every((count) => count === 3) ? [] : ['每天必须各有3篇']),
+    ...(pending.length === 0 ? [] : [`${pending.length}篇待确认`]),
+    ...(conflicts.length === 0 ? [] : [`${conflicts.length}处冲突`]),
+  ];
   const clearSelection = (): void =>
     setUi((current) => ({
       ...current,
@@ -144,6 +171,17 @@ export function WeeklyPlanPage(): React.JSX.Element {
         clearSelection();
       });
   };
+  const unlock = (): void => {
+    const bridge = window.rednoteV2;
+    if (bridge === undefined) return notify('本机周计划桥接不可用，未解锁计划。');
+    void bridge
+      .unlockWeeklyPlan({ expectedRevision: session.planRevision, weekKey: session.weekKey })
+      .then((result) => {
+        if (!result.ok) return notify(result.error.message);
+        setSession((current) => withPersistedWeeklyPlan(current, result.value));
+        notify('已派生可调整草稿；原锁定版本保留为历史引用。');
+      });
+  };
   const openScheduler = (event: React.MouseEvent<HTMLButtonElement>): void => {
     if (selectedIds.length === 0) {
       notify('请先选择至少一篇内容。');
@@ -175,7 +213,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
           />
         }
         description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
-        eyebrow={`当前周 ${currentWeek.weekKey} · ${currentWeek.startDate} 至 ${currentWeek.endDate}`}
+        eyebrow={`查看计划周 ${session.weekKey} · 自然当前周 ${currentWeek.weekKey}（${currentWeek.startDate} 至 ${currentWeek.endDate}）`}
         title="本周计划"
       />
       {!planConsistent ? (
@@ -196,8 +234,11 @@ export function WeeklyPlanPage(): React.JSX.Element {
           <Icon name="check-circle" />
           <div>
             <strong>本周计划已锁定</strong>
-            <p>当前为真实只读状态；重启后仍保持锁定。</p>
+            <p>当前为真实只读状态；可解锁调整并重新处理确认、冲突和锁定。</p>
           </div>
+          <Button onClick={unlock} tone="quiet">
+            解锁调整
+          </Button>
         </section>
       ) : null}
       <div className="v2-plan-toolbar">
@@ -240,7 +281,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
                 <header>
                   <strong>{day}</strong>
                   <span>{date}</span>
-                  {day === '周日' ? <b>今天</b> : null}
+                  {dayItems.some((item) => item.date === today) ? <b>今天</b> : null}
                 </header>
                 <div>
                   {dayItems
@@ -307,7 +348,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
               </div>
               <div>
                 <dt>空位</dt>
-                <dd>{Math.max(0, 23 - session.plan.length + skipped.length)} 个</dd>
+                <dd>{Math.max(0, 21 - session.plan.length + skipped.length)} 个</dd>
               </div>
             </dl>
             {conflicts.length === 0 ? null : (
@@ -335,7 +376,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
             >
               自由选择日期时间
             </Button>
-            <Button disabled={locked} onClick={lock} tone="primary">
+            <Button disabled={locked || lockReasons.length > 0} onClick={lock} tone="primary">
               锁定本周计划
             </Button>
           </section>
@@ -366,6 +407,11 @@ export function WeeklyPlanPage(): React.JSX.Element {
           </Button>
         </section>
       )}
+      {!locked && lockReasons.length > 0 ? (
+        <p className="v2-form-error" role="status">
+          锁定前仍需处理：{lockReasons.join('、')}。
+        </p>
+      ) : null}
     </div>
   );
 }

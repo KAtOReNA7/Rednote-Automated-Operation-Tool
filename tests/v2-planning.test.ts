@@ -102,26 +102,22 @@ describe('V2 R03 persona-driven planning', () => {
     expect(repeated.candidates).toEqual(generated.candidates);
   });
 
-  it('confirms, skips, locks, and rejects every normal mutation after locking', () => {
+  it('locks only a complete confirmed plan and rejects every normal mutation after locking', () => {
     const facade = new V2ApplicationFacade(new MemoryV2Repository());
-    facade.read({ view: 'WEEKLY_PLAN', weekKey: V2_DEFAULT_WEEK_KEY });
+    const initial = facade.read({
+      view: 'WEEKLY_PLAN',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    }) as WeeklyPlan;
     const confirmed = facade.mutate({
       action: 'CONFIRM_PLAN_CANDIDATES',
-      candidateIds: ['thu-1'],
+      candidateIds: initial.candidates.map(({ id }) => id),
       expectedRevision: 0,
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
-    const skipped = facade.mutate({
-      action: 'SKIP_PLAN_CANDIDATES',
-      candidateIds: ['sun-2'],
-      expectedRevision: confirmed.revision,
-      weekKey: V2_DEFAULT_WEEK_KEY,
-    }) as WeeklyPlan;
-    expect(skipped.candidates.find(({ id }) => id === 'thu-1')?.status).toBe('CONFIRMED');
-    expect(skipped.candidates.find(({ id }) => id === 'sun-2')?.status).toBe('SKIPPED');
+    expect(confirmed.candidates.every(({ status }) => status === 'CONFIRMED')).toBe(true);
     const locked = facade.mutate({
       action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: skipped.revision,
+      expectedRevision: confirmed.revision,
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
     expect(locked.status).toBe('CONFIRMED');
