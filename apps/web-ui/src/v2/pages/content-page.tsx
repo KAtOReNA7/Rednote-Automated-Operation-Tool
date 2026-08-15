@@ -295,7 +295,7 @@ export function ContentPage(): React.JSX.Element {
             <h2>尚未生成内容包</h2>
             <p>
               {session.planStatus === 'CONFIRMED'
-                ? '请在左侧明确选择 3 个计划项，然后生成确定性本地内容。'
+                ? '请在左侧明确选择 3 个计划项，然后预览并生成受控模型内容。'
                 : '当前周计划尚未锁定；生成操作保持禁用门禁。'}
             </p>
           </section>
@@ -309,8 +309,8 @@ export function ContentPage(): React.JSX.Element {
                   v{active.version} · revision {active.revision} · {active.status}
                 </small>
                 <small>
-                  文案：{active.provenance.copyModelId ?? '历史演示内容'} · 封面：
-                  {active.provenance.coverModelId ?? '历史演示内容'} · 生成时间：
+                  文案：{active.provenance.copyModelId ?? '历史版本'} · 封面：
+                  {active.provenance.coverModelId ?? '历史版本'} · 生成时间：
                   {active.provenance.generatedAt}
                 </small>
               </div>
@@ -377,7 +377,7 @@ export function ContentPage(): React.JSX.Element {
                   封面 ·{' '}
                   {active.provenance.coverSource === 'GENERATED_IMAGE'
                     ? '模型生成版本'
-                    : '历史演示内容'}
+                    : '历史版本'}
                 </figcaption>
               </figure>
               <div className="v2-package-fields">
