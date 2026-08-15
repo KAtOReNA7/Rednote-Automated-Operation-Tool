@@ -281,7 +281,7 @@ for (const mode of ['disabled', 'enabled']) {
           report.runtime?.sqliteInitialized !== true ||
           report.runtime?.v2TableCount !== 8 ||
           report.runtime?.personaRevision !== 0 ||
-          report.runtime?.planRevision !== 1 ||
+          report.runtime?.planRevision !== 2 ||
           report.security?.externalRequestAttempts !== 0
         )
           throw new Error(`V2 packaged smoke failed: ${JSON.stringify(report)}`);
