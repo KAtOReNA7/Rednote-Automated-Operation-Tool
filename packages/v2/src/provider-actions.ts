@@ -156,6 +156,7 @@ export type V2ProviderActionErrorCode =
   | 'PROVIDER_ACTION_CONFIG_CHANGED'
   | 'PROVIDER_ACTION_CREDENTIAL_CHANGED'
   | 'PROVIDER_ACTION_EXPIRED'
+  | 'PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE'
   | 'PROVIDER_ACTION_REPLAYED'
   | 'PROVIDER_ACTION_SOURCE_CHANGED'
   | 'PROVIDER_ACTION_STALE'
@@ -457,6 +458,7 @@ export type V2StructuredJsonState = 'STALE' | 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPO
 export type V2BudgetState = 'ALLOWED' | 'BLOCKED' | 'UNKNOWN';
 
 export interface V2StructuredProtocolCandidate {
+  readonly observedAt?: string | null;
   readonly protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES';
   readonly stale: boolean;
   readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
@@ -475,14 +477,14 @@ export function selectV2StructuredProtocol(
       state: candidates.length > 0 ? ('STALE' as const) : ('UNKNOWN' as const),
     });
   }
-  const supported =
-    current.find(
-      (candidate) => candidate.state === 'SUPPORTED' && candidate.protocolMode === 'RESPONSES',
-    ) ??
-    current.find(
-      (candidate) =>
-        candidate.state === 'SUPPORTED' && candidate.protocolMode === 'CHAT_COMPLETIONS',
-    );
+  const supported = current
+    .filter((candidate) => candidate.state === 'SUPPORTED')
+    .sort((left, right) => {
+      const observed = (right.observedAt ?? '').localeCompare(left.observedAt ?? '');
+      if (observed !== 0) return observed;
+      // A deterministic tie-break only; no request-time fallback is performed.
+      return left.protocolMode === 'CHAT_COMPLETIONS' ? -1 : 1;
+    })[0];
   return Object.freeze({
     protocolMode: supported?.protocolMode ?? null,
     state:

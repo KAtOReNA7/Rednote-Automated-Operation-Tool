@@ -1499,6 +1499,8 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
       PROVIDER_ACTION_CONFIG_CHANGED: '预览后 AI 配置已变化，请重新预览。',
       PROVIDER_ACTION_CREDENTIAL_CHANGED: '预览后凭据状态已变化，请重新预览。',
       PROVIDER_ACTION_EXPIRED: '确认已过期，请重新预览。',
+      PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE:
+        '图片服务当前不可用（HTTP 503），文案不受影响；可稍后单独重试封面。',
       PROVIDER_ACTION_REPLAYED: '该确认已使用，请重新预览。',
       PROVIDER_ACTION_SOURCE_CHANGED: '预览后目标数据已变化，请重新预览。',
       PROVIDER_ACTION_STALE: '预览后业务数据已变化，请重新预览。',
@@ -1517,7 +1519,8 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
       message: messages[error.code],
       severity: error.code === 'PROVIDER_ACTION_STALE' ? 'WARNING' : 'ERROR',
       suggestedAction:
-        error.code === 'PROVIDER_ACTION_UNCERTAIN'
+        error.code === 'PROVIDER_ACTION_UNCERTAIN' ||
+        error.code === 'PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE'
           ? '打开设置与模型账本核对后再决定'
           : '检查设置后重新预览',
     };

@@ -224,6 +224,31 @@ const V2_R07_PROBE_SELECTION = Object.freeze({
   targetModelSlots: Object.freeze(['RESEARCH', 'WRITING', 'IMAGE'] as const),
 });
 
+export function selectV2R07ProbeCapabilities(
+  entries: readonly ProviderCapabilityStateView['entries'][number][],
+) {
+  const supported = (slot: 'IMAGE' | 'RESEARCH' | 'WRITING', capability: string): boolean =>
+    entries.some(
+      (entry) =>
+        entry.modelSlot === slot &&
+        entry.capability === capability &&
+        !entry.stale &&
+        entry.state === 'SUPPORTED',
+    );
+  const textReady =
+    supported('RESEARCH', 'structuredJson') && supported('WRITING', 'structuredJson');
+  const imageReady = supported('IMAGE', 'imageGeneration');
+  return Object.freeze({
+    ...V2_R07_PROBE_SELECTION,
+    selectedCapabilities: Object.freeze(
+      [textReady ? null : 'structuredJson', imageReady ? null : 'imageGeneration'].filter(
+        (value): value is 'imageGeneration' | 'structuredJson' => value !== null,
+      ),
+    ),
+    structuredProtocolModes: V2_R07_PROBE_SELECTION.structuredProtocolModes,
+  });
+}
+
 function v2ProbeDiagnosticCode(
   entry: ProviderCapabilityStateView['entries'][number] | undefined,
   fallback: string,
@@ -484,18 +509,21 @@ export class DesktopSettingsRuntime {
       readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
     }[];
     try {
-      planSteps = active.capabilities.describePlan(V2_R07_PROBE_SELECTION).steps.filter(
-        (
-          candidate,
-        ): candidate is typeof candidate & {
-          readonly capability: 'imageGeneration' | 'structuredJson';
-          readonly modelId: string;
-          readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
-          readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
-        } =>
-          candidate.modelId !== null &&
-          (candidate.capability === 'structuredJson' || candidate.capability === 'imageGeneration'),
-      );
+      planSteps = active.capabilities
+        .describePlan(selectV2R07ProbeCapabilities(capability.entries))
+        .steps.filter(
+          (
+            candidate,
+          ): candidate is typeof candidate & {
+            readonly capability: 'imageGeneration' | 'structuredJson';
+            readonly modelId: string;
+            readonly modelSlots: readonly ('IMAGE' | 'RESEARCH' | 'WRITING')[];
+            readonly protocolMode: 'CHAT_COMPLETIONS' | 'NOT_APPLICABLE' | 'RESPONSES';
+          } =>
+            candidate.modelId !== null &&
+            (candidate.capability === 'structuredJson' ||
+              candidate.capability === 'imageGeneration'),
+        );
     } catch {
       planSteps = [];
     }
@@ -634,6 +662,7 @@ export class DesktopSettingsRuntime {
             )
             .map((candidate) => ({
               protocolMode: candidate.protocolMode as 'CHAT_COMPLETIONS' | 'RESPONSES',
+              observedAt: candidate.observedAt,
               stale: candidate.stale,
               state: candidate.state,
             })),
@@ -742,7 +771,24 @@ export class DesktopSettingsRuntime {
     windowId: number,
   ): V2CapabilityProbePreview {
     const active = this.#requireActive();
-    const preview = active.capabilities.preview(V2_R07_PROBE_SELECTION, senderId, windowId);
+    const selection = selectV2R07ProbeCapabilities(active.capabilities.getState().entries);
+    if (selection.selectedCapabilities.length === 0) {
+      return {
+        budgetReady: !active.accounting.getView().hardStop,
+        credentialBindingVersion: 0,
+        expiresAt: new Date().toISOString(),
+        feeEstimate: 'UNKNOWN',
+        planHash: 'NO_R07_CAPABILITY_PROBE_NEEDED',
+        requestCount: 0,
+        fetchEnabled: false,
+        searchEnabled: false,
+        settingsRevision: 0,
+        startToken: 'NO_R07_CAPABILITY_PROBE_NEEDED',
+        modelIds: Object.freeze([]),
+        userApprovedUnknownCost: false,
+      };
+    }
+    const preview = active.capabilities.preview(selection, senderId, windowId);
     if (preview.requestCount > 3) {
       throw new ProviderCapabilityControlError('PROBE_INVALID_REQUEST');
     }

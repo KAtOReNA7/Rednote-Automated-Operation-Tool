@@ -109,6 +109,22 @@ describe('V2 R07 controlled provider adapter', () => {
         { protocolMode: 'CHAT_COMPLETIONS', stale: false, state: 'SUPPORTED' },
         { protocolMode: 'RESPONSES', stale: false, state: 'SUPPORTED' },
       ]),
+    ).toEqual({ protocolMode: 'CHAT_COMPLETIONS', state: 'SUPPORTED' });
+    expect(
+      selectV2StructuredProtocol([
+        {
+          observedAt: '2026-08-15T00:00:01.000Z',
+          protocolMode: 'CHAT_COMPLETIONS',
+          stale: false,
+          state: 'SUPPORTED',
+        },
+        {
+          observedAt: '2026-08-15T00:00:02.000Z',
+          protocolMode: 'RESPONSES',
+          stale: false,
+          state: 'SUPPORTED',
+        },
+      ]),
     ).toEqual({ protocolMode: 'RESPONSES', state: 'SUPPORTED' });
     expect(
       selectV2StructuredProtocol([

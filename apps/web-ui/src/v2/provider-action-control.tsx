@@ -93,7 +93,12 @@ export function ProviderActionControl({
       setPreview(null);
       if (!result.ok) {
         setMessage(result.error.message);
-        setStatus(result.error.code === 'PROVIDER_ACTION_UNCERTAIN' ? 'UNCERTAIN' : 'BLOCKED');
+        setStatus(
+          result.error.code === 'PROVIDER_ACTION_UNCERTAIN' ||
+            result.error.code === 'PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE'
+            ? 'UNCERTAIN'
+            : 'BLOCKED',
+        );
         return;
       }
       await onSuccess();

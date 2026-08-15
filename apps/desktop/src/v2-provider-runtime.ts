@@ -560,6 +560,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
           )
           .map((candidate) => ({
             protocolMode: candidate.protocolMode as 'CHAT_COMPLETIONS' | 'RESPONSES',
+            observedAt: candidate.observedAt,
             stale: candidate.stale,
             state: candidate.state,
           })),

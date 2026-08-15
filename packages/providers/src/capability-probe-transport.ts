@@ -5,6 +5,7 @@ import {
   type CapabilityProbeTransport,
 } from './capability-probe-contracts.js';
 import { normalizeCapabilityProbeBaseUrl } from './capability-probe-plan.js';
+import { providerEndpointUrl, type ProviderEndpoint } from './transport.js';
 import {
   normalizeOpenAICompatibleResponse,
   OpenAIResponseNormalizationError,
@@ -24,6 +25,13 @@ const ALLOWED_PATHS = new Set([
   '/models',
   '/responses',
 ]);
+const PROVIDER_ENDPOINT_BY_PROBE_PATH: Readonly<
+  Partial<Record<CapabilityProbeRequest['path'], ProviderEndpoint>>
+> = Object.freeze({
+  '/chat/completions': 'CHAT_COMPLETIONS',
+  '/images/generations': 'IMAGES_GENERATIONS',
+  '/responses': 'RESPONSES',
+});
 const ALLOWED_RESPONSE_HEADERS = Object.freeze([
   'allow',
   'content-type',
@@ -39,6 +47,10 @@ export function capabilityProbeUrl(baseUrl: string, path: CapabilityProbeRequest
     throw new TypeError('Capability probe endpoint is not allowed.');
   }
   const normalized = normalizeCapabilityProbeBaseUrl(baseUrl);
+  const providerEndpoint = PROVIDER_ENDPOINT_BY_PROBE_PATH[path];
+  if (providerEndpoint !== undefined) {
+    return providerEndpointUrl(normalized, providerEndpoint);
+  }
   const parsed = new URL(normalized);
   parsed.pathname = `${parsed.pathname.replace(/\/+$/u, '')}${path}`;
   return parsed.toString();

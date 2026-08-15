@@ -462,7 +462,12 @@ export class V2DesktopRuntime {
       throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
     }
     if (executed.status === 'OUTCOME_UNCERTAIN') {
-      throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
+      throw new V2ProviderActionError(
+        lease.intent.kind === 'CONTENT_COVER' &&
+          executed.stableErrorCode === 'PROVIDER_UPSTREAM_5XX'
+          ? 'PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE'
+          : 'PROVIDER_ACTION_UNCERTAIN',
+      );
     }
     if (executed.status === 'CANCELLED') {
       throw new V2ProviderActionError('PROVIDER_ACTION_CANCELLED');

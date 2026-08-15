@@ -377,7 +377,9 @@ export function ContentPage(): React.JSX.Element {
                   封面 ·{' '}
                   {active.provenance.coverSource === 'GENERATED_IMAGE'
                     ? '模型生成版本'
-                    : '历史版本'}
+                    : active.provenance.copyModelRunId === null
+                      ? '历史版本'
+                      : '待补封面（当前为历史演示封面）'}
                 </figcaption>
               </figure>
               <div className="v2-package-fields">

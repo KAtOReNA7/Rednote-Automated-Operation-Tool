@@ -157,6 +157,26 @@ describe('Issue 013 capability persistence migration', () => {
         ],
         runId: 'probe-success-000001',
       });
+      repository.recordObservation(
+        'probe-success-000001',
+        currentPlan,
+        {
+          capability: 'structuredJson',
+          confidence: 'CONFIRMED',
+          maxContextTokens: null,
+          modelId: 'fixture-model',
+          modelSlots: ['RESEARCH', 'WRITING'],
+          observedAt: '2026-07-28T00:00:03.500Z',
+          protocolMode: 'CHAT_COMPLETIONS',
+          rateLimitRequests: null,
+          rateLimitTokens: null,
+          reasonCode: 'NOT_PROBED',
+          safeDetails: {},
+          source: 'PROBED',
+          state: 'SUPPORTED',
+        },
+        '2026-07-28T00:00:03.500Z',
+      );
       repository.createRun('probe-partial-000001', currentPlan, '2026-07-28T00:00:05.000Z');
       repository.recordObservation(
         'probe-partial-000001',
@@ -186,22 +206,26 @@ describe('Issue 013 capability persistence migration', () => {
       });
       expect(repository.getState(currentPlan.configFingerprint, 1)).toMatchObject({
         derivedState: 'PARTIAL',
-        entries: [
-          {
-            modelSlot: 'RESEARCH',
-            reasonCode: 'SCHEMA_MISMATCH',
-            safeDetails: { status: 200 },
-            state: 'UNKNOWN',
-          },
-          {
-            modelSlot: 'WRITING',
-            reasonCode: 'SCHEMA_MISMATCH',
-            safeDetails: { status: 200 },
-            state: 'UNKNOWN',
-          },
-        ],
         runId: 'probe-partial-000001',
       });
+      const currentEntries = repository.getState(currentPlan.configFingerprint, 1).entries;
+      expect(currentEntries).toContainEqual(
+        expect.objectContaining({
+          modelSlot: 'RESEARCH',
+          protocolMode: 'RESPONSES',
+          reasonCode: 'SCHEMA_MISMATCH',
+          safeDetails: { status: 200 },
+          state: 'UNKNOWN',
+        }),
+      );
+      expect(currentEntries).toContainEqual(
+        expect.objectContaining({
+          capability: 'structuredJson',
+          protocolMode: 'CHAT_COMPLETIONS',
+          stale: false,
+          state: 'SUPPORTED',
+        }),
+      );
       expect(repository.getState(currentPlan.configFingerprint, 2).derivedState).toBe('STALE');
     } finally {
       database.close();
