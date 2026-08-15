@@ -58,6 +58,8 @@ export type V2ProviderActionIntent =
 
 export interface V2ProviderActionPreview {
   readonly blockReasons: readonly string[];
+  /** Safe local business-state reason, without request payloads or paths. */
+  readonly businessReasonCode?: V2ProviderActionErrorCode;
   readonly budgetState: V2BudgetState;
   readonly canConfirm: boolean;
   readonly capabilityState: V2StructuredJsonState;
@@ -86,7 +88,7 @@ export interface V2ProviderActionPreview {
     | 'UNKNOWN_FEE_CONSENT_REQUIRED';
   readonly reasonMessage: string;
   readonly unknownCostApproved?: boolean;
-  readonly requestCount: 1;
+  readonly requestCount: 1 | 3;
   readonly searchEnabled: false;
   readonly summary: string;
   readonly targetEndDate?: string;
@@ -127,7 +129,7 @@ export interface V2ProviderActionExecutionResult {
     | 'UNKNOWN_POSSIBLY_INCURRED'
     | 'UNPRICED_USAGE'
     | 'USER_PRICE_TABLE_ESTIMATE';
-  readonly externalRequestCount: 0 | 1;
+  readonly externalRequestCount: 0 | 1 | 2 | 3;
   readonly outcomeCertainty:
     'COMPLETED_INVALID_OUTPUT' | 'MAY_HAVE_EXECUTED' | 'NOT_SENT' | 'REJECTED_BEFORE_EXECUTION';
   readonly output: unknown;
@@ -139,7 +141,7 @@ export interface V2ProviderActionExecutionResult {
 export interface V2ProviderActionResult {
   readonly costAmountMicroUsd: number | null;
   readonly costState: V2ProviderActionExecutionResult['costState'];
-  readonly externalRequestCount: 0 | 1;
+  readonly externalRequestCount: 0 | 1 | 2 | 3;
   readonly kind: V2ProviderActionKind;
   readonly status: 'SUCCEEDED';
 }
@@ -363,7 +365,7 @@ export const V2_PROVIDER_OUTPUT_JSON_SCHEMAS = Object.freeze({
           type: 'object',
         },
         maxItems: 3,
-        minItems: 3,
+        minItems: 1,
         type: 'array',
       },
     },

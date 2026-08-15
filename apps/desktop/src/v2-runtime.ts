@@ -90,6 +90,33 @@ function providerInputHash(input: Readonly<Record<string, unknown>>): string {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex');
 }
 
+function providerBusinessBlock(
+  intent: V2ProviderActionIntent,
+  error: V2ProviderActionError,
+): string {
+  if (intent.kind === 'CONTENT_PACKAGES') {
+    if (error.affectedFields.includes('existingContent'))
+      return '所选计划项已有内容版本；请在内容包中选择“生成新版本”。';
+    if (error.affectedFields.includes('candidateIds'))
+      return '所选计划项已变化或不可生成，请重新选择 3 个锁定计划项。';
+    return '周计划尚未锁定或已变化，请重新载入后再选择 3 个计划项。';
+  }
+  if (intent.kind === 'REPLY_SUGGESTION') {
+    return error.affectedFields.includes('interaction')
+      ? '互动记录尚未保存或已更新，请重新载入互动页后再试。'
+      : '当前互动状态不能生成回复建议。';
+  }
+  return '目标周计划已变化，请重新载入后再预览。';
+}
+
+function combinedExternalRequestCount(
+  results: readonly V2ProviderActionExecutionResult[],
+): 0 | 1 | 2 | 3 {
+  const count = results.reduce<number>((total, item) => total + item.externalRequestCount, 0);
+  if (count > 3) throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
+  return count as 0 | 1 | 2 | 3;
+}
+
 const unavailableProviderExecution: V2ProviderExecutionPort = {
   execute: async () => ({
     costAmountMicroUsd: null,
@@ -355,17 +382,15 @@ export class V2DesktopRuntime {
   ): Promise<V2ProviderActionPreview> {
     this.#removeExpiredProviderPreviews();
     let input: Readonly<Record<string, unknown>> = Object.freeze({});
-    let businessBlock: string | null = null;
+    let businessBlock: {
+      readonly code: V2ProviderActionError['code'];
+      readonly message: string;
+    } | null = null;
     try {
       input = await this.#providerInput(intent);
     } catch (error) {
       if (!(error instanceof V2ProviderActionError)) throw error;
-      businessBlock =
-        intent.kind === 'CONTENT_PACKAGES'
-          ? '请先锁定计划并选择 3 个尚未生成内容包的候选。'
-          : intent.kind === 'REPLY_SUGGESTION'
-            ? '当前互动状态不能生成回复建议。'
-            : '目标周计划已变化，请重新载入后再预览。';
+      businessBlock = { code: error.code, message: providerBusinessBlock(intent, error) };
     }
     const readiness = await this.#providerExecution.inspect({
       input,
@@ -389,16 +414,18 @@ export class V2DesktopRuntime {
     const targetWeek = targetWeekKey === null ? null : weekDateRange(targetWeekKey);
     return Object.freeze({
       ...readiness,
+      ...(businessBlock === null ? {} : { businessReasonCode: businessBlock.code }),
       blockReasons:
         businessBlock === null
           ? readiness.blockReasons
-          : [businessBlock, ...readiness.blockReasons],
+          : [businessBlock.message, ...readiness.blockReasons],
       canConfirm,
       expiresAt: new Date(expiresAtMs).toISOString(),
       fetchEnabled: false,
       kind: intent.kind,
       previewToken,
-      requestCount: 1,
+      requestCount: intent.kind === 'CONTENT_PACKAGES' ? 3 : 1,
+      reasonMessage: businessBlock?.message ?? readiness.reasonMessage,
       searchEnabled: false,
       summary: providerActionSummary(intent.kind),
       ...(targetWeek === null
@@ -451,14 +478,8 @@ export class V2DesktopRuntime {
       throw new V2ProviderActionError('PROVIDER_ACTION_CREDENTIAL_CHANGED');
     if (currentReadiness.readinessBinding !== lease.readiness.readinessBinding)
       throw new V2ProviderActionError('PROVIDER_ACTION_STALE');
-    const executed = await this.#providerExecution.execute({
-      executionId: `v2-r07-${randomUUID()}`,
-      input,
-      kind: lease.intent.kind,
-      modelSlot: providerActionModelSlot(lease.intent.kind),
-      userApprovedUnknownCost: lease.intent.userApprovedUnknownCost === true,
-    });
-    if (executed.externalRequestCount > 1) {
+    const executed = await this.#executeProviderAction(lease.intent, input);
+    if (executed.externalRequestCount > 3) {
       throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
     }
     if (executed.status === 'OUTCOME_UNCERTAIN') {
@@ -490,6 +511,61 @@ export class V2DesktopRuntime {
     });
   }
 
+  async #executeProviderAction(
+    intent: V2ProviderActionIntent,
+    input: Readonly<Record<string, unknown>>,
+  ): Promise<V2ProviderActionExecutionResult> {
+    const execute = (executionId: string, actionInput: Readonly<Record<string, unknown>>) =>
+      this.#providerExecution.execute({
+        executionId,
+        input: actionInput,
+        kind: intent.kind,
+        modelSlot: providerActionModelSlot(intent.kind),
+        userApprovedUnknownCost: intent.userApprovedUnknownCost === true,
+      });
+    if (intent.kind !== 'CONTENT_PACKAGES') return execute(`v2-r07-${randomUUID()}`, input);
+
+    const candidates = input.candidates;
+    const persona = input.persona;
+    if (!Array.isArray(candidates) || candidates.length !== 3 || persona === undefined) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['candidateIds']);
+    }
+    const results: V2ProviderActionExecutionResult[] = [];
+    for (const candidate of candidates) {
+      const result = await execute(
+        `v2-r07-${randomUUID()}`,
+        Object.freeze({ candidate, persona, weekKey: input.weekKey }),
+      );
+      results.push(result);
+      if (result.status !== 'SUCCEEDED') {
+        return Object.freeze({
+          ...result,
+          externalRequestCount: combinedExternalRequestCount(results),
+        });
+      }
+    }
+    const packages = results.flatMap((result) => {
+      const output = result.output;
+      return typeof output === 'object' && output !== null && 'packages' in output
+        ? (output as { readonly packages: unknown[] }).packages
+        : [];
+    });
+    if (packages.length !== 3)
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
+    return Object.freeze({
+      costAmountMicroUsd: results.every(({ costAmountMicroUsd }) => costAmountMicroUsd !== null)
+        ? results.reduce((total, item) => total + (item.costAmountMicroUsd ?? 0), 0)
+        : null,
+      costState: results[0]?.costState ?? 'NOT_INCURRED',
+      externalRequestCount: combinedExternalRequestCount(results),
+      modelRunId: null,
+      outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
+      output: Object.freeze({ packages }),
+      stableErrorCode: null,
+      status: 'SUCCEEDED',
+    });
+  }
+
   async #providerInput(intent: V2ProviderActionIntent): Promise<Readonly<Record<string, unknown>>> {
     const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
     if (intent.kind === 'WEEKLY_PLAN') {
@@ -508,13 +584,14 @@ export class V2DesktopRuntime {
         weekKey: intent.weekKey,
       }) as WeeklyPlan;
       const existing = await this.#content.read(intent.weekKey);
-      if (
-        plan.revision !== intent.expectedPlanRevision ||
-        plan.status !== 'CONFIRMED' ||
-        intent.candidateIds.some((id) => !plan.candidates.some((item) => item.id === id)) ||
-        existing.packages.some((item) => intent.candidateIds.includes(item.candidateId))
-      ) {
+      if (plan.revision !== intent.expectedPlanRevision || plan.status !== 'CONFIRMED') {
         throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['weeklyPlan']);
+      }
+      if (intent.candidateIds.some((id) => !plan.candidates.some((item) => item.id === id))) {
+        throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['candidateIds']);
+      }
+      if (existing.packages.some((item) => intent.candidateIds.includes(item.candidateId))) {
+        throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['existingContent']);
       }
       return Object.freeze({
         candidates: plan.candidates.filter((item) => intent.candidateIds.includes(item.id)),

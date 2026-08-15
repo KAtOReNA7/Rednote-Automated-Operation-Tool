@@ -226,6 +226,7 @@ export interface V2ExceptionSummary {
     | V2ProviderActionErrorCode
     | 'CAPABILITY_PROBE_BLOCKED'
     | 'CREDENTIAL_ERROR'
+    | 'LOCAL_OPERATION_FAILED'
     | 'SETTINGS_INVALID'
     | 'SETTINGS_NOT_READY'
     | 'PERSISTENCE_UNAVAILABLE'
@@ -597,7 +598,7 @@ export function parseV2ProviderActionOutput(
     if (
       !exactKeys(value, ['packages']) ||
       !Array.isArray(value.packages) ||
-      value.packages.length !== 3
+      (value.packages.length !== 1 && value.packages.length !== 3)
     ) {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
     }
@@ -1619,9 +1620,9 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
   }
   return {
     affectedFields: [],
-    code: 'PERSISTENCE_UNAVAILABLE',
-    message: '本机保存暂时不可用。',
+    code: 'LOCAL_OPERATION_FAILED',
+    message: '本地操作未完成，请重新载入后再试。',
     severity: 'ERROR',
-    suggestedAction: '关闭后重新启动应用',
+    suggestedAction: '重新载入当前页面；如仍失败再关闭后重新启动应用',
   };
 }

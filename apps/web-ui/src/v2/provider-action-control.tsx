@@ -102,7 +102,9 @@ export function ProviderActionControl({
         return;
       }
       await onSuccess();
-      setMessage('受控结果已校验并写入本机；本次最多执行 1 个模型请求。');
+      setMessage(
+        `受控结果已校验并写入本机；本次最多执行 ${currentPreview.requestCount} 个模型请求。`,
+      );
       setStatus('SUCCEEDED');
     } finally {
       setBusy(false);
@@ -162,7 +164,7 @@ export function ProviderActionControl({
             </div>
             <div>
               <dt>外部请求</dt>
-              <dd>最多 1 次</dd>
+              <dd>最多 {preview.requestCount} 次</dd>
             </div>
             <div>
               <dt>费用上界</dt>
@@ -192,6 +194,12 @@ export function ProviderActionControl({
                   <li key={reason}>{reason}</li>
                 ))}
               </ul>
+              {preview.businessReasonCode === undefined ? null : (
+                <details>
+                  <summary>查看本地诊断代码</summary>
+                  <code>{preview.businessReasonCode}</code>
+                </details>
+              )}
               <button
                 onClick={() => {
                   window.location.hash = '/v2/settings';
@@ -213,7 +221,7 @@ export function ProviderActionControl({
                 }}
                 type="checkbox"
               />
-              <span>我了解费用未知，仍授权本次最多 1 个请求</span>
+              <span>我了解费用未知，仍授权本次最多 {preview.requestCount} 个请求</span>
             </label>
           ) : null}
           <div className="v2-provider-preview-actions">

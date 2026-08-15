@@ -109,7 +109,7 @@ export function InteractionPage(): React.JSX.Element {
       if (result === undefined) return fail('本机互动桥接不可用，未导入。');
       if (!result.ok) return fail(result.error.message);
       setNewText('');
-      await refresh(result.value.item.itemId);
+      if (!(await refresh(result.value.item.itemId))) return;
       notify(
         result.value.duplicate ? '相同互动记录已存在，未重复写入。' : '互动记录已保存到本机。',
       );

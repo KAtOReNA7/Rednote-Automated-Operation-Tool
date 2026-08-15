@@ -8,6 +8,7 @@ import {
   parseV2ProviderActionIntent,
   parseV2ProviderActionOutput,
   selectV2StructuredProtocol,
+  toV2Exception,
   type V2ProviderActionExecutionRequest,
   type V2ProviderActionExecutionResult,
   type V2ProviderActionPreview,
@@ -80,14 +81,20 @@ class ScriptedProviderExecution {
           }
         : request.kind === 'CONTENT_PACKAGES'
           ? {
-              packages: ['morgue', 'yellow-room', 'moonstone'].map((coverKey, index) => ({
-                body: `受控正文 ${index + 1}`,
-                coverKey,
-                materialNotes: '仅使用已提供的本地上下文。',
-                suggestedTime: `2026-07-${String(27 + index * 2).padStart(2, '0')}T10:00`,
-                tags: ['推理小说', `本地草稿${index + 1}`],
-                title: `受控内容包 ${index + 1}`,
-              })),
+              packages: [request.input.candidate].map((candidate) => {
+                const id =
+                  typeof candidate === 'object' && candidate !== null && 'id' in candidate
+                    ? String(Number(String(candidate.id).match(/(\d+)$/u)?.[1] ?? '1'))
+                    : '1';
+                return {
+                  body: `受控正文 ${id}`,
+                  coverKey: 'morgue',
+                  materialNotes: '仅使用已提供的本地上下文。',
+                  suggestedTime: '2026-07-27T10:00',
+                  tags: ['推理小说', `本地草稿${id}`],
+                  title: `受控内容包 ${id}`,
+                };
+              }),
             }
           : { replyText: '谢谢你的留言。这是一条待你确认后手动发送的回复建议。' };
     return {
@@ -103,6 +110,13 @@ class ScriptedProviderExecution {
 }
 
 describe('V2 R07 controlled provider adapter', () => {
+  it('does not mislabel an unexpected local failure as unavailable persistence', () => {
+    expect(toV2Exception(new Error('fixture local failure'))).toMatchObject({
+      code: 'LOCAL_OPERATION_FAILED',
+      message: '本地操作未完成，请重新载入后再试。',
+    });
+  });
+
   it('selects a current supported structured protocol deterministically', () => {
     expect(
       selectV2StructuredProtocol([
@@ -182,6 +196,66 @@ describe('V2 R07 controlled provider adapter', () => {
         weekKey: '2026-W31',
       }),
     ).toThrow();
+  });
+
+  it('shows a three-item content preview as three bounded writing requests', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r07-content-preview-'));
+    temporaryRoots.push(root);
+    const provider = new ScriptedProviderExecution();
+    const runtime = await V2DesktopRuntime.open(root, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      providerExecution: provider,
+    });
+    try {
+      const initial = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W31',
+      })) as WeeklyPlan;
+      const confirmed = (await runtime.mutate({
+        action: 'CONFIRM_PLAN_CANDIDATES',
+        candidateIds: initial.candidates.map(({ id }) => id),
+        expectedRevision: initial.revision,
+        weekKey: initial.weekKey,
+      })) as WeeklyPlan;
+      const locked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: confirmed.revision,
+        weekKey: confirmed.weekKey,
+      })) as WeeklyPlan;
+      const preview = (await runtime.read(
+        {
+          intent: {
+            candidateIds: locked.candidates.slice(0, 3).map(({ id }) => id),
+            expectedPlanRevision: locked.revision,
+            idempotencyKey: 'content-three-items',
+            kind: 'CONTENT_PACKAGES',
+            weekKey: locked.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        { senderId: 1, windowId: 1 },
+      )) as V2ProviderActionPreview;
+
+      expect(preview).toMatchObject({
+        canConfirm: true,
+        requestCount: 3,
+        searchEnabled: false,
+        fetchEnabled: false,
+      });
+      await runtime.mutate(
+        {
+          action: 'CONFIRM_PROVIDER_ACTION',
+          confirmation: 'RUN_PROVIDER_ACTION',
+          previewToken: preview.previewToken,
+        },
+        { senderId: 1, windowId: 1 },
+      );
+      expect(provider.calls).toHaveLength(3);
+      expect(provider.calls.every(({ kind }) => kind === 'CONTENT_PACKAGES')).toBe(true);
+    } finally {
+      runtime.close();
+    }
   });
 
   it('previews offline, consumes one bound token, and persists all three scripted actions', async () => {
@@ -400,6 +474,8 @@ describe('V2 R07 controlled provider adapter', () => {
       });
       expect(provider.calls.map(({ kind, modelSlot }) => [kind, modelSlot])).toEqual([
         ['WEEKLY_PLAN', 'research'],
+        ['CONTENT_PACKAGES', 'writing'],
+        ['CONTENT_PACKAGES', 'writing'],
         ['CONTENT_PACKAGES', 'writing'],
         ['REPLY_SUGGESTION', 'writing'],
         ['WEEKLY_PLAN', 'research'],

@@ -92,6 +92,20 @@ function demandUpperBound(input: Readonly<Record<string, unknown>>) {
   });
 }
 
+function actionDemandUpperBound(
+  kind: V2ProviderActionKind,
+  input: Readonly<Record<string, unknown>>,
+) {
+  const count = kind === 'CONTENT_PACKAGES' ? 3 : 1;
+  const unit = demandUpperBound(input);
+  return Object.freeze({
+    ...unit,
+    externalCalls: count,
+    inputTokens: unit.inputTokens * count,
+    outputTokens: unit.outputTokens * count,
+  });
+}
+
 function imageDemandUpperBound(input: Readonly<Record<string, unknown>>) {
   return Object.freeze({
     externalCalls: 1,
@@ -306,8 +320,14 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
               cachedInputTokens: null,
               imageGenerationCalls: request.kind === 'CONTENT_COVER' ? 1 : 0,
               images: request.kind === 'CONTENT_COVER' ? 1 : 0,
-              inputTokens: demandUpperBound(request.input).inputTokens,
-              outputTokens: request.kind === 'CONTENT_COVER' ? null : MAX_OUTPUT_TOKENS,
+              inputTokens:
+                request.kind === 'CONTENT_COVER'
+                  ? demandUpperBound(request.input).inputTokens
+                  : actionDemandUpperBound(request.kind, request.input).inputTokens,
+              outputTokens:
+                request.kind === 'CONTENT_COVER'
+                  ? null
+                  : actionDemandUpperBound(request.kind, request.input).outputTokens,
               reasoningTokens: null,
               source: 'NOT_REPORTED',
               toolCalls: 0,

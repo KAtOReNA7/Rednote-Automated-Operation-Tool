@@ -601,6 +601,44 @@ describe('V2-R05 interaction renderer and managed files', () => {
     expect(submitted?.relatedContentPackageId).toBe(PERSISTED_PACKAGE_ID);
   });
 
+  it('does not present an unsynchronised interaction as persistently saved', async () => {
+    const { app } = await harness();
+    const bridge = interactionBridge(app);
+    let reads = 0;
+    Object.defineProperty(window, 'rednoteV2', {
+      configurable: true,
+      value: {
+        ...bridge,
+        readInteractions: async () => {
+          reads += 1;
+          if (reads === 1) return bridge.readInteractions();
+          return {
+            error: {
+              affectedFields: [],
+              code: 'PERSISTENCE_UNAVAILABLE' as const,
+              message: '本机仓储未就绪，未确认互动已保存。',
+              severity: 'ERROR' as const,
+              suggestedAction: '重新载入互动页',
+            },
+            ok: false as const,
+          };
+        },
+      },
+    });
+    Object.defineProperty(window, 'scrollTo', { configurable: true, value: () => undefined });
+    window.history.replaceState(null, '', '/v2.html#/v2/interaction');
+    const user = userEvent.setup();
+    render(<V2App />);
+
+    await user.type(screen.getByLabelText('粘贴一条评论或私信'), '尚未确认同步的评论');
+    await user.click(screen.getByRole('button', { name: '保存本地互动' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      '本机仓储未就绪，未确认互动已保存。',
+    );
+    expect(screen.queryByText('互动记录已保存到本机。')).not.toBeInTheDocument();
+  });
+
   it('uses bounded content-addressed IMPORT files and stable dedup hashes', async () => {
     const { root, rootPath } = await createStorageTestContext();
     const files = new V2LocalInteractionFiles(root);
