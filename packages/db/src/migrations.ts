@@ -11870,6 +11870,12 @@ DROP TABLE v2_reply_suggestion_versions;
 ALTER TABLE v2_reply_suggestion_versions_r07_new RENAME TO v2_reply_suggestion_versions;
 `;
 
+const V2_WEEKLY_PLAN_LOCK_HISTORY = `
+ALTER TABLE v2_weekly_plan_snapshots
+  ADD COLUMN locked_history_json TEXT
+    CHECK (locked_history_json IS NULL OR json_valid(locked_history_json));
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -12005,5 +12011,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'v2_generated_cover_and_model_provenance',
     sql: V2_GENERATED_COVER_AND_MODEL_PROVENANCE,
     version: 25,
+  }),
+  Object.freeze({
+    name: 'v2_weekly_plan_lock_history',
+    sql: V2_WEEKLY_PLAN_LOCK_HISTORY,
+    version: 26,
   }),
 ]);

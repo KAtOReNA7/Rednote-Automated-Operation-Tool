@@ -144,8 +144,14 @@ export function V2App(): React.JSX.Element {
       if (!planRead.ok || !contentRead.ok) throw new Error('V2 read failed');
       let packages = contentRead.value.packages;
       if (packages.length === 0) {
-        const locked = await bridge.lockWeeklyPlan({
+        const confirmed = await bridge.confirmPlanCandidates({
+          candidateIds: planRead.value.candidates.map(({ id }) => id),
           expectedRevision: planRead.value.revision,
+          weekKey: V2_SMOKE_WEEK_KEY,
+        });
+        if (!confirmed.ok) throw new Error('V2 plan confirmation failed');
+        const locked = await bridge.lockWeeklyPlan({
+          expectedRevision: confirmed.value.revision,
           weekKey: V2_SMOKE_WEEK_KEY,
         });
         if (!locked.ok) throw new Error('V2 setup failed');

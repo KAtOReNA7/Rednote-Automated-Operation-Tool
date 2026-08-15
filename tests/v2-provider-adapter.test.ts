@@ -67,19 +67,15 @@ class ScriptedProviderExecution {
     const output =
       request.kind === 'WEEKLY_PLAN'
         ? {
-            candidates: [
-              ['monday', '周一', '2026-07-27', '10:00'],
-              ['wednesday', '周三', '2026-07-29', '14:00'],
-              ['friday', '周五', '2026-07-31', '19:30'],
-            ].map(([id, day, date, time]) => ({
-              book: `测试作品 ${id}`,
+            candidates: Array.from({ length: 21 }, (_, index) => ({
+              book: `测试作品 ${index + 1}`,
               conflictWithIds: [],
-              date,
-              day,
-              id,
+              date: '2026-07-27',
+              day: '周一',
+              id: `candidate-${index + 1}`,
               status: 'PENDING',
-              time,
-              title: `受控计划 ${id}`,
+              time: '10:00',
+              title: `受控计划 ${index + 1}`,
             })),
           }
         : request.kind === 'CONTENT_PACKAGES'
@@ -265,24 +261,43 @@ describe('V2 R07 controlled provider adapter', () => {
         view: 'WEEKLY_PLAN',
         weekKey: initial.weekKey,
       })) as WeeklyPlan;
-      expect(generated.candidates).toHaveLength(3);
+      expect(generated.candidates).toHaveLength(21);
+      expect(generated.candidates.filter(({ status }) => status === 'PENDING')).toHaveLength(21);
       expect(provider.calls).toHaveLength(1);
       expect(provider.calls[0]).toMatchObject({ kind: 'WEEKLY_PLAN', modelSlot: 'research' });
 
-      const locked = (await runtime.mutate({
-        action: 'LOCK_WEEKLY_PLAN',
+      const confirmed = (await runtime.mutate({
+        action: 'CONFIRM_PLAN_CANDIDATES',
+        candidateIds: generated.candidates.map(({ id }) => id),
         expectedRevision: generated.revision,
         weekKey: generated.weekKey,
       })) as WeeklyPlan;
-      const candidateIds = locked.candidates.map(({ id }) => id);
+
+      const locked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: confirmed.revision,
+        weekKey: confirmed.weekKey,
+      })) as WeeklyPlan;
+      const unlocked = (await runtime.mutate({
+        action: 'UNLOCK_WEEKLY_PLAN',
+        expectedRevision: locked.revision,
+        weekKey: locked.weekKey,
+      })) as WeeklyPlan;
+      expect(unlocked).toMatchObject({ status: 'DRAFT' });
+      const relocked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: unlocked.revision,
+        weekKey: unlocked.weekKey,
+      })) as WeeklyPlan;
+      const candidateIds = relocked.candidates.slice(0, 3).map(({ id }) => id);
       const contentPreview = (await runtime.read(
         {
           intent: {
             candidateIds,
-            expectedPlanRevision: locked.revision,
+            expectedPlanRevision: relocked.revision,
             idempotencyKey: 'r07-content-scripted',
             kind: 'CONTENT_PACKAGES',
-            weekKey: locked.weekKey,
+            weekKey: relocked.weekKey,
           },
           view: 'PROVIDER_ACTION_PREVIEW',
         },
@@ -296,7 +311,7 @@ describe('V2 R07 controlled provider adapter', () => {
         },
         caller,
       );
-      const content = await runtime.read({ view: 'CONTENT_PACKAGES', weekKey: locked.weekKey });
+      const content = await runtime.read({ view: 'CONTENT_PACKAGES', weekKey: relocked.weekKey });
       expect(
         (content as { packages: readonly { fields: { title: string } }[] }).packages.map(
           ({ fields }) => fields.title,
@@ -358,8 +373,8 @@ describe('V2 R07 controlled provider adapter', () => {
         },
         caller,
       );
-      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: locked.weekKey })).toMatchObject({
-        revision: locked.revision,
+      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: relocked.weekKey })).toMatchObject({
+        revision: relocked.revision,
         status: 'CONFIRMED',
       });
       expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: nextWeek.weekKey })).toMatchObject({
