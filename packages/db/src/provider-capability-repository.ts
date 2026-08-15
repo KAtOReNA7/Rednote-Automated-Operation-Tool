@@ -352,17 +352,19 @@ export class SqliteProviderCapabilityRepository {
         ? 'NOT_PROBED'
         : !terminalIsCurrent && entries.length === 0
           ? 'STALE'
-          : entries.length > 0 && entries.every((entry) => entry.state !== 'UNKNOWN')
+          : latestTerminal.status === 'SUCCEEDED'
             ? 'PROBE_COMPLETE'
-            : entries.some((entry) => entry.state !== 'UNKNOWN')
-              ? 'PARTIAL'
-              : latestTerminal.status === 'FAILED'
-                ? 'FAILED'
-                : latestTerminal.status === 'CANCELLED'
-                  ? 'CANCELLED'
-                  : latestTerminal.status === 'INTERRUPTED'
-                    ? 'INTERRUPTED'
-                    : 'NOT_PROBED';
+            : entries.length > 0 && entries.every((entry) => entry.state !== 'UNKNOWN')
+              ? 'PROBE_COMPLETE'
+              : entries.some((entry) => entry.state !== 'UNKNOWN')
+                ? 'PARTIAL'
+                : latestTerminal.status === 'FAILED'
+                  ? 'FAILED'
+                  : latestTerminal.status === 'CANCELLED'
+                    ? 'CANCELLED'
+                    : latestTerminal.status === 'INTERRUPTED'
+                      ? 'INTERRUPTED'
+                      : 'NOT_PROBED';
     return {
       derivedState,
       entries: entries.map((row) => ({
