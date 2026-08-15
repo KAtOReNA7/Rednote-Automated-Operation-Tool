@@ -77,6 +77,7 @@ async function establishProviderFixture(
 async function createContent(
   bridge: NonNullable<Window['rednoteV2']>,
   observe: (phase: string) => void,
+  generateContent = true,
 ) {
   observe('plan-read');
   let plan = await requireResult(await bridge.readWeeklyPlan({ weekKey: WEEK_KEY }), 'plan read');
@@ -100,6 +101,7 @@ async function createContent(
         'plan lock',
       );
     }
+    if (!generateContent) return { content, plan, preview };
     const candidateIds = plan.candidates.slice(0, 3).map(({ id }) => id);
     observe('content-preview');
     preview = await requireResult(
@@ -220,7 +222,7 @@ async function createInteraction(
 
 export async function runR07PackagedBlackbox(
   port: number,
-  attempt: number,
+  attempt: 1 | 2 | 3,
   observe: (phase: string) => void,
 ) {
   const bridge = window.rednoteV2;
@@ -228,25 +230,83 @@ export async function runR07PackagedBlackbox(
   const settings =
     attempt === 1
       ? await establishProviderFixture(bridge, port, observe)
-      : await requireResult(await bridge.readProviderSettings?.(), 'settings recovery');
+      : attempt === 2
+        ? await requireResult(await bridge.readProviderSettings?.(), 'settings recovery')
+        : null;
+  if (attempt === 1) {
+    if (settings === null) throw new Error('settings seed unavailable');
+    const { content, plan } = await createContent(bridge, observe, false);
+    return {
+      attempt,
+      buildCommit: __REDNOTE_BUILD_INFO__.commit,
+      commentPersisted: false,
+      contentCount: content.packages.length,
+      directMessagePersisted: false,
+      imageRequestCount: 0,
+      planRevision: plan.revision,
+      previewCanConfirm: false,
+      previewRequestCount: 0,
+      providerProtocol: settings.writing.protocolMode,
+    };
+  }
+  if (attempt === 3) {
+    observe('content-recovery');
+    const content = await requireResult(
+      await bridge.readContentPackages({ weekKey: WEEK_KEY }),
+      'content recovery',
+    );
+    const interactions = await requireResult(
+      await bridge.readInteractions(),
+      'interaction recovery',
+    );
+    if (content.packages.length !== 3 || content.packages.some(({ status }) => status !== 'DRAFT'))
+      throw new Error('content restart persistence mismatch');
+    return {
+      attempt,
+      buildCommit: __REDNOTE_BUILD_INFO__.commit,
+      commentPersisted: interactions.items.some(
+        ({ kind, status }) => kind === 'COMMENT' && status === 'MANUAL_SENT',
+      ),
+      contentCount: content.packages.length,
+      directMessagePersisted: interactions.items.some(
+        ({ kind, status }) => kind === 'DIRECT_MESSAGE' && status === 'MANUAL_SENT',
+      ),
+      imageRequestCount: 0,
+      planRevision: 0,
+      previewCanConfirm: true,
+      previewRequestCount: 3,
+      providerProtocol: 'CHAT_COMPLETIONS',
+    };
+  }
   const { content, plan, preview } = await createContent(bridge, observe);
-  const comment = await createInteraction(bridge, 'COMMENT', observe);
-  const directMessage = await createInteraction(bridge, 'DIRECT_MESSAGE', observe);
+  const comment = attempt === 2 ? await createInteraction(bridge, 'COMMENT', observe) : null;
+  const directMessage =
+    attempt === 2 ? await createInteraction(bridge, 'DIRECT_MESSAGE', observe) : null;
   const interactions = await requireResult(await bridge.readInteractions(), 'interaction recovery');
   return {
     attempt,
     buildCommit: __REDNOTE_BUILD_INFO__.commit,
-    commentPersisted: interactions.items.some(
-      ({ itemId, status }) => itemId === comment.itemId && status === 'MANUAL_SENT',
-    ),
+    commentPersisted:
+      comment === null
+        ? interactions.items.some(
+            ({ kind, status }) => kind === 'COMMENT' && status === 'MANUAL_SENT',
+          )
+        : interactions.items.some(
+            ({ itemId, status }) => itemId === comment.itemId && status === 'MANUAL_SENT',
+          ),
     contentCount: content.packages.length,
-    directMessagePersisted: interactions.items.some(
-      ({ itemId, status }) => itemId === directMessage.itemId && status === 'MANUAL_SENT',
-    ),
+    directMessagePersisted:
+      directMessage === null
+        ? interactions.items.some(
+            ({ kind, status }) => kind === 'DIRECT_MESSAGE' && status === 'MANUAL_SENT',
+          )
+        : interactions.items.some(
+            ({ itemId, status }) => itemId === directMessage.itemId && status === 'MANUAL_SENT',
+          ),
     imageRequestCount: 0,
     planRevision: plan.revision,
-    previewCanConfirm: attempt === 1 ? preview?.canConfirm === true : true,
-    previewRequestCount: attempt === 1 ? preview?.requestCount : 3,
-    providerProtocol: settings.writing.protocolMode,
+    previewCanConfirm: preview?.canConfirm === true,
+    previewRequestCount: preview?.requestCount ?? 3,
+    providerProtocol: settings?.writing.protocolMode ?? 'CHAT_COMPLETIONS',
   };
 }

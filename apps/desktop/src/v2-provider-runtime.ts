@@ -122,17 +122,37 @@ function opaqueBinding(value: string | null): string | null {
   return value === null ? null : createHash('sha256').update(value).digest('hex');
 }
 
-function normalizeR07ProviderSettings(settings: AppSettings): AppSettings {
-  if (
-    settings.setupState === 'PROVIDER_CONFIG_INCOMPLETE' &&
-    settings.credentialReference !== null &&
-    settings.providerBaseUrl !== null &&
-    settings.researchModelId !== null &&
-    settings.writingModelId !== null
-  ) {
-    return { ...settings, setupState: 'PROVIDER_CONFIGURED_UNVERIFIED' };
-  }
-  return settings;
+interface V2ActionProviderConfiguration {
+  readonly modelId: string | null;
+  readonly providerConfigured: boolean;
+  readonly settingsForProviderLoader: AppSettings;
+}
+
+/**
+ * V2 actions intentionally do not inherit the legacy all-model setup gate.
+ * This pure projection is shared by readiness inspection and execution so an
+ * existing database cannot preview one configuration then execute another.
+ */
+export function resolveV2ActionProviderConfiguration(
+  settings: AppSettings,
+  modelSlot: V2ProviderActionExecutionRequest['modelSlot'],
+): V2ActionProviderConfiguration {
+  const modelId =
+    modelSlot === 'research'
+      ? settings.researchModelId
+      : modelSlot === 'image'
+        ? settings.imageModelId
+        : settings.writingModelId;
+  const providerConfigured =
+    settings.credentialReference !== null && settings.providerBaseUrl !== null && modelId !== null;
+  return Object.freeze({
+    modelId,
+    providerConfigured,
+    settingsForProviderLoader:
+      providerConfigured && settings.setupState === 'PROVIDER_CONFIG_INCOMPLETE'
+        ? { ...settings, setupState: 'PROVIDER_CONFIGURED_UNVERIFIED' as const }
+        : settings,
+  });
 }
 
 export class V2ProviderRuntime implements V2ProviderExecutionPort {
@@ -170,15 +190,17 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
   public async execute(
     request: V2ProviderActionExecutionRequest,
   ): Promise<V2ProviderActionExecutionResult> {
-    let config;
     let modelId: string | null;
     let protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES';
     try {
-      config = new ProviderConfigLoader({
-        readProviderSettings: () =>
-          normalizeR07ProviderSettings(this.#settings.getBundle().settings),
+      const actionConfiguration = resolveV2ActionProviderConfiguration(
+        this.#settings.getBundle().settings,
+        request.modelSlot,
+      );
+      new ProviderConfigLoader({
+        readProviderSettings: () => actionConfiguration.settingsForProviderLoader,
       }).load(PROVIDER_ID);
-      modelId = config.modelIds[request.modelSlot];
+      modelId = actionConfiguration.modelId;
       if (modelId === null) throw new Error('PROVIDER_MODEL_NOT_CONFIGURED');
       const capability = this.#capabilityEntry(
         {
@@ -274,13 +296,8 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     request: Omit<V2ProviderActionExecutionRequest, 'executionId'>,
   ): Promise<V2ProviderActionReadiness> {
     const settings = this.#settings.getBundle().settings;
-    const modelId =
-      request.modelSlot === 'research'
-        ? settings.researchModelId
-        : request.modelSlot === 'image'
-          ? settings.imageModelId
-          : settings.writingModelId;
-    const providerConfigured = settings.providerBaseUrl !== null && modelId !== null;
+    const actionConfiguration = resolveV2ActionProviderConfiguration(settings, request.modelSlot);
+    const { modelId, providerConfigured } = actionConfiguration;
     const credential = await this.#credentials.getStatus(CREDENTIAL_SLOT);
     const credentialState = credential.requiresReauth
       ? ('REAUTH_REQUIRED' as const)
@@ -458,8 +475,12 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
 
   async #invoke(request: ModelExecutionRequestV1, credential: string) {
     const kind = actionKind(request.taskKind);
+    const actionConfiguration = resolveV2ActionProviderConfiguration(
+      this.#settings.getBundle().settings,
+      request.modelSlot as V2ProviderActionExecutionRequest['modelSlot'],
+    );
     const config = new ProviderConfigLoader({
-      readProviderSettings: () => normalizeR07ProviderSettings(this.#settings.getBundle().settings),
+      readProviderSettings: () => actionConfiguration.settingsForProviderLoader,
     }).load(PROVIDER_ID);
     const capabilities = this.#providerCapabilities(request);
     const schema: RuntimeSchema<Readonly<Record<string, unknown>>> = Object.freeze({

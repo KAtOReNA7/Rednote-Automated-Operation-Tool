@@ -95,7 +95,7 @@ function resolveCapabilitySmokePort(argv: readonly string[]): number | null {
   return Number.isSafeInteger(port) && port >= 1_024 && port <= 65_535 ? port : null;
 }
 
-function resolveR07Blackbox(argv: readonly string[]): { attempt: 1 | 2; port: number } | null {
+function resolveR07Blackbox(argv: readonly string[]): { attempt: 1 | 2 | 3; port: number } | null {
   const portArgument = argv.find((value) => value.startsWith('--r07-blackbox-port='));
   const attemptArgument = argv.find((value) => value.startsWith('--r07-blackbox-attempt='));
   const port = Number(portArgument?.slice('--r07-blackbox-port='.length));
@@ -103,7 +103,7 @@ function resolveR07Blackbox(argv: readonly string[]): { attempt: 1 | 2; port: nu
   return Number.isSafeInteger(port) &&
     port >= 1_024 &&
     port <= 65_535 &&
-    (attempt === 1 || attempt === 2)
+    (attempt === 1 || attempt === 2 || attempt === 3)
     ? { attempt, port }
     : null;
 }
@@ -339,12 +339,17 @@ async function startV2Application(
             ? persistence.personaRevision === 0 && persistence.planRevision === 2
             : blackbox?.attempt === r07Blackbox.attempt &&
               blackbox.buildCommit.length === 40 &&
-              blackbox.commentPersisted &&
-              blackbox.contentCount === 3 &&
-              blackbox.directMessagePersisted &&
+              (r07Blackbox.attempt === 1
+                ? !blackbox.commentPersisted &&
+                  blackbox.contentCount === 0 &&
+                  !blackbox.directMessagePersisted
+                : blackbox.commentPersisted &&
+                  blackbox.contentCount === 3 &&
+                  blackbox.directMessagePersisted) &&
               blackbox.imageRequestCount === 0 &&
-              blackbox.previewCanConfirm &&
-              blackbox.previewRequestCount === 3 &&
+              (r07Blackbox.attempt === 1
+                ? !blackbox.previewCanConfirm && blackbox.previewRequestCount === 0
+                : blackbox.previewCanConfirm && blackbox.previewRequestCount === 3) &&
               blackbox.providerProtocol === 'CHAT_COMPLETIONS');
         await emitSmokeProcessSample('capability-validated');
         writeSmokeReport(smokeOutputPath, {

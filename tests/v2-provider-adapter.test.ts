@@ -9,6 +9,7 @@ import {
   parseV2ProviderActionOutput,
   selectV2StructuredProtocol,
   toV2Exception,
+  V2ProviderActionError,
   type V2ProviderActionExecutionRequest,
   type V2ProviderActionExecutionResult,
   type V2ProviderActionPreview,
@@ -18,7 +19,9 @@ import { initializeProjectDataRoot } from '../packages/storage/src/index.js';
 
 vi.mock('electron', () => ({
   app: { getAppPath: () => resolve('.') },
-  BrowserWindow: { fromWebContents: () => null },
+  BrowserWindow: {
+    fromWebContents: (contents: { readonly testWindow?: unknown }) => contents.testWindow,
+  },
   ipcMain: { handle: vi.fn(), removeHandler: vi.fn() },
   shell: { openPath: async () => '' },
 }));
@@ -135,6 +138,68 @@ describe('V2 R07 controlled provider adapter', () => {
       code: 'LOCAL_OPERATION_FAILED',
       message: '本地操作未完成，请重新载入后再试。',
     });
+  });
+
+  it('accepts the bounded third R07 packaged restart URL and still rejects other attempts', async () => {
+    const { isTrustedV2IpcSender } = await import('../apps/desktop/src/v2-runtime.js');
+    const window = {};
+    const sender = { testWindow: window };
+    const event = {
+      sender,
+      senderFrame: {
+        url: 'rednote://app/v2.html?smoke=1&r07BlackboxPort=43119&r07BlackboxAttempt=3',
+      },
+    };
+    Object.assign(sender, { mainFrame: event.senderFrame });
+
+    expect(isTrustedV2IpcSender(event as never, 'rednote://app/v2.html', window as never)).toBe(
+      true,
+    );
+    event.senderFrame.url =
+      'rednote://app/v2.html?smoke=1&r07BlackboxPort=43119&r07BlackboxAttempt=4';
+    expect(isTrustedV2IpcSender(event as never, 'rednote://app/v2.html', window as never)).toBe(
+      false,
+    );
+  });
+
+  it('projects a legacy global setup state into the same action-scoped writing configuration', async () => {
+    const { resolveV2ActionProviderConfiguration } =
+      await import('../apps/desktop/src/v2-provider-runtime.js');
+    const legacySettings = {
+      credentialReference: 'CONTENT_AI_API_KEY',
+      embeddingModelId: null,
+      imageModelId: null,
+      monthlyHardLimitCents: 10_000,
+      monthlyWarningCents: 8_000,
+      providerBaseUrl: 'http://127.0.0.1:43119/v1',
+      providerProtocol: 'OPENAI_COMPATIBLE',
+      researchModelId: 'research-model',
+      reviewModelId: null,
+      revision: 4,
+      setupState: 'PROVIDER_CONFIG_INCOMPLETE',
+      updatedAt: '2026-08-16T00:00:00.000Z',
+      writingModelId: 'writing-model',
+    } as const;
+
+    const writing = resolveV2ActionProviderConfiguration(legacySettings, 'writing');
+    const research = resolveV2ActionProviderConfiguration(legacySettings, 'research');
+
+    expect(writing).toMatchObject({ modelId: 'writing-model', providerConfigured: true });
+    expect(research).toMatchObject({ modelId: 'research-model', providerConfigured: true });
+    expect(writing.settingsForProviderLoader.setupState).toBe('PROVIDER_CONFIGURED_UNVERIFIED');
+    expect(legacySettings.setupState).toBe('PROVIDER_CONFIG_INCOMPLETE');
+    expect(legacySettings.reviewModelId).toBeNull();
+  });
+
+  it('returns the precise changed field instead of the generic provider blocker', () => {
+    expect(
+      toV2Exception(
+        new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED', ['writingModelId']),
+      ),
+    ).toMatchObject({ message: '预览后写作模型已变化，请重新预览。' });
+    expect(
+      toV2Exception(new V2ProviderActionError('PROVIDER_ACTION_STALE', ['weeklyPlan'])),
+    ).toMatchObject({ message: '预览后周计划版本已变化，请重新预览。' });
   });
 
   it('selects a current supported structured protocol deterministically', () => {

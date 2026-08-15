@@ -146,7 +146,7 @@ export function V2App(): React.JSX.Element {
         Number.isSafeInteger(blackboxPort) &&
         blackboxPort >= 1_024 &&
         blackboxPort <= 65_535 &&
-        (blackboxAttempt === 1 || blackboxAttempt === 2)
+        (blackboxAttempt === 1 || blackboxAttempt === 2 || blackboxAttempt === 3)
       ) {
         blackboxPhase = 'start';
         const blackbox = await Promise.race([

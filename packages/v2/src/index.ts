@@ -1514,10 +1514,29 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
       UNKNOWN_FEE_CONSENT_REQUIRED: '费用未知，需重新预览并明确授权本次最多 1 个请求。',
       PROVIDER_OUTPUT_INVALID: '模型结果不符合严格合同，系统未写入业务结果。',
     });
+    const fieldLabel: Readonly<Record<string, string>> = Object.freeze({
+      credentialBinding: '凭据绑定',
+      planRevision: '计划版本',
+      researchModelId: '研究模型',
+      weeklyPlan: '周计划版本',
+      writingModelId: '写作模型',
+    });
+    const affected = error.affectedFields.map((field) => fieldLabel[field] ?? field).join('、');
+    const message =
+      affected === ''
+        ? messages[error.code]
+        : error.code === 'PROVIDER_ACTION_CONFIG_CHANGED'
+          ? `预览后${affected}已变化，请重新预览。`
+          : error.code === 'PROVIDER_ACTION_CREDENTIAL_CHANGED'
+            ? `预览后${affected}已变化，请重新预览。`
+            : error.code === 'PROVIDER_ACTION_STALE' ||
+                error.code === 'PROVIDER_ACTION_SOURCE_CHANGED'
+              ? `预览后${affected}已变化，请重新预览。`
+              : messages[error.code];
     return {
       affectedFields: error.affectedFields,
       code: error.code,
-      message: messages[error.code],
+      message,
       severity: error.code === 'PROVIDER_ACTION_STALE' ? 'WARNING' : 'ERROR',
       suggestedAction:
         error.code === 'PROVIDER_ACTION_UNCERTAIN' ||

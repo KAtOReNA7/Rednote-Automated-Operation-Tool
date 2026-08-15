@@ -90,6 +90,19 @@ function providerInputHash(input: Readonly<Record<string, unknown>>): string {
   return createHash('sha256').update(JSON.stringify(input)).digest('hex');
 }
 
+function readinessAffectedFields(readiness: V2ProviderActionReadiness): readonly string[] {
+  if (!readiness.providerConfigured)
+    return readiness.modelId === null
+      ? [readiness.modelSlot === 'research' ? 'researchModelId' : 'writingModelId']
+      : ['providerBaseUrl'];
+  if (readiness.credentialState !== 'CONFIGURED') return ['credentialBinding'];
+  if (readiness.capabilityState !== 'SUPPORTED') return [`${readiness.modelSlot}Capability`];
+  if (readiness.budgetState === 'BLOCKED') return ['budget'];
+  if (readiness.feeEstimateMicroUsd === null && !readiness.unknownCostApproved)
+    return ['unknownCostConsent'];
+  return [];
+}
+
 function providerBusinessBlock(
   intent: V2ProviderActionIntent,
   error: V2ProviderActionError,
@@ -481,13 +494,18 @@ export class V2DesktopRuntime {
             : currentReadiness.reasonCode === 'READY'
               ? 'PROVIDER_ACTION_BLOCKED'
               : currentReadiness.reasonCode,
+        readinessAffectedFields(currentReadiness),
       );
     if (providerInputHash(input) !== lease.inputHash)
       throw new V2ProviderActionError('PROVIDER_ACTION_SOURCE_CHANGED');
+    if (currentReadiness.modelId !== lease.readiness.modelId)
+      throw new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED', [
+        currentReadiness.modelSlot === 'research' ? 'researchModelId' : 'writingModelId',
+      ]);
     if (currentReadiness.configFingerprint !== lease.readiness.configFingerprint)
-      throw new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED');
+      throw new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED', ['providerBaseUrl']);
     if (currentReadiness.credentialBinding !== lease.readiness.credentialBinding)
-      throw new V2ProviderActionError('PROVIDER_ACTION_CREDENTIAL_CHANGED');
+      throw new V2ProviderActionError('PROVIDER_ACTION_CREDENTIAL_CHANGED', ['credentialBinding']);
     if (currentReadiness.readinessBinding !== lease.readiness.readinessBinding)
       throw new V2ProviderActionError('PROVIDER_ACTION_STALE');
     const executed = await this.#executeProviderAction(lease.intent, input);
@@ -781,7 +799,7 @@ export function isTrustedV2IpcSender(
       actual.pathname === expected.pathname &&
       (actual.search === '' ||
         actual.search === '?smoke=1' ||
-        /^\?smoke=1&r07BlackboxPort=\d{4,5}&r07BlackboxAttempt=[12]$/u.test(actual.search)) &&
+        /^\?smoke=1&r07BlackboxPort=\d{4,5}&r07BlackboxAttempt=[123]$/u.test(actual.search)) &&
       actual.username === '' &&
       actual.password === ''
     );

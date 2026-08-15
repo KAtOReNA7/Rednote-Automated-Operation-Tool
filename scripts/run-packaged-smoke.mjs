@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { isAbsolute, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { FuseState, FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 
@@ -25,6 +26,50 @@ import { createPortableTemp } from './portable-temp.mjs';
 import { startR07PackagedProviderFixture } from './r07-packaged-provider-fixture.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '..');
+
+function seedLegacyR07ReadinessFixture(smokeWorkspace) {
+  const databasePath = join(
+    smokeWorkspace,
+    'userData 中文 空格',
+    'v2-project-data',
+    'database',
+    'rednote.sqlite',
+  );
+  const database = new DatabaseSync(databasePath);
+  try {
+    const changed = database
+      .prepare(
+        `UPDATE app_settings
+         SET setup_state = 'PROVIDER_CONFIG_INCOMPLETE',
+             revision = revision + 1,
+             updated_at = ?
+         WHERE id = 'app'
+           AND provider_base_url IS NOT NULL
+           AND research_model_id IS NOT NULL
+           AND writing_model_id IS NOT NULL
+           AND review_model_id IS NULL
+           AND credential_reference = 'CONTENT_AI_API_KEY'`,
+      )
+      .run(new Date().toISOString()).changes;
+    const state = database
+      .prepare(
+        `SELECT credential_reference, research_model_id, review_model_id, setup_state, writing_model_id
+         FROM app_settings WHERE id = 'app'`,
+      )
+      .get();
+    if (
+      changed !== 1 ||
+      state?.setup_state !== 'PROVIDER_CONFIG_INCOMPLETE' ||
+      state.review_model_id !== null ||
+      state.credential_reference !== 'CONTENT_AI_API_KEY' ||
+      state.research_model_id === null ||
+      state.writing_model_id === null
+    )
+      throw new Error('R07 legacy readiness fixture was not established.');
+  } finally {
+    database.close();
+  }
+}
 
 async function assertV2R04Export(smokeWorkspace) {
   const exportRoot = join(smokeWorkspace, 'userData 中文 空格', 'v2-project-data', 'exports', 'v2');
@@ -318,7 +363,7 @@ if (!r07BlackboxOnly) {
   const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
   const fixture = await startR07PackagedProviderFixture();
   try {
-    for (const attempt of [1, 2]) {
+    for (const attempt of [1, 2, 3]) {
       const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
       const child = spawn(
         executablePath,
@@ -382,12 +427,14 @@ if (!r07BlackboxOnly) {
           report.ok !== true ||
           blackbox?.attempt !== attempt ||
           blackbox.buildCommit.length !== 40 ||
-          !blackbox.commentPersisted ||
-          !blackbox.directMessagePersisted ||
-          blackbox.contentCount !== 3 ||
+          (attempt === 1 ? blackbox.commentPersisted : !blackbox.commentPersisted) ||
+          (attempt === 1 ? blackbox.directMessagePersisted : !blackbox.directMessagePersisted) ||
+          (attempt === 1 ? blackbox.contentCount !== 0 : blackbox.contentCount !== 3) ||
           blackbox.imageRequestCount !== 0 ||
-          !blackbox.previewCanConfirm ||
-          blackbox.previewRequestCount !== 3 ||
+          (attempt === 1 ? blackbox.previewCanConfirm : !blackbox.previewCanConfirm) ||
+          (attempt === 1
+            ? blackbox.previewRequestCount !== 0
+            : blackbox.previewRequestCount !== 3) ||
           blackbox.providerProtocol !== 'CHAT_COMPLETIONS' ||
           report.security?.externalRequestAttempts !== 0
         )
@@ -395,6 +442,7 @@ if (!r07BlackboxOnly) {
             `R07 packaged blackbox failed: ${JSON.stringify(report)} ${stderr.slice(0, 512)}`,
           );
         await assertProcessesExited(finalProcessIds);
+        if (attempt === 1) seedLegacyR07ReadinessFixture(smokeWorkspace);
         results.push({
           attempt,
           buildCommit: blackbox.buildCommit,
