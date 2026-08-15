@@ -325,7 +325,9 @@ export function InteractionPage(): React.JSX.Element {
         ) : (
           <section aria-label="回复详情" className="v2-card v2-reply-detail">
             <div>
-              <p className="v2-kicker">{active.source}</p>
+              <p className="v2-kicker">
+                {active.source === 'MODEL' ? '模型生成建议' : '本地导入记录'}
+              </p>
               <h2>
                 {active.type} · {statusLabels[active.status]}
               </h2>

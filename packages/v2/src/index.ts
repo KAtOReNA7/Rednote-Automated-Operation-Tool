@@ -208,6 +208,11 @@ export type V2MutationRequest =
       readonly expectedRevision: number;
       readonly weekKey: string;
     }
+  | {
+      readonly action: 'UNLOCK_WEEKLY_PLAN';
+      readonly expectedRevision: number;
+      readonly weekKey: string;
+    }
   | V2ProviderActionConfirmation
   | V2ProviderSettingsMutation
   | ContentMutationRequest
@@ -282,6 +287,10 @@ export interface V2Bridge {
   ) => Promise<V2Result<ContentWorkspace>>;
   readonly generateReplySuggestion: InteractionItemCall<'GENERATE_REPLY_SUGGESTION'>;
   readonly lockWeeklyPlan: (input: {
+    readonly expectedRevision: number;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
+  readonly unlockWeeklyPlan: (input: {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
@@ -877,7 +886,9 @@ export function parseV2MutationRequest(value: unknown): V2MutationRequest {
     };
   }
   if (
-    (value.action === 'GENERATE_WEEKLY_PLAN' || value.action === 'LOCK_WEEKLY_PLAN') &&
+    (value.action === 'GENERATE_WEEKLY_PLAN' ||
+      value.action === 'LOCK_WEEKLY_PLAN' ||
+      value.action === 'UNLOCK_WEEKLY_PLAN') &&
     exactKeys(value, ['action', 'expectedRevision', 'weekKey'])
   ) {
     return {
@@ -1189,6 +1200,31 @@ export function summarizeV2Workspace(
   });
 }
 
+export function weeklyPlanLockReasons(planValue: WeeklyPlan): readonly string[] {
+  const plan = parseWeeklyPlan(planValue);
+  const active = plan.candidates.filter((candidate) => candidate.status !== 'SKIPPED');
+  const byDay = new Map<string, number>();
+  for (const candidate of active) byDay.set(candidate.day, (byDay.get(candidate.day) ?? 0) + 1);
+  const reasons: string[] = [];
+  if (active.length !== 21) reasons.push(`还差${Math.max(0, 21 - active.length)}篇`);
+  for (const day of dayLabels) {
+    const count = byDay.get(day) ?? 0;
+    if (count !== 3) reasons.push(`${day}不是3篇`);
+  }
+  const pending = active.filter((candidate) => candidate.status === 'PENDING').length;
+  const conflicts = active.filter(
+    (candidate) => candidate.status === 'CONFLICT' || candidate.conflictWithIds.length > 0,
+  ).length;
+  const nonLockable = active.filter(
+    (candidate) => !['CONFIRMED', 'EXPORTED'].includes(candidate.status),
+  ).length;
+  if (pending > 0) reasons.push(`${pending}篇待确认`);
+  if (conflicts > 0) reasons.push(`${conflicts}处冲突`);
+  if (nonLockable > 0 && pending === 0 && conflicts === 0)
+    reasons.push(`${nonLockable}篇尚不可锁定`);
+  return Object.freeze(reasons);
+}
+
 export interface V2RepositoryPort {
   readonly getOrCreatePersona: (seed: AccountPersona) => AccountPersona;
   readonly getOrCreateWeeklyPlan: (seed: WeeklyPlan, personaSeed: AccountPersona) => WeeklyPlan;
@@ -1295,8 +1331,18 @@ export class V2ApplicationFacade {
     }
     if (request.action === 'LOCK_WEEKLY_PLAN') {
       if (current.status === 'CONFIRMED') return current;
+      if (weeklyPlanLockReasons(current).length > 0) {
+        throw new V2ContractError('PLAN_CONFLICT', ['weeklyPlan']);
+      }
       return this.#repository.saveWeeklyPlan(
         parseWeeklyPlan({ ...current, status: 'CONFIRMED' }),
+        request.expectedRevision,
+      );
+    }
+    if (request.action === 'UNLOCK_WEEKLY_PLAN') {
+      if (current.status === 'DRAFT') return current;
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({ ...current, status: 'DRAFT' }),
         request.expectedRevision,
       );
     }
@@ -1376,7 +1422,30 @@ export class V2ApplicationFacade {
     }
     let generated: readonly PlanCandidate[];
     try {
-      generated = candidatesValue.map(parseCandidate);
+      const supplied = candidatesValue.map(parseCandidate);
+      if (
+        supplied.length !== 21 ||
+        new Set(supplied.map((candidate) => candidate.id)).size !== 21 ||
+        new Set(supplied.map((candidate) => candidate.title.trim())).size !== 21 ||
+        supplied.some((candidate) => candidate.title.trim() === '' || candidate.book.trim() === '')
+      ) {
+        throw new TypeError('Invalid strict weekly plan count.');
+      }
+      const monday = mondayOfIsoWeek(current.weekKey);
+      generated = supplied.map((candidate, index) => {
+        const dayIndex = Math.floor(index / 3);
+        const slotIndex = index % 3;
+        const date = new Date(monday.getTime() + dayIndex * 86_400_000);
+        return {
+          ...candidate,
+          conflictWithIds: [],
+          date: dateText(date),
+          day: dayLabels[dayIndex] ?? '周一',
+          id: `${current.weekKey}-slot-${String(index + 1).padStart(2, '0')}`,
+          status: 'PENDING' as const,
+          time: (['10:00', '14:00', '20:00'] as const)[slotIndex] ?? '10:00',
+        };
+      });
       parseWeeklyPlan({ ...current, candidates: generated, status: 'DRAFT' });
     } catch {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);

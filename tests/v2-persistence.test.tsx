@@ -108,6 +108,8 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
     }),
     lockWeeklyPlan: async (input) =>
       success(facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    unlockWeeklyPlan: async (input) =>
+      success(facade.mutate({ action: 'UNLOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     previewPlanReschedule: async (input) =>
       success(facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview),
     exportContentPackages: async () => ({
@@ -542,12 +544,13 @@ describe('V2 migration and repository', () => {
       expectedRevision: confirmed.revision,
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
-    const locked = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: skipped.revision,
-      weekKey: V2_DEFAULT_WEEK_KEY,
-    }) as WeeklyPlan;
-    expect(locked).toMatchObject({ revision: 4, status: 'CONFIRMED' });
+    expect(() =>
+      facade.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: skipped.revision,
+        weekKey: V2_DEFAULT_WEEK_KEY,
+      }),
+    ).toThrowError('PLAN_CONFLICT');
     database.close();
 
     database = connectDatabase(databasePath);
@@ -560,7 +563,7 @@ describe('V2 migration and repository', () => {
       view: 'WEEKLY_PLAN',
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
-    expect(restoredPlan).toMatchObject({ revision: 4, status: 'CONFIRMED' });
+    expect(restoredPlan).toMatchObject({ revision: 3, status: 'DRAFT' });
     expect(restoredPlan.candidates.find(({ id }) => id === 'thu-1')).toMatchObject({
       date: '2026-08-02',
       day: '周日',
@@ -666,6 +669,7 @@ describe('V2 Electron boundary', () => {
       'skipPlanCandidates',
       'startProviderCapabilityProbe',
       'undoInteractionManualSent',
+      'unlockWeeklyPlan',
       'updatePersona',
       'updateProviderSettings',
     ]);
