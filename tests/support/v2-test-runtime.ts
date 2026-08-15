@@ -112,6 +112,8 @@ export function createMemoryV2Bridge(): V2Bridge {
     }),
     lockWeeklyPlan: (input) =>
       run(() => facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    unlockWeeklyPlan: (input) =>
+      run(() => facade.mutate({ action: 'UNLOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     previewPlanReschedule: (input) =>
       run(
         () => facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview,
