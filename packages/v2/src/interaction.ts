@@ -54,7 +54,11 @@ export interface InteractionDeletePreview {
   readonly retainedManagedReferenceCount: number;
   readonly tombstone: true;
 }
-export type InteractionCreateResult = Readonly<{ duplicate: boolean; item: InteractionItem }>;
+export type InteractionCreateResult = Readonly<{
+  duplicate: boolean;
+  item: InteractionItem;
+  persisted: true;
+}>;
 
 export interface InteractionVersionRef {
   readonly expectedRevision: number;
@@ -433,7 +437,7 @@ export class V2InteractionApplication {
     if (existing !== null) {
       if (existing.status === 'DELETED')
         throw new V2InteractionError('INTERACTION_STATE_INVALID', ['itemId']);
-      return { duplicate: true, item: await this.#hydrate(existing) };
+      return { duplicate: true, item: await this.#hydrate(existing), persisted: true };
     }
     const userTextFile = await this.files.writeText(userText, 'USER_TEXT');
     const item = this.repository.createInteraction({
@@ -446,7 +450,8 @@ export class V2InteractionApplication {
       status: 'NEW',
       userText: userTextFile,
     });
-    return { duplicate: false, item: await this.#hydrate(item) };
+    const persisted = this.repository.getInteraction(item.itemId);
+    return { duplicate: false, item: await this.#hydrate(persisted), persisted: true };
   }
 
   async #generate(

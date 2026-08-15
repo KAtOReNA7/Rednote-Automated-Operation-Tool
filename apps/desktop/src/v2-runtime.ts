@@ -5,7 +5,7 @@ import type { DatabaseSync } from 'node:sqlite';
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 
 import { connectDatabase, initializeDatabase, SqliteV2Repository } from '@mystery-operations/db';
-import { initializeProjectDataRoot } from '@mystery-operations/storage';
+import { initializeProjectDataRoot, type ProjectDataRoot } from '@mystery-operations/storage';
 import {
   V2ApplicationFacade,
   V2ContentApplication,
@@ -210,6 +210,18 @@ export class V2DesktopRuntime {
     } = {},
   ): Promise<V2DesktopRuntime> {
     const root = await initializeProjectDataRoot(join(userDataPath, V2_DATA_ROOT_DIRECTORY));
+    return V2DesktopRuntime.openProject(root, options);
+  }
+
+  public static async openProject(
+    root: ProjectDataRoot,
+    options: {
+      readonly assetsDirectory?: string;
+      readonly openDirectory?: (path: string) => Promise<string>;
+      readonly providerExecution?: V2ProviderExecutionPort;
+      readonly settingsControl?: V2SettingsControlPort;
+    } = {},
+  ): Promise<V2DesktopRuntime> {
     const databasePath = join(root.databaseDirectory, PROJECT_DATABASE_FILE);
     await initializeDatabase({
       backupDirectory: root.backupDatabaseDirectory,
@@ -500,6 +512,7 @@ export class V2DesktopRuntime {
           : executed.stableErrorCode === 'BUDGET_UNPRICED_LIMIT_REQUIRED'
             ? 'PROVIDER_ACTION_UNKNOWN_FEE_CONSENT_REQUIRED'
             : 'PROVIDER_ACTION_BLOCKED',
+        executed.stableErrorCode === null ? [] : [executed.stableErrorCode],
       );
     await this.#persistProviderOutput(lease.intent, executed.output, executed.modelRunId ?? null);
     return Object.freeze({
@@ -766,7 +779,9 @@ export function isTrustedV2IpcSender(
     return (
       actual.origin === expected.origin &&
       actual.pathname === expected.pathname &&
-      (actual.search === '' || actual.search === '?smoke=1') &&
+      (actual.search === '' ||
+        actual.search === '?smoke=1' ||
+        /^\?smoke=1&r07BlackboxPort=\d{4,5}&r07BlackboxAttempt=[12]$/u.test(actual.search)) &&
       actual.username === '' &&
       actual.password === ''
     );

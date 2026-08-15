@@ -396,8 +396,8 @@ export class DesktopSettingsRuntime {
     await this.#localApi.attachProject(this.#active.database, this.#active.clipper);
   }
 
-  public async ensureV2Project(rootPath: string): Promise<void> {
-    if (this.#active !== null) return;
+  public async ensureV2Project(rootPath: string): Promise<ProjectDataRoot> {
+    if (this.#active !== null) return this.#active.root;
     const root = await initializeProjectDataRoot(rootPath);
     const prepared = await this.#openActiveProject(root);
     try {
@@ -418,6 +418,7 @@ export class DesktopSettingsRuntime {
         record,
         status: 'READY',
       };
+      return root;
     } catch (error) {
       prepared.database.close();
       throw error;

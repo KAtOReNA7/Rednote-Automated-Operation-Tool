@@ -28,6 +28,7 @@ import { LibraryPage } from './pages/library-page.js';
 import { OverviewPage } from './pages/overview-page.js';
 import { ReviewPage } from './pages/review-page.js';
 import { SettingsPage } from './pages/settings-page.js';
+import { runR07PackagedBlackbox } from './r07-packaged-blackbox.js';
 import { WeeklyPlanPage } from './pages/weekly-plan-page.js';
 
 const V2_SMOKE_PREFIX = '__V2_R01_SMOKE__:';
@@ -132,11 +133,39 @@ export function V2App(): React.JSX.Element {
     };
   }, []);
   useEffect(() => {
-    if (window.location.search !== '?smoke=1' || smokeStarted.current) return;
+    const smokeParameters = new URLSearchParams(window.location.search);
+    if (smokeParameters.get('smoke') !== '1' || smokeStarted.current) return;
     smokeStarted.current = true;
     const bridge = window.rednoteV2;
+    let blackboxPhase = 'not-started';
     void (async () => {
       if (bridge === undefined) throw new Error('V2 bridge unavailable');
+      const blackboxPort = Number(smokeParameters.get('r07BlackboxPort'));
+      const blackboxAttempt = Number(smokeParameters.get('r07BlackboxAttempt'));
+      if (
+        Number.isSafeInteger(blackboxPort) &&
+        blackboxPort >= 1_024 &&
+        blackboxPort <= 65_535 &&
+        (blackboxAttempt === 1 || blackboxAttempt === 2)
+      ) {
+        blackboxPhase = 'start';
+        const blackbox = await Promise.race([
+          runR07PackagedBlackbox(blackboxPort, blackboxAttempt, (next) => (blackboxPhase = next)),
+          new Promise<never>((_, reject) =>
+            window.setTimeout(() => reject(new Error(`BLACKBOX_TIMEOUT:${blackboxPhase}`)), 20_000),
+          ),
+        ]);
+        document.title = `${V2_SMOKE_PREFIX}${encodeURIComponent(
+          JSON.stringify({
+            blackbox,
+            marker: document.querySelector('[data-v2-shell]') !== null,
+            mockMode: document.querySelector('[data-v2-mock="true"]') !== null,
+            navigationCount: document.querySelectorAll('[data-v2-navigation-item]').length,
+            preload: true,
+          }),
+        )}`;
+        return;
+      }
       const [planRead, contentRead] = await Promise.all([
         bridge.readWeeklyPlan({ weekKey: V2_SMOKE_WEEK_KEY }),
         bridge.readContentPackages({ weekKey: V2_SMOKE_WEEK_KEY }),
@@ -299,9 +328,22 @@ export function V2App(): React.JSX.Element {
         preload: bridge !== undefined,
       };
       document.title = `${V2_SMOKE_PREFIX}${encodeURIComponent(JSON.stringify(report))}`;
-    })().catch(() => {
+    })().catch((error: unknown) => {
       document.title = `${V2_SMOKE_PREFIX}${encodeURIComponent(
-        JSON.stringify({ marker: false, mockMode: true, navigationCount: 7, preload: true }),
+        JSON.stringify({
+          error:
+            error instanceof Error && /^BLACKBOX_TIMEOUT:[a-z-]+$/u.test(error.message)
+              ? error.message
+              : `BLACKBOX_FAILED:${blackboxPhase}:${
+                  error instanceof Error
+                    ? error.message.replace(/[^A-Za-z0-9_:,-]/gu, '_').slice(0, 160)
+                    : 'UnknownError'
+                }`,
+          marker: false,
+          mockMode: true,
+          navigationCount: 7,
+          preload: true,
+        }),
       )}`;
     });
   }, []);

@@ -183,8 +183,14 @@ describe('V2-R05 interaction contracts and local persistence', () => {
     expect(comment).toMatchObject({
       duplicate: false,
       item: { kind: 'COMMENT', userText: '评论内容\n第二行' },
+      persisted: true,
     });
-    expect(replay).toMatchObject({ duplicate: true, item: { itemId: comment.item.itemId } });
+    expect(replay).toMatchObject({
+      duplicate: true,
+      item: { itemId: comment.item.itemId },
+      persisted: true,
+    });
+    expect(direct.persisted).toBe(true);
     expect(direct.item).toMatchObject({
       kind: 'DIRECT_MESSAGE',
       relatedContentPackageId: PERSISTED_PACKAGE_ID,

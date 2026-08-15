@@ -108,6 +108,7 @@ export function InteractionPage(): React.JSX.Element {
       });
       if (result === undefined) return fail('本机互动桥接不可用，未导入。');
       if (!result.ok) return fail(result.error.message);
+      if (!result.value.persisted) return fail('互动未能从当前本机项目重新读取，请重试。');
       setNewText('');
       if (!(await refresh(result.value.item.itemId))) return;
       notify(

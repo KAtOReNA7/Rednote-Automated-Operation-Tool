@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -14,6 +14,7 @@ import {
   type V2ProviderActionPreview,
   type WeeklyPlan,
 } from '../packages/v2/src/index.js';
+import { initializeProjectDataRoot } from '../packages/storage/src/index.js';
 
 vi.mock('electron', () => ({
   app: { getAppPath: () => resolve('.') },
@@ -110,6 +111,25 @@ class ScriptedProviderExecution {
 }
 
 describe('V2 R07 controlled provider adapter', () => {
+  it('opens business persistence on the locator-selected ProjectDataRoot', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const parent = mkdtempSync(join(tmpdir(), 'rednote-v2-selected-root-'));
+    temporaryRoots.push(parent);
+    const selected = await initializeProjectDataRoot(join(parent, 'selected-project'));
+    const runtime = await V2DesktopRuntime.openProject(selected, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+    });
+    try {
+      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: '2026-W31' })).toMatchObject({
+        weekKey: '2026-W31',
+      });
+    } finally {
+      runtime.close();
+    }
+    expect(existsSync(join(selected.databaseDirectory, 'rednote.sqlite'))).toBe(true);
+    expect(existsSync(join(parent, 'v2-project-data'))).toBe(false);
+  });
+
   it('does not mislabel an unexpected local failure as unavailable persistence', () => {
     expect(toV2Exception(new Error('fixture local failure'))).toMatchObject({
       code: 'LOCAL_OPERATION_FAILED',

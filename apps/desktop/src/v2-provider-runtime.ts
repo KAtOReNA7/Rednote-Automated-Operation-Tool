@@ -13,7 +13,7 @@ import {
   type ProviderUsage,
   type RuntimeSchema,
 } from '@mystery-operations/providers';
-import { CREDENTIAL_SLOT } from '@mystery-operations/settings';
+import { CREDENTIAL_SLOT, type AppSettings } from '@mystery-operations/settings';
 import { ModelResultCacheStore, type ProjectDataRoot } from '@mystery-operations/storage';
 import {
   V2_PROVIDER_OUTPUT_JSON_SCHEMAS,
@@ -122,6 +122,19 @@ function opaqueBinding(value: string | null): string | null {
   return value === null ? null : createHash('sha256').update(value).digest('hex');
 }
 
+function normalizeR07ProviderSettings(settings: AppSettings): AppSettings {
+  if (
+    settings.setupState === 'PROVIDER_CONFIG_INCOMPLETE' &&
+    settings.credentialReference !== null &&
+    settings.providerBaseUrl !== null &&
+    settings.researchModelId !== null &&
+    settings.writingModelId !== null
+  ) {
+    return { ...settings, setupState: 'PROVIDER_CONFIGURED_UNVERIFIED' };
+  }
+  return settings;
+}
+
 export class V2ProviderRuntime implements V2ProviderExecutionPort {
   readonly #accounting: SqliteModelAccountingRepository;
   readonly #capabilities: ProviderCapabilityRuntime;
@@ -162,7 +175,8 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     let protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES';
     try {
       config = new ProviderConfigLoader({
-        readProviderSettings: () => this.#settings.getBundle().settings,
+        readProviderSettings: () =>
+          normalizeR07ProviderSettings(this.#settings.getBundle().settings),
       }).load(PROVIDER_ID);
       modelId = config.modelIds[request.modelSlot];
       if (modelId === null) throw new Error('PROVIDER_MODEL_NOT_CONFIGURED');
@@ -445,7 +459,7 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
   async #invoke(request: ModelExecutionRequestV1, credential: string) {
     const kind = actionKind(request.taskKind);
     const config = new ProviderConfigLoader({
-      readProviderSettings: () => this.#settings.getBundle().settings,
+      readProviderSettings: () => normalizeR07ProviderSettings(this.#settings.getBundle().settings),
     }).load(PROVIDER_ID);
     const capabilities = this.#providerCapabilities(request);
     const schema: RuntimeSchema<Readonly<Record<string, unknown>>> = Object.freeze({

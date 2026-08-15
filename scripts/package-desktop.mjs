@@ -42,8 +42,12 @@ async function writeExperienceFiles(packageDirectory) {
     windowsHide: true,
   });
   const commit = stdout.trim();
+  const buildInfo = JSON.parse(await readFile(join(buildDirectory, 'build-info.json'), 'utf8'));
   if (
     !/^[a-f0-9]{40}$/u.test(commit) ||
+    buildInfo.commit !== commit ||
+    typeof buildInfo.builtAt !== 'string' ||
+    buildInfo.v2DataVersion !== 1 ||
     (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
       process.env.REDNOTE_EXACT_HEAD_SHA !== commit)
   ) {
@@ -58,7 +62,7 @@ async function writeExperienceFiles(packageDirectory) {
     writeFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), command(' --v2-shell'), 'utf8'),
     writeFile(join(packageDirectory, '返回当前绿色版本.cmd'), command(''), 'utf8'),
     writeFile(
-      join(packageDirectory, 'V2-R05-体验清单.txt'),
+      join(packageDirectory, 'V2-R07-体验清单.txt'),
       checklist.replace(/\r?\n/gu, '\r\n'),
       'utf8',
     ),
@@ -231,7 +235,7 @@ try {
   await writeExperienceFiles(packagePaths[0]);
 
   process.stdout.write(
-    'Packaged Windows desktop directory, V2-R05 launchers, checklist, and verified Electron fuses.\n',
+    'Packaged Windows desktop directory, V2 launchers, embedded build info, checklist, and verified Electron fuses.\n',
   );
 } finally {
   await rm(packagingScratchDirectory, { force: true, recursive: true });

@@ -277,6 +277,29 @@ describe('SettingsService persistence and concurrency', () => {
     await expect(test.service.clearCredential('wrong')).rejects.toBeInstanceOf(SettingsError);
   });
 
+  it('does not require the unrelated review slot to configure R07 provider execution', async () => {
+    const test = await context();
+    test.repository.update({
+      ...test.repository.getBundle().settings,
+      account: test.repository.getBundle().account,
+      credentialReference: null,
+      expectedRevision: 0,
+      providerBaseUrl: 'https://provider.invalid/v1',
+      researchModelId: 'research-model',
+      reviewModelId: null,
+      setupState: 'PROVIDER_CONFIG_INCOMPLETE',
+      updatedAt: '2026-08-15T00:00:00.000Z',
+      writingModelId: 'writing-model',
+    });
+
+    await test.service.setCredential(runtimeUnusableValue());
+
+    expect(test.repository.getBundle().settings).toMatchObject({
+      reviewModelId: null,
+      setupState: 'PROVIDER_CONFIGURED_UNVERIFIED',
+    });
+  });
+
   it('marks reauthentication without preventing local settings reads', async () => {
     const test = await context();
     test.credentials.reauth = true;

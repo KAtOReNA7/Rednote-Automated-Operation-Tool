@@ -453,6 +453,10 @@ export function SettingsPage(): React.JSX.Element {
     setUi((current) => ({ ...current, personaErrors: [] }));
     notify(`账号人设已保存到本机 · revision ${result.value.revision}`);
   };
+  const buildInfo =
+    typeof __REDNOTE_BUILD_INFO__ === 'undefined'
+      ? { builtAt: '开发测试环境', commit: 'development', v2DataVersion: 1 }
+      : __REDNOTE_BUILD_INFO__;
   return (
     <div className="v2-page">
       <PageHeader
@@ -510,6 +514,17 @@ export function SettingsPage(): React.JSX.Element {
           <ProviderSettings />
         </div>
         <aside className="v2-settings-aside">
+          <section className="v2-card" aria-label="构建版本">
+            <Icon name="file-text" />
+            <div>
+              <h2>构建版本</h2>
+              <p>
+                commit <code>{buildInfo.commit.slice(0, 8)}</code>
+              </p>
+              <p>构建时间：{buildInfo.builtAt}</p>
+              <p>V2 数据版本：v{buildInfo.v2DataVersion}</p>
+            </div>
+          </section>
           <section className="v2-card">
             <Icon name="paper-plane-tilt" />
             <div>

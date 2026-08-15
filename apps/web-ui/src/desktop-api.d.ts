@@ -2,6 +2,11 @@ import type { DesktopBridge } from '@mystery-operations/shared';
 import type * as V2 from '@mystery-operations/v2';
 
 declare global {
+  const __REDNOTE_BUILD_INFO__: Readonly<{
+    builtAt: string;
+    commit: string;
+    v2DataVersion: number;
+  }>;
   type V2PlanCandidateContract = V2.PlanCandidateStatus;
   type V2PlanFieldsContract = V2.PlanRescheduleFields;
   type V2PlanModeContract = V2.PlanRescheduleMode;
@@ -18,6 +23,7 @@ declare global {
   type V2ProviderSettingsViewContract = V2.V2ProviderSettingsView;
   type V2CapabilityProbePreviewContract = V2.V2CapabilityProbePreview;
   type V2CapabilityProbeProgressContract = V2.V2CapabilityProbeProgress;
+  type V2ResultContract<T> = V2.V2Result<T>;
 
   interface Window {
     readonly rednoteDesktop?: DesktopBridge;
