@@ -120,6 +120,20 @@ function generation(plan: WeeklyPlan) {
   };
 }
 
+function lockCompletePlan(facade: V2ApplicationFacade, plan: WeeklyPlan): WeeklyPlan {
+  const confirmed = facade.mutate({
+    action: 'CONFIRM_PLAN_CANDIDATES',
+    candidateIds: plan.candidates.map(({ id }) => id),
+    expectedRevision: plan.revision,
+    weekKey: plan.weekKey,
+  }) as WeeklyPlan;
+  return facade.mutate({
+    action: 'LOCK_WEEKLY_PLAN',
+    expectedRevision: confirmed.revision,
+    weekKey: confirmed.weekKey,
+  }) as WeeklyPlan;
+}
+
 function approval(packages: readonly { id: string; revision: number; versionId: string }[]) {
   return packages.map((item) => ({
     expectedRevision: item.revision,
@@ -134,11 +148,7 @@ describe('V2-R04 content contracts and persistence', () => {
     await expect(app.generate(generation(draftPlan), persona, draftPlan)).rejects.toMatchObject({
       code: 'CONTENT_NOT_READY',
     });
-    const plan = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: draftPlan.revision,
-      weekKey: draftPlan.weekKey,
-    }) as WeeklyPlan;
+    const plan = lockCompletePlan(facade, draftPlan);
     const first = await app.generate(generation(plan), persona, plan);
     const replay = await app.generate(generation(plan), persona, plan);
 
@@ -162,11 +172,7 @@ describe('V2-R04 content contracts and persistence', () => {
 
   it('creates versions only for material edits and binds atomic approval to exact current versions', async () => {
     const { app, draftPlan, facade, persona, repository } = await harness();
-    const plan = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: 0,
-      weekKey: draftPlan.weekKey,
-    }) as WeeklyPlan;
+    const plan = lockCompletePlan(facade, draftPlan);
     const created = await app.generate(generation(plan), persona, plan);
     const first = required(created.packages[0], 'first content package');
     const noOp = await app.save({
@@ -221,11 +227,7 @@ describe('V2-R04 content contracts and persistence', () => {
 
   it('restores metadata and content through a new application instance and fails closed on corruption', async () => {
     const { app, database, draftPlan, facade, files, persona } = await harness();
-    const plan = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: 0,
-      weekKey: draftPlan.weekKey,
-    }) as WeeklyPlan;
+    const plan = lockCompletePlan(facade, draftPlan);
     const created = await app.generate(generation(plan), persona, plan);
     const restored = new V2ContentApplication(new SqliteV2Repository(database), files);
     await expect(restored.read(plan.weekKey)).resolves.toEqual(created);
