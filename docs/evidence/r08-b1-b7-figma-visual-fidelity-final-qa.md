@@ -1,7 +1,7 @@
 # R08 B1–B7 Figma 视觉保真最终 QA
 
-日期：2026-08-16  
-分支：`codex/v2-r08-apple-music-ui`  
+日期：2026-08-16
+分支：`codex/v2-r08-apple-music-ui`
 设计事实源：Figma `aLH4yq5SGE9MLIIwPBtJBT`（B1 `11:39`、B2 `11:40`、B3–B7 `26:34`–`26:38`）
 
 ## 方法与证据
