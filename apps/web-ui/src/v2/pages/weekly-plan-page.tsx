@@ -234,10 +234,12 @@ export function WeeklyPlanPage(): React.JSX.Element {
           </div>
         </section>
       ) : null}
-      <p className="v2-plan-boundary">
-        下周预览目标：{nextWeek.weekKey} · {nextWeek.startDate} 至 {nextWeek.endDate}。
-      </p>
-      <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
+      <section className="v2-weekly-context" aria-label="计划边界说明">
+        <p className="v2-plan-boundary">
+          下周预览目标：{nextWeek.weekKey} · {nextWeek.startDate} 至 {nextWeek.endDate}。
+        </p>
+        <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
+      </section>
       {locked ? (
         <section className="v2-locked-banner" role="status">
           <Icon name="check-circle" />

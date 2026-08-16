@@ -43,6 +43,7 @@ export function InteractionPage(): React.JSX.Element {
   );
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
+  const [intakeOpen, setIntakeOpen] = useState(false);
   const [newText, setNewText] = useState('');
   const [relatedId, setRelatedId] = useState('');
   const [sentConfirmed, setSentConfirmed] = useState(false);
@@ -230,50 +231,64 @@ export function InteractionPage(): React.JSX.Element {
         </div>
         <p>系统只保存回复建议与人工发送记录；不会连接平台，也不会自动发送评论或私信。</p>
       </section>
-      <section
-        aria-label="添加本地互动"
-        className="v2-card v2-reply-detail v2-interaction-composer"
-      >
-        <div className="v2-segments">
-          {(['评论', '私信'] as const).map((value) => (
-            <button
-              data-active={tab === value}
-              key={value}
-              onClick={() => changeTab(value)}
-              type="button"
+      <section aria-label="添加本地互动" className="v2-card v2-interaction-intake">
+        <header>
+          <div>
+            <p className="v2-kicker">本地收件箱</p>
+            <h2>新增一条互动</h2>
+          </div>
+          <Button icon="plus" onClick={() => setIntakeOpen((open) => !open)} tone="quiet">
+            {intakeOpen ? '收起录入' : '新增互动'}
+          </Button>
+        </header>
+        {intakeOpen ? (
+          <div className="v2-interaction-composer">
+            <div className="v2-segments">
+              {(['评论', '私信'] as const).map((value) => (
+                <button
+                  data-active={tab === value}
+                  key={value}
+                  onClick={() => changeTab(value)}
+                  type="button"
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            <label className="v2-field">
+              <span>粘贴一条{tab}</span>
+              <textarea
+                aria-label="粘贴一条评论或私信"
+                onChange={(event) => setNewText(event.target.value)}
+                rows={3}
+                value={newText}
+              />
+            </label>
+            <label className="v2-field">
+              <span>关联内容包（可选）</span>
+              <select onChange={(event) => setRelatedId(event.target.value)} value={relatedId}>
+                <option value="">不关联</option>
+                {session.content.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.book}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              disabled={busy || newText.trim() === ''}
+              icon="plus"
+              onClick={create}
+              tone="primary"
             >
-              {value}
-            </button>
-          ))}
-        </div>
-        <label className="v2-field">
-          <span>粘贴一条{tab}</span>
-          <textarea
-            aria-label="粘贴一条评论或私信"
-            onChange={(event) => setNewText(event.target.value)}
-            rows={3}
-            value={newText}
-          />
-        </label>
-        <label className="v2-field">
-          <span>关联内容包（可选）</span>
-          <select onChange={(event) => setRelatedId(event.target.value)} value={relatedId}>
-            <option value="">不关联</option>
-            {session.content.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.book}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button
-          disabled={busy || newText.trim() === ''}
-          icon="plus"
-          onClick={create}
-          tone="primary"
-        >
-          保存本地互动
-        </Button>
+              保存本地互动
+            </Button>
+          </div>
+        ) : (
+          <p className="v2-manual-note">
+            需要记录一条评论或私信时再展开录入；不会连接或发送到任何平台。
+          </p>
+        )}
       </section>
       <div className="v2-interaction-grid">
         <section aria-label="本地互动列表" className="v2-card v2-inbox v2-interaction-inbox">

@@ -10,6 +10,8 @@ export function LibraryPage(): React.JSX.Element {
   const books = session.books.filter((book) =>
     `${book.title}${book.author}${book.angle}`.toLowerCase().includes(query.toLowerCase()),
   );
+  const featuredBook = books.at(0);
+  const recentBooks = books.slice(1);
   return (
     <div className="v2-page v2-library-page">
       <PageHeader
@@ -52,42 +54,68 @@ export function LibraryPage(): React.JSX.Element {
           </div>
         </section>
       ) : (
-        <section aria-label="作品运营卡片" className="v2-book-grid v2-library-shelf">
-          {books.map((book, index) => {
-            const tone = coverTones[index % coverTones.length];
-            return (
-              <article className="v2-card v2-book" key={book.id}>
-                <div className="v2-book-cover" data-tone={tone}>
-                  <span>推理小说</span>
-                  <Icon name="books" size={32} />
-                  <strong>《{book.title}》</strong>
-                  <small>本地作品资料</small>
-                </div>
-                <section className="v2-book-copy">
-                  <p className="v2-kicker">{book.author}</p>
-                  <h2>《{book.title}》</h2>
-                  <p className="v2-book-angle">{book.angle}</p>
-                  <dl>
-                    <div>
-                      <dt>已发布</dt>
-                      <dd>{book.posts} 篇</dd>
-                    </div>
-                    <div>
-                      <dt>收藏率</dt>
-                      <dd>{book.saves}</dd>
-                    </div>
-                  </dl>
-                  <button
-                    onClick={() => notify(`《${book.title}》运营摘要仅作模拟展示。`)}
-                    type="button"
-                  >
-                    查看运营摘要 <Icon name="arrow-right" size={14} />
-                  </button>
-                </section>
-              </article>
-            );
-          })}
-        </section>
+        <>
+          {featuredBook === undefined ? null : (
+            <section className="v2-library-feature" aria-label="重点作品">
+              <div className="v2-library-feature-cover" data-tone="midnight">
+                <span>重点作品</span>
+                <strong>《{featuredBook.title}》</strong>
+                <small>中性封面占位 · 本地作品资料</small>
+              </div>
+              <div>
+                <p className="v2-kicker">作品运营摘要</p>
+                <h2>《{featuredBook.title}》</h2>
+                <p>{featuredBook.angle}</p>
+                <dl>
+                  <div>
+                    <dt>已发布</dt>
+                    <dd>{featuredBook.posts} 篇</dd>
+                  </div>
+                  <div>
+                    <dt>收藏率</dt>
+                    <dd>{featuredBook.saves}</dd>
+                  </div>
+                </dl>
+              </div>
+            </section>
+          )}
+          <section aria-label="近期作品卡片" className="v2-book-grid v2-library-shelf">
+            {recentBooks.map((book, index) => {
+              const tone = coverTones[index % coverTones.length];
+              return (
+                <article className="v2-card v2-book" key={book.id}>
+                  <div className="v2-book-cover" data-tone={tone}>
+                    <span>推理小说</span>
+                    <Icon name="books" size={32} />
+                    <strong>《{book.title}》</strong>
+                    <small>本地作品资料</small>
+                  </div>
+                  <section className="v2-book-copy">
+                    <p className="v2-kicker">{book.author}</p>
+                    <h2>《{book.title}》</h2>
+                    <p className="v2-book-angle">{book.angle}</p>
+                    <dl>
+                      <div>
+                        <dt>已发布</dt>
+                        <dd>{book.posts} 篇</dd>
+                      </div>
+                      <div>
+                        <dt>收藏率</dt>
+                        <dd>{book.saves}</dd>
+                      </div>
+                    </dl>
+                    <button
+                      onClick={() => notify(`《${book.title}》运营摘要仅作模拟展示。`)}
+                      type="button"
+                    >
+                      查看运营摘要 <Icon name="arrow-right" size={14} />
+                    </button>
+                  </section>
+                </article>
+              );
+            })}
+          </section>
+        </>
       )}
     </div>
   );

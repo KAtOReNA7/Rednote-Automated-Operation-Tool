@@ -169,7 +169,26 @@ export function ReviewPage(): React.JSX.Element {
             <span className="v2-status v2-status--neutral">{metricLabel}</span>
           </header>
           {chartRows.length === 0 ? (
-            <p className="v2-chart-empty">尚无可绘制的数据；图表不会以 0 代替未知。</p>
+            <div className="v2-chart-empty">
+              <svg aria-label="暂无浏览量趋势数据" role="img" viewBox="0 0 520 150">
+                <title>暂无浏览量趋势数据</title>
+                <path
+                  d="M32 124H504M32 22V124"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeOpacity=".18"
+                />
+                <path
+                  d="M70 102L170 82L270 96L370 62L470 80"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeDasharray="5 8"
+                  strokeOpacity=".22"
+                  strokeWidth="3"
+                />
+              </svg>
+              <p>尚无可绘制的数据；图表不会以 0 代替未知。</p>
+            </div>
           ) : (
             <svg
               aria-label="浏览量趋势图"
@@ -224,7 +243,14 @@ export function ReviewPage(): React.JSX.Element {
             <span className="v2-status v2-status--neutral">浏览量</span>
           </header>
           {chartRows.length === 0 ? (
-            <p className="v2-chart-empty">暂无已保存内容指标。</p>
+            <div className="v2-chart-empty">
+              <div className="v2-empty-bars" aria-hidden="true">
+                <i />
+                <i />
+                <i />
+              </div>
+              <p>暂无已保存内容指标。</p>
+            </div>
           ) : (
             <div className="v2-bar-chart">
               {chartRows.map((item) => (

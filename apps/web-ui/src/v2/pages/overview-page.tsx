@@ -71,10 +71,7 @@ export function OverviewPage(): React.JSX.Element {
       </header>
 
       <section aria-label="今日运营摘要" className="v2-editorial-lead">
-        <article className="v2-feature-hero">
-          {heroContent === undefined ? null : (
-            <img alt="" aria-hidden="true" src={heroContent.cover} />
-          )}
+        <article className="v2-feature-hero" data-has-content={heroContent !== undefined}>
           <div>
             <p className="v2-kicker">趋势选题</p>
             <h2>{locked ? '本周内容已进入执行节奏' : '先完成本周最重要的决定'}</h2>

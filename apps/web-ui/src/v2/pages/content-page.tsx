@@ -229,7 +229,7 @@ export function ContentPage(): React.JSX.Element {
         </div>
         <p>从左侧选择锁定计划项，在中间编辑六字段内容，在右侧核对版本与审批状态。</p>
       </section>
-      <div className="v2-content-grid">
+      <div className="v2-content-grid v2-content-canvas">
         <section aria-label="内容包列表" className="v2-card v2-package-list v2-content-queue">
           <header>
             <strong>

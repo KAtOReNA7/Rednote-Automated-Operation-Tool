@@ -31,6 +31,12 @@ const probeSummaryLabel = {
   RUNNING: '运行中',
   STALE: '结果已过期',
 } as const;
+const settingsSections = [
+  ['provider', 'v2-provider-settings', 'AI 服务'],
+  ['persona', 'v2-persona-settings', '账号与文风'],
+  ['capabilities', 'v2-provider-capabilities', '能力与确认'],
+  ['budget', 'v2-provider-budget', '费用与预算'],
+] as const;
 
 function ProviderSettings(): React.JSX.Element {
   const { notify } = useV2Controller();
@@ -422,6 +428,11 @@ function ProviderSettings(): React.JSX.Element {
 
 export function SettingsPage(): React.JSX.Element {
   const { notify, session, setSession, setUi, ui } = useV2Controller();
+  const [activeSection, setActiveSection] = useState('provider');
+  const selectSection = (section: string, targetId: string): void => {
+    setActiveSection(section);
+    document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
   const update = (field: 'audience' | 'boundary' | 'name' | 'tone', value: string): void => {
     setSession((current) => ({ ...current, persona: { ...current.persona, [field]: value } }));
     setUi((current) => ({
@@ -479,10 +490,17 @@ export function SettingsPage(): React.JSX.Element {
       <div className="v2-settings-grid v2-settings-board">
         <nav aria-label="设置分类" className="v2-card v2-settings-section-nav">
           <p className="v2-kicker">设置分类</p>
-          <a href="#v2-provider-settings">AI 服务</a>
-          <a href="#v2-persona-settings">账号与文风</a>
-          <a href="#v2-provider-capabilities">能力与确认</a>
-          <a href="#v2-provider-budget">费用与预算</a>
+          {settingsSections.map(([section, targetId, label]) => (
+            <button
+              aria-pressed={activeSection === section}
+              data-active={activeSection === section}
+              key={section}
+              onClick={() => selectSection(section, targetId)}
+              type="button"
+            >
+              {label}
+            </button>
+          ))}
         </nav>
         <div className="v2-stack v2-settings-main">
           <ProviderSettings />
