@@ -19,10 +19,12 @@ export function OverviewPage(): React.JSX.Element {
   const locked = session.planStatus === 'CONFIRMED';
   const emptySlots = Math.max(0, 23 - currentPlan.length + skippedCount);
   const activeReviews = reviews.filter(({ kind }) => kind !== '排程' || conflictCount > 0);
+  const featuredContent = session.content.slice(0, 4);
+  const heroContent = featuredContent[0];
   const toggleExceptions = (): void =>
     setUi((current) => ({ ...current, onlyExceptions: !current.onlyExceptions }));
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-overview-page">
       <header className="v2-page-header">
         <div>
           <p className="v2-kicker">7月27日—8月2日</p>
@@ -58,6 +60,87 @@ export function OverviewPage(): React.JSX.Element {
           </Button>
         </div>
       </header>
+      <section aria-label="本周运营焦点" className="v2-editorial-lead">
+        <article className="v2-feature-hero">
+          {heroContent === undefined ? null : (
+            <img alt="" aria-hidden="true" src={heroContent.cover} />
+          )}
+          <div>
+            <p className="v2-kicker">本周运营焦点</p>
+            <h2>{locked ? '本周计划已经进入执行节奏' : '先完成本周最重要的决定'}</h2>
+            <p>
+              {currentPlan.length} 篇内容保存在本机，其中 {pendingCount} 篇待确认
+              {conflictCount > 0 ? `，还有 ${conflictCount} 处时间冲突` : '，当前没有时间冲突'}。
+            </p>
+            <Button icon="arrow-right" onClick={() => navigate('weekly-plan')} tone="primary">
+              查看本周计划
+            </Button>
+          </div>
+        </article>
+        <section className="v2-card v2-today-decisions">
+          <header>
+            <div>
+              <p className="v2-kicker">只呈现需要行动的结果</p>
+              <h2>今天需要你决定</h2>
+            </div>
+            <span>{pendingCount + session.content.length + session.interactions.length}</span>
+          </header>
+          {[
+            ['calendar-blank', '本周计划', `${pendingCount} 篇待确认`, 'weekly-plan'],
+            ['file-text', '内容包', `${session.content.length} 个本地版本`, 'content'],
+            [
+              'chats-circle',
+              '评论与私信',
+              `${session.interactions.length} 条本地互动`,
+              'interaction',
+            ],
+          ].map(([icon, title, detail, destination]) => (
+            <button key={title} onClick={() => navigate(destination as V2RouteId)} type="button">
+              <span className="v2-round-icon">
+                <Icon name={icon as 'calendar-blank'} />
+              </span>
+              <span>
+                <strong>{title}</strong>
+                <small>{detail}</small>
+              </span>
+              <Icon name="caret-right" size={17} />
+            </button>
+          ))}
+        </section>
+      </section>
+      <section className="v2-featured-section">
+        <header className="v2-section-head">
+          <div>
+            <p className="v2-kicker">保存在本机的当前版本</p>
+            <h2>本周精选内容</h2>
+          </div>
+          <button onClick={() => navigate('content')} type="button">
+            查看全部 <Icon name="arrow-right" size={15} />
+          </button>
+        </header>
+        {featuredContent.length === 0 ? (
+          <section className="v2-card v2-editorial-empty">
+            <Icon name="file-text" size={24} />
+            <div>
+              <strong>内容包尚未生成</strong>
+              <p>完成并锁定周计划后，可在内容页按需生成本地内容包。</p>
+            </div>
+          </section>
+        ) : (
+          <div className="v2-featured-grid">
+            {featuredContent.map((item) => (
+              <button key={item.id} onClick={() => navigate('content')} type="button">
+                <img alt={item.coverAlt} src={item.cover} />
+                <span>
+                  <small>{item.book}</small>
+                  <strong>{item.title}</strong>
+                  <em>{item.status}</em>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </section>
       <div className="v2-overview-grid">
         <div className="v2-stack">
           <section aria-label="需要处理" className="v2-card v2-queue">

@@ -330,7 +330,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
           })}
         </section>
         <aside className="v2-stack">
-          <section className="v2-card v2-side-card">
+          <section className="v2-card v2-side-card v2-rhythm-card">
             <p className="v2-kicker">保持全局视角</p>
             <h2>本周节奏</h2>
             <dl className="v2-facts">
