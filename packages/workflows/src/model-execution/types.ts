@@ -142,6 +142,13 @@ export interface ModelExecutionResultV1 {
   readonly localCacheHit: boolean;
   readonly outcomeCertainty: OutcomeCertainty;
   readonly output: ModelExecutionOutputV1 | null;
+  readonly providerRequestId?: string | null;
+  readonly safeDiagnostic?: Readonly<{
+    readonly actualRootType: string | null;
+    readonly expectedType: string | null;
+    readonly issuePath: readonly (number | string)[];
+    readonly rootKeys: readonly string[];
+  }>;
   readonly stableErrorCode: string | null;
   readonly status: ModelExecutionStatus;
   readonly usage: UsageObservationV1;

@@ -95,6 +95,19 @@ function resolveCapabilitySmokePort(argv: readonly string[]): number | null {
   return Number.isSafeInteger(port) && port >= 1_024 && port <= 65_535 ? port : null;
 }
 
+function resolveR07Blackbox(argv: readonly string[]): { attempt: 1 | 2 | 3; port: number } | null {
+  const portArgument = argv.find((value) => value.startsWith('--r07-blackbox-port='));
+  const attemptArgument = argv.find((value) => value.startsWith('--r07-blackbox-attempt='));
+  const port = Number(portArgument?.slice('--r07-blackbox-port='.length));
+  const attempt = Number(attemptArgument?.slice('--r07-blackbox-attempt='.length));
+  return Number.isSafeInteger(port) &&
+    port >= 1_024 &&
+    port <= 65_535 &&
+    (attempt === 1 || attempt === 2 || attempt === 3)
+    ? { attempt, port }
+    : null;
+}
+
 function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
   const prefix = '--issue010-smoke-workspace=';
   const argument = argv.find((value) => value.startsWith(prefix));
@@ -116,6 +129,7 @@ function resolveSmokeWorkspacePath(argv: readonly string[]): string | null {
 const smokeWorkspacePath = isSmokeMode ? resolveSmokeWorkspacePath(process.argv) : null;
 const localApiSmoke = isSmokeMode ? resolveLocalApiSmoke(process.argv) : null;
 const capabilitySmokePort = isSmokeMode ? resolveCapabilitySmokePort(process.argv) : null;
+const r07Blackbox = isSmokeMode ? resolveR07Blackbox(process.argv) : null;
 const CONTENT_TYPES: Readonly<Record<string, string>> = Object.freeze({
   '.css': 'text/css; charset=utf-8',
   '.html': 'text/html; charset=utf-8',
@@ -231,11 +245,14 @@ async function startV2Application(
     nodeVersion: process.versions.node,
   });
   await settingsRuntime.initialize();
-  await settingsRuntime.ensureV2Project(join(app.getPath('userData'), 'v2-project-data'));
-  const runtime = await V2DesktopRuntime.open(app.getPath('userData'), {
+  const projectRoot = await settingsRuntime.ensureV2Project(
+    join(app.getPath('userData'), 'v2-project-data'),
+  );
+  const runtime = await V2DesktopRuntime.openProject(projectRoot, {
     providerExecution: {
       execute: (request) => settingsRuntime.executeV2ProviderAction(request),
       inspect: (request) => settingsRuntime.inspectV2ProviderAction(request),
+      inspectContentCopy: (request) => settingsRuntime.inspectV2ContentCopy(request),
     },
     settingsControl: {
       clearCredential: () => settingsRuntime.clearV2ProviderCredential(),
@@ -292,11 +309,14 @@ async function startV2Application(
       app.exit(2);
       return;
     }
-    const timeout = setTimeout(() => {
-      writeSmokeReport(smokeOutputPath, { error: 'V2_SMOKE_TIMEOUT', ok: false });
-      closeRuntime();
-      app.exit(3);
-    }, 20_000);
+    const timeout = setTimeout(
+      () => {
+        writeSmokeReport(smokeOutputPath, { error: 'V2_SMOKE_TIMEOUT', ok: false });
+        closeRuntime();
+        app.exit(3);
+      },
+      r07Blackbox === null ? 20_000 : 60_000,
+    );
     let reported = false;
     mainWindow.on('page-title-updated', (event, title) => {
       const renderer = parseV2RendererSmokeTitle(title);
@@ -305,16 +325,33 @@ async function startV2Application(
       event.preventDefault();
       clearTimeout(timeout);
       void (async () => {
-        const persistence = runtime.smokeSummary();
+        const persistence = renderer.marker
+          ? runtime.smokeSummary()
+          : { personaRevision: -1, planRevision: -1, v2TableCount: 8 };
+        const blackbox = renderer.blackbox;
         const ok =
           renderer.marker &&
           !renderer.mockMode &&
           renderer.navigationCount === 7 &&
           renderer.preload &&
-          persistence.personaRevision === 0 &&
-          persistence.planRevision === 1 &&
           persistence.v2TableCount === 8 &&
-          sessionSecurityAudit.externalRequestAttempts === 0;
+          sessionSecurityAudit.externalRequestAttempts === 0 &&
+          (r07Blackbox === null
+            ? persistence.personaRevision === 0 && persistence.planRevision === 2
+            : blackbox?.attempt === r07Blackbox.attempt &&
+              blackbox.buildCommit.length === 40 &&
+              (r07Blackbox.attempt === 1
+                ? !blackbox.commentPersisted &&
+                  blackbox.contentCount === 0 &&
+                  !blackbox.directMessagePersisted
+                : blackbox.commentPersisted &&
+                  blackbox.contentCount === 3 &&
+                  blackbox.directMessagePersisted) &&
+              blackbox.imageRequestCount === 0 &&
+              (r07Blackbox.attempt === 1
+                ? !blackbox.previewCanConfirm && blackbox.previewRequestCount === 0
+                : blackbox.previewCanConfirm && blackbox.previewRequestCount === 3) &&
+              blackbox.providerProtocol === 'CHAT_COMPLETIONS');
         await emitSmokeProcessSample('capability-validated');
         writeSmokeReport(smokeOutputPath, {
           main: true,
@@ -344,13 +381,32 @@ async function startV2Application(
         await emitSmokeProcessSample('before-exit');
         closeRuntime();
         app.exit(ok ? 0 : 4);
-      })().catch(() => app.exit(5));
+      })().catch((error: unknown) => {
+        try {
+          writeSmokeReport(smokeOutputPath, {
+            error: 'V2_SMOKE_MAIN_HANDLER_FAILED',
+            errorCode:
+              typeof error === 'object' && error !== null && 'code' in error
+                ? String(error.code).slice(0, 64)
+                : null,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+            ok: false,
+          });
+        } catch {
+          // The original bounded failure remains authoritative when the report path is unavailable.
+        }
+        app.exit(5);
+      });
     });
   }
 
   const targetUrl = new URL(expectedRendererUrl);
   targetUrl.hash = '/v2/overview';
   if (isSmokeMode) targetUrl.searchParams.set('smoke', '1');
+  if (r07Blackbox !== null) {
+    targetUrl.searchParams.set('r07BlackboxPort', String(r07Blackbox.port));
+    targetUrl.searchParams.set('r07BlackboxAttempt', String(r07Blackbox.attempt));
+  }
   await mainWindow.loadURL(targetUrl.toString());
 }
 

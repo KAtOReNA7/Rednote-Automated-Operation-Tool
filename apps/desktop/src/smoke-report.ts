@@ -20,6 +20,18 @@ export interface RendererSmokeReport {
 }
 
 export interface V2RendererSmokeReport {
+  readonly blackbox?: {
+    readonly attempt: number;
+    readonly buildCommit: string;
+    readonly commentPersisted: boolean;
+    readonly contentCount: number;
+    readonly directMessagePersisted: boolean;
+    readonly imageRequestCount: number;
+    readonly planRevision: number;
+    readonly previewCanConfirm: boolean;
+    readonly previewRequestCount: number;
+    readonly providerProtocol: string | null;
+  };
   readonly marker: boolean;
   readonly mockMode: boolean;
   readonly navigationCount: number;

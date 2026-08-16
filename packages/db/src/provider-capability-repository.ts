@@ -59,6 +59,7 @@ interface EntryRow {
   readonly model_id: string | null;
   readonly model_slot: ProbeModelSlot;
   readonly observed_at: string | null;
+  readonly created_at: string;
   readonly protocol_mode: ProbeProtocolMode;
   readonly rate_limit_requests: number | null;
   readonly rate_limit_tokens: number | null;
@@ -308,20 +309,30 @@ export class SqliteProviderCapabilityRepository {
           readonly status: ProbeRunStatus;
         }
       | undefined;
-    const entries =
-      latestTerminal === undefined
-        ? []
-        : (this.#database
-            .prepare(
-              `SELECT model_slot, model_id, protocol_mode, capability, state, reason_code,
-                      source, confidence, stale, safe_details_json,
-                      max_context_tokens, rate_limit_requests, rate_limit_tokens,
-                      observed_at
-               FROM provider_capability_entries
-               WHERE run_id = ?
-               ORDER BY model_slot, protocol_mode, capability`,
-            )
-            .all(latestTerminal.run_id) as unknown as readonly EntryRow[]);
+    const currentRows = this.#database
+      .prepare(
+        `SELECT model_slot, model_id, protocol_mode, capability, state, reason_code,
+                source, confidence, stale, safe_details_json,
+                max_context_tokens, rate_limit_requests, rate_limit_tokens,
+                observed_at, created_at
+         FROM provider_capability_entries
+         WHERE config_fingerprint = ? AND credential_binding_version = ? AND stale = 0
+         ORDER BY observed_at DESC, created_at DESC`,
+      )
+      .all(configFingerprint, credentialBindingVersion) as unknown as readonly EntryRow[];
+    const byEvidenceIdentity = new Map<string, EntryRow[]>();
+    for (const row of currentRows) {
+      const key = `${row.model_slot}\0${row.model_id ?? ''}\0${row.protocol_mode}\0${row.capability}`;
+      const rows = byEvidenceIdentity.get(key) ?? [];
+      rows.push(row);
+      byEvidenceIdentity.set(key, rows);
+    }
+    const entries = [...byEvidenceIdentity.values()]
+      .map(
+        (rows) =>
+          rows.find((row) => row.state === 'SUPPORTED' || row.state === 'UNSUPPORTED') ?? rows[0],
+      )
+      .filter((row): row is EntryRow => row !== undefined);
     const history = this.#database
       .prepare(
         `SELECT id AS run_id, profile, planned_request_count, sent_request_count,
@@ -339,19 +350,21 @@ export class SqliteProviderCapabilityRepository {
     const derivedState: ProviderCapabilityStateRecord['derivedState'] =
       latestTerminal === undefined
         ? 'NOT_PROBED'
-        : !terminalIsCurrent
+        : !terminalIsCurrent && entries.length === 0
           ? 'STALE'
           : latestTerminal.status === 'SUCCEEDED'
             ? 'PROBE_COMPLETE'
-            : latestTerminal.status === 'PARTIAL'
-              ? 'PARTIAL'
-              : latestTerminal.status === 'FAILED'
-                ? 'FAILED'
-                : latestTerminal.status === 'CANCELLED'
-                  ? 'CANCELLED'
-                  : latestTerminal.status === 'INTERRUPTED'
-                    ? 'INTERRUPTED'
-                    : 'NOT_PROBED';
+            : entries.length > 0 && entries.every((entry) => entry.state !== 'UNKNOWN')
+              ? 'PROBE_COMPLETE'
+              : entries.some((entry) => entry.state !== 'UNKNOWN')
+                ? 'PARTIAL'
+                : latestTerminal.status === 'FAILED'
+                  ? 'FAILED'
+                  : latestTerminal.status === 'CANCELLED'
+                    ? 'CANCELLED'
+                    : latestTerminal.status === 'INTERRUPTED'
+                      ? 'INTERRUPTED'
+                      : 'NOT_PROBED';
     return {
       derivedState,
       entries: entries.map((row) => ({

@@ -108,6 +108,8 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
     }),
     lockWeeklyPlan: async (input) =>
       success(facade.mutate({ action: 'LOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    unlockWeeklyPlan: async (input) =>
+      success(facade.mutate({ action: 'UNLOCK_WEEKLY_PLAN', ...input }) as WeeklyPlan),
     previewPlanReschedule: async (input) =>
       success(facade.read({ view: 'PLAN_RESCHEDULE_PREVIEW', ...input }) as PlanReschedulePreview),
     exportContentPackages: async () => ({
@@ -249,13 +251,16 @@ describe('V2 pure contracts', () => {
 });
 
 describe('V2 migration and repository', () => {
-  it('appends the R07 provenance migration without adding a business table or trigger', async () => {
+  it('appends the R07 provenance and locked-plan history migrations without a table or trigger', async () => {
     const previous = MIGRATIONS.at(-2);
     const current = MIGRATIONS.at(-1);
     expect(current).toMatchObject({
-      name: 'v2_generated_cover_and_model_provenance',
+      name: 'v2_weekly_plan_lock_history',
       version: (previous?.version ?? 0) + 1,
     });
+    expect(previous).toMatchObject({ name: 'v2_generated_cover_and_model_provenance' });
+    expect(current?.sql).toContain('locked_history_json');
+    expect(current?.sql).not.toMatch(/CREATE\s+(?:TABLE|TRIGGER)/iu);
     const databasePath = createTemporaryDatabasePath('v2 new database');
     const result = await initializeDatabase({ databasePath });
     const database = connectDatabase(databasePath);
@@ -542,12 +547,13 @@ describe('V2 migration and repository', () => {
       expectedRevision: confirmed.revision,
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
-    const locked = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: skipped.revision,
-      weekKey: V2_DEFAULT_WEEK_KEY,
-    }) as WeeklyPlan;
-    expect(locked).toMatchObject({ revision: 4, status: 'CONFIRMED' });
+    expect(() =>
+      facade.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: skipped.revision,
+        weekKey: V2_DEFAULT_WEEK_KEY,
+      }),
+    ).toThrowError('PLAN_CONFLICT');
     database.close();
 
     database = connectDatabase(databasePath);
@@ -560,7 +566,7 @@ describe('V2 migration and repository', () => {
       view: 'WEEKLY_PLAN',
       weekKey: V2_DEFAULT_WEEK_KEY,
     }) as WeeklyPlan;
-    expect(restoredPlan).toMatchObject({ revision: 4, status: 'CONFIRMED' });
+    expect(restoredPlan).toMatchObject({ revision: 3, status: 'DRAFT' });
     expect(restoredPlan.candidates.find(({ id }) => id === 'thu-1')).toMatchObject({
       date: '2026-08-02',
       day: '周日',
@@ -568,6 +574,58 @@ describe('V2 migration and repository', () => {
       time: '14:00',
     });
     expect(restoredPlan.candidates.find(({ id }) => id === 'sun-2')?.status).toBe('SKIPPED');
+    database.close();
+  });
+
+  it('derives one editable draft from a locked snapshot and preserves the locked history', async () => {
+    const databasePath = createTemporaryDatabasePath('v2 locked plan history');
+    await initializeDatabase({ databasePath });
+    let database = connectDatabase(databasePath);
+    let facade = new V2ApplicationFacade(new SqliteV2Repository(database));
+    const draft = facade.read({ view: 'WEEKLY_PLAN', weekKey: V2_DEFAULT_WEEK_KEY }) as WeeklyPlan;
+    const confirmed = facade.mutate({
+      action: 'CONFIRM_PLAN_CANDIDATES',
+      candidateIds: draft.candidates.map(({ id }) => id),
+      expectedRevision: draft.revision,
+      weekKey: draft.weekKey,
+    }) as WeeklyPlan;
+    const locked = facade.mutate({
+      action: 'LOCK_WEEKLY_PLAN',
+      expectedRevision: confirmed.revision,
+      weekKey: confirmed.weekKey,
+    }) as WeeklyPlan;
+    const unlocked = facade.mutate({
+      action: 'UNLOCK_WEEKLY_PLAN',
+      expectedRevision: locked.revision,
+      weekKey: locked.weekKey,
+    }) as WeeklyPlan;
+    expect(unlocked).toMatchObject({ revision: locked.revision + 1, status: 'DRAFT' });
+    expect(
+      facade.mutate({
+        action: 'UNLOCK_WEEKLY_PLAN',
+        expectedRevision: unlocked.revision,
+        weekKey: unlocked.weekKey,
+      }),
+    ).toEqual(unlocked);
+    expect(
+      database
+        .prepare(
+          `SELECT locked_history_json FROM v2_weekly_plan_snapshots
+           WHERE workspace_id='v2-local-workspace' AND week_key=?`,
+        )
+        .get(unlocked.weekKey),
+    ).toEqual({
+      locked_history_json: JSON.stringify([
+        { candidates: locked.candidates, revision: locked.revision, status: 'CONFIRMED' },
+      ]),
+    });
+    database.close();
+    database = connectDatabase(databasePath);
+    facade = new V2ApplicationFacade(new SqliteV2Repository(database));
+    expect(facade.read({ view: 'WEEKLY_PLAN', weekKey: unlocked.weekKey })).toMatchObject({
+      revision: unlocked.revision,
+      status: 'DRAFT',
+    });
     database.close();
   });
 });
@@ -638,6 +696,7 @@ describe('V2 Electron boundary', () => {
       'createInteraction',
       'decideStrategyRecommendation',
       'deleteInteraction',
+      'executeContentCopyGeneration',
       'exportContentPackages',
       'generateContentPackages',
       'generateReplySuggestion',
@@ -645,6 +704,7 @@ describe('V2 Electron boundary', () => {
       'lockWeeklyPlan',
       'markInteractionManualSent',
       'openContentExport',
+      'previewContentCopyGeneration',
       'previewInteractionDelete',
       'previewPlanReschedule',
       'previewProviderAction',
@@ -666,6 +726,7 @@ describe('V2 Electron boundary', () => {
       'skipPlanCandidates',
       'startProviderCapabilityProbe',
       'undoInteractionManualSent',
+      'unlockWeeklyPlan',
       'updatePersona',
       'updateProviderSettings',
     ]);
@@ -698,6 +759,12 @@ describe('V2 Electron boundary', () => {
       confirmation: 'RUN_PROVIDER_ACTION',
       previewToken: 'r07-preview-token',
     });
+    await exposed.previewContentCopyGeneration?.({
+      selectedPlanItemIds: ['mon-1'],
+      userApprovedUnknownCost: true,
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    await exposed.executeContentCopyGeneration?.({ previewToken: 'r07-copy-preview-token' });
     await exposed.updatePersona({ expectedRevision: 0, persona: DEFAULT_ACCOUNT_PERSONA });
     await exposed.generateWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });
     await exposed.confirmPlanCandidates({

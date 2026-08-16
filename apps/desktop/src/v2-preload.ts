@@ -6,6 +6,8 @@ import {
   type ContentExportResult,
   type ContentPackage,
   type ContentWorkspace,
+  type V2ContentCopyGenerationPreview,
+  type V2ContentCopyGenerationResult,
   type InteractionCreateResult,
   type InteractionDeletePreview,
   type InteractionItem,
@@ -37,6 +39,13 @@ const bridge: V2Bridge = Object.freeze({
     }),
   confirmProviderAction: (input: Parameters<NonNullable<V2Bridge['confirmProviderAction']>>[0]) =>
     invoke<V2ProviderActionResult>('mutate', { action: 'CONFIRM_PROVIDER_ACTION', ...input }),
+  executeContentCopyGeneration: (
+    input: Parameters<NonNullable<V2Bridge['executeContentCopyGeneration']>>[0],
+  ) =>
+    invoke<V2ContentCopyGenerationResult>('mutate', {
+      action: 'EXECUTE_CONTENT_COPY_GENERATION',
+      ...input,
+    }),
   clearProviderCredential: (
     input: Parameters<NonNullable<V2Bridge['clearProviderCredential']>>[0],
   ) => invoke<V2ProviderSettingsView>('mutate', { action: 'CLEAR_PROVIDER_CREDENTIAL', ...input }),
@@ -59,6 +68,8 @@ const bridge: V2Bridge = Object.freeze({
     invoke<InteractionItem>('mutate', { action: 'GENERATE_REPLY_SUGGESTION', ...input }),
   lockWeeklyPlan: (input: Parameters<V2Bridge['lockWeeklyPlan']>[0]) =>
     invoke<WeeklyPlan>('mutate', { action: 'LOCK_WEEKLY_PLAN', ...input }),
+  unlockWeeklyPlan: (input: Parameters<V2Bridge['unlockWeeklyPlan']>[0]) =>
+    invoke<WeeklyPlan>('mutate', { action: 'UNLOCK_WEEKLY_PLAN', ...input }),
   previewPlanReschedule: (input: Parameters<V2Bridge['previewPlanReschedule']>[0]) =>
     invoke<PlanReschedulePreview>('read', {
       view: 'PLAN_RESCHEDULE_PREVIEW',
@@ -66,6 +77,13 @@ const bridge: V2Bridge = Object.freeze({
     }),
   previewProviderAction: (input: Parameters<NonNullable<V2Bridge['previewProviderAction']>>[0]) =>
     invoke<V2ProviderActionPreview>('read', { intent: input, view: 'PROVIDER_ACTION_PREVIEW' }),
+  previewContentCopyGeneration: (
+    input: Parameters<NonNullable<V2Bridge['previewContentCopyGeneration']>>[0],
+  ) =>
+    invoke<V2ContentCopyGenerationPreview>('read', {
+      ...input,
+      view: 'CONTENT_COPY_GENERATION_PREVIEW',
+    }),
   previewProviderCapabilityProbe: () =>
     invoke<V2CapabilityProbePreview>('read', { view: 'PROVIDER_CAPABILITY_PROBE_PREVIEW' }),
   exportContentPackages: (input: Parameters<V2Bridge['exportContentPackages']>[0]) =>

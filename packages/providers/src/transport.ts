@@ -47,7 +47,7 @@ export type FetchImplementation = (
   init?: RequestInit,
 ) => Promise<Response>;
 
-function buildProviderUrl(baseUrl: string, endpoint: ProviderEndpoint): string {
+export function providerEndpointUrl(baseUrl: string, endpoint: ProviderEndpoint): string {
   const parsed = new URL(baseUrl);
   const loopback =
     parsed.hostname === 'localhost' ||
@@ -122,7 +122,7 @@ export class NodeFetchHttpTransport implements HttpTransport {
 
     let url: string;
     try {
-      url = buildProviderUrl(request.baseUrl, request.endpoint);
+      url = providerEndpointUrl(request.baseUrl, request.endpoint);
     } catch {
       throw new ProviderError('PROVIDER_NOT_CONFIGURED', {
         causeCategory: 'CONFIGURATION',
@@ -325,5 +325,5 @@ export class NodeFetchHttpTransport implements HttpTransport {
 }
 
 export function providerEndpointUrlForTesting(baseUrl: string, endpoint: ProviderEndpoint): string {
-  return buildProviderUrl(baseUrl, endpoint);
+  return providerEndpointUrl(baseUrl, endpoint);
 }

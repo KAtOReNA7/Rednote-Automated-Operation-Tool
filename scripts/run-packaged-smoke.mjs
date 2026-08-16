@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, readdir, rm, stat } from 'node:fs/promises';
 import { createHash, randomUUID } from 'node:crypto';
 import { isAbsolute, join, resolve } from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 
 import { FuseState, FuseV1Options, FuseVersion, getCurrentFuseWire } from '@electron/fuses';
 
@@ -22,8 +23,53 @@ import {
   startIssue013CapabilityFixture,
 } from './issue013-capability-smoke-fixture.mjs';
 import { createPortableTemp } from './portable-temp.mjs';
+import { startR07PackagedProviderFixture } from './r07-packaged-provider-fixture.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '..');
+
+function seedLegacyR07ReadinessFixture(smokeWorkspace) {
+  const databasePath = join(
+    smokeWorkspace,
+    'userData 中文 空格',
+    'v2-project-data',
+    'database',
+    'rednote.sqlite',
+  );
+  const database = new DatabaseSync(databasePath);
+  try {
+    const changed = database
+      .prepare(
+        `UPDATE app_settings
+         SET setup_state = 'PROVIDER_CONFIG_INCOMPLETE',
+             revision = revision + 1,
+             updated_at = ?
+         WHERE id = 'app'
+           AND provider_base_url IS NOT NULL
+           AND research_model_id IS NOT NULL
+           AND writing_model_id IS NOT NULL
+           AND review_model_id IS NULL
+           AND credential_reference = 'CONTENT_AI_API_KEY'`,
+      )
+      .run(new Date().toISOString()).changes;
+    const state = database
+      .prepare(
+        `SELECT credential_reference, research_model_id, review_model_id, setup_state, writing_model_id
+         FROM app_settings WHERE id = 'app'`,
+      )
+      .get();
+    if (
+      changed !== 1 ||
+      state?.setup_state !== 'PROVIDER_CONFIG_INCOMPLETE' ||
+      state.review_model_id !== null ||
+      state.credential_reference !== 'CONTENT_AI_API_KEY' ||
+      state.research_model_id === null ||
+      state.writing_model_id === null
+    )
+      throw new Error('R07 legacy readiness fixture was not established.');
+  } finally {
+    database.close();
+  }
+}
 
 async function assertV2R04Export(smokeWorkspace) {
   const exportRoot = join(smokeWorkspace, 'userData 中文 空格', 'v2-project-data', 'exports', 'v2');
@@ -102,13 +148,13 @@ await stat(appAsar);
 const [v2Launcher, legacyLauncher, checklist] = await Promise.all([
   readFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), 'utf8'),
   readFile(join(packageDirectory, '返回当前绿色版本.cmd'), 'utf8'),
-  readFile(join(packageDirectory, 'V2-R05-体验清单.txt'), 'utf8'),
+  readFile(join(packageDirectory, 'V2-R07-体验清单.txt'), 'utf8'),
 ]);
 if (
   !v2Launcher.includes('%~dp0RednoteMysteryOperations.exe') ||
   (v2Launcher.match(/--v2-shell/gu) ?? []).length !== 1 ||
   legacyLauncher.includes('--v2-shell') ||
-  !checklist.startsWith('本轮验证完全本地的评论/私信导入与回复记录，不是视觉改版。') ||
+  !checklist.startsWith('Rednote V2-R07 打包运行时体验清单') ||
   !checklist.includes('等待用户本人验收，禁止合并。') ||
   (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
     !checklist.includes(process.env.REDNOTE_EXACT_HEAD_SHA))
@@ -142,101 +188,182 @@ delete childEnvironment.ELECTRON_RUN_AS_NODE;
 delete childEnvironment.NODE_OPTIONS;
 
 const results = [];
-for (const mode of ['disabled', 'enabled']) {
-  const temporary = await createPortableTemp(projectRoot, `packaged-smoke-${mode}`);
-  const capabilityFixture = await startIssue013CapabilityFixture();
-  const port = await allocateLoopbackPort();
-  const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
-  const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
-  const modeEnvironment = {
-    ...childEnvironment,
-    ...temporary.env,
-  };
-  const child = spawn(
-    executablePath,
-    [
-      '--issue006-smoke',
-      `--issue006-smoke-output=${outputPath}`,
-      `--issue010-smoke-workspace=${smokeWorkspace}`,
-      `--issue011-smoke-mode=${mode}`,
-      `--issue011-smoke-port=${port}`,
-      `--issue013-smoke-port=${capabilityFixture.port}`,
-    ],
-    {
-      cwd: packageDirectory,
-      env: modeEnvironment,
-      stdio: ['ignore', 'pipe', 'pipe'],
-      windowsHide: true,
-    },
-  );
-  let stderr = '';
-  child.stderr.setEncoding('utf8');
-  child.stderr.on('data', (chunk) => {
-    stderr += chunk;
-  });
-  const processCollector = createSmokeProcessCollector(child.pid);
-  const stdoutEnded = processCollector.attachStream(child.stdout);
-  const exitPromise = waitForExit(child);
-  try {
-    const reportStartedAt = Date.now();
-    const report = await waitForSmokeReport(outputPath);
-    recordObservationStage('smoke-report-ready', reportStartedAt, { mode, packaged: true });
-    assertIssue013CapabilityFixture(capabilityFixture, report);
-    const networkProcessIds = await processCollector.waitForStages();
-    const snapshot = await inspectControlledProcesses(networkProcessIds);
-    const socketStartedAt = Date.now();
-    const socketEvidence = assertSocketSnapshot(snapshot, mode, port, capabilityFixture.port);
-    recordObservationStage('socket-policy-check', socketStartedAt, {
-      mode,
-      packaged: true,
-      ...socketEvidence,
+const r07BlackboxOnly = process.env.REDNOTE_R07_BLACKBOX_ONLY === '1';
+if (!r07BlackboxOnly) {
+  for (const mode of ['disabled', 'enabled']) {
+    const temporary = await createPortableTemp(projectRoot, `packaged-smoke-${mode}`);
+    const capabilityFixture = await startIssue013CapabilityFixture();
+    const port = await allocateLoopbackPort();
+    const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
+    const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
+    const modeEnvironment = {
+      ...childEnvironment,
+      ...temporary.env,
+    };
+    const child = spawn(
+      executablePath,
+      [
+        '--issue006-smoke',
+        `--issue006-smoke-output=${outputPath}`,
+        `--issue010-smoke-workspace=${smokeWorkspace}`,
+        `--issue011-smoke-mode=${mode}`,
+        `--issue011-smoke-port=${port}`,
+        `--issue013-smoke-port=${capabilityFixture.port}`,
+      ],
+      {
+        cwd: packageDirectory,
+        env: modeEnvironment,
+        stdio: ['ignore', 'pipe', 'pipe'],
+        windowsHide: true,
+      },
+    );
+    let stderr = '';
+    child.stderr.setEncoding('utf8');
+    child.stderr.on('data', (chunk) => {
+      stderr += chunk;
     });
-    const exitStartedAt = Date.now();
-    const exitCode = await exitPromise;
-    recordObservationStage('electron-exit-wait', exitStartedAt, {
-      exitCode,
-      mode,
-      packaged: true,
-    });
-    if (exitCode !== 0) {
-      throw new Error(
-        `Packaged executable smoke exited with ${String(exitCode)} and report ${JSON.stringify(report)}: ${stderr}`,
-      );
+    const processCollector = createSmokeProcessCollector(child.pid);
+    const stdoutEnded = processCollector.attachStream(child.stdout);
+    const exitPromise = waitForExit(child);
+    try {
+      const reportStartedAt = Date.now();
+      const report = await waitForSmokeReport(outputPath);
+      recordObservationStage('smoke-report-ready', reportStartedAt, { mode, packaged: true });
+      assertIssue013CapabilityFixture(capabilityFixture, report);
+      const networkProcessIds = await processCollector.waitForStages();
+      const snapshot = await inspectControlledProcesses(networkProcessIds);
+      const socketStartedAt = Date.now();
+      const socketEvidence = assertSocketSnapshot(snapshot, mode, port, capabilityFixture.port);
+      recordObservationStage('socket-policy-check', socketStartedAt, {
+        mode,
+        packaged: true,
+        ...socketEvidence,
+      });
+      const exitStartedAt = Date.now();
+      const exitCode = await exitPromise;
+      recordObservationStage('electron-exit-wait', exitStartedAt, {
+        exitCode,
+        mode,
+        packaged: true,
+      });
+      if (exitCode !== 0) {
+        throw new Error(
+          `Packaged executable smoke exited with ${String(exitCode)} and report ${JSON.stringify(report)}: ${stderr}`,
+        );
+      }
+      await stdoutEnded;
+      const finalProcessIds = processCollector.finish();
+      assertCommonReport(report, true, mode, port);
+      await assertProcessesExited(finalProcessIds);
+      await assertPortReleased(port);
+      results.push({
+        mode,
+        ...socketEvidence,
+        portReleased: true,
+        processCount: finalProcessIds.length,
+        processesExited: true,
+      });
+    } finally {
+      if (child.exitCode === null) {
+        child.kill();
+        await exitPromise.catch(() => undefined);
+      }
+      await capabilityFixture.close();
+      await rm(outputPath, { force: true });
+      await rm(smokeWorkspace, {
+        force: true,
+        maxRetries: 20,
+        recursive: true,
+        retryDelay: 100,
+      });
+      await temporary.cleanup();
     }
-    await stdoutEnded;
-    const finalProcessIds = processCollector.finish();
-    assertCommonReport(report, true, mode, port);
-    await assertProcessesExited(finalProcessIds);
-    await assertPortReleased(port);
-    results.push({
-      mode,
-      ...socketEvidence,
-      portReleased: true,
-      processCount: finalProcessIds.length,
-      processesExited: true,
-    });
-  } finally {
-    if (child.exitCode === null) {
-      child.kill();
-      await exitPromise.catch(() => undefined);
+  }
+
+  {
+    const temporary = await createPortableTemp(projectRoot, 'packaged-smoke-v2');
+    const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
+    try {
+      for (const attempt of [1, 2]) {
+        const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
+        const child = spawn(
+          executablePath,
+          [
+            '--issue006-smoke',
+            '--v2-shell',
+            `--issue006-smoke-output=${outputPath}`,
+            `--issue010-smoke-workspace=${smokeWorkspace}`,
+          ],
+          {
+            cwd: packageDirectory,
+            env: { ...childEnvironment, ...temporary.env },
+            stdio: ['ignore', 'pipe', 'pipe'],
+            windowsHide: true,
+          },
+        );
+        const processCollector = createSmokeProcessCollector(child.pid);
+        const stdoutEnded = processCollector.attachStream(child.stdout);
+        const exitPromise = waitForExit(child);
+        try {
+          const report = await waitForSmokeReport(outputPath);
+          const processIds = await processCollector.waitForStages();
+          const socketEvidence = assertSocketSnapshot(
+            await inspectControlledProcesses(processIds),
+            'disabled',
+            43_119,
+            43_120,
+          );
+          const exitCode = await exitPromise;
+          await stdoutEnded;
+          const finalProcessIds = processCollector.finish();
+          if (
+            exitCode !== 0 ||
+            report.ok !== true ||
+            report.packaged !== true ||
+            report.mode !== 'v2' ||
+            report.renderer?.navigationCount !== 7 ||
+            report.renderer?.mockMode !== false ||
+            report.security?.preload !== true ||
+            report.runtime?.ipcRegistered !== true ||
+            report.runtime?.projectDataRootInitialized !== true ||
+            report.runtime?.sqliteInitialized !== true ||
+            report.runtime?.v2TableCount !== 8 ||
+            report.runtime?.personaRevision !== 0 ||
+            report.runtime?.planRevision !== 2 ||
+            report.security?.externalRequestAttempts !== 0
+          )
+            throw new Error(`V2 packaged smoke failed: ${JSON.stringify(report)}`);
+          await assertProcessesExited(finalProcessIds);
+          const exportEvidence = await assertV2R04Export(smokeWorkspace);
+          results.push({
+            attempt,
+            ...exportEvidence,
+            mode: 'v2',
+            ...socketEvidence,
+            processCount: finalProcessIds.length,
+            processesExited: true,
+          });
+        } finally {
+          if (child.exitCode === null) {
+            child.kill();
+            await exitPromise.catch(() => undefined);
+          }
+          await rm(outputPath, { force: true });
+        }
+      }
+    } finally {
+      await rm(smokeWorkspace, { force: true, maxRetries: 20, recursive: true, retryDelay: 100 });
+      await temporary.cleanup();
     }
-    await capabilityFixture.close();
-    await rm(outputPath, { force: true });
-    await rm(smokeWorkspace, {
-      force: true,
-      maxRetries: 20,
-      recursive: true,
-      retryDelay: 100,
-    });
-    await temporary.cleanup();
   }
 }
 
 {
-  const temporary = await createPortableTemp(projectRoot, 'packaged-smoke-v2');
+  const temporary = await createPortableTemp(projectRoot, 'packaged-r07-blackbox');
   const smokeWorkspace = await mkdtemp(join(temporary.root, 'rednote-issue010-smoke-'));
+  const fixture = await startR07PackagedProviderFixture();
   try {
-    for (const attempt of [1, 2]) {
+    for (const attempt of [1, 2, 3]) {
       const outputPath = join(temporary.root, `issue006-smoke-${randomUUID()}.json`);
       const child = spawn(
         executablePath,
@@ -245,6 +372,8 @@ for (const mode of ['disabled', 'enabled']) {
           '--v2-shell',
           `--issue006-smoke-output=${outputPath}`,
           `--issue010-smoke-workspace=${smokeWorkspace}`,
+          `--r07-blackbox-port=${fixture.port}`,
+          `--r07-blackbox-attempt=${attempt}`,
         ],
         {
           cwd: packageDirectory,
@@ -253,44 +382,71 @@ for (const mode of ['disabled', 'enabled']) {
           windowsHide: true,
         },
       );
+      let stderr = '';
+      let stdout = '';
+      child.stderr.setEncoding('utf8');
+      child.stderr.on('data', (chunk) => (stderr += chunk));
+      child.stdout.setEncoding('utf8');
+      child.stdout.on('data', (chunk) => (stdout += chunk));
       const processCollector = createSmokeProcessCollector(child.pid);
       const stdoutEnded = processCollector.attachStream(child.stdout);
-      const exitPromise = waitForExit(child);
+      const exitPromise = waitForExit(child, 75_000);
       try {
-        const report = await waitForSmokeReport(outputPath);
+        let report;
+        try {
+          report = await Promise.race([
+            waitForSmokeReport(outputPath, 65_000),
+            exitPromise.then((code) => {
+              throw new Error(`ELECTRON_EXITED:${String(code)}`);
+            }),
+          ]);
+        } catch (error) {
+          throw new Error(
+            `R07 blackbox report unavailable: ${error instanceof Error ? error.message : 'UNKNOWN'}; requests=${JSON.stringify(fixture.requests)}; stdout=${stdout.slice(0, 1024)}; stderr=${stderr.slice(0, 1024)}`,
+            { cause: error },
+          );
+        }
+        if (report.ok !== true) {
+          throw new Error(
+            `R07 packaged blackbox reported failure: ${JSON.stringify(report)}; requests=${JSON.stringify(fixture.requests)}`,
+          );
+        }
         const processIds = await processCollector.waitForStages();
         const socketEvidence = assertSocketSnapshot(
           await inspectControlledProcesses(processIds),
           'disabled',
           43_119,
-          43_120,
+          fixture.port,
         );
         const exitCode = await exitPromise;
         await stdoutEnded;
         const finalProcessIds = processCollector.finish();
+        const blackbox = report.renderer?.blackbox;
         if (
           exitCode !== 0 ||
           report.ok !== true ||
-          report.packaged !== true ||
-          report.mode !== 'v2' ||
-          report.renderer?.navigationCount !== 7 ||
-          report.renderer?.mockMode !== false ||
-          report.security?.preload !== true ||
-          report.runtime?.ipcRegistered !== true ||
-          report.runtime?.projectDataRootInitialized !== true ||
-          report.runtime?.sqliteInitialized !== true ||
-          report.runtime?.v2TableCount !== 8 ||
-          report.runtime?.personaRevision !== 0 ||
-          report.runtime?.planRevision !== 1 ||
+          blackbox?.attempt !== attempt ||
+          blackbox.buildCommit.length !== 40 ||
+          (attempt === 1 ? blackbox.commentPersisted : !blackbox.commentPersisted) ||
+          (attempt === 1 ? blackbox.directMessagePersisted : !blackbox.directMessagePersisted) ||
+          (attempt === 1 ? blackbox.contentCount !== 0 : blackbox.contentCount !== 3) ||
+          blackbox.imageRequestCount !== 0 ||
+          (attempt === 1 ? blackbox.previewCanConfirm : !blackbox.previewCanConfirm) ||
+          (attempt === 1
+            ? blackbox.previewRequestCount !== 0
+            : blackbox.previewRequestCount !== 3) ||
+          blackbox.providerProtocol !== 'CHAT_COMPLETIONS' ||
           report.security?.externalRequestAttempts !== 0
         )
-          throw new Error(`V2 packaged smoke failed: ${JSON.stringify(report)}`);
+          throw new Error(
+            `R07 packaged blackbox failed: ${JSON.stringify(report)} ${stderr.slice(0, 512)}`,
+          );
         await assertProcessesExited(finalProcessIds);
-        const exportEvidence = await assertV2R04Export(smokeWorkspace);
+        if (attempt === 1) seedLegacyR07ReadinessFixture(smokeWorkspace);
         results.push({
           attempt,
-          ...exportEvidence,
-          mode: 'v2',
+          buildCommit: blackbox.buildCommit,
+          mode: 'v2-r07-blackbox',
           ...socketEvidence,
           processCount: finalProcessIds.length,
           processesExited: true,
@@ -303,7 +459,20 @@ for (const mode of ['disabled', 'enabled']) {
         await rm(outputPath, { force: true });
       }
     }
+    const production = fixture.requests.filter(
+      ({ actionKind }) => actionKind !== 'CAPABILITY_PROBE',
+    );
+    if (
+      production.filter(({ actionKind }) => actionKind === 'CONTENT_COPY_VERSION').length !== 3 ||
+      production.filter(({ actionKind }) => actionKind === 'REPLY_SUGGESTION').length !== 2 ||
+      fixture.requests.some(({ authorizationPresent }) => !authorizationPresent)
+    )
+      throw new Error(
+        `R07 packaged provider request contract failed: ${JSON.stringify(fixture.requests)}`,
+      );
   } finally {
+    await fixture.close();
+    await assertPortReleased(fixture.port);
     await rm(smokeWorkspace, { force: true, maxRetries: 20, recursive: true, retryDelay: 100 });
     await temporary.cleanup();
   }

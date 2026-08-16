@@ -175,8 +175,12 @@ export interface ImageGenerationResult {
 }
 
 export interface SchemaIssue {
+  readonly actualType?: string;
   readonly code: string;
+  readonly expectedType?: string;
   readonly path: readonly (number | string)[];
+  readonly rootKeys?: readonly string[];
+  readonly rootType?: string;
 }
 
 export type SchemaValidationResult<T> =
@@ -184,6 +188,7 @@ export type SchemaValidationResult<T> =
   | { readonly issues: readonly SchemaIssue[]; readonly ok: false };
 
 export interface RuntimeSchema<T> {
+  readonly decodeText?: (text: string) => SchemaValidationResult<T>;
   readonly id: string;
   readonly jsonSchema: JsonObject;
   readonly strictObject: true;

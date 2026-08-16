@@ -284,6 +284,7 @@ export class SqliteModelExecutionPersistence implements ModelExecutionPersistenc
         now: this.#now().toISOString(),
         outcomeCertainty: result.outcomeCertainty,
         priceSchedule: null,
+        stableErrorCode: result.stableErrorCode,
         status: result.status === 'AMBIGUOUS' ? 'AMBIGUOUS' : 'FAILED',
         usage: result.usage,
       });

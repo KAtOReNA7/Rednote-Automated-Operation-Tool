@@ -34,6 +34,8 @@ import {
 } from './metrics.js';
 import {
   V2ProviderActionError,
+  parseV2ContentCopyGenerationExecutionRequest,
+  parseV2ContentCopyGenerationPreviewRequest,
   parseV2ProviderActionConfirmation,
   parseV2ProviderActionIntent,
   type V2ProviderActionKind,
@@ -42,6 +44,10 @@ import {
   type V2ProviderActionIntent,
   type V2ProviderActionPreview,
   type V2ProviderActionResult,
+  type V2ContentCopyGenerationExecutionRequest,
+  type V2ContentCopyGenerationPreviewRequest,
+  type V2ContentCopyGenerationPreview,
+  type V2ContentCopyGenerationResult,
   parseV2ProviderSettingsMutation,
   type V2CapabilityProbePreview,
   type V2CapabilityProbeProgress,
@@ -162,6 +168,7 @@ export type V2ReadRequest =
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
+  | ({ readonly view: 'CONTENT_COPY_GENERATION_PREVIEW' } & V2ContentCopyGenerationPreviewRequest)
   | { readonly view: 'METRICS_REVIEW'; readonly snapshotWindow: MetricWindow }
   | { readonly intent: V2ProviderActionIntent; readonly view: 'PROVIDER_ACTION_PREVIEW' }
   | { readonly view: 'PROVIDER_SETTINGS' }
@@ -208,7 +215,13 @@ export type V2MutationRequest =
       readonly expectedRevision: number;
       readonly weekKey: string;
     }
+  | {
+      readonly action: 'UNLOCK_WEEKLY_PLAN';
+      readonly expectedRevision: number;
+      readonly weekKey: string;
+    }
   | V2ProviderActionConfirmation
+  | V2ContentCopyGenerationExecutionRequest
   | V2ProviderSettingsMutation
   | ContentMutationRequest
   | InteractionMutationRequest;
@@ -221,6 +234,7 @@ export interface V2ExceptionSummary {
     | V2ProviderActionErrorCode
     | 'CAPABILITY_PROBE_BLOCKED'
     | 'CREDENTIAL_ERROR'
+    | 'LOCAL_OPERATION_FAILED'
     | 'SETTINGS_INVALID'
     | 'SETTINGS_NOT_READY'
     | 'PERSISTENCE_UNAVAILABLE'
@@ -264,6 +278,9 @@ export interface V2Bridge {
     readonly confirmation: 'RUN_PROVIDER_ACTION';
     readonly previewToken: string;
   }) => Promise<V2Result<V2ProviderActionResult>>;
+  readonly executeContentCopyGeneration?: (input: {
+    readonly previewToken: string;
+  }) => Promise<V2Result<V2ContentCopyGenerationResult>>;
   readonly clearProviderCredential?: (input: {
     readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
   }) => Promise<V2Result<V2ProviderSettingsView>>;
@@ -285,12 +302,21 @@ export interface V2Bridge {
     readonly expectedRevision: number;
     readonly weekKey: string;
   }) => Promise<V2Result<WeeklyPlan>>;
+  readonly unlockWeeklyPlan: (input: {
+    readonly expectedRevision: number;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
   readonly previewPlanReschedule: (
     input: PlanRescheduleFields,
   ) => Promise<V2Result<PlanReschedulePreview>>;
   readonly previewProviderAction?: (
     input: V2ProviderActionIntent,
   ) => Promise<V2Result<V2ProviderActionPreview>>;
+  readonly previewContentCopyGeneration?: (input: {
+    readonly selectedPlanItemIds: readonly string[];
+    readonly userApprovedUnknownCost: boolean;
+    readonly weekKey: string;
+  }) => Promise<V2Result<V2ContentCopyGenerationPreview>>;
   readonly previewProviderCapabilityProbe?: () => Promise<V2Result<V2CapabilityProbePreview>>;
   readonly exportContentPackages: (
     input: ContentInput<'EXPORT_CONTENT_PACKAGES'>,
@@ -588,7 +614,7 @@ export function parseV2ProviderActionOutput(
     if (
       !exactKeys(value, ['packages']) ||
       !Array.isArray(value.packages) ||
-      value.packages.length !== 3
+      (value.packages.length !== 1 && value.packages.length !== 3)
     ) {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['packages']);
     }
@@ -755,6 +781,10 @@ export function parseContentMutationRequest(value: unknown): ContentMutationRequ
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
+    const request = parseV2ContentCopyGenerationPreviewRequest(value);
+    return { ...request, view: value.view };
+  }
   if (value.view === 'PROVIDER_ACTION_PREVIEW' && exactKeys(value, ['intent', 'view'])) {
     return { intent: parseV2ProviderActionIntent(value.intent), view: value.view };
   }
@@ -809,6 +839,9 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.action === 'EXECUTE_CONTENT_COPY_GENERATION') {
+    return parseV2ContentCopyGenerationExecutionRequest(value);
+  }
   if (value.action === 'CONFIRM_PROVIDER_ACTION') {
     return parseV2ProviderActionConfirmation(value);
   }
@@ -877,7 +910,9 @@ export function parseV2MutationRequest(value: unknown): V2MutationRequest {
     };
   }
   if (
-    (value.action === 'GENERATE_WEEKLY_PLAN' || value.action === 'LOCK_WEEKLY_PLAN') &&
+    (value.action === 'GENERATE_WEEKLY_PLAN' ||
+      value.action === 'LOCK_WEEKLY_PLAN' ||
+      value.action === 'UNLOCK_WEEKLY_PLAN') &&
     exactKeys(value, ['action', 'expectedRevision', 'weekKey'])
   ) {
     return {
@@ -1189,11 +1224,37 @@ export function summarizeV2Workspace(
   });
 }
 
+export function weeklyPlanLockReasons(planValue: WeeklyPlan): readonly string[] {
+  const plan = parseWeeklyPlan(planValue);
+  const active = plan.candidates.filter((candidate) => candidate.status !== 'SKIPPED');
+  const byDay = new Map<string, number>();
+  for (const candidate of active) byDay.set(candidate.day, (byDay.get(candidate.day) ?? 0) + 1);
+  const reasons: string[] = [];
+  if (active.length !== 21) reasons.push(`还差${Math.max(0, 21 - active.length)}篇`);
+  for (const day of dayLabels) {
+    const count = byDay.get(day) ?? 0;
+    if (count !== 3) reasons.push(`${day}不是3篇`);
+  }
+  const pending = active.filter((candidate) => candidate.status === 'PENDING').length;
+  const conflicts = active.filter(
+    (candidate) => candidate.status === 'CONFLICT' || candidate.conflictWithIds.length > 0,
+  ).length;
+  const nonLockable = active.filter(
+    (candidate) => !['CONFIRMED', 'EXPORTED'].includes(candidate.status),
+  ).length;
+  if (pending > 0) reasons.push(`${pending}篇待确认`);
+  if (conflicts > 0) reasons.push(`${conflicts}处冲突`);
+  if (nonLockable > 0 && pending === 0 && conflicts === 0)
+    reasons.push(`${nonLockable}篇尚不可锁定`);
+  return Object.freeze(reasons);
+}
+
 export interface V2RepositoryPort {
   readonly getOrCreatePersona: (seed: AccountPersona) => AccountPersona;
   readonly getOrCreateWeeklyPlan: (seed: WeeklyPlan, personaSeed: AccountPersona) => WeeklyPlan;
   readonly savePersona: (persona: AccountPersonaFields, expectedRevision: number) => AccountPersona;
   readonly saveWeeklyPlan: (plan: WeeklyPlan, expectedRevision: number) => WeeklyPlan;
+  readonly unlockWeeklyPlan: (plan: WeeklyPlan, expectedRevision: number) => WeeklyPlan;
 }
 
 function clearConflictLinks(
@@ -1234,6 +1295,7 @@ export class V2ApplicationFacade {
     }
     if (
       request.view === 'METRICS_REVIEW' ||
+      request.view === 'CONTENT_COPY_GENERATION_PREVIEW' ||
       request.view === 'PROVIDER_ACTION_PREVIEW' ||
       request.view === 'PROVIDER_SETTINGS' ||
       request.view === 'PROVIDER_CAPABILITY_PROBE_PREVIEW' ||
@@ -1259,6 +1321,7 @@ export class V2ApplicationFacade {
     if (
       request.action === 'SAVE_METRIC_SNAPSHOTS' ||
       request.action === 'DECIDE_STRATEGY_RECOMMENDATION' ||
+      request.action === 'EXECUTE_CONTENT_COPY_GENERATION' ||
       request.action === 'CONFIRM_PROVIDER_ACTION' ||
       request.action === 'UPDATE_PROVIDER_SETTINGS' ||
       request.action === 'SET_PROVIDER_CREDENTIAL' ||
@@ -1295,8 +1358,18 @@ export class V2ApplicationFacade {
     }
     if (request.action === 'LOCK_WEEKLY_PLAN') {
       if (current.status === 'CONFIRMED') return current;
+      if (weeklyPlanLockReasons(current).length > 0) {
+        throw new V2ContractError('PLAN_CONFLICT', ['weeklyPlan']);
+      }
       return this.#repository.saveWeeklyPlan(
         parseWeeklyPlan({ ...current, status: 'CONFIRMED' }),
+        request.expectedRevision,
+      );
+    }
+    if (request.action === 'UNLOCK_WEEKLY_PLAN') {
+      if (current.status === 'DRAFT') return current;
+      return this.#repository.unlockWeeklyPlan(
+        parseWeeklyPlan({ ...current, status: 'DRAFT' }),
         request.expectedRevision,
       );
     }
@@ -1376,7 +1449,30 @@ export class V2ApplicationFacade {
     }
     let generated: readonly PlanCandidate[];
     try {
-      generated = candidatesValue.map(parseCandidate);
+      const supplied = candidatesValue.map(parseCandidate);
+      if (
+        supplied.length !== 21 ||
+        new Set(supplied.map((candidate) => candidate.id)).size !== 21 ||
+        new Set(supplied.map((candidate) => candidate.title.trim())).size !== 21 ||
+        supplied.some((candidate) => candidate.title.trim() === '' || candidate.book.trim() === '')
+      ) {
+        throw new TypeError('Invalid strict weekly plan count.');
+      }
+      const monday = mondayOfIsoWeek(current.weekKey);
+      generated = supplied.map((candidate, index) => {
+        const dayIndex = Math.floor(index / 3);
+        const slotIndex = index % 3;
+        const date = new Date(monday.getTime() + dayIndex * 86_400_000);
+        return {
+          ...candidate,
+          conflictWithIds: [],
+          date: dateText(date),
+          day: dayLabels[dayIndex] ?? '周一',
+          id: `${current.weekKey}-slot-${String(index + 1).padStart(2, '0')}`,
+          status: 'PENDING' as const,
+          time: (['10:00', '14:00', '20:00'] as const)[slotIndex] ?? '10:00',
+        };
+      });
       parseWeeklyPlan({ ...current, candidates: generated, status: 'DRAFT' });
     } catch {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
@@ -1429,6 +1525,8 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
       PROVIDER_ACTION_CONFIG_CHANGED: '预览后 AI 配置已变化，请重新预览。',
       PROVIDER_ACTION_CREDENTIAL_CHANGED: '预览后凭据状态已变化，请重新预览。',
       PROVIDER_ACTION_EXPIRED: '确认已过期，请重新预览。',
+      PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE:
+        '图片服务当前不可用（HTTP 503），文案不受影响；可稍后单独重试封面。',
       PROVIDER_ACTION_REPLAYED: '该确认已使用，请重新预览。',
       PROVIDER_ACTION_SOURCE_CHANGED: '预览后目标数据已变化，请重新预览。',
       PROVIDER_ACTION_STALE: '预览后业务数据已变化，请重新预览。',
@@ -1441,13 +1539,33 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
       UNKNOWN_FEE_CONSENT_REQUIRED: '费用未知，需重新预览并明确授权本次最多 1 个请求。',
       PROVIDER_OUTPUT_INVALID: '模型结果不符合严格合同，系统未写入业务结果。',
     });
+    const fieldLabel: Readonly<Record<string, string>> = Object.freeze({
+      credentialBinding: '凭据绑定',
+      planRevision: '计划版本',
+      researchModelId: '研究模型',
+      weeklyPlan: '周计划版本',
+      writingModelId: '写作模型',
+    });
+    const affected = error.affectedFields.map((field) => fieldLabel[field] ?? field).join('、');
+    const message =
+      affected === ''
+        ? messages[error.code]
+        : error.code === 'PROVIDER_ACTION_CONFIG_CHANGED'
+          ? `预览后${affected}已变化，请重新预览。`
+          : error.code === 'PROVIDER_ACTION_CREDENTIAL_CHANGED'
+            ? `预览后${affected}已变化，请重新预览。`
+            : error.code === 'PROVIDER_ACTION_STALE' ||
+                error.code === 'PROVIDER_ACTION_SOURCE_CHANGED'
+              ? `预览后${affected}已变化，请重新预览。`
+              : messages[error.code];
     return {
       affectedFields: error.affectedFields,
       code: error.code,
-      message: messages[error.code],
+      message,
       severity: error.code === 'PROVIDER_ACTION_STALE' ? 'WARNING' : 'ERROR',
       suggestedAction:
-        error.code === 'PROVIDER_ACTION_UNCERTAIN'
+        error.code === 'PROVIDER_ACTION_UNCERTAIN' ||
+        error.code === 'PROVIDER_ACTION_IMAGE_SERVICE_UNAVAILABLE'
           ? '打开设置与模型账本核对后再决定'
           : '检查设置后重新预览',
     };
@@ -1546,9 +1664,9 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
   }
   return {
     affectedFields: [],
-    code: 'PERSISTENCE_UNAVAILABLE',
-    message: '本机保存暂时不可用。',
+    code: 'LOCAL_OPERATION_FAILED',
+    message: '本地操作未完成，请重新载入后再试。',
     severity: 'ERROR',
-    suggestedAction: '关闭后重新启动应用',
+    suggestedAction: '重新载入当前页面；如仍失败再关闭后重新启动应用',
   };
 }

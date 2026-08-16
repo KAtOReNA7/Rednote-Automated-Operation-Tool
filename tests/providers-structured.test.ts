@@ -7,6 +7,11 @@ import {
   type RuntimeSchema,
 } from '../packages/providers/src/index.js';
 import {
+  V2_CONTENT_COPY_WIRE_JSON_SCHEMA,
+  decodeContentCopyWireText,
+  parseContentCopyWireValue,
+} from '../packages/v2/src/index.js';
+import {
   FakeCredentialResolver,
   ScriptedTransport,
   createProviderConfig,
@@ -24,6 +29,79 @@ function structuredEnvelope(text: string) {
 }
 
 describe('Issue 012 structured generation', () => {
+  it('uses the schema-owned bounded decoder for a fenced V2 content copy object', async () => {
+    const value = {
+      body: '合成正文',
+      materialNotes: '合成资料说明',
+      tags: ['推理小说'],
+      title: '合成标题',
+    };
+    const transport = new ScriptedTransport([
+      {
+        response: jsonResponse(structuredEnvelope(`\`\`\`json\n${JSON.stringify(value)}\n\`\`\``)),
+      },
+    ]);
+    const provider = new OpenAICompatibleProvider(
+      createProviderConfig(),
+      new FakeCredentialResolver(),
+      { transport },
+    );
+    const result = await provider.generateStructured(
+      createTextRequest(),
+      {
+        decodeText: decodeContentCopyWireText,
+        id: 'v2_content_copy_wire',
+        jsonSchema: V2_CONTENT_COPY_WIRE_JSON_SCHEMA,
+        strictObject: true,
+        validate: parseContentCopyWireValue,
+        version: 2,
+      },
+      createProviderContext('STRUCTURED_GENERATION', 'CHAT_COMPLETIONS'),
+    );
+    expect(result.value).toEqual(value);
+    expect(transport.requests).toHaveLength(1);
+  });
+
+  it('exposes only finite V2 wire mismatch diagnostics', async () => {
+    const transport = new ScriptedTransport([
+      {
+        response: jsonResponse(
+          structuredEnvelope(JSON.stringify({ body: '正文', tags: ['推理小说'] })),
+        ),
+      },
+    ]);
+    const provider = new OpenAICompatibleProvider(
+      createProviderConfig(),
+      new FakeCredentialResolver(),
+      { transport },
+    );
+    const error = await provider
+      .generateStructured(
+        createTextRequest(),
+        {
+          decodeText: decodeContentCopyWireText,
+          id: 'v2_content_copy_wire',
+          jsonSchema: V2_CONTENT_COPY_WIRE_JSON_SCHEMA,
+          strictObject: true,
+          validate: parseContentCopyWireValue,
+          version: 2,
+        },
+        createProviderContext('STRUCTURED_GENERATION', 'CHAT_COMPLETIONS'),
+      )
+      .catch((value: unknown) => value);
+    expect(error).toMatchObject({
+      code: 'PROVIDER_SCHEMA_VALIDATION_FAILED',
+      details: {
+        actualFieldType: 'undefined',
+        actualRootType: 'object',
+        expectedType: 'non-empty string',
+        issuePath: ['materialNotes'],
+        rootKeys: ['body', 'tags'],
+      },
+    });
+    expect(JSON.stringify(error)).not.toContain('正文');
+  });
+
   it('requires a versioned strict-object runtime schema', () => {
     const context = createProviderContext('STRUCTURED_GENERATION', 'CHAT_COMPLETIONS');
     expect(() => validateRuntimeSchema(createTestSchema(), context)).not.toThrow();
@@ -115,8 +193,12 @@ describe('Issue 012 structured generation', () => {
     expect(error).toMatchObject({
       code: 'PROVIDER_SCHEMA_VALIDATION_FAILED',
       details: {
+        contentType: 'MISSING',
+        envelopeType: 'CHAT_COMPLETIONS',
+        httpStatus: 200,
         issueCode: 'INVALID_ANSWER',
         issuePath: ['answer'],
+        providerRequestId: 'UNAVAILABLE',
         schemaId: 'test_answer',
         schemaVersion: 1,
       },

@@ -9,6 +9,7 @@ import { userEvent } from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { ProviderActionControl } from '../apps/web-ui/src/v2/provider-action-control.js';
+import { ContentCopyGenerationControl } from '../apps/web-ui/src/v2/content-copy-generation-control.js';
 import { V2App } from '../apps/web-ui/src/v2/app.js';
 import type { V2Bridge, V2ProviderSettingsView } from '../packages/v2/src/index.js';
 import { createMemoryV2Bridge } from './support/v2-test-runtime.js';
@@ -28,6 +29,136 @@ function expose(methods: Partial<V2Bridge>): void {
 }
 
 describe('V2 R07 provider action renderer', () => {
+  it('previews and executes content copy through the dedicated bridge without image requests', async () => {
+    const previewContentCopyGeneration = vi.fn(async (input) => ({
+      ok: true as const,
+      value: {
+        blockReasons: input.userApprovedUnknownCost ? [] : ['费用未知；请明确授权。'],
+        budgetState: 'UNKNOWN' as const,
+        canConfirm: input.userApprovedUnknownCost,
+        capabilityEvidenceId: 'chat-evidence',
+        credentialBinding: 'credential-binding',
+        credentialState: 'CONFIGURED' as const,
+        expiresAt: '2026-08-16T12:00:00.000Z',
+        feeEstimateMicroUsd: null,
+        fetchEnabled: false as const,
+        itemBlockReasons: {},
+        modelId: 'writing-model',
+        previewToken: input.userApprovedUnknownCost ? 'copy-token' : null,
+        protocolMode: 'CHAT_COMPLETIONS' as const,
+        requestCount: 3 as const,
+        searchEnabled: false as const,
+        selectedPlanItemIds: input.selectedPlanItemIds,
+        unknownCostApproved: input.userApprovedUnknownCost,
+        weekKey: input.weekKey,
+      },
+    }));
+    const executeContentCopyGeneration = vi.fn(async () => ({
+      ok: true as const,
+      value: {
+        externalRequestCount: 3 as const,
+        items: ['mon-1', 'mon-2', 'mon-3'].map((planItemId) => ({
+          message: '文案已生成，待补封面。',
+          packageId: `pkg-${planItemId}`,
+          planItemId,
+          providerRequestId: 'provider-request-safe-1',
+          safeDiagnostic: null,
+          status: 'SUCCEEDED' as const,
+          technicalCode: null,
+        })),
+        weekKey: '2026-W31',
+      },
+    }));
+    expose({ executeContentCopyGeneration, previewContentCopyGeneration });
+    const user = userEvent.setup();
+    render(
+      <ContentCopyGenerationControl
+        onComplete={vi.fn().mockResolvedValue(undefined)}
+        selectedPlanItemIds={['mon-1', 'mon-2', 'mon-3']}
+        weekKey="2026-W31"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: '预览生成 3 份文案' }));
+    expect(screen.getByText('CHAT_COMPLETIONS')).toBeVisible();
+    expect(screen.getByText('0 次')).toBeVisible();
+    expect(screen.getByText('关闭 / 关闭')).toBeVisible();
+    await user.click(
+      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 3 次文本请求' }),
+    );
+    await user.click(screen.getByRole('button', { name: '确认并生成 3 份文案' }));
+    expect(executeContentCopyGeneration).toHaveBeenCalledWith({ previewToken: 'copy-token' });
+    expect(await screen.findAllByText('成功：文案已生成，待补封面。')).toHaveLength(3);
+  });
+
+  it('shows a finite field-level schema reason without response content', async () => {
+    expose({
+      executeContentCopyGeneration: async () => ({
+        ok: true,
+        value: {
+          externalRequestCount: 1,
+          items: [
+            {
+              message: '模型返回的 JSON 缺少或写错了内容字段，未保存任何内容。',
+              packageId: null,
+              planItemId: 'mon-1',
+              providerRequestId: 'req-safe-123',
+              safeDiagnostic: {
+                actualRootType: 'object',
+                expectedType: 'non-empty string',
+                issuePath: ['title'],
+                rootKeys: ['body', 'materialNotes', 'tags'],
+              },
+              status: 'FAILED',
+              technicalCode: 'PROVIDER_SCHEMA_VALIDATION_FAILED:title',
+            },
+          ],
+          weekKey: '2026-W31',
+        },
+      }),
+      previewContentCopyGeneration: async () => ({
+        ok: true,
+        value: {
+          blockReasons: [],
+          budgetState: 'ALLOWED',
+          canConfirm: true,
+          capabilityEvidenceId: 'evidence',
+          credentialBinding: 'credential',
+          credentialState: 'CONFIGURED',
+          expiresAt: '2026-08-16T12:00:00.000Z',
+          feeEstimateMicroUsd: '1000',
+          fetchEnabled: false,
+          itemBlockReasons: {},
+          modelId: 'writing-model',
+          previewToken: 'copy-token',
+          protocolMode: 'CHAT_COMPLETIONS',
+          requestCount: 1,
+          searchEnabled: false,
+          selectedPlanItemIds: ['mon-1'],
+          unknownCostApproved: false,
+          weekKey: '2026-W31',
+        },
+      }),
+    });
+    const user = userEvent.setup();
+    render(
+      <ContentCopyGenerationControl
+        onComplete={vi.fn().mockResolvedValue(undefined)}
+        selectedPlanItemIds={['mon-1']}
+        weekKey="2026-W31"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: '预览生成 1 份文案' }));
+    await user.click(screen.getByRole('button', { name: '确认并生成 1 份文案' }));
+    expect(
+      await screen.findByText('失败：模型返回的 JSON 缺少或写错了内容字段，未保存任何内容。'),
+    ).toBeVisible();
+    await user.click(screen.getByText('技术信息'));
+    expect(screen.getByText('失败字段：title')).toBeVisible();
+    expect(screen.getByText('期望类型：non-empty string')).toBeVisible();
+    expect(screen.getByText('实际根类型：object')).toBeVisible();
+    expect(screen.getByText('实际根键名：body、materialNotes、tags')).toBeVisible();
+  });
+
   it('shows a retryable error instead of an endless provider-settings loader', async () => {
     expose({
       ...createMemoryV2Bridge(),

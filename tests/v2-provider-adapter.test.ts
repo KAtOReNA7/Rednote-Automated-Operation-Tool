@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
@@ -8,15 +8,20 @@ import {
   parseV2ProviderActionIntent,
   parseV2ProviderActionOutput,
   selectV2StructuredProtocol,
+  toV2Exception,
+  V2ProviderActionError,
   type V2ProviderActionExecutionRequest,
   type V2ProviderActionExecutionResult,
   type V2ProviderActionPreview,
   type WeeklyPlan,
 } from '../packages/v2/src/index.js';
+import { initializeProjectDataRoot } from '../packages/storage/src/index.js';
 
 vi.mock('electron', () => ({
   app: { getAppPath: () => resolve('.') },
-  BrowserWindow: { fromWebContents: () => null },
+  BrowserWindow: {
+    fromWebContents: (contents: { readonly testWindow?: unknown }) => contents.testWindow,
+  },
   ipcMain: { handle: vi.fn(), removeHandler: vi.fn() },
   shell: { openPath: async () => '' },
 }));
@@ -32,6 +37,8 @@ class ScriptedProviderExecution {
   approvalRequired = false;
   configFingerprint = 'fixture-config';
   credentialBinding = 'fixture-credential';
+  contentCapabilityEvidenceId = 'fixture-chat-evidence';
+  contentModelId = 'writing-test';
   protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' = 'RESPONSES';
 
   public async inspect(request: Omit<V2ProviderActionExecutionRequest, 'executionId'>) {
@@ -60,6 +67,25 @@ class ScriptedProviderExecution {
     };
   }
 
+  public async inspectContentCopy(request: {
+    readonly requestCount: 1 | 2 | 3;
+    readonly userApprovedUnknownCost: boolean;
+  }) {
+    return {
+      blockReasons:
+        this.approvalRequired && !request.userApprovedUnknownCost ? ['approval required'] : [],
+      budgetState: 'ALLOWED' as const,
+      canConfirm: !this.approvalRequired || request.userApprovedUnknownCost,
+      capabilityEvidenceId: this.contentCapabilityEvidenceId,
+      credentialBinding: this.credentialBinding,
+      credentialState: 'CONFIGURED' as const,
+      feeEstimateMicroUsd: this.approvalRequired ? null : '1000',
+      modelId: this.contentModelId,
+      protocolMode: 'CHAT_COMPLETIONS' as const,
+      unknownCostApproved: request.userApprovedUnknownCost,
+    };
+  }
+
   public async execute(
     request: V2ProviderActionExecutionRequest,
   ): Promise<V2ProviderActionExecutionResult> {
@@ -67,31 +93,34 @@ class ScriptedProviderExecution {
     const output =
       request.kind === 'WEEKLY_PLAN'
         ? {
-            candidates: [
-              ['monday', '周一', '2026-07-27', '10:00'],
-              ['wednesday', '周三', '2026-07-29', '14:00'],
-              ['friday', '周五', '2026-07-31', '19:30'],
-            ].map(([id, day, date, time]) => ({
-              book: `测试作品 ${id}`,
+            candidates: Array.from({ length: 21 }, (_, index) => ({
+              book: `测试作品 ${index + 1}`,
               conflictWithIds: [],
-              date,
-              day,
-              id,
+              date: '2026-07-27',
+              day: '周一',
+              id: `candidate-${index + 1}`,
               status: 'PENDING',
-              time,
-              title: `受控计划 ${id}`,
+              time: '10:00',
+              title: `受控计划 ${index + 1}`,
             })),
           }
-        : request.kind === 'CONTENT_PACKAGES'
+        : request.kind === 'CONTENT_PACKAGES' ||
+            (request.kind === 'CONTENT_COPY_VERSION' && 'candidate' in request.input)
           ? {
-              packages: ['morgue', 'yellow-room', 'moonstone'].map((coverKey, index) => ({
-                body: `受控正文 ${index + 1}`,
-                coverKey,
-                materialNotes: '仅使用已提供的本地上下文。',
-                suggestedTime: `2026-07-${String(27 + index * 2).padStart(2, '0')}T10:00`,
-                tags: ['推理小说', `本地草稿${index + 1}`],
-                title: `受控内容包 ${index + 1}`,
-              })),
+              packages: [request.input.candidate].map((candidate) => {
+                const id =
+                  typeof candidate === 'object' && candidate !== null && 'id' in candidate
+                    ? String(Number(String(candidate.id).match(/(\d+)$/u)?.[1] ?? '1'))
+                    : '1';
+                return {
+                  body: `受控正文 ${id}`,
+                  coverKey: 'morgue',
+                  materialNotes: '仅使用已提供的本地上下文。',
+                  suggestedTime: '2026-07-27T10:00',
+                  tags: ['推理小说', `本地草稿${id}`],
+                  title: `受控内容包 ${id}`,
+                };
+              }),
             }
           : { replyText: '谢谢你的留言。这是一条待你确认后手动发送的回复建议。' };
     return {
@@ -102,16 +131,121 @@ class ScriptedProviderExecution {
       output,
       stableErrorCode: null,
       status: 'SUCCEEDED',
+      modelRunId: null,
     };
   }
 }
 
 describe('V2 R07 controlled provider adapter', () => {
+  it('opens business persistence on the locator-selected ProjectDataRoot', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const parent = mkdtempSync(join(tmpdir(), 'rednote-v2-selected-root-'));
+    temporaryRoots.push(parent);
+    const selected = await initializeProjectDataRoot(join(parent, 'selected-project'));
+    const runtime = await V2DesktopRuntime.openProject(selected, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+    });
+    try {
+      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: '2026-W31' })).toMatchObject({
+        weekKey: '2026-W31',
+      });
+    } finally {
+      runtime.close();
+    }
+    expect(existsSync(join(selected.databaseDirectory, 'rednote.sqlite'))).toBe(true);
+    expect(existsSync(join(parent, 'v2-project-data'))).toBe(false);
+  });
+
+  it('does not mislabel an unexpected local failure as unavailable persistence', () => {
+    expect(toV2Exception(new Error('fixture local failure'))).toMatchObject({
+      code: 'LOCAL_OPERATION_FAILED',
+      message: '本地操作未完成，请重新载入后再试。',
+    });
+  });
+
+  it('accepts the bounded third R07 packaged restart URL and still rejects other attempts', async () => {
+    const { isTrustedV2IpcSender } = await import('../apps/desktop/src/v2-runtime.js');
+    const window = {};
+    const sender = { testWindow: window };
+    const event = {
+      sender,
+      senderFrame: {
+        url: 'rednote://app/v2.html?smoke=1&r07BlackboxPort=43119&r07BlackboxAttempt=3',
+      },
+    };
+    Object.assign(sender, { mainFrame: event.senderFrame });
+
+    expect(isTrustedV2IpcSender(event as never, 'rednote://app/v2.html', window as never)).toBe(
+      true,
+    );
+    event.senderFrame.url =
+      'rednote://app/v2.html?smoke=1&r07BlackboxPort=43119&r07BlackboxAttempt=4';
+    expect(isTrustedV2IpcSender(event as never, 'rednote://app/v2.html', window as never)).toBe(
+      false,
+    );
+  });
+
+  it('projects a legacy global setup state into the same action-scoped writing configuration', async () => {
+    const { resolveV2ActionProviderConfiguration } =
+      await import('../apps/desktop/src/v2-provider-runtime.js');
+    const legacySettings = {
+      credentialReference: 'CONTENT_AI_API_KEY',
+      embeddingModelId: null,
+      imageModelId: null,
+      monthlyHardLimitCents: 10_000,
+      monthlyWarningCents: 8_000,
+      providerBaseUrl: 'http://127.0.0.1:43119/v1',
+      providerProtocol: 'OPENAI_COMPATIBLE',
+      researchModelId: 'research-model',
+      reviewModelId: null,
+      revision: 4,
+      setupState: 'PROVIDER_CONFIG_INCOMPLETE',
+      updatedAt: '2026-08-16T00:00:00.000Z',
+      writingModelId: 'writing-model',
+    } as const;
+
+    const writing = resolveV2ActionProviderConfiguration(legacySettings, 'writing');
+    const research = resolveV2ActionProviderConfiguration(legacySettings, 'research');
+
+    expect(writing).toMatchObject({ modelId: 'writing-model', providerConfigured: true });
+    expect(research).toMatchObject({ modelId: 'research-model', providerConfigured: true });
+    expect(writing.settingsForProviderLoader.setupState).toBe('PROVIDER_CONFIGURED_UNVERIFIED');
+    expect(legacySettings.setupState).toBe('PROVIDER_CONFIG_INCOMPLETE');
+    expect(legacySettings.reviewModelId).toBeNull();
+  });
+
+  it('returns the precise changed field instead of the generic provider blocker', () => {
+    expect(
+      toV2Exception(
+        new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED', ['writingModelId']),
+      ),
+    ).toMatchObject({ message: '预览后写作模型已变化，请重新预览。' });
+    expect(
+      toV2Exception(new V2ProviderActionError('PROVIDER_ACTION_STALE', ['weeklyPlan'])),
+    ).toMatchObject({ message: '预览后周计划版本已变化，请重新预览。' });
+  });
+
   it('selects a current supported structured protocol deterministically', () => {
     expect(
       selectV2StructuredProtocol([
         { protocolMode: 'CHAT_COMPLETIONS', stale: false, state: 'SUPPORTED' },
         { protocolMode: 'RESPONSES', stale: false, state: 'SUPPORTED' },
+      ]),
+    ).toEqual({ protocolMode: 'CHAT_COMPLETIONS', state: 'SUPPORTED' });
+    expect(
+      selectV2StructuredProtocol([
+        {
+          observedAt: '2026-08-15T00:00:01.000Z',
+          protocolMode: 'CHAT_COMPLETIONS',
+          stale: false,
+          state: 'SUPPORTED',
+        },
+        {
+          observedAt: '2026-08-15T00:00:02.000Z',
+          protocolMode: 'RESPONSES',
+          stale: false,
+          state: 'SUPPORTED',
+        },
       ]),
     ).toEqual({ protocolMode: 'RESPONSES', state: 'SUPPORTED' });
     expect(
@@ -170,6 +304,187 @@ describe('V2 R07 controlled provider adapter', () => {
         weekKey: '2026-W31',
       }),
     ).toThrow();
+  });
+
+  it('shows a three-item content preview as three bounded writing requests', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r07-content-preview-'));
+    temporaryRoots.push(root);
+    const provider = new ScriptedProviderExecution();
+    const runtime = await V2DesktopRuntime.open(root, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      providerExecution: provider,
+    });
+    try {
+      const initial = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W31',
+      })) as WeeklyPlan;
+      const confirmed = (await runtime.mutate({
+        action: 'CONFIRM_PLAN_CANDIDATES',
+        candidateIds: initial.candidates.map(({ id }) => id),
+        expectedRevision: initial.revision,
+        weekKey: initial.weekKey,
+      })) as WeeklyPlan;
+      const locked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: confirmed.revision,
+        weekKey: confirmed.weekKey,
+      })) as WeeklyPlan;
+      const preview = (await runtime.read(
+        {
+          intent: {
+            candidateIds: locked.candidates.slice(0, 3).map(({ id }) => id),
+            expectedPlanRevision: locked.revision,
+            idempotencyKey: 'content-three-items',
+            kind: 'CONTENT_PACKAGES',
+            weekKey: locked.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        { senderId: 1, windowId: 1 },
+      )) as V2ProviderActionPreview;
+
+      expect(preview).toMatchObject({
+        canConfirm: true,
+        requestCount: 3,
+        searchEnabled: false,
+        fetchEnabled: false,
+      });
+      await runtime.mutate(
+        {
+          action: 'CONFIRM_PROVIDER_ACTION',
+          confirmation: 'RUN_PROVIDER_ACTION',
+          previewToken: preview.previewToken,
+        },
+        { senderId: 1, windowId: 1 },
+      );
+      expect(provider.calls).toHaveLength(3);
+      expect(provider.calls.every(({ kind }) => kind === 'CONTENT_PACKAGES')).toBe(true);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it('uses the dedicated content-copy evaluator and appends versions for confirmed plan items', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r07-dedicated-copy-'));
+    temporaryRoots.push(root);
+    const provider = new ScriptedProviderExecution();
+    provider.approvalRequired = true;
+    const runtime = await V2DesktopRuntime.open(root, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      providerExecution: provider,
+    });
+    const caller = { senderId: 21, windowId: 34 };
+    try {
+      const initial = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W31',
+      })) as WeeklyPlan;
+      const confirmed = (await runtime.mutate({
+        action: 'CONFIRM_PLAN_CANDIDATES',
+        candidateIds: initial.candidates.map(({ id }) => id),
+        expectedRevision: initial.revision,
+        weekKey: initial.weekKey,
+      })) as WeeklyPlan;
+      const locked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: confirmed.revision,
+        weekKey: confirmed.weekKey,
+      })) as WeeklyPlan;
+      const selectedPlanItemIds = locked.candidates.slice(0, 3).map(({ id }) => id);
+      const blocked = await runtime.read(
+        {
+          selectedPlanItemIds,
+          userApprovedUnknownCost: false,
+          view: 'CONTENT_COPY_GENERATION_PREVIEW',
+          weekKey: locked.weekKey,
+        },
+        caller,
+      );
+      expect(blocked).toMatchObject({
+        canConfirm: false,
+        previewToken: null,
+        protocolMode: 'CHAT_COMPLETIONS',
+        requestCount: 3,
+      });
+      const preview = await runtime.read(
+        {
+          selectedPlanItemIds: [...selectedPlanItemIds].reverse(),
+          userApprovedUnknownCost: true,
+          view: 'CONTENT_COPY_GENERATION_PREVIEW',
+          weekKey: locked.weekKey,
+        },
+        caller,
+      );
+      expect(preview).toMatchObject({
+        canConfirm: true,
+        fetchEnabled: false,
+        protocolMode: 'CHAT_COMPLETIONS',
+        requestCount: 3,
+        searchEnabled: false,
+        selectedPlanItemIds: [...selectedPlanItemIds].sort(),
+      });
+      const generated = await runtime.mutate(
+        {
+          action: 'EXECUTE_CONTENT_COPY_GENERATION',
+          previewToken: (preview as { previewToken: string }).previewToken,
+        },
+        caller,
+      );
+      expect(generated).toMatchObject({
+        externalRequestCount: 3,
+        items: selectedPlanItemIds.map((planItemId) => ({
+          planItemId,
+          status: 'SUCCEEDED',
+        })),
+      });
+      const firstWorkspace = (await runtime.read({
+        view: 'CONTENT_PACKAGES',
+        weekKey: locked.weekKey,
+      })) as {
+        packages: readonly {
+          candidateId: string;
+          provenance?: { copyModelRunId: string | null };
+          version: number;
+        }[];
+      };
+      expect(firstWorkspace.packages).toHaveLength(3);
+      expect(firstWorkspace.packages.every(({ version }) => version === 1)).toBe(true);
+
+      const appendPreview = await runtime.read(
+        {
+          selectedPlanItemIds: [selectedPlanItemIds[0]],
+          userApprovedUnknownCost: true,
+          view: 'CONTENT_COPY_GENERATION_PREVIEW',
+          weekKey: locked.weekKey,
+        },
+        caller,
+      );
+      await runtime.mutate(
+        {
+          action: 'EXECUTE_CONTENT_COPY_GENERATION',
+          previewToken: (appendPreview as { previewToken: string }).previewToken,
+        },
+        caller,
+      );
+      const appended = (await runtime.read({
+        view: 'CONTENT_PACKAGES',
+        weekKey: locked.weekKey,
+      })) as { packages: readonly { candidateId: string; version: number }[] };
+      expect(
+        appended.packages.find(({ candidateId }) => candidateId === selectedPlanItemIds[0]),
+      ).toMatchObject({ version: 2 });
+      expect(
+        provider.calls.every(
+          ({ requiredProtocolMode }) => requiredProtocolMode === 'CHAT_COMPLETIONS',
+        ),
+      ).toBe(true);
+      expect(provider.calls.every(({ kind }) => kind === 'CONTENT_COPY_VERSION')).toBe(true);
+    } finally {
+      runtime.close();
+    }
   });
 
   it('previews offline, consumes one bound token, and persists all three scripted actions', async () => {
@@ -265,24 +580,43 @@ describe('V2 R07 controlled provider adapter', () => {
         view: 'WEEKLY_PLAN',
         weekKey: initial.weekKey,
       })) as WeeklyPlan;
-      expect(generated.candidates).toHaveLength(3);
+      expect(generated.candidates).toHaveLength(21);
+      expect(generated.candidates.filter(({ status }) => status === 'PENDING')).toHaveLength(21);
       expect(provider.calls).toHaveLength(1);
       expect(provider.calls[0]).toMatchObject({ kind: 'WEEKLY_PLAN', modelSlot: 'research' });
 
-      const locked = (await runtime.mutate({
-        action: 'LOCK_WEEKLY_PLAN',
+      const confirmed = (await runtime.mutate({
+        action: 'CONFIRM_PLAN_CANDIDATES',
+        candidateIds: generated.candidates.map(({ id }) => id),
         expectedRevision: generated.revision,
         weekKey: generated.weekKey,
       })) as WeeklyPlan;
-      const candidateIds = locked.candidates.map(({ id }) => id);
+
+      const locked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: confirmed.revision,
+        weekKey: confirmed.weekKey,
+      })) as WeeklyPlan;
+      const unlocked = (await runtime.mutate({
+        action: 'UNLOCK_WEEKLY_PLAN',
+        expectedRevision: locked.revision,
+        weekKey: locked.weekKey,
+      })) as WeeklyPlan;
+      expect(unlocked).toMatchObject({ status: 'DRAFT' });
+      const relocked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: unlocked.revision,
+        weekKey: unlocked.weekKey,
+      })) as WeeklyPlan;
+      const candidateIds = relocked.candidates.slice(0, 3).map(({ id }) => id);
       const contentPreview = (await runtime.read(
         {
           intent: {
             candidateIds,
-            expectedPlanRevision: locked.revision,
+            expectedPlanRevision: relocked.revision,
             idempotencyKey: 'r07-content-scripted',
             kind: 'CONTENT_PACKAGES',
-            weekKey: locked.weekKey,
+            weekKey: relocked.weekKey,
           },
           view: 'PROVIDER_ACTION_PREVIEW',
         },
@@ -296,7 +630,7 @@ describe('V2 R07 controlled provider adapter', () => {
         },
         caller,
       );
-      const content = await runtime.read({ view: 'CONTENT_PACKAGES', weekKey: locked.weekKey });
+      const content = await runtime.read({ view: 'CONTENT_PACKAGES', weekKey: relocked.weekKey });
       expect(
         (content as { packages: readonly { fields: { title: string } }[] }).packages.map(
           ({ fields }) => fields.title,
@@ -358,8 +692,8 @@ describe('V2 R07 controlled provider adapter', () => {
         },
         caller,
       );
-      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: locked.weekKey })).toMatchObject({
-        revision: locked.revision,
+      expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: relocked.weekKey })).toMatchObject({
+        revision: relocked.revision,
         status: 'CONFIRMED',
       });
       expect(await runtime.read({ view: 'WEEKLY_PLAN', weekKey: nextWeek.weekKey })).toMatchObject({
@@ -369,6 +703,8 @@ describe('V2 R07 controlled provider adapter', () => {
       });
       expect(provider.calls.map(({ kind, modelSlot }) => [kind, modelSlot])).toEqual([
         ['WEEKLY_PLAN', 'research'],
+        ['CONTENT_PACKAGES', 'writing'],
+        ['CONTENT_PACKAGES', 'writing'],
         ['CONTENT_PACKAGES', 'writing'],
         ['REPLY_SUGGESTION', 'writing'],
         ['WEEKLY_PLAN', 'research'],

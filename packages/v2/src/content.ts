@@ -23,6 +23,43 @@ export interface ContentPackageFields {
   readonly title: string;
 }
 
+export interface ContentCopyWireDto {
+  readonly body: string;
+  readonly materialNotes: string;
+  readonly tags: readonly string[];
+  readonly title: string;
+}
+
+export interface ContentCopyWireIssue {
+  readonly actualType: string;
+  readonly code: string;
+  readonly expectedType: string;
+  readonly path: readonly (number | string)[];
+  readonly rootKeys: readonly string[];
+  readonly rootType: string;
+}
+
+export type ContentCopyWireDecodeResult =
+  | { readonly ok: true; readonly value: ContentCopyWireDto }
+  | { readonly issues: readonly ContentCopyWireIssue[]; readonly ok: false };
+
+export const V2_CONTENT_COPY_WIRE_JSON_SCHEMA = Object.freeze({
+  additionalProperties: false,
+  properties: {
+    body: { maxLength: 16_000, minLength: 1, type: 'string' },
+    materialNotes: { maxLength: 2_000, minLength: 1, type: 'string' },
+    tags: {
+      items: { maxLength: 80, minLength: 1, type: 'string' },
+      maxItems: 10,
+      minItems: 1,
+      type: 'array',
+    },
+    title: { maxLength: 300, minLength: 1, type: 'string' },
+  },
+  required: ['body', 'materialNotes', 'tags', 'title'],
+  type: 'object',
+} as const);
+
 export interface ContentPackage {
   readonly candidateId: string;
   readonly fields: ContentPackageFields;
@@ -220,6 +257,159 @@ function text(value: unknown, maximum: number, field: string): string {
   return value;
 }
 
+function valueType(value: unknown): string {
+  if (value === null) return 'null';
+  if (Array.isArray(value)) return 'array';
+  return typeof value;
+}
+
+function wireFailure(
+  code: string,
+  path: readonly (number | string)[],
+  expectedType: string,
+  actual: unknown,
+  rootKeys: readonly string[],
+  rootType: string = 'object',
+): ContentCopyWireDecodeResult {
+  return Object.freeze({
+    issues: Object.freeze([
+      Object.freeze({
+        actualType: valueType(actual),
+        code,
+        expectedType,
+        path: Object.freeze(path),
+        rootKeys: Object.freeze(rootKeys.slice(0, 12)),
+        rootType,
+      }),
+    ]),
+    ok: false,
+  });
+}
+
+export function parseContentCopyWireValue(value: unknown): ContentCopyWireDecodeResult {
+  const initialKeys = record(value) ? Object.keys(value).sort() : [];
+  let candidate = value;
+  if (record(value)) {
+    const wrapperKeys = Object.keys(value);
+    if (wrapperKeys.length === 1 && (wrapperKeys[0] === 'content' || wrapperKeys[0] === 'result')) {
+      candidate = value[wrapperKeys[0]];
+    }
+  }
+  if (!record(candidate)) {
+    return wireFailure(
+      'WIRE_ROOT_TYPE_INVALID',
+      [],
+      'object',
+      candidate,
+      initialKeys,
+      valueType(candidate),
+    );
+  }
+  const rootKeys = Object.keys(candidate).sort();
+  const expectedKeys = ['body', 'materialNotes', 'tags', 'title'];
+  const missing = expectedKeys.find((key) => !(key in candidate));
+  if (missing !== undefined) {
+    return wireFailure(
+      'WIRE_FIELD_MISSING',
+      [missing],
+      expectedTypeForWireField(missing),
+      undefined,
+      rootKeys,
+    );
+  }
+  const unknown = rootKeys.find((key) => !expectedKeys.includes(key));
+  if (unknown !== undefined) {
+    return wireFailure('WIRE_UNKNOWN_FIELD', [unknown], 'absent', candidate[unknown], rootKeys);
+  }
+  for (const [field, maximum] of [
+    ['title', 300],
+    ['body', 16_000],
+    ['materialNotes', 2_000],
+  ] as const) {
+    try {
+      text(candidate[field], maximum, field);
+    } catch {
+      return wireFailure(
+        'WIRE_FIELD_TYPE_OR_LENGTH_INVALID',
+        [field],
+        'non-empty string',
+        candidate[field],
+        rootKeys,
+      );
+    }
+  }
+  if (!Array.isArray(candidate.tags) || candidate.tags.length < 1 || candidate.tags.length > 10) {
+    return wireFailure(
+      'WIRE_FIELD_TYPE_OR_LENGTH_INVALID',
+      ['tags'],
+      'array<string>[1..10]',
+      candidate.tags,
+      rootKeys,
+    );
+  }
+  const tags: string[] = [];
+  for (const [index, tag] of candidate.tags.entries()) {
+    try {
+      tags.push(text(tag, 80, 'tags'));
+    } catch {
+      return wireFailure(
+        'WIRE_FIELD_TYPE_OR_LENGTH_INVALID',
+        ['tags', index],
+        'non-empty string',
+        tag,
+        rootKeys,
+      );
+    }
+  }
+  if (new Set(tags).size !== tags.length) {
+    return wireFailure(
+      'WIRE_TAGS_DUPLICATED',
+      ['tags'],
+      'unique array<string>',
+      candidate.tags,
+      rootKeys,
+    );
+  }
+  return Object.freeze({
+    ok: true,
+    value: Object.freeze({
+      body: candidate.body as string,
+      materialNotes: candidate.materialNotes as string,
+      tags: Object.freeze(tags),
+      title: candidate.title as string,
+    }),
+  });
+}
+
+function expectedTypeForWireField(field: string): string {
+  return field === 'tags' ? 'array<string>[1..10]' : 'non-empty string';
+}
+
+export function decodeContentCopyWireText(textValue: string): ContentCopyWireDecodeResult {
+  let jsonText = textValue.trim();
+  const fence = /^```(?:json)?[\t ]*\r?\n([\s\S]*?)\r?\n```$/iu.exec(jsonText);
+  if (fence !== null) jsonText = (fence[1] ?? '').trim();
+  let value: unknown;
+  try {
+    value = JSON.parse(jsonText) as unknown;
+  } catch {
+    return wireFailure('WIRE_JSON_INVALID', [], 'JSON object', 'invalid-json', [], 'invalid-json');
+  }
+  return parseContentCopyWireValue(value);
+}
+
+export function mapContentCopyWireToFields(
+  wire: ContentCopyWireDto,
+  candidate: { readonly date: string; readonly day: string; readonly time: string },
+  weekKey: string,
+): ContentPackageFields {
+  return parseContentPackageFields({
+    ...wire,
+    coverKey: 'morgue',
+    suggestedTime: `${candidateDate({ weekKey }, candidate.day, candidate.date)}T${candidate.time}`,
+  });
+}
+
 export function parseContentPackageFields(value: unknown): ContentPackageFields {
   if (
     !record(value) ||
@@ -282,7 +472,7 @@ function sameFields(left: ContentPackageFields, right: ContentPackageFields): bo
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function candidateDate(plan: WeeklyPlan, day: string, storedDate: string): string {
+function candidateDate(plan: Pick<WeeklyPlan, 'weekKey'>, day: string, storedDate: string): string {
   if (storedDate.includes('-')) return storedDate;
   const year = Number(plan.weekKey.slice(0, 4));
   const week = Number(plan.weekKey.slice(6));
@@ -386,6 +576,54 @@ export class V2ContentApplication {
     return this.#workspace(request.weekKey, this.#repository.create(records));
   }
 
+  public async appendOrCreateModelCopy(
+    plan: WeeklyPlan,
+    candidateId: string,
+    fieldsValue: unknown,
+    modelRunId: string | null,
+  ): Promise<ContentPackage> {
+    if (plan.status !== 'CONFIRMED') {
+      throw new V2ContentError('CONTENT_NOT_READY', ['weeklyPlan']);
+    }
+    const candidate = plan.candidates.find((item) => item.id === candidateId);
+    if (candidate === undefined || candidate.status === 'SKIPPED') {
+      throw new V2ContentError('INVALID_REQUEST', ['candidateIds']);
+    }
+    const fields = parseContentPackageFields(fieldsValue);
+    const current = this.#repository
+      .list(plan.weekKey)
+      .find((item) => item.candidateId === candidateId);
+    if (current !== undefined) {
+      return this.appendModelCopy(
+        current.packageId,
+        current.revision,
+        current.versionId,
+        fields,
+        modelRunId,
+      );
+    }
+    const packageId = `pkg-${plan.weekKey.toLowerCase()}-${candidateId}`;
+    const [created] = this.#repository.create([
+      {
+        candidateId,
+        copyModelRunId: modelRunId,
+        coverKey: fields.coverKey,
+        createdAt: new Date().toISOString(),
+        files: await this.#files.writeFields(fields),
+        generatedCover: null,
+        packageId,
+        planRevision: plan.revision,
+        revision: 0,
+        status: 'DRAFT',
+        version: 1,
+        versionId: `${packageId}-v1`,
+        weekKey: plan.weekKey,
+      },
+    ]);
+    if (created === undefined) throw new V2ContentError('CONTENT_CORRUPT');
+    return this.#package(created, fields);
+  }
+
   public async save(
     request: Extract<ContentMutationRequest, { readonly action: 'SAVE_CONTENT_PACKAGE' }>,
   ): Promise<ContentPackage> {
@@ -408,7 +646,7 @@ export class V2ContentApplication {
     expectedRevision: number,
     expectedVersionId: string,
     fieldsValue: unknown,
-    modelRunId: string,
+    modelRunId: string | null,
   ): Promise<ContentPackage> {
     const current = this.#repository.get(packageId);
     this.#assertCurrent(current, { expectedRevision, expectedVersionId });

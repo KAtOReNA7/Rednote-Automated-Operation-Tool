@@ -165,6 +165,11 @@ function ProviderSettings(): React.JSX.Element {
       window.rednoteV2?.startProviderCapabilityProbe === undefined
     )
       return;
+    if (probe.requestCount === 0) {
+      notify('当前必需能力已有有效证据，无需重复验证。');
+      setProbe(null);
+      return;
+    }
     const result = await window.rednoteV2.startProviderCapabilityProbe({
       confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
       credentialBindingVersion: probe.credentialBindingVersion,
@@ -315,28 +320,34 @@ function ProviderSettings(): React.JSX.Element {
               {view.credentialState === 'CONFIGURED' ? null : (
                 <p className="v2-form-error">凭据未配置或需重新认证，请先在上方保存凭据。</p>
               )}
-              <label>
-                <input
-                  checked={confirmProbe}
-                  onChange={(event) => setConfirmProbe(event.target.checked)}
-                  type="checkbox"
-                />
-                {probe.feeEstimate === 'UNKNOWN'
-                  ? `我了解费用未知，仍授权本次最多 ${probe.requestCount} 个能力检查请求`
-                  : '我确认启动本次能力检查'}
-              </label>
-              <Button
-                disabled={
-                  !confirmProbe ||
-                  !probe.budgetReady ||
-                  view.credentialState !== 'CONFIGURED' ||
-                  !view.providerConfigured
-                }
-                onClick={() => void startProbe()}
-                tone="primary"
-              >
-                确认并启动
-              </Button>
+              {probe.requestCount === 0 ? (
+                <p role="status">当前必需能力已有有效证据，无需重复验证。</p>
+              ) : (
+                <>
+                  <label>
+                    <input
+                      checked={confirmProbe}
+                      onChange={(event) => setConfirmProbe(event.target.checked)}
+                      type="checkbox"
+                    />
+                    {probe.feeEstimate === 'UNKNOWN'
+                      ? `我了解费用未知，仍授权本次最多 ${probe.requestCount} 个能力检查请求`
+                      : '我确认启动本次能力检查'}
+                  </label>
+                  <Button
+                    disabled={
+                      !confirmProbe ||
+                      !probe.budgetReady ||
+                      view.credentialState !== 'CONFIGURED' ||
+                      !view.providerConfigured
+                    }
+                    onClick={() => void startProbe()}
+                    tone="primary"
+                  >
+                    确认并启动
+                  </Button>
+                </>
+              )}
             </div>
           )}
           {view.capabilityProbe.latestRun === null ? null : (
@@ -442,6 +453,10 @@ export function SettingsPage(): React.JSX.Element {
     setUi((current) => ({ ...current, personaErrors: [] }));
     notify(`账号人设已保存到本机 · revision ${result.value.revision}`);
   };
+  const buildInfo =
+    typeof __REDNOTE_BUILD_INFO__ === 'undefined'
+      ? { builtAt: '开发测试环境', commit: 'development', v2DataVersion: 1 }
+      : __REDNOTE_BUILD_INFO__;
   return (
     <div className="v2-page">
       <PageHeader
@@ -499,6 +514,17 @@ export function SettingsPage(): React.JSX.Element {
           <ProviderSettings />
         </div>
         <aside className="v2-settings-aside">
+          <section className="v2-card" aria-label="构建版本">
+            <Icon name="file-text" />
+            <div>
+              <h2>构建版本</h2>
+              <p>
+                commit <code>{buildInfo.commit.slice(0, 8)}</code>
+              </p>
+              <p>构建时间：{buildInfo.builtAt}</p>
+              <p>V2 数据版本：v{buildInfo.v2DataVersion}</p>
+            </div>
+          </section>
           <section className="v2-card">
             <Icon name="paper-plane-tilt" />
             <div>

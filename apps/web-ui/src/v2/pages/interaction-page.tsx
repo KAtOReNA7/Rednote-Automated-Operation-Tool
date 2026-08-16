@@ -108,8 +108,9 @@ export function InteractionPage(): React.JSX.Element {
       });
       if (result === undefined) return fail('本机互动桥接不可用，未导入。');
       if (!result.ok) return fail(result.error.message);
+      if (!result.value.persisted) return fail('互动未能从当前本机项目重新读取，请重试。');
       setNewText('');
-      await refresh(result.value.item.itemId);
+      if (!(await refresh(result.value.item.itemId))) return;
       notify(
         result.value.duplicate ? '相同互动记录已存在，未重复写入。' : '互动记录已保存到本机。',
       );
@@ -325,7 +326,9 @@ export function InteractionPage(): React.JSX.Element {
         ) : (
           <section aria-label="回复详情" className="v2-card v2-reply-detail">
             <div>
-              <p className="v2-kicker">{active.source}</p>
+              <p className="v2-kicker">
+                {active.source === 'MODEL' ? '模型生成建议' : '本地导入记录'}
+              </p>
               <h2>
                 {active.type} · {statusLabels[active.status]}
               </h2>

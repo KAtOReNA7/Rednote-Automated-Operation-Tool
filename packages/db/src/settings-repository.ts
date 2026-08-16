@@ -192,7 +192,6 @@ export class SqliteSettingsRepository implements SettingsRepository {
              setup_state = CASE
                WHEN ? IS NOT NULL AND provider_base_url IS NOT NULL
                 AND research_model_id IS NOT NULL AND writing_model_id IS NOT NULL
-                AND review_model_id IS NOT NULL
                THEN 'PROVIDER_CONFIGURED_UNVERIFIED'
                ELSE 'PROVIDER_CONFIG_INCOMPLETE'
              END,

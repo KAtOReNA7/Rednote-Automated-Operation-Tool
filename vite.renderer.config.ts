@@ -1,7 +1,27 @@
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { fileURLToPath, URL } from 'node:url';
 
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+
+const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+const buildInfo = Object.freeze({
+  builtAt: new Date().toISOString(),
+  commit: execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: projectRoot,
+    encoding: 'utf8',
+    windowsHide: true,
+  }).trim(),
+  v2DataVersion: 1,
+});
+if (!/^[a-f0-9]{40}$/u.test(buildInfo.commit)) throw new Error('Invalid build commit identity.');
+mkdirSync(fileURLToPath(new URL('./.vite', import.meta.url)), { recursive: true });
+writeFileSync(
+  fileURLToPath(new URL('./.vite/build-info.json', import.meta.url)),
+  `${JSON.stringify(buildInfo, null, 2)}\n`,
+  'utf8',
+);
 
 export default defineConfig({
   base: './',
@@ -17,6 +37,9 @@ export default defineConfig({
     sourcemap: false,
   },
   plugins: [react()],
+  define: {
+    __REDNOTE_BUILD_INFO__: JSON.stringify(buildInfo),
+  },
   resolve: {
     alias: {
       '@mystery-operations/local-api': fileURLToPath(

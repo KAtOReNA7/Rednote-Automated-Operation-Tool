@@ -13,6 +13,9 @@ import {
   V2ContentError,
   V2_DEFAULT_WEEK_KEY,
   V2_CONTENT_FIELD_KEYS,
+  V2_CONTENT_COPY_WIRE_JSON_SCHEMA,
+  decodeContentCopyWireText,
+  mapContentCopyWireToFields,
   parseContentMutationRequest,
   type AccountPersona,
   type ContentBlobSet,
@@ -33,6 +36,12 @@ import {
 
 const databases: DatabaseSync[] = [];
 const candidateIds = ['mon-1', 'tue-2', 'sun-2'] as const;
+const wireFixture = Object.freeze({
+  body: '这是一段经过严格合同校验的合成正文。',
+  materialNotes: '仅依据本地计划项和账号人设生成。',
+  tags: Object.freeze(['推理小说', '合成样本']),
+  title: '严格合同下的合成标题',
+});
 
 function required<T>(value: T | undefined, label: string): T {
   if (value === undefined) throw new Error(`Missing ${label}.`);
@@ -120,6 +129,20 @@ function generation(plan: WeeklyPlan) {
   };
 }
 
+function lockCompletePlan(facade: V2ApplicationFacade, plan: WeeklyPlan): WeeklyPlan {
+  const confirmed = facade.mutate({
+    action: 'CONFIRM_PLAN_CANDIDATES',
+    candidateIds: plan.candidates.map(({ id }) => id),
+    expectedRevision: plan.revision,
+    weekKey: plan.weekKey,
+  }) as WeeklyPlan;
+  return facade.mutate({
+    action: 'LOCK_WEEKLY_PLAN',
+    expectedRevision: confirmed.revision,
+    weekKey: confirmed.weekKey,
+  }) as WeeklyPlan;
+}
+
 function approval(packages: readonly { id: string; revision: number; versionId: string }[]) {
   return packages.map((item) => ({
     expectedRevision: item.revision,
@@ -128,17 +151,79 @@ function approval(packages: readonly { id: string; revision: number; versionId: 
   }));
 }
 
+describe('R07 content copy wire contract', () => {
+  it('uses one flat strict JSON object containing only model-authored fields', () => {
+    expect(V2_CONTENT_COPY_WIRE_JSON_SCHEMA).toMatchObject({
+      additionalProperties: false,
+      required: ['body', 'materialNotes', 'tags', 'title'],
+      type: 'object',
+    });
+    expect(Object.keys(V2_CONTENT_COPY_WIRE_JSON_SCHEMA.properties).sort()).toEqual([
+      'body',
+      'materialNotes',
+      'tags',
+      'title',
+    ]);
+    expect(JSON.stringify(V2_CONTENT_COPY_WIRE_JSON_SCHEMA)).not.toMatch(
+      /oneOf|anyOf|nullable|revision|cover|suggestedTime|status/u,
+    );
+  });
+
+  it.each([
+    ['direct object', JSON.stringify(wireFixture)],
+    ['json fence', `\`\`\`json\n${JSON.stringify(wireFixture)}\n\`\`\``],
+    ['content wrapper', JSON.stringify({ content: wireFixture })],
+    ['result wrapper', JSON.stringify({ result: wireFixture })],
+  ])('accepts %s as one strict wire object', (_label, textValue) => {
+    expect(decodeContentCopyWireText(textValue)).toEqual({ ok: true, value: wireFixture });
+  });
+
+  it.each([
+    ['missing field', JSON.stringify({ ...wireFixture, title: undefined }), 'WIRE_FIELD_MISSING'],
+    [
+      'wrong type',
+      JSON.stringify({ ...wireFixture, tags: 'not-an-array' }),
+      'WIRE_FIELD_TYPE_OR_LENGTH_INVALID',
+    ],
+    ['array root', JSON.stringify([wireFixture]), 'WIRE_ROOT_TYPE_INVALID'],
+    ['extra text', `before ${JSON.stringify(wireFixture)} after`, 'WIRE_JSON_INVALID'],
+    ['unknown field', JSON.stringify({ ...wireFixture, extra: true }), 'WIRE_UNKNOWN_FIELD'],
+  ])('rejects %s with a finite issue', (_label, textValue, code) => {
+    const decoded = decodeContentCopyWireText(textValue);
+    expect(decoded).toMatchObject({ ok: false, issues: [{ code }] });
+  });
+
+  it('maps one provider result to deterministic local fields and restores the saved draft', async () => {
+    const { app, database, draftPlan, facade, files } = await harness();
+    const plan = lockCompletePlan(facade, draftPlan);
+    const candidate = required(plan.candidates[0], 'wire candidate');
+    const decoded = decodeContentCopyWireText(JSON.stringify(wireFixture));
+    if (!decoded.ok) throw new Error('wire fixture did not decode');
+    const fields = mapContentCopyWireToFields(decoded.value, candidate, plan.weekKey);
+    const created = await app.appendOrCreateModelCopy(plan, candidate.id, fields, null);
+    expect(created).toMatchObject({
+      candidateId: candidate.id,
+      fields: {
+        coverKey: 'morgue',
+        suggestedTime: `${candidate.date}T${candidate.time}`,
+      },
+      status: 'DRAFT',
+      version: 1,
+    });
+    const reopened = new V2ContentApplication(new SqliteV2Repository(database), files);
+    await expect(reopened.read(plan.weekKey)).resolves.toMatchObject({
+      packages: [{ id: created.id, fields }],
+    });
+  });
+});
+
 describe('V2-R04 content contracts and persistence', () => {
   it('gates generation on a locked plan and replays one deterministic three-package command', async () => {
     const { app, draftPlan, facade, files, persona } = await harness();
     await expect(app.generate(generation(draftPlan), persona, draftPlan)).rejects.toMatchObject({
       code: 'CONTENT_NOT_READY',
     });
-    const plan = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: draftPlan.revision,
-      weekKey: draftPlan.weekKey,
-    }) as WeeklyPlan;
+    const plan = lockCompletePlan(facade, draftPlan);
     const first = await app.generate(generation(plan), persona, plan);
     const replay = await app.generate(generation(plan), persona, plan);
 
@@ -162,11 +247,7 @@ describe('V2-R04 content contracts and persistence', () => {
 
   it('creates versions only for material edits and binds atomic approval to exact current versions', async () => {
     const { app, draftPlan, facade, persona, repository } = await harness();
-    const plan = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: 0,
-      weekKey: draftPlan.weekKey,
-    }) as WeeklyPlan;
+    const plan = lockCompletePlan(facade, draftPlan);
     const created = await app.generate(generation(plan), persona, plan);
     const first = required(created.packages[0], 'first content package');
     const noOp = await app.save({
@@ -221,11 +302,7 @@ describe('V2-R04 content contracts and persistence', () => {
 
   it('restores metadata and content through a new application instance and fails closed on corruption', async () => {
     const { app, database, draftPlan, facade, files, persona } = await harness();
-    const plan = facade.mutate({
-      action: 'LOCK_WEEKLY_PLAN',
-      expectedRevision: 0,
-      weekKey: draftPlan.weekKey,
-    }) as WeeklyPlan;
+    const plan = lockCompletePlan(facade, draftPlan);
     const created = await app.generate(generation(plan), persona, plan);
     const restored = new V2ContentApplication(new SqliteV2Repository(database), files);
     await expect(restored.read(plan.weekKey)).resolves.toEqual(created);
