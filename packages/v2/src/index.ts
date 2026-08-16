@@ -34,6 +34,8 @@ import {
 } from './metrics.js';
 import {
   V2ProviderActionError,
+  parseV2ContentCopyGenerationExecutionRequest,
+  parseV2ContentCopyGenerationPreviewRequest,
   parseV2ProviderActionConfirmation,
   parseV2ProviderActionIntent,
   type V2ProviderActionKind,
@@ -42,6 +44,10 @@ import {
   type V2ProviderActionIntent,
   type V2ProviderActionPreview,
   type V2ProviderActionResult,
+  type V2ContentCopyGenerationExecutionRequest,
+  type V2ContentCopyGenerationPreviewRequest,
+  type V2ContentCopyGenerationPreview,
+  type V2ContentCopyGenerationResult,
   parseV2ProviderSettingsMutation,
   type V2CapabilityProbePreview,
   type V2CapabilityProbeProgress,
@@ -162,6 +168,7 @@ export type V2ReadRequest =
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
+  | ({ readonly view: 'CONTENT_COPY_GENERATION_PREVIEW' } & V2ContentCopyGenerationPreviewRequest)
   | { readonly view: 'METRICS_REVIEW'; readonly snapshotWindow: MetricWindow }
   | { readonly intent: V2ProviderActionIntent; readonly view: 'PROVIDER_ACTION_PREVIEW' }
   | { readonly view: 'PROVIDER_SETTINGS' }
@@ -214,6 +221,7 @@ export type V2MutationRequest =
       readonly weekKey: string;
     }
   | V2ProviderActionConfirmation
+  | V2ContentCopyGenerationExecutionRequest
   | V2ProviderSettingsMutation
   | ContentMutationRequest
   | InteractionMutationRequest;
@@ -270,6 +278,9 @@ export interface V2Bridge {
     readonly confirmation: 'RUN_PROVIDER_ACTION';
     readonly previewToken: string;
   }) => Promise<V2Result<V2ProviderActionResult>>;
+  readonly executeContentCopyGeneration?: (input: {
+    readonly previewToken: string;
+  }) => Promise<V2Result<V2ContentCopyGenerationResult>>;
   readonly clearProviderCredential?: (input: {
     readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
   }) => Promise<V2Result<V2ProviderSettingsView>>;
@@ -301,6 +312,11 @@ export interface V2Bridge {
   readonly previewProviderAction?: (
     input: V2ProviderActionIntent,
   ) => Promise<V2Result<V2ProviderActionPreview>>;
+  readonly previewContentCopyGeneration?: (input: {
+    readonly selectedPlanItemIds: readonly string[];
+    readonly userApprovedUnknownCost: boolean;
+    readonly weekKey: string;
+  }) => Promise<V2Result<V2ContentCopyGenerationPreview>>;
   readonly previewProviderCapabilityProbe?: () => Promise<V2Result<V2CapabilityProbePreview>>;
   readonly exportContentPackages: (
     input: ContentInput<'EXPORT_CONTENT_PACKAGES'>,
@@ -765,6 +781,10 @@ export function parseContentMutationRequest(value: unknown): ContentMutationRequ
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
+    const request = parseV2ContentCopyGenerationPreviewRequest(value);
+    return { ...request, view: value.view };
+  }
   if (value.view === 'PROVIDER_ACTION_PREVIEW' && exactKeys(value, ['intent', 'view'])) {
     return { intent: parseV2ProviderActionIntent(value.intent), view: value.view };
   }
@@ -819,6 +839,9 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.action === 'EXECUTE_CONTENT_COPY_GENERATION') {
+    return parseV2ContentCopyGenerationExecutionRequest(value);
+  }
   if (value.action === 'CONFIRM_PROVIDER_ACTION') {
     return parseV2ProviderActionConfirmation(value);
   }
@@ -1272,6 +1295,7 @@ export class V2ApplicationFacade {
     }
     if (
       request.view === 'METRICS_REVIEW' ||
+      request.view === 'CONTENT_COPY_GENERATION_PREVIEW' ||
       request.view === 'PROVIDER_ACTION_PREVIEW' ||
       request.view === 'PROVIDER_SETTINGS' ||
       request.view === 'PROVIDER_CAPABILITY_PROBE_PREVIEW' ||
@@ -1297,6 +1321,7 @@ export class V2ApplicationFacade {
     if (
       request.action === 'SAVE_METRIC_SNAPSHOTS' ||
       request.action === 'DECIDE_STRATEGY_RECOMMENDATION' ||
+      request.action === 'EXECUTE_CONTENT_COPY_GENERATION' ||
       request.action === 'CONFIRM_PROVIDER_ACTION' ||
       request.action === 'UPDATE_PROVIDER_SETTINGS' ||
       request.action === 'SET_PROVIDER_CREDENTIAL' ||

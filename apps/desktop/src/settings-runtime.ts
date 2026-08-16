@@ -205,6 +205,7 @@ import type {
   V2ProviderActionExecutionRequest,
   V2ProviderActionExecutionResult,
   V2ProviderActionReadiness,
+  V2ContentCopyGenerationReadiness,
   V2ProviderSettingsDraft,
   V2ProviderSettingsView,
 } from '@mystery-operations/v2';
@@ -467,6 +468,28 @@ export class DesktopSettingsRuntime {
       };
     }
     return this.#active.v2Provider.inspect(request);
+  }
+
+  public async inspectV2ContentCopy(request: {
+    readonly input: Readonly<Record<string, unknown>>;
+    readonly requestCount: 1 | 2 | 3;
+    readonly userApprovedUnknownCost: boolean;
+  }): Promise<V2ContentCopyGenerationReadiness> {
+    if (this.#active === null) {
+      return {
+        blockReasons: ['本地设置项目尚未就绪。'],
+        budgetState: 'UNKNOWN',
+        canConfirm: false,
+        capabilityEvidenceId: null,
+        credentialBinding: null,
+        credentialState: 'NOT_CONFIGURED',
+        feeEstimateMicroUsd: null,
+        modelId: null,
+        protocolMode: null,
+        unknownCostApproved: request.userApprovedUnknownCost,
+      };
+    }
+    return this.#active.v2Provider.inspectContentCopy(request);
   }
 
   public async getV2ProviderSettings(): Promise<V2ProviderSettingsView> {

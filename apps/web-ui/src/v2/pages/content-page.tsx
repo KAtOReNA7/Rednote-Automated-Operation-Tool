@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 import { Button, Icon, PageHeader, StatusPill, useV2Controller } from '../components.js';
+import { ContentCopyGenerationControl } from '../content-copy-generation-control.js';
 import { type V2Session, withPersistedContentPackages } from '../mock-provider.js';
 import { ProviderActionControl } from '../provider-action-control.js';
 
@@ -165,9 +166,10 @@ export function ContentPage(): React.JSX.Element {
 
   const generationCandidates = session.plan.filter(({ status }) => status !== '已跳过');
   const selectedPackages = session.content.filter(({ id }) => selectedIds.includes(id));
-  const copyTargets =
-    selectedPackages.length === 0 && active !== undefined ? [active] : selectedPackages;
-  const copyTargetCountAllowed = copyTargets.length === 1 || copyTargets.length === 3;
+  const selectedPlanItemIds =
+    session.content.length === 0
+      ? selectedIds
+      : selectedPackages.map(({ candidateId }) => candidateId);
   const selectable = session.content.length === 0 ? generationCandidates : session.content;
   const allSelected = selectable.length > 0 && selectedIds.length === selectable.length;
 
@@ -175,55 +177,39 @@ export function ContentPage(): React.JSX.Element {
     <div className="v2-page">
       <PageHeader
         actions={
-          session.content.length === 0 ? (
-            <ProviderActionControl
-              disabled={busy || session.planStatus !== 'CONFIRMED' || selectedIds.length !== 3}
-              disabledReason={
-                session.planStatus !== 'CONFIRMED'
-                  ? '请先锁定周计划，再查看调用 readiness。'
-                  : selectedIds.length !== 3
-                    ? '请选择恰好 3 个候选。'
-                    : undefined
-              }
-              intent={{
-                candidateIds: selectedIds,
-                expectedPlanRevision: session.planRevision,
-                idempotencyKey: stableKey('content', [
-                  session.weekKey,
-                  ...selectedIds.slice().sort(),
-                ]),
-                kind: 'CONTENT_PACKAGES',
-                weekKey: session.weekKey,
-              }}
-              label={`预览生成内容包 (${selectedIds.length}/3)`}
-              onSuccess={async () => {
-                const result = await window.rednoteV2?.readContentPackages({
+          <>
+            <ContentCopyGenerationControl
+              onComplete={async () => {
+                const refreshed = await window.rednoteV2?.readContentPackages({
                   weekKey: session.weekKey,
                 });
-                if (result?.ok === true) applyWorkspace(result.value);
+                if (refreshed?.ok === true) applyWorkspace(refreshed.value);
               }}
+              selectedPlanItemIds={selectedPlanItemIds}
+              weekKey={session.weekKey}
             />
-          ) : (
-            <>
-              {exportId === '' ? null : (
-                <Button disabled={busy} icon="export" onClick={openExport}>
-                  打开导出目录
+            {session.content.length === 0 ? null : (
+              <>
+                {exportId === '' ? null : (
+                  <Button disabled={busy} icon="export" onClick={openExport}>
+                    打开导出目录
+                  </Button>
+                )}
+                <Button disabled={busy} icon="export" onClick={exportSelected}>
+                  导出所选 {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
                 </Button>
-              )}
-              <Button disabled={busy} icon="export" onClick={exportSelected}>
-                导出所选 {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
-              </Button>
-              <Button
-                disabled={busy}
-                icon="check"
-                onClick={() => approve(selectedIds)}
-                tone="primary"
-              >
-                {window.rednoteV2 === undefined ? '批量通过' : '批量批准'}{' '}
-                {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
-              </Button>
-            </>
-          )
+                <Button
+                  disabled={busy}
+                  icon="check"
+                  onClick={() => approve(selectedIds)}
+                  tone="primary"
+                >
+                  {window.rednoteV2 === undefined ? '批量通过' : '批量批准'}{' '}
+                  {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
+                </Button>
+              </>
+            )}
+          </>
         }
         description="封面、标题、正文、标签、建议日期时间和素材说明在一个工作区完成编辑、批准与本地导出。"
         eyebrow="六字段内容包 · 完全本地"
@@ -329,28 +315,6 @@ export function ContentPage(): React.JSX.Element {
                 每个动作先显示真实模型、能力、费用和 Search / Fetch 关闭状态；旧版本不会被覆盖。
               </p>
               <div className="v2-inline-actions">
-                <ProviderActionControl
-                  disabled={!copyTargetCountAllowed}
-                  disabledReason={
-                    copyTargetCountAllowed ? undefined : '请选择 1 个或 3 个内容包生成文案新版本。'
-                  }
-                  intent={{
-                    items: copyTargets.map((item) => ({
-                      expectedRevision: item.revision,
-                      expectedVersionId: item.versionId,
-                      packageId: item.id,
-                    })),
-                    kind: 'CONTENT_COPY_VERSION',
-                    weekKey: active.weekKey,
-                  }}
-                  label={`模型生成文案新版本 (${copyTargets.length})`}
-                  onSuccess={async () => {
-                    const result = await window.rednoteV2?.readContentPackages({
-                      weekKey: active.weekKey,
-                    });
-                    if (result?.ok === true) applyWorkspace(result.value);
-                  }}
-                />
                 <ProviderActionControl
                   intent={{
                     expectedRevision: active.revision,

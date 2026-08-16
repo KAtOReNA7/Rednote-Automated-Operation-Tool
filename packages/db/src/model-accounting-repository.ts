@@ -542,6 +542,7 @@ export class SqliteModelAccountingRepository {
     readonly now: string;
     readonly outcomeCertainty: ModelRunRecord['outcomeCertainty'];
     readonly priceSchedule: ModelPriceScheduleRecord | null;
+    readonly stableErrorCode?: string | null;
     readonly status: 'AMBIGUOUS' | 'CANCELLED' | 'FAILED' | 'SUCCEEDED';
     readonly usage: UsageColumnsInput;
   }): ModelRunRecord {
@@ -591,7 +592,7 @@ export class SqliteModelAccountingRepository {
       }
       this.#database
         .prepare(
-          `UPDATE model_runs SET cache_entry_id=?,output_hash=?,status=?,
+          `UPDATE model_runs SET cache_entry_id=?,output_hash=?,status=?,stable_error_code=?,
              outcome_certainty=?,external_request_count=1,usage_input_tokens=?,
              usage_output_tokens=?,usage_total_tokens=?,usage_cached_input_tokens=?,
              usage_cache_write_tokens=?,usage_reasoning_tokens=?,usage_images=?,
@@ -604,6 +605,7 @@ export class SqliteModelAccountingRepository {
           cacheId,
           input.cache?.outputHash ?? null,
           input.status,
+          input.stableErrorCode ?? null,
           input.outcomeCertainty,
           input.usage.inputTokens,
           input.usage.outputTokens,

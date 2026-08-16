@@ -696,6 +696,7 @@ describe('V2 Electron boundary', () => {
       'createInteraction',
       'decideStrategyRecommendation',
       'deleteInteraction',
+      'executeContentCopyGeneration',
       'exportContentPackages',
       'generateContentPackages',
       'generateReplySuggestion',
@@ -703,6 +704,7 @@ describe('V2 Electron boundary', () => {
       'lockWeeklyPlan',
       'markInteractionManualSent',
       'openContentExport',
+      'previewContentCopyGeneration',
       'previewInteractionDelete',
       'previewPlanReschedule',
       'previewProviderAction',
@@ -757,6 +759,12 @@ describe('V2 Electron boundary', () => {
       confirmation: 'RUN_PROVIDER_ACTION',
       previewToken: 'r07-preview-token',
     });
+    await exposed.previewContentCopyGeneration?.({
+      selectedPlanItemIds: ['mon-1'],
+      userApprovedUnknownCost: true,
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    });
+    await exposed.executeContentCopyGeneration?.({ previewToken: 'r07-copy-preview-token' });
     await exposed.updatePersona({ expectedRevision: 0, persona: DEFAULT_ACCOUNT_PERSONA });
     await exposed.generateWeeklyPlan({ expectedRevision: 0, weekKey: V2_DEFAULT_WEEK_KEY });
     await exposed.confirmPlanCandidates({

@@ -252,6 +252,7 @@ async function startV2Application(
     providerExecution: {
       execute: (request) => settingsRuntime.executeV2ProviderAction(request),
       inspect: (request) => settingsRuntime.inspectV2ProviderAction(request),
+      inspectContentCopy: (request) => settingsRuntime.inspectV2ContentCopy(request),
     },
     settingsControl: {
       clearCredential: () => settingsRuntime.clearV2ProviderCredential(),

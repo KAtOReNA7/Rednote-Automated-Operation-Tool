@@ -209,7 +209,8 @@ describe('Issue 014 SQLite v7 accounting and cache state', () => {
       now: '2026-07-28T00:00:01.000Z',
       outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
       priceSchedule: null,
-      status: 'SUCCEEDED',
+      stableErrorCode: 'PROVIDER_INVALID_JSON:CONTENT_JSON',
+      status: 'FAILED',
       usage: {
         cacheWriteTokens: null,
         cachedInputTokens: null,
@@ -230,6 +231,10 @@ describe('Issue 014 SQLite v7 accounting and cache state', () => {
     expect(ledger).toEqual({
       amount_microusd: null,
       cost_state: 'UNPRICED_USAGE',
+    });
+    expect(repository.getRunByExecutionId('execution-ledger')).toMatchObject({
+      stableErrorCode: 'PROVIDER_INVALID_JSON:CONTENT_JSON',
+      status: 'FAILED',
     });
     expect(() => database.prepare(`UPDATE cost_ledger SET amount_microusd=0`).run()).toThrow();
     expect(() => database.prepare(`DELETE FROM cost_ledger`).run()).toThrow();

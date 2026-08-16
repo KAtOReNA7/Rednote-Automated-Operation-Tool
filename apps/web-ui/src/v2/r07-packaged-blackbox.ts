@@ -85,7 +85,7 @@ async function createContent(
     await bridge.readContentPackages({ weekKey: WEEK_KEY }),
     'content read',
   );
-  let preview: V2ProviderActionPreviewContract | null = null;
+  let preview: V2ContentCopyGenerationPreviewContract | null = null;
   if (content.packages.length === 0) {
     if (plan.status !== 'CONFIRMED') {
       plan = await requireResult(
@@ -105,11 +105,8 @@ async function createContent(
     const candidateIds = plan.candidates.slice(0, 3).map(({ id }) => id);
     observe('content-preview');
     preview = await requireResult(
-      await bridge.previewProviderAction?.({
-        candidateIds,
-        expectedPlanRevision: plan.revision,
-        idempotencyKey: 'r07-packaged-content',
-        kind: 'CONTENT_PACKAGES',
+      await bridge.previewContentCopyGeneration?.({
+        selectedPlanItemIds: candidateIds,
         userApprovedUnknownCost: true,
         weekKey: WEEK_KEY,
       }),
@@ -121,21 +118,43 @@ async function createContent(
       preview.requestCount !== 3 ||
       preview.protocolMode !== 'CHAT_COMPLETIONS'
     )
-      throw new Error('content preview not confirmable');
+      throw new Error(
+        `content preview not confirmable:${JSON.stringify({
+          blockReasons: preview.blockReasons,
+          budgetState: preview.budgetState,
+          capabilityEvidence: preview.capabilityEvidenceId !== null,
+          credentialBinding: preview.credentialBinding !== null,
+          credentialState: preview.credentialState,
+          modelConfigured: preview.modelId !== null,
+          protocolMode: preview.protocolMode,
+          requestCount: preview.requestCount,
+        })}`,
+      );
     observe('content-confirm');
-    await requireResult(
-      await bridge.confirmProviderAction?.({
-        confirmation: 'RUN_PROVIDER_ACTION',
-        previewToken: preview.previewToken,
-      }),
+    const generated = await requireResult(
+      await bridge.executeContentCopyGeneration?.({ previewToken: preview.previewToken }),
       'content confirm',
     );
+    if (
+      generated.externalRequestCount !== 3 ||
+      generated.items.length !== 3 ||
+      generated.items.some(({ status }) => status !== 'SUCCEEDED')
+    )
+      throw new Error('content generation result mismatch');
     content = await requireResult(
       await bridge.readContentPackages({ weekKey: WEEK_KEY }),
       'content reread',
     );
   }
-  if (content.packages.length !== 3 || content.packages.some(({ status }) => status !== 'DRAFT'))
+  if (
+    content.packages.length !== 3 ||
+    content.packages.some(
+      ({ provenance, status }) =>
+        status !== 'DRAFT' ||
+        provenance?.copyModelRunId == null ||
+        provenance.coverSource === 'GENERATED_IMAGE',
+    )
+  )
     throw new Error('content persistence mismatch');
   return { content, plan, preview };
 }
@@ -259,7 +278,15 @@ export async function runR07PackagedBlackbox(
       await bridge.readInteractions(),
       'interaction recovery',
     );
-    if (content.packages.length !== 3 || content.packages.some(({ status }) => status !== 'DRAFT'))
+    if (
+      content.packages.length !== 3 ||
+      content.packages.some(
+        ({ provenance, status }) =>
+          status !== 'DRAFT' ||
+          provenance?.copyModelRunId == null ||
+          provenance.coverSource === 'GENERATED_IMAGE',
+      )
+    )
       throw new Error('content restart persistence mismatch');
     return {
       attempt,

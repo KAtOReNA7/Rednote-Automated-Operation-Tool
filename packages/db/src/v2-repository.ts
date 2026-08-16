@@ -506,7 +506,11 @@ export class SqliteV2Repository
   }
 
   public create(records: readonly NewContentVersionRecord[]): readonly ContentVersionRecord[] {
-    if (records.length !== 3 || new Set(records.map(({ packageId }) => packageId)).size !== 3) {
+    if (
+      records.length < 1 ||
+      records.length > 3 ||
+      new Set(records.map(({ packageId }) => packageId)).size !== records.length
+    ) {
       throw new V2ContentError('INVALID_REQUEST', ['packages']);
     }
     return runInTransaction(this.#database, () => {

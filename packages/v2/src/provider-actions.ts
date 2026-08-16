@@ -118,6 +118,7 @@ export interface V2ProviderActionExecutionRequest {
   readonly input: Readonly<Record<string, unknown>>;
   readonly kind: V2ProviderActionKind;
   readonly modelSlot: V2ProviderModelSlot;
+  readonly requiredProtocolMode?: 'CHAT_COMPLETIONS';
   readonly userApprovedUnknownCost?: boolean;
 }
 
@@ -133,6 +134,13 @@ export interface V2ProviderActionExecutionResult {
   readonly outcomeCertainty:
     'COMPLETED_INVALID_OUTPUT' | 'MAY_HAVE_EXECUTED' | 'NOT_SENT' | 'REJECTED_BEFORE_EXECUTION';
   readonly output: unknown;
+  readonly providerRequestId?: string | null;
+  readonly safeDiagnostic?: Readonly<{
+    readonly actualRootType: string | null;
+    readonly expectedType: string | null;
+    readonly issuePath: readonly (number | string)[];
+    readonly rootKeys: readonly string[];
+  }>;
   readonly stableErrorCode: string | null;
   readonly status: 'BLOCKED' | 'CANCELLED' | 'OUTCOME_UNCERTAIN' | 'SUCCEEDED';
   readonly modelRunId?: string | null;
@@ -144,6 +152,57 @@ export interface V2ProviderActionResult {
   readonly externalRequestCount: 0 | 1 | 2 | 3;
   readonly kind: V2ProviderActionKind;
   readonly status: 'SUCCEEDED';
+}
+
+export interface V2ContentCopyGenerationReadiness {
+  readonly blockReasons: readonly string[];
+  readonly budgetState: V2BudgetState;
+  readonly canConfirm: boolean;
+  readonly capabilityEvidenceId: string | null;
+  readonly credentialBinding: string | null;
+  readonly credentialState: V2CredentialState;
+  readonly feeEstimateMicroUsd: string | null;
+  readonly modelId: string | null;
+  readonly protocolMode: 'CHAT_COMPLETIONS' | null;
+  readonly unknownCostApproved: boolean;
+}
+
+export interface V2ContentCopyGenerationPreview extends V2ContentCopyGenerationReadiness {
+  readonly expiresAt: string;
+  readonly fetchEnabled: false;
+  readonly itemBlockReasons: Readonly<Record<string, string>>;
+  readonly previewToken: string | null;
+  readonly requestCount: 1 | 2 | 3;
+  readonly searchEnabled: false;
+  readonly selectedPlanItemIds: readonly string[];
+  readonly weekKey: string;
+}
+
+export interface V2ContentCopyGenerationItemResult {
+  readonly message: string;
+  readonly packageId: string | null;
+  readonly planItemId: string;
+  readonly providerRequestId: string | null;
+  readonly safeDiagnostic: V2ProviderActionExecutionResult['safeDiagnostic'] | null;
+  readonly status: 'FAILED' | 'SUCCEEDED';
+  readonly technicalCode: string | null;
+}
+
+export interface V2ContentCopyGenerationResult {
+  readonly externalRequestCount: 0 | 1 | 2 | 3;
+  readonly items: readonly V2ContentCopyGenerationItemResult[];
+  readonly weekKey: string;
+}
+
+export interface V2ContentCopyGenerationPreviewRequest {
+  readonly selectedPlanItemIds: readonly string[];
+  readonly userApprovedUnknownCost: boolean;
+  readonly weekKey: string;
+}
+
+export interface V2ContentCopyGenerationExecutionRequest {
+  readonly action: 'EXECUTE_CONTENT_COPY_GENERATION';
+  readonly previewToken: string;
 }
 
 export type V2ProviderActionErrorCode =
@@ -339,6 +398,49 @@ export function parseV2ProviderActionConfirmation(value: unknown): V2ProviderAct
     confirmation: value.confirmation,
     previewToken: token(value.previewToken, 'previewToken', V2_PROVIDER_ACTION_LIMITS.tokenLength),
   };
+}
+
+export function parseV2ContentCopyGenerationPreviewRequest(
+  value: unknown,
+): V2ContentCopyGenerationPreviewRequest {
+  if (
+    !record(value) ||
+    !exactKeys(value, ['selectedPlanItemIds', 'userApprovedUnknownCost', 'view', 'weekKey']) ||
+    value.view !== 'CONTENT_COPY_GENERATION_PREVIEW' ||
+    typeof value.userApprovedUnknownCost !== 'boolean' ||
+    !Array.isArray(value.selectedPlanItemIds) ||
+    value.selectedPlanItemIds.length < 1 ||
+    value.selectedPlanItemIds.length > 3
+  ) {
+    throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED', ['selectedPlanItemIds']);
+  }
+  const selectedPlanItemIds = value.selectedPlanItemIds.map((id) =>
+    token(id, 'selectedPlanItemIds', 64),
+  );
+  if (new Set(selectedPlanItemIds).size !== selectedPlanItemIds.length) {
+    throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED', ['selectedPlanItemIds']);
+  }
+  return Object.freeze({
+    selectedPlanItemIds: Object.freeze([...selectedPlanItemIds].sort()),
+    userApprovedUnknownCost: value.userApprovedUnknownCost,
+    weekKey: weekKey(value.weekKey),
+  });
+}
+
+export function parseV2ContentCopyGenerationExecutionRequest(
+  value: unknown,
+): V2ContentCopyGenerationExecutionRequest {
+  if (
+    !record(value) ||
+    !exactKeys(value, ['action', 'previewToken']) ||
+    value.action !== 'EXECUTE_CONTENT_COPY_GENERATION'
+  ) {
+    throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+  }
+  return Object.freeze({
+    action: value.action,
+    previewToken: token(value.previewToken, 'previewToken', V2_PROVIDER_ACTION_LIMITS.tokenLength),
+  });
 }
 
 export const V2_PROVIDER_OUTPUT_JSON_SCHEMAS = Object.freeze({

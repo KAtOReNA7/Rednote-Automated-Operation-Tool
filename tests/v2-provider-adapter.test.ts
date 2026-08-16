@@ -37,6 +37,8 @@ class ScriptedProviderExecution {
   approvalRequired = false;
   configFingerprint = 'fixture-config';
   credentialBinding = 'fixture-credential';
+  contentCapabilityEvidenceId = 'fixture-chat-evidence';
+  contentModelId = 'writing-test';
   protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' = 'RESPONSES';
 
   public async inspect(request: Omit<V2ProviderActionExecutionRequest, 'executionId'>) {
@@ -65,6 +67,25 @@ class ScriptedProviderExecution {
     };
   }
 
+  public async inspectContentCopy(request: {
+    readonly requestCount: 1 | 2 | 3;
+    readonly userApprovedUnknownCost: boolean;
+  }) {
+    return {
+      blockReasons:
+        this.approvalRequired && !request.userApprovedUnknownCost ? ['approval required'] : [],
+      budgetState: 'ALLOWED' as const,
+      canConfirm: !this.approvalRequired || request.userApprovedUnknownCost,
+      capabilityEvidenceId: this.contentCapabilityEvidenceId,
+      credentialBinding: this.credentialBinding,
+      credentialState: 'CONFIGURED' as const,
+      feeEstimateMicroUsd: this.approvalRequired ? null : '1000',
+      modelId: this.contentModelId,
+      protocolMode: 'CHAT_COMPLETIONS' as const,
+      unknownCostApproved: request.userApprovedUnknownCost,
+    };
+  }
+
   public async execute(
     request: V2ProviderActionExecutionRequest,
   ): Promise<V2ProviderActionExecutionResult> {
@@ -83,7 +104,8 @@ class ScriptedProviderExecution {
               title: `受控计划 ${index + 1}`,
             })),
           }
-        : request.kind === 'CONTENT_PACKAGES'
+        : request.kind === 'CONTENT_PACKAGES' ||
+            (request.kind === 'CONTENT_COPY_VERSION' && 'candidate' in request.input)
           ? {
               packages: [request.input.candidate].map((candidate) => {
                 const id =
@@ -109,6 +131,7 @@ class ScriptedProviderExecution {
       output,
       stableErrorCode: null,
       status: 'SUCCEEDED',
+      modelRunId: null,
     };
   }
 }
@@ -338,6 +361,127 @@ describe('V2 R07 controlled provider adapter', () => {
       );
       expect(provider.calls).toHaveLength(3);
       expect(provider.calls.every(({ kind }) => kind === 'CONTENT_PACKAGES')).toBe(true);
+    } finally {
+      runtime.close();
+    }
+  });
+
+  it('uses the dedicated content-copy evaluator and appends versions for confirmed plan items', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r07-dedicated-copy-'));
+    temporaryRoots.push(root);
+    const provider = new ScriptedProviderExecution();
+    provider.approvalRequired = true;
+    const runtime = await V2DesktopRuntime.open(root, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      providerExecution: provider,
+    });
+    const caller = { senderId: 21, windowId: 34 };
+    try {
+      const initial = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W31',
+      })) as WeeklyPlan;
+      const confirmed = (await runtime.mutate({
+        action: 'CONFIRM_PLAN_CANDIDATES',
+        candidateIds: initial.candidates.map(({ id }) => id),
+        expectedRevision: initial.revision,
+        weekKey: initial.weekKey,
+      })) as WeeklyPlan;
+      const locked = (await runtime.mutate({
+        action: 'LOCK_WEEKLY_PLAN',
+        expectedRevision: confirmed.revision,
+        weekKey: confirmed.weekKey,
+      })) as WeeklyPlan;
+      const selectedPlanItemIds = locked.candidates.slice(0, 3).map(({ id }) => id);
+      const blocked = await runtime.read(
+        {
+          selectedPlanItemIds,
+          userApprovedUnknownCost: false,
+          view: 'CONTENT_COPY_GENERATION_PREVIEW',
+          weekKey: locked.weekKey,
+        },
+        caller,
+      );
+      expect(blocked).toMatchObject({
+        canConfirm: false,
+        previewToken: null,
+        protocolMode: 'CHAT_COMPLETIONS',
+        requestCount: 3,
+      });
+      const preview = await runtime.read(
+        {
+          selectedPlanItemIds: [...selectedPlanItemIds].reverse(),
+          userApprovedUnknownCost: true,
+          view: 'CONTENT_COPY_GENERATION_PREVIEW',
+          weekKey: locked.weekKey,
+        },
+        caller,
+      );
+      expect(preview).toMatchObject({
+        canConfirm: true,
+        fetchEnabled: false,
+        protocolMode: 'CHAT_COMPLETIONS',
+        requestCount: 3,
+        searchEnabled: false,
+        selectedPlanItemIds: [...selectedPlanItemIds].sort(),
+      });
+      const generated = await runtime.mutate(
+        {
+          action: 'EXECUTE_CONTENT_COPY_GENERATION',
+          previewToken: (preview as { previewToken: string }).previewToken,
+        },
+        caller,
+      );
+      expect(generated).toMatchObject({
+        externalRequestCount: 3,
+        items: selectedPlanItemIds.map((planItemId) => ({
+          planItemId,
+          status: 'SUCCEEDED',
+        })),
+      });
+      const firstWorkspace = (await runtime.read({
+        view: 'CONTENT_PACKAGES',
+        weekKey: locked.weekKey,
+      })) as {
+        packages: readonly {
+          candidateId: string;
+          provenance?: { copyModelRunId: string | null };
+          version: number;
+        }[];
+      };
+      expect(firstWorkspace.packages).toHaveLength(3);
+      expect(firstWorkspace.packages.every(({ version }) => version === 1)).toBe(true);
+
+      const appendPreview = await runtime.read(
+        {
+          selectedPlanItemIds: [selectedPlanItemIds[0]],
+          userApprovedUnknownCost: true,
+          view: 'CONTENT_COPY_GENERATION_PREVIEW',
+          weekKey: locked.weekKey,
+        },
+        caller,
+      );
+      await runtime.mutate(
+        {
+          action: 'EXECUTE_CONTENT_COPY_GENERATION',
+          previewToken: (appendPreview as { previewToken: string }).previewToken,
+        },
+        caller,
+      );
+      const appended = (await runtime.read({
+        view: 'CONTENT_PACKAGES',
+        weekKey: locked.weekKey,
+      })) as { packages: readonly { candidateId: string; version: number }[] };
+      expect(
+        appended.packages.find(({ candidateId }) => candidateId === selectedPlanItemIds[0]),
+      ).toMatchObject({ version: 2 });
+      expect(
+        provider.calls.every(
+          ({ requiredProtocolMode }) => requiredProtocolMode === 'CHAT_COMPLETIONS',
+        ),
+      ).toBe(true);
+      expect(provider.calls.every(({ kind }) => kind === 'CONTENT_COPY_VERSION')).toBe(true);
     } finally {
       runtime.close();
     }

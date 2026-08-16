@@ -35,6 +35,9 @@ import {
   type V2CapabilityProbeProgress,
   type V2ProviderSettingsDraft,
   type V2ProviderSettingsView,
+  type V2ContentCopyGenerationPreview,
+  type V2ContentCopyGenerationReadiness,
+  type V2ContentCopyGenerationResult,
   type V2Result,
   weekDateRange,
   type WeeklyPlan,
@@ -56,6 +59,11 @@ export interface V2ProviderExecutionPort {
   inspect(
     request: Omit<V2ProviderActionExecutionRequest, 'executionId'>,
   ): Promise<V2ProviderActionReadiness>;
+  inspectContentCopy?(request: {
+    readonly input: Readonly<Record<string, unknown>>;
+    readonly requestCount: 1 | 2 | 3;
+    readonly userApprovedUnknownCost: boolean;
+  }): Promise<V2ContentCopyGenerationReadiness>;
 }
 
 export interface V2SettingsControlPort {
@@ -84,6 +92,17 @@ interface ProviderPreviewLease {
   readonly intent: V2ProviderActionIntent;
   readonly inputHash: string;
   readonly readiness: V2ProviderActionReadiness;
+}
+
+interface ContentCopyPreviewLease {
+  readonly caller: V2ActionCaller;
+  readonly capabilityEvidenceId: string;
+  readonly credentialBinding: string;
+  readonly expiresAtMs: number;
+  readonly modelId: string;
+  readonly planRevision: number;
+  readonly selectedPlanItemIds: readonly string[];
+  readonly weekKey: string;
 }
 
 function providerInputHash(input: Readonly<Record<string, unknown>>): string {
@@ -194,6 +213,7 @@ export class V2DesktopRuntime {
   readonly #providerExecution: V2ProviderExecutionPort;
   readonly #settingsControl: V2SettingsControlPort;
   readonly #providerPreviews = new Map<string, ProviderPreviewLease>();
+  readonly #contentCopyPreviews = new Map<string, ContentCopyPreviewLease>();
   readonly #usedProviderPreviews = new Set<string>();
   #closed = false;
 
@@ -259,6 +279,10 @@ export class V2DesktopRuntime {
   public async read(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2ReadRequest(input);
+    if (request.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
+      if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+      return this.#previewContentCopyGeneration(request, caller);
+    }
     if (request.view === 'PROVIDER_ACTION_PREVIEW') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#previewProviderAction(request.intent, caller);
@@ -286,6 +310,10 @@ export class V2DesktopRuntime {
   public async mutate(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2MutationRequest(input);
+    if (request.action === 'EXECUTE_CONTENT_COPY_GENERATION') {
+      if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+      return this.#executeContentCopyGeneration(request.previewToken, caller);
+    }
     if (request.action === 'CONFIRM_PROVIDER_ACTION') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#confirmProviderAction(request.previewToken, caller);
@@ -375,6 +403,7 @@ export class V2DesktopRuntime {
     if (this.#closed) return;
     this.#database.close();
     this.#providerPreviews.clear();
+    this.#contentCopyPreviews.clear();
     this.#usedProviderPreviews.clear();
     this.#closed = true;
   }
@@ -399,6 +428,225 @@ export class V2DesktopRuntime {
         return decision === undefined ? item : { ...item, status: decision.status };
       }),
     } as MetricsReview;
+  }
+
+  async #evaluateContentCopyGeneration(input: {
+    readonly selectedPlanItemIds: readonly string[];
+    readonly userApprovedUnknownCost: boolean;
+    readonly weekKey: string;
+  }) {
+    const plan = this.#facade.read({ view: 'WEEKLY_PLAN', weekKey: input.weekKey }) as WeeklyPlan;
+    const selectedPlanItemIds = Object.freeze([...input.selectedPlanItemIds].sort());
+    const itemBlockReasons: Record<string, string> = {};
+    const candidates = selectedPlanItemIds.flatMap((id) => {
+      const candidate = plan.candidates.find((item) => item.id === id);
+      if (candidate === undefined) {
+        itemBlockReasons[id] = '计划项已删除或不属于当前锁定周计划。';
+        return [];
+      }
+      if (candidate.status === 'SKIPPED') {
+        itemBlockReasons[id] = '计划项已跳过，不能生成文案。';
+        return [];
+      }
+      return [candidate];
+    });
+    const businessReasons = [
+      ...(this.#database.isOpen ? [] : ['本地项目数据不可读写。']),
+      ...(plan.status === 'CONFIRMED' ? [] : ['请先锁定当前周计划。']),
+      ...(selectedPlanItemIds.length >= 1 && selectedPlanItemIds.length <= 3
+        ? []
+        : ['请选择 1 至 3 个计划项。']),
+      ...Object.values(itemBlockReasons),
+    ];
+    const persona = this.#facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona;
+    const providerInput = Object.freeze({
+      candidates: Object.freeze(candidates),
+      persona,
+      weekKey: input.weekKey,
+    });
+    const readiness =
+      this.#providerExecution.inspectContentCopy === undefined
+        ? Object.freeze({
+            blockReasons: Object.freeze(['专用内容文案 Provider runtime 不可用。']),
+            budgetState: 'UNKNOWN' as const,
+            canConfirm: false,
+            capabilityEvidenceId: null,
+            credentialBinding: null,
+            credentialState: 'NOT_CONFIGURED' as const,
+            feeEstimateMicroUsd: null,
+            modelId: null,
+            protocolMode: null,
+            unknownCostApproved: input.userApprovedUnknownCost,
+          })
+        : await this.#providerExecution.inspectContentCopy({
+            input: providerInput,
+            requestCount: selectedPlanItemIds.length as 1 | 2 | 3,
+            userApprovedUnknownCost: input.userApprovedUnknownCost,
+          });
+    return Object.freeze({
+      candidates: Object.freeze(candidates),
+      itemBlockReasons: Object.freeze(itemBlockReasons),
+      persona,
+      plan,
+      providerInput,
+      readiness: Object.freeze({
+        ...readiness,
+        blockReasons: Object.freeze([...businessReasons, ...readiness.blockReasons]),
+        canConfirm: businessReasons.length === 0 && readiness.canConfirm,
+      }),
+      selectedPlanItemIds,
+    });
+  }
+
+  async #previewContentCopyGeneration(
+    request: {
+      readonly selectedPlanItemIds: readonly string[];
+      readonly userApprovedUnknownCost: boolean;
+      readonly weekKey: string;
+    },
+    caller: V2ActionCaller,
+  ): Promise<V2ContentCopyGenerationPreview> {
+    this.#removeExpiredProviderPreviews();
+    const evaluated = await this.#evaluateContentCopyGeneration(request);
+    const expiresAtMs = Date.now() + V2_PROVIDER_ACTION_LIMITS.tokenTtlMs;
+    const { readiness } = evaluated;
+    const canIssueToken =
+      readiness.canConfirm &&
+      readiness.modelId !== null &&
+      readiness.credentialBinding !== null &&
+      readiness.capabilityEvidenceId !== null;
+    const previewToken = canIssueToken ? randomBytes(32).toString('base64url') : null;
+    if (
+      previewToken !== null &&
+      readiness.modelId !== null &&
+      readiness.credentialBinding !== null &&
+      readiness.capabilityEvidenceId !== null
+    ) {
+      this.#contentCopyPreviews.set(previewToken, {
+        caller,
+        capabilityEvidenceId: readiness.capabilityEvidenceId,
+        credentialBinding: readiness.credentialBinding,
+        expiresAtMs,
+        modelId: readiness.modelId,
+        planRevision: evaluated.plan.revision,
+        selectedPlanItemIds: evaluated.selectedPlanItemIds,
+        weekKey: request.weekKey,
+      });
+    }
+    return Object.freeze({
+      ...readiness,
+      expiresAt: new Date(expiresAtMs).toISOString(),
+      fetchEnabled: false,
+      itemBlockReasons: evaluated.itemBlockReasons,
+      previewToken,
+      requestCount: evaluated.selectedPlanItemIds.length as 1 | 2 | 3,
+      searchEnabled: false,
+      selectedPlanItemIds: evaluated.selectedPlanItemIds,
+      weekKey: request.weekKey,
+    });
+  }
+
+  async #executeContentCopyGeneration(
+    previewToken: string,
+    caller: V2ActionCaller,
+  ): Promise<V2ContentCopyGenerationResult> {
+    const lease = this.#contentCopyPreviews.get(previewToken);
+    if (lease === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+    this.#contentCopyPreviews.delete(previewToken);
+    if (lease.expiresAtMs < Date.now()) throw new V2ProviderActionError('PROVIDER_ACTION_EXPIRED');
+    if (lease.caller.senderId !== caller.senderId || lease.caller.windowId !== caller.windowId) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
+    }
+    const evaluated = await this.#evaluateContentCopyGeneration({
+      selectedPlanItemIds: lease.selectedPlanItemIds,
+      userApprovedUnknownCost: true,
+      weekKey: lease.weekKey,
+    });
+    if (evaluated.plan.revision !== lease.planRevision) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_SOURCE_CHANGED', ['weeklyPlan']);
+    }
+    if (evaluated.readiness.modelId !== lease.modelId) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED', ['writingModelId']);
+    }
+    if (evaluated.readiness.credentialBinding !== lease.credentialBinding) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_CREDENTIAL_CHANGED', ['credentialBinding']);
+    }
+    if (evaluated.readiness.capabilityEvidenceId !== lease.capabilityEvidenceId) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_CONFIG_CHANGED', ['writingCapability']);
+    }
+    if (!evaluated.readiness.canConfirm) {
+      throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED', ['contentCopyReadiness']);
+    }
+    const results: V2ContentCopyGenerationResult['items'][number][] = [];
+    let externalRequestCount = 0;
+    for (const candidate of evaluated.candidates) {
+      const executed = await this.#providerExecution.execute({
+        executionId: `v2-r07-${randomUUID()}`,
+        input: Object.freeze({
+          candidate,
+          persona: evaluated.persona,
+          weekKey: lease.weekKey,
+        }),
+        kind: 'CONTENT_COPY_VERSION',
+        modelSlot: 'writing',
+        requiredProtocolMode: 'CHAT_COMPLETIONS',
+        userApprovedUnknownCost: true,
+      });
+      externalRequestCount += executed.externalRequestCount;
+      if (
+        executed.status !== 'SUCCEEDED' ||
+        typeof executed.output !== 'object' ||
+        executed.output === null ||
+        !('packages' in executed.output) ||
+        !Array.isArray(executed.output.packages) ||
+        executed.output.packages.length !== 1
+      ) {
+        const technicalCode = executed.stableErrorCode;
+        results.push({
+          message: contentCopyFailureMessage(executed.status, technicalCode),
+          packageId: null,
+          planItemId: candidate.id,
+          providerRequestId: executed.providerRequestId ?? null,
+          safeDiagnostic: executed.safeDiagnostic ?? null,
+          status: 'FAILED',
+          technicalCode,
+        });
+        continue;
+      }
+      try {
+        const saved = await this.#content.appendOrCreateModelCopy(
+          evaluated.plan,
+          candidate.id,
+          executed.output.packages[0],
+          executed.modelRunId ?? null,
+        );
+        results.push({
+          message: '文案已生成，待补封面。',
+          packageId: saved.id,
+          planItemId: candidate.id,
+          providerRequestId: executed.providerRequestId ?? null,
+          safeDiagnostic: null,
+          status: 'SUCCEEDED',
+          technicalCode: null,
+        });
+      } catch {
+        results.push({
+          message: '文案已返回但本地保存失败，未覆盖历史版本。',
+          packageId: null,
+          planItemId: candidate.id,
+          providerRequestId: executed.providerRequestId ?? null,
+          safeDiagnostic: null,
+          status: 'FAILED',
+          technicalCode: 'CONTENT_VERSION_PERSISTENCE_FAILED',
+        });
+      }
+    }
+    if (externalRequestCount > 3) throw new V2ProviderActionError('PROVIDER_ACTION_UNCERTAIN');
+    return Object.freeze({
+      externalRequestCount: externalRequestCount as 0 | 1 | 2 | 3,
+      items: Object.freeze(results),
+      weekKey: lease.weekKey,
+    });
   }
 
   async #previewProviderAction(
@@ -773,7 +1021,38 @@ export class V2DesktopRuntime {
     for (const [token, lease] of this.#providerPreviews) {
       if (lease.expiresAtMs < now) this.#providerPreviews.delete(token);
     }
+    for (const [token, lease] of this.#contentCopyPreviews) {
+      if (lease.expiresAtMs < now) this.#contentCopyPreviews.delete(token);
+    }
   }
+}
+
+function contentCopyFailureMessage(
+  status: V2ProviderActionExecutionResult['status'],
+  technicalCode: string | null,
+): string {
+  if (status === 'OUTCOME_UNCERTAIN') {
+    return '请求结果不确定，未保存；请核对账本后再决定是否单独重试。';
+  }
+  if (technicalCode?.startsWith('PROVIDER_UPSTREAM_4XX:HTTP_400') === true) {
+    return 'Provider 不接受当前结构化输出参数（HTTP 400），未保存任何内容。';
+  }
+  if (technicalCode?.startsWith('PROVIDER_INVALID_JSON:CONTENT_JSON') === true) {
+    return '模型返回了文本，但文本不是可解析的 JSON，未保存任何内容。';
+  }
+  if (technicalCode?.startsWith('PROVIDER_INVALID_JSON:ENVELOPE_JSON') === true) {
+    return 'Provider 返回的响应不是有效 JSON，未保存任何内容。';
+  }
+  if (technicalCode?.startsWith('PROVIDER_SCHEMA_VALIDATION_FAILED') === true) {
+    return '模型返回的 JSON 缺少或写错了内容字段，未保存任何内容。';
+  }
+  if (technicalCode?.startsWith('PROVIDER_PROTOCOL_ERROR') === true) {
+    return 'Provider 返回了响应，但缺少可读取的文案内容，未保存任何内容。';
+  }
+  if (technicalCode?.startsWith('PROVIDER_INVALID_CONTENT_TYPE') === true) {
+    return 'Provider 返回了不支持的响应格式，未保存任何内容。';
+  }
+  return '文案请求未完成；请展开技术码查看脱敏原因，其他成功项不受影响。';
 }
 
 export function isTrustedV2IpcSender(

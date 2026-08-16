@@ -463,7 +463,7 @@ if (!r07BlackboxOnly) {
       ({ actionKind }) => actionKind !== 'CAPABILITY_PROBE',
     );
     if (
-      production.filter(({ actionKind }) => actionKind === 'CONTENT_PACKAGES').length !== 3 ||
+      production.filter(({ actionKind }) => actionKind === 'CONTENT_COPY_VERSION').length !== 3 ||
       production.filter(({ actionKind }) => actionKind === 'REPLY_SUGGESTION').length !== 2 ||
       fixture.requests.some(({ authorizationPresent }) => !authorizationPresent)
     )

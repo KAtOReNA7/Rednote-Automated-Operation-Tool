@@ -309,6 +309,8 @@ function failedResult(
   certainty: OutcomeCertainty,
   externalRequestCount: 0 | 1,
   usage = emptyUsageObservation(),
+  providerRequestId: string | null = null,
+  safeDiagnostic?: ModelExecutionResultV1['safeDiagnostic'],
 ): ModelExecutionResultV1 {
   return Object.freeze({
     costAmountMicroUsd: null,
@@ -323,6 +325,8 @@ function failedResult(
     localCacheHit: false,
     outcomeCertainty: certainty,
     output: null,
+    providerRequestId,
+    ...(safeDiagnostic === undefined ? {} : { safeDiagnostic }),
     stableErrorCode: code,
     status,
     usage,
@@ -337,6 +341,32 @@ function providerFailureResult(
     return failedResult(request, 'AMBIGUOUS', 'MODEL_EXECUTION_INTERNAL', 'MAY_HAVE_EXECUTED', 1);
   }
   const providerError = error as ProviderError;
+  const diagnosticCode = providerDiagnosticCode(providerError);
+  const providerRequestId =
+    typeof providerError.details.providerRequestId === 'string' &&
+    providerError.details.providerRequestId !== 'UNAVAILABLE'
+      ? providerError.details.providerRequestId
+      : null;
+  const safeDiagnostic = Object.freeze({
+    actualRootType:
+      typeof providerError.details.actualRootType === 'string'
+        ? providerError.details.actualRootType
+        : null,
+    expectedType:
+      typeof providerError.details.expectedType === 'string'
+        ? providerError.details.expectedType
+        : null,
+    issuePath: Object.freeze(
+      Array.isArray(providerError.details.issuePath) ? providerError.details.issuePath : [],
+    ),
+    rootKeys: Object.freeze(
+      Array.isArray(providerError.details.rootKeys)
+        ? providerError.details.rootKeys.filter(
+            (value): value is string => typeof value === 'string',
+          )
+        : [],
+    ),
+  });
   const beforeSend =
     providerError.outcomeCertainty === 'NOT_SENT' ||
     providerError.outcomeCertainty === 'REJECTED_BEFORE_EXECUTION';
@@ -352,10 +382,34 @@ function providerFailureResult(
         : cancelled
           ? 'CANCELLED_AFTER_SEND'
           : 'FAILED_AFTER_SEND',
-    providerError.code,
+    diagnosticCode,
     providerError.outcomeCertainty,
     beforeSend ? 0 : 1,
+    emptyUsageObservation(),
+    providerRequestId,
+    safeDiagnostic,
   );
+}
+
+function providerDiagnosticCode(error: ProviderError): string {
+  let suffix = '';
+  if (error.code === 'PROVIDER_INVALID_JSON') {
+    suffix = 'schemaId' in error.details ? 'CONTENT_JSON' : 'ENVELOPE_JSON';
+  } else if (error.code === 'PROVIDER_SCHEMA_VALIDATION_FAILED') {
+    const path = error.details.issuePath;
+    suffix = Array.isArray(path) ? path.join('.') : '';
+  } else if (error.code === 'PROVIDER_PROTOCOL_ERROR') {
+    suffix = typeof error.details.reason === 'string' ? error.details.reason : '';
+  } else if (error.code === 'PROVIDER_UPSTREAM_4XX' || error.code === 'PROVIDER_UPSTREAM_5XX') {
+    suffix = typeof error.details.status === 'number' ? `HTTP_${error.details.status}` : '';
+  } else if (error.code === 'PROVIDER_INVALID_CONTENT_TYPE') {
+    suffix =
+      typeof error.details.receivedContentType === 'string'
+        ? error.details.receivedContentType.replace(/[^A-Za-z0-9_-]/gu, '_')
+        : '';
+  }
+  const diagnostic = suffix.length === 0 ? error.code : `${error.code}:${suffix}`;
+  return diagnostic.slice(0, 96);
 }
 
 export class ModelExecutionService {

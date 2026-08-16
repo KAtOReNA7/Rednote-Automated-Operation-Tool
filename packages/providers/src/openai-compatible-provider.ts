@@ -24,6 +24,7 @@ import {
   type ProviderCallContext,
   type ProviderOperation,
   type RuntimeSchema,
+  type SchemaValidationResult,
   type StructuredGenerationProvider,
   type StructuredGenerationRequest,
   type StructuredGenerationResult,
@@ -162,20 +163,44 @@ export class OpenAICompatibleProvider
       body,
       context,
     );
-    const textResult =
-      context.protocolMode === 'RESPONSES'
-        ? decodeResponsesText(
-            response.body,
-            context,
-            response.latencyMs,
-            response.headers.providerRequestId,
-          )
-        : decodeChatCompletionsText(
-            response.body,
-            context,
-            response.latencyMs,
-            response.headers.providerRequestId,
-          );
+    let textResult: TextGenerationResult;
+    try {
+      textResult =
+        context.protocolMode === 'RESPONSES'
+          ? decodeResponsesText(
+              response.body,
+              context,
+              response.latencyMs,
+              response.headers.providerRequestId,
+            )
+          : decodeChatCompletionsText(
+              response.body,
+              context,
+              response.latencyMs,
+              response.headers.providerRequestId,
+            );
+    } catch (error) {
+      if (isProviderError(error)) {
+        throw new ProviderError(error.code, {
+          causeCategory: error.causeCategory,
+          details: {
+            ...error.details,
+            contentType: response.headers.receivedContentType ?? 'MISSING',
+            envelopeType: context.protocolMode,
+            httpStatus: response.status,
+            providerRequestId: response.headers.providerRequestId ?? 'UNAVAILABLE',
+          },
+          modelId: error.modelId,
+          operation: error.operation,
+          outcomeCertainty: error.outcomeCertainty,
+          providerId: error.providerId,
+          requestId: error.requestId,
+          retryAfterMs: error.retryAfterMs,
+          retryDisposition: error.retryDisposition,
+        });
+      }
+      throw error;
+    }
     if (textResult.refusal !== null) {
       throw new ProviderError('PROVIDER_REFUSAL', {
         causeCategory: 'PROTOCOL',
@@ -187,33 +212,24 @@ export class OpenAICompatibleProvider
         retryDisposition: 'RETRY_MANUAL',
       });
     }
-    let candidate: unknown;
-    try {
-      candidate = JSON.parse(textResult.text) as unknown;
-    } catch {
-      throw new ProviderError('PROVIDER_INVALID_JSON', {
-        causeCategory: 'PROTOCOL',
-        details: {
-          characterCount: textResult.text.length,
-          contentHash: createHash('sha256').update(textResult.text, 'utf8').digest('hex'),
-          schemaId: schema.id,
-          schemaVersion: schema.version,
-        },
-        modelId: context.modelId,
-        operation: context.operation,
-        outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
-        providerId: context.providerId,
-        requestId: context.requestId,
-        retryDisposition: 'RETRY_MANUAL',
-      });
-    }
-    try {
-      validateJsonValueLimits(candidate, context);
-    } catch (error) {
-      if (isProviderError(error)) {
-        throw new ProviderError('PROVIDER_RESPONSE_TOO_LARGE', {
-          causeCategory: 'SCHEMA',
-          details: { schemaId: schema.id, schemaVersion: schema.version },
+    let validation: SchemaValidationResult<T>;
+    if (schema.decodeText === undefined) {
+      let candidate: unknown;
+      try {
+        candidate = JSON.parse(textResult.text) as unknown;
+      } catch {
+        throw new ProviderError('PROVIDER_INVALID_JSON', {
+          causeCategory: 'PROTOCOL',
+          details: {
+            characterCount: textResult.text.length,
+            contentHash: createHash('sha256').update(textResult.text, 'utf8').digest('hex'),
+            contentType: response.headers.receivedContentType ?? 'MISSING',
+            envelopeType: context.protocolMode,
+            httpStatus: response.status,
+            providerRequestId: textResult.providerRequestId ?? 'UNAVAILABLE',
+            schemaId: schema.id,
+            schemaVersion: schema.version,
+          },
           modelId: context.modelId,
           operation: context.operation,
           outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
@@ -222,18 +238,44 @@ export class OpenAICompatibleProvider
           retryDisposition: 'RETRY_MANUAL',
         });
       }
-      throw error;
+      try {
+        validateJsonValueLimits(candidate, context);
+      } catch (error) {
+        if (isProviderError(error)) {
+          throw new ProviderError('PROVIDER_RESPONSE_TOO_LARGE', {
+            causeCategory: 'SCHEMA',
+            details: { schemaId: schema.id, schemaVersion: schema.version },
+            modelId: context.modelId,
+            operation: context.operation,
+            outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
+            providerId: context.providerId,
+            requestId: context.requestId,
+            retryDisposition: 'RETRY_MANUAL',
+          });
+        }
+        throw error;
+      }
+      validation = schema.validate(candidate);
+    } else {
+      validation = schema.decodeText(textResult.text);
+      if (validation.ok) validateJsonValueLimits(validation.value, context);
     }
-    const validation = schema.validate(candidate);
     if (!validation.ok) {
       const issues = sanitizeSchemaIssues(validation.issues);
       const first = issues[0];
       throw new ProviderError('PROVIDER_SCHEMA_VALIDATION_FAILED', {
         causeCategory: 'SCHEMA',
         details: {
-          contentHash: createHash('sha256').update(textResult.text, 'utf8').digest('hex'),
           issueCode: first?.code ?? 'SCHEMA_VALIDATION_FAILED',
           issuePath: first?.path ?? [],
+          actualFieldType: first?.actualType ?? 'unknown',
+          actualRootType: first?.rootType ?? 'unknown',
+          expectedType: first?.expectedType ?? 'unknown',
+          rootKeys: first?.rootKeys ?? [],
+          contentType: response.headers.receivedContentType ?? 'MISSING',
+          envelopeType: context.protocolMode,
+          httpStatus: response.status,
+          providerRequestId: textResult.providerRequestId ?? 'UNAVAILABLE',
           schemaId: schema.id,
           schemaVersion: schema.version,
         },

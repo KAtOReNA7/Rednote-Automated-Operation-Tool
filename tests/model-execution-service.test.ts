@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
+import { ProviderError } from '../packages/providers/src/index.js';
+
 import {
   MODEL_RESULT_CACHE_FORMAT,
   MODEL_RESULT_CACHE_FORMAT_VERSION,
@@ -61,7 +63,9 @@ function request(
   } satisfies ModelExecutionRequestV1;
 }
 
-function harness(options: { budgetBlocked?: boolean; maxConcurrent?: number } = {}) {
+function harness(
+  options: { budgetBlocked?: boolean; maxConcurrent?: number; providerError?: ProviderError } = {},
+) {
   const executions = new Map<string, { cacheKey: string; result: ModelExecutionResultV1 }>();
   const entries = new Map<string, PersistedCacheEntryV1>();
   const envelopes = new Map<string, ModelResultCacheEnvelope<ModelExecutionOutputV1>>();
@@ -120,6 +124,7 @@ function harness(options: { budgetBlocked?: boolean; maxConcurrent?: number } = 
     peak = Math.max(peak, active);
     try {
       await new Promise<void>((resolve) => setTimeout(resolve, 2));
+      if (options.providerError !== undefined) throw options.providerError;
       return {
         cost: null,
         outcomeCertainty: 'COMPLETED_INVALID_OUTPUT' as const,
@@ -222,6 +227,32 @@ describe('Issue 014 ModelExecutionService ordering and singleflight', () => {
       }),
     ).rejects.toThrow('finite contract');
     expect(test.providerInvoker).not.toHaveBeenCalled();
+  });
+
+  it('retains a safe post-send layer code and provider request id without response content', async () => {
+    const test = harness({
+      providerError: new ProviderError('PROVIDER_SCHEMA_VALIDATION_FAILED', {
+        causeCategory: 'SCHEMA',
+        details: {
+          issuePath: ['packages', 0, 'title'],
+          providerRequestId: 'req-safe-123',
+        },
+        modelId: 'fixture-model',
+        operation: 'STRUCTURED_GENERATION',
+        outcomeCertainty: 'COMPLETED_INVALID_OUTPUT',
+        providerId: 'fixture-provider',
+        requestId: 'execution-diagnostic',
+        retryDisposition: 'RETRY_MANUAL',
+      }),
+    });
+    const result = await test.service.execute(request('execution-diagnostic', 'BYPASS'));
+    expect(result).toMatchObject({
+      externalRequestCount: 1,
+      providerRequestId: 'req-safe-123',
+      stableErrorCode: 'PROVIDER_SCHEMA_VALIDATION_FAILED:packages.0.title',
+      status: 'FAILED_AFTER_SEND',
+    });
+    expect(JSON.stringify(result)).not.toContain('response');
   });
 
   it('uses the controlled cache envelope and never stores raw provider envelopes', () => {

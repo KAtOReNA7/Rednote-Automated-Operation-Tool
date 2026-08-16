@@ -366,6 +366,7 @@ export function validateRuntimeSchema<T>(schema: RuntimeSchema<T>, identity: Err
     schema.version < 1 ||
     schema.strictObject !== true ||
     typeof schema.validate !== 'function' ||
+    (schema.decodeText !== undefined && typeof schema.decodeText !== 'function') ||
     typeof schema.jsonSchema !== 'object' ||
     schema.jsonSchema === null ||
     Array.isArray(schema.jsonSchema) ||
@@ -381,7 +382,13 @@ export function sanitizeSchemaIssues(issues: readonly SchemaIssue[]): readonly S
   return Object.freeze(
     issues.slice(0, 8).map((issue) =>
       Object.freeze({
+        ...(typeof issue.actualType === 'string'
+          ? { actualType: issue.actualType.slice(0, 64) }
+          : {}),
         code: /^[A-Z][A-Z0-9_]{0,63}$/u.test(issue.code) ? issue.code : 'SCHEMA_VALIDATION_FAILED',
+        ...(typeof issue.expectedType === 'string'
+          ? { expectedType: issue.expectedType.slice(0, 64) }
+          : {}),
         path: Object.freeze(
           issue.path
             .slice(0, 8)
@@ -395,6 +402,16 @@ export function sanitizeSchemaIssues(issues: readonly SchemaIssue[]): readonly S
                   : 'field',
             ),
         ),
+        ...(Array.isArray(issue.rootKeys)
+          ? {
+              rootKeys: Object.freeze(
+                issue.rootKeys
+                  .slice(0, 12)
+                  .map((key) => (/^[A-Za-z0-9_-]{1,64}$/u.test(key) ? key : 'field')),
+              ),
+            }
+          : {}),
+        ...(typeof issue.rootType === 'string' ? { rootType: issue.rootType.slice(0, 64) } : {}),
       }),
     ),
   );

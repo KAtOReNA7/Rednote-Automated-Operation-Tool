@@ -8,8 +8,8 @@ export async function startR07PackagedProviderFixture() {
     request.on('data', (chunk) => chunks.push(chunk));
     request.on('end', () => {
       const body = Buffer.concat(chunks).toString('utf8');
-      const actionKind = body.includes('CONTENT_PACKAGES')
-        ? 'CONTENT_PACKAGES'
+      const actionKind = body.includes('CONTENT_COPY_VERSION')
+        ? 'CONTENT_COPY_VERSION'
         : body.includes('REPLY_SUGGESTION')
           ? 'REPLY_SUGGESTION'
           : 'CAPABILITY_PROBE';
@@ -42,19 +42,13 @@ export async function startR07PackagedProviderFixture() {
       }
       if (request.method === 'POST' && request.url === '/v1/chat/completions') {
         let output;
-        if (actionKind === 'CONTENT_PACKAGES') {
+        if (actionKind === 'CONTENT_COPY_VERSION') {
           contentIndex += 1;
           output = {
-            packages: [
-              {
-                body: `受控黑盒正文 ${contentIndex}`,
-                coverKey: 'morgue',
-                materialNotes: '仅使用隔离本机合成输入。',
-                suggestedTime: `2026-07-${String(26 + contentIndex).padStart(2, '0')}T10:00`,
-                tags: ['本地黑盒', `文案${contentIndex}`],
-                title: `受控黑盒内容 ${contentIndex}`,
-              },
-            ],
+            body: `受控黑盒正文 ${contentIndex}`,
+            materialNotes: '仅使用隔离本机合成输入。',
+            tags: ['本地黑盒', `文案${contentIndex}`],
+            title: `受控黑盒内容 ${contentIndex}`,
           };
         } else if (actionKind === 'REPLY_SUGGESTION') {
           output = { replyText: '这是仅保存到本机、需要用户手动发送的受控回复建议。' };
