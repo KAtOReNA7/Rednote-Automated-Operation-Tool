@@ -126,7 +126,14 @@ export function ReviewPage(): React.JSX.Element {
           </label>
         }
       />
-      <section aria-label="本地指标图表" className="v2-review-analytics">
+      <section className="v2-workspace-intro v2-review-intro" aria-label="数据复盘说明">
+        <div>
+          <p className="v2-kicker">观察窗口 · 真实本地数据</p>
+          <h2>先看结果，再决定下周策略</h2>
+        </div>
+        <p>未知数据保持为空，不会以 0 替代。录入已审批内容的表现后，才会形成可追溯的汇总与建议。</p>
+      </section>
+      <section aria-label="本地指标图表" className="v2-review-analytics v2-review-dashboard">
         <article className="v2-card v2-review-kpis">
           <div>
             <p className="v2-kicker">
@@ -234,8 +241,14 @@ export function ReviewPage(): React.JSX.Element {
           )}
         </article>
       </section>
-      <section className="v2-metric-intake">
-        <h2>指标录入</h2>
+      <section className="v2-metric-intake v2-review-intake">
+        <header>
+          <div>
+            <p className="v2-kicker">本地录入</p>
+            <h2>指标录入</h2>
+          </div>
+          <p>每条数据均保存到当前观察窗口，并可在重启后恢复。</p>
+        </header>
         {packages.length === 0 ? (
           <p>暂无已审批内容。</p>
         ) : (
@@ -281,7 +294,7 @@ export function ReviewPage(): React.JSX.Element {
           保存本页指标
         </Button>
       </section>
-      <section className="v2-card v2-side-card">
+      <section className="v2-card v2-side-card v2-review-summary">
         <h2>真实汇总</h2>
         {review === null || review.details.length === 0 ? (
           <p>尚未录入当前观察窗口的数据。</p>
@@ -302,7 +315,7 @@ export function ReviewPage(): React.JSX.Element {
           </div>
         )}
       </section>
-      <section className="v2-card v2-dashboard">
+      <section className="v2-card v2-dashboard v2-review-strategy">
         <h2>策略建议</h2>
         {review?.recommendations.length ? (
           review.recommendations.map((item) => (

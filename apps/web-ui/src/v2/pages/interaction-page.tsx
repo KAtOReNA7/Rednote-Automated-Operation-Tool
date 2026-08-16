@@ -223,7 +223,17 @@ export function InteractionPage(): React.JSX.Element {
           <span>{error}</span>
         </div>
       )}
-      <section aria-label="添加本地互动" className="v2-card v2-reply-detail">
+      <section className="v2-workspace-intro" aria-label="互动收件箱说明">
+        <div>
+          <p className="v2-kicker">互动收件箱</p>
+          <h2>筛选、编辑并确认每一条人工互动</h2>
+        </div>
+        <p>系统只保存回复建议与人工发送记录；不会连接平台，也不会自动发送评论或私信。</p>
+      </section>
+      <section
+        aria-label="添加本地互动"
+        className="v2-card v2-reply-detail v2-interaction-composer"
+      >
         <div className="v2-segments">
           {(['评论', '私信'] as const).map((value) => (
             <button
@@ -266,7 +276,7 @@ export function InteractionPage(): React.JSX.Element {
         </Button>
       </section>
       <div className="v2-interaction-grid">
-        <section aria-label="本地互动列表" className="v2-card v2-inbox">
+        <section aria-label="本地互动列表" className="v2-card v2-inbox v2-interaction-inbox">
           <label className="v2-field">
             <span>状态筛选</span>
             <select
@@ -324,7 +334,7 @@ export function InteractionPage(): React.JSX.Element {
             <p>请先在上方主动粘贴一条评论或私信。</p>
           </section>
         ) : (
-          <section aria-label="回复详情" className="v2-card v2-reply-detail">
+          <section aria-label="回复详情" className="v2-card v2-reply-detail v2-reply-editor">
             <div>
               <p className="v2-kicker">
                 {active.source === 'MODEL' ? '模型生成建议' : '本地导入记录'}
@@ -426,7 +436,10 @@ export function InteractionPage(): React.JSX.Element {
             <p className="v2-manual-note">未连接平台，不会自动发送评论或私信。</p>
           </section>
         )}
-        <aside aria-label="互动上下文" className="v2-card v2-interaction-context">
+        <aside
+          aria-label="互动上下文"
+          className="v2-card v2-interaction-context v2-workspace-inspector"
+        >
           <p className="v2-kicker">处理上下文</p>
           <h2>{active?.type ?? '尚未选择互动'}</h2>
           <dl className="v2-facts">

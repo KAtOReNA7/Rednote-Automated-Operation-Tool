@@ -201,7 +201,7 @@ function ProviderSettings(): React.JSX.Element {
   };
 
   return (
-    <section className="v2-card v2-settings v2-provider-settings">
+    <section className="v2-card v2-settings v2-provider-settings" id="v2-provider-settings">
       <div className="v2-settings-title">
         <Icon name="sparkle" size={24} />
         <div>
@@ -284,7 +284,7 @@ function ProviderSettings(): React.JSX.Element {
             </Button>
           </div>
           <hr />
-          <h3>R07 所需能力</h3>
+          <h3 id="v2-provider-capabilities">R07 所需能力</h3>
           <p>
             研究槽：{capabilityLabel[view.research.state]}
             {view.research.protocolMode === null ? '' : ` · ${view.research.protocolMode}`} ·
@@ -404,7 +404,7 @@ function ProviderSettings(): React.JSX.Element {
             </div>
           )}
           <hr />
-          <h3>费用与预算</h3>
+          <h3 id="v2-provider-budget">费用与预算</h3>
           <p>
             周计划价格：{view.accounting.priceReadyForWeeklyPlan ? '可估算' : '未配置'} · 内容价格：
             {view.accounting.priceReadyForContent ? '可估算' : '未配置'} · 回复价格：
@@ -469,9 +469,24 @@ export function SettingsPage(): React.JSX.Element {
         eyebrow="账号人设与本地运行"
         title="设置"
       />
-      <div className="v2-settings-grid">
-        <div className="v2-stack">
-          <section className="v2-card v2-settings">
+      <section className="v2-workspace-intro v2-settings-intro" aria-label="设置说明">
+        <div>
+          <p className="v2-kicker">本地工作区设置</p>
+          <h2>把账号表达与 AI 服务分开管理</h2>
+        </div>
+        <p>凭据始终留在本机安全存储；费用、能力与平台边界均显示真实状态，不会模拟已连接的服务。</p>
+      </section>
+      <div className="v2-settings-grid v2-settings-board">
+        <nav aria-label="设置分类" className="v2-card v2-settings-section-nav">
+          <p className="v2-kicker">设置分类</p>
+          <a href="#v2-provider-settings">AI 服务</a>
+          <a href="#v2-persona-settings">账号与文风</a>
+          <a href="#v2-provider-capabilities">能力与确认</a>
+          <a href="#v2-provider-budget">费用与预算</a>
+        </nav>
+        <div className="v2-stack v2-settings-main">
+          <ProviderSettings />
+          <section className="v2-card v2-settings v2-persona-settings" id="v2-persona-settings">
             <div className="v2-settings-title">
               <Icon name="user-circle" size={24} />
               <div>
@@ -511,10 +526,17 @@ export function SettingsPage(): React.JSX.Element {
               ) : null}
             </label>
           </section>
-          <ProviderSettings />
         </div>
-        <aside className="v2-settings-aside">
-          <section className="v2-card" aria-label="构建版本">
+        <aside className="v2-settings-aside v2-settings-rail">
+          <section className="v2-card v2-settings-rail-card" aria-label="本地边界">
+            <Icon name="check-circle" />
+            <div>
+              <p className="v2-kicker">本地边界</p>
+              <h2>人工确认优先</h2>
+              <p>每次生成、审批和平台操作均需由用户明确确认。</p>
+            </div>
+          </section>
+          <section className="v2-card v2-settings-rail-card" aria-label="构建版本">
             <Icon name="file-text" />
             <div>
               <h2>构建版本</h2>
@@ -525,7 +547,7 @@ export function SettingsPage(): React.JSX.Element {
               <p>V2 数据版本：v{buildInfo.v2DataVersion}</p>
             </div>
           </section>
-          <section className="v2-card">
+          <section className="v2-card v2-settings-rail-card">
             <Icon name="paper-plane-tilt" />
             <div>
               <h2>平台操作</h2>

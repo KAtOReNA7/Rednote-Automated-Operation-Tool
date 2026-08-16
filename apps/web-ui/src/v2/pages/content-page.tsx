@@ -222,8 +222,15 @@ export function ContentPage(): React.JSX.Element {
           <span>{error}</span>
         </div>
       )}
+      <section className="v2-workspace-intro" aria-label="内容工作台说明">
+        <div>
+          <p className="v2-kicker">内容工作台</p>
+          <h2>把一份内容做成可确认的版本</h2>
+        </div>
+        <p>从左侧选择锁定计划项，在中间编辑六字段内容，在右侧核对版本与审批状态。</p>
+      </section>
       <div className="v2-content-grid">
-        <section aria-label="内容包列表" className="v2-card v2-package-list">
+        <section aria-label="内容包列表" className="v2-card v2-package-list v2-content-queue">
           <header>
             <strong>
               {session.content.length === 0 ? '选择锁定计划项' : `内容包 ${session.content.length}`}
@@ -286,7 +293,10 @@ export function ContentPage(): React.JSX.Element {
             </p>
           </section>
         ) : (
-          <section aria-label={`${active.book} 内容包`} className="v2-card v2-package-detail">
+          <section
+            aria-label={`${active.book} 内容包`}
+            className="v2-card v2-package-detail v2-content-stage"
+          >
             <div className="v2-section-head">
               <div>
                 <p className="v2-kicker">{active.book}</p>
@@ -391,7 +401,10 @@ export function ContentPage(): React.JSX.Element {
             </div>
           </section>
         )}
-        <aside aria-label="版本检查器" className="v2-card v2-content-inspector">
+        <aside
+          aria-label="版本检查器"
+          className="v2-card v2-content-inspector v2-workspace-inspector"
+        >
           <p className="v2-kicker">版本检查器</p>
           <h2>{active === undefined ? '等待选择内容' : '准备确认当前版本'}</h2>
           <dl className="v2-facts">
