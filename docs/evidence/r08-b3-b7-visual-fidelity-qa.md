@@ -1,8 +1,8 @@
 # R08 B3–B7 visual fidelity QA
 
-Status: `VISUAL_QA_PASS`  
-Exact implementation baseline: `410f5d638108a0870186b6068a74479182898979` with the uncommitted R08 B3–B7 visual-correction diff applied.  
-Viewport: `1440 × 900` for every comparison.  
+Status: `VISUAL_QA_PASS`
+Exact implementation baseline: `410f5d638108a0870186b6068a74479182898979` with the uncommitted R08 B3–B7 visual-correction diff applied.
+Viewport: `1440 × 900` for every comparison.
 Runtime: production Electron V2 renderer, started with an isolated temporary data root. No model, provider, business-network, or platform call was made.
 
 ## Evidence binding
