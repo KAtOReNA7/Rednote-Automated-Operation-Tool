@@ -762,4 +762,114 @@
     .v2-page-header h1 { font-size: 34px; }
     .v2-library-shelf, .v2-review-kpis .v2-metrics { grid-template-columns: 1fr !important; }
   }
+
+  /* R08 North Star V2 freeze: shared production presentation rules grounded in Section 51:79. */
+  .v2-body {
+    font-family: 'Noto Sans SC', 'Microsoft YaHei UI', 'Segoe UI', sans-serif;
+  }
+  .v2-body small {
+    font-size: 12px;
+  }
+  .v2-page {
+    width: calc(100% - 64px);
+    padding-bottom: 56px;
+  }
+  .v2-window-bar {
+    padding-inline: 32px;
+  }
+  .v2-brand {
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .v2-side-brand {
+    font-weight: 750;
+  }
+  .v2-page-header {
+    min-height: 116px;
+    margin-bottom: 30px;
+  }
+  .v2-page-header h1 {
+    font-size: clamp(36px, 3vw, 44px);
+  }
+  .v2-page-header > div > p:last-child {
+    max-width: 720px;
+  }
+  .v2-card,
+  .v2-featured-grid > button,
+  .v2-week-strip,
+  .v2-day-focus,
+  .v2-library-feature,
+  .v2-library-page .v2-book,
+  .v2-content-page .v2-package-detail,
+  .v2-content-inspector,
+  .v2-interaction-page .v2-inbox,
+  .v2-interaction-page .v2-reply-detail,
+  .v2-interaction-context,
+  .v2-settings-page .v2-provider-settings,
+  .v2-persona-settings {
+    border-radius: 18px;
+  }
+  .v2-feature-hero,
+  .v2-rhythm-card,
+  .v2-library-feature,
+  .v2-settings-rail-card:first-child {
+    box-shadow: 0 16px 40px rgb(15 10 31 / 14%);
+  }
+  .v2-featured-section,
+  .v2-review-intake {
+    margin-top: 32px;
+  }
+  .v2-editorial-empty,
+  .v2-day-focus-empty,
+  .v2-library-empty,
+  .v2-chart-empty {
+    border: 1px dashed var(--v2-line);
+    border-radius: 18px;
+    background: rgb(255 255 255 / 72%);
+  }
+  .v2-chart-empty {
+    min-height: 220px;
+    justify-items: start;
+    padding: 28px;
+  }
+  .v2-chart-empty strong {
+    color: var(--v2-ink);
+    font-size: 17px;
+  }
+  .v2-chart-empty p {
+    max-width: 420px;
+    font-size: 14px;
+    line-height: 1.65;
+  }
+  .v2-review-kpis > p,
+  .v2-review-kpis .v2-metrics > div {
+    border-radius: 18px;
+  }
+  .v2-review-page .v2-chart-card header h2,
+  .v2-content-page .v2-package-detail h2,
+  .v2-interaction-page .v2-reply-detail h2,
+  .v2-library-page .v2-book h2 {
+    font-size: 20px;
+  }
+  .v2-settings-section-nav button {
+    min-height: 44px;
+    border-radius: 12px;
+  }
+  .v2-provider-blockers {
+    border-radius: 14px;
+  }
+  @media (min-width: 1440px) {
+    .v2-page {
+      width: calc(100% - 64px);
+    }
+    .v2-content-canvas {
+      grid-template-columns: 250px minmax(0, 1fr) 250px !important;
+    }
+    .v2-interaction-grid {
+      grid-template-columns: 280px minmax(0, 1fr) 250px !important;
+    }
+    .v2-settings-board {
+      grid-template-columns: 188px minmax(0, 1fr) 248px !important;
+    }
+  }
 }

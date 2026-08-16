@@ -253,7 +253,7 @@ export function AppFrame({
         <header className="v2-window-bar">
           <div className="v2-brand">
             <Icon name="bookmark-simple" size={19} />
-            <span>Rednote V2</span>
+            <span>Rednote Studio</span>
           </div>
           <strong className="v2-mock-label">
             {providerStatus === 'READY'

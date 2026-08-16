@@ -133,7 +133,9 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByLabelText('粘贴一条评论或私信')).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '数据复盘' }));
-    expect(document.querySelector('.v2-chart-empty svg')).toBeInTheDocument();
+    expect(screen.getByText('尚未录入当前观察窗口的数据')).toBeVisible();
+    expect(screen.getByText(/不会用模拟数据补位/u)).toBeVisible();
+    expect(document.querySelector('.v2-chart-empty svg')).not.toBeInTheDocument();
   });
 
   it('searches books, exposes the local review intake, and saves four persona fields in-session', async () => {
