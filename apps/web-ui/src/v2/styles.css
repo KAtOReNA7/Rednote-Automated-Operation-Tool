@@ -162,6 +162,43 @@
   .v2-metric-package small, .v2-field small { color: var(--v2-muted); font-size: 11px; }
   .v2-metric-fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
   .v2-metric-save { display: flex; align-items: center; justify-content: flex-end; gap: 16px; margin: 18px 0; }
+  /* R08: the approved Apple Music B workspace layouts. Business controls keep their existing contracts. */
+  .v2-content-page .v2-content-grid { grid-template-columns: 250px minmax(0, 1fr) 238px; gap: 18px; }
+  .v2-content-page .v2-package-list, .v2-content-page .v2-package-detail, .v2-content-inspector { min-height: 680px; }
+  .v2-content-page .v2-package-detail { padding: 22px; }
+  .v2-content-page .v2-package-grid { grid-template-columns: 184px minmax(0, 1fr); gap: 20px; }
+  .v2-content-page .v2-package-grid figure { min-height: 300px; background: linear-gradient(150deg, #17151d, #61152f 58%, #b53b3c); }
+  .v2-content-inspector, .v2-interaction-context { padding: 18px; align-self: start; }
+  .v2-content-inspector h2, .v2-interaction-context h2 { margin-top: 4px; font-size: 17px; }
+  .v2-interaction-page > .v2-reply-detail { margin-bottom: 18px; }
+  .v2-interaction-page .v2-interaction-grid { grid-template-columns: 280px minmax(0, 1fr) 238px; gap: 18px; }
+  .v2-interaction-page .v2-inbox, .v2-interaction-page .v2-reply-detail { min-height: 550px; }
+  .v2-interaction-page .v2-reply-detail { padding: 22px; }
+  .v2-library-page .v2-book-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 18px; }
+  .v2-library-page .v2-book { display: block; overflow: hidden; padding: 0; }
+  .v2-library-page .v2-book > div { min-height: 178px; border-radius: 0; background: linear-gradient(145deg, #17151d, #721832 60%, #bd413d); color: white; }
+  .v2-library-page .v2-book > div[data-tone='1'] { background: linear-gradient(145deg, #1b1833, #9d42d2); }
+  .v2-library-page .v2-book > div[data-tone='2'] { background: #efefef; color: var(--v2-muted); }
+  .v2-library-page .v2-book > section { padding: 16px; }
+  .v2-library-page .v2-book h2 { min-height: 54px; }
+  .v2-review-analytics { display: grid; grid-template-columns: 1.25fr .75fr; gap: 16px; margin-bottom: 18px; }
+  .v2-review-kpis { grid-column: 1 / -1; display: flex; align-items: end; justify-content: space-between; gap: 24px; padding: 18px; }
+  .v2-review-kpis .v2-metrics { flex: 1; margin-top: 0; }
+  .v2-chart-card { min-height: 245px; padding: 18px; }
+  .v2-chart-card header { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+  .v2-chart-card h2 { font-size: 18px; }
+  .v2-trend-chart { width: 100%; height: 145px; margin-top: 8px; color: var(--v2-red); overflow: visible; }
+  .v2-trend-chart text { fill: var(--v2-muted); font-size: 11px; }
+  .v2-chart-legend, .v2-chart-empty { color: var(--v2-muted); font-size: 11px; line-height: 1.5; }
+  .v2-bar-chart { display: grid; gap: 13px; margin-top: 20px; }
+  .v2-bar-chart > div { display: grid; grid-template-columns: 110px minmax(24px, 1fr) auto; align-items: center; gap: 10px; font-size: 11px; }
+  .v2-bar-chart i { min-height: 12px; border-radius: 99px; background: linear-gradient(90deg, var(--v2-red), #d8665e); }
+  .v2-settings-page .v2-settings-grid { grid-template-columns: 220px minmax(0, 1fr) 258px; }
+  .v2-settings-page .v2-settings-grid > .v2-stack::before { display: block; margin-bottom: 4px; color: var(--v2-red); content: 'AI 服务与账号表达'; font-size: 12px; font-weight: 700; }
+  .v2-settings-page .v2-settings-aside { position: sticky; top: 78px; }
+  .v2-settings-page .v2-provider-settings { border-top: 3px solid var(--v2-red); }
+  @media (min-width: 1800px) { .v2-page { max-width: 1880px; padding-inline: 56px; } .v2-content-page .v2-content-grid { grid-template-columns: 280px minmax(720px, 1fr) 270px; } .v2-interaction-page .v2-interaction-grid { grid-template-columns: 320px minmax(720px, 1fr) 270px; } }
+  @media (max-width: 1120px) { .v2-content-page .v2-content-grid, .v2-interaction-page .v2-interaction-grid, .v2-settings-page .v2-settings-grid, .v2-review-analytics { grid-template-columns: 1fr; } .v2-content-inspector, .v2-interaction-context { display: none; } .v2-library-page .v2-book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
   .v2-metric-save [role='alert'] { color: #a44936; }
   .v2-field-row, .v2-review-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
   .v2-field-row > div, .v2-material { border: 1px solid var(--v2-line); border-radius: 8px; background: #f6f3ee; padding: 12px; }

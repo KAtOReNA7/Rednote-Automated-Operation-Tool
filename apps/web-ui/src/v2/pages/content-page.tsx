@@ -391,6 +391,25 @@ export function ContentPage(): React.JSX.Element {
             </div>
           </section>
         )}
+        <aside aria-label="版本检查器" className="v2-card v2-content-inspector">
+          <p className="v2-kicker">版本检查器</p>
+          <h2>{active === undefined ? '等待选择内容' : '准备确认当前版本'}</h2>
+          <dl className="v2-facts">
+            <div>
+              <dt>封面</dt>
+              <dd>{active === undefined ? '—' : active.coverAlt === '' ? '待补充' : '已关联'}</dd>
+            </div>
+            <div>
+              <dt>版本状态</dt>
+              <dd>{active?.status ?? '未生成'}</dd>
+            </div>
+            <div>
+              <dt>建议时间</dt>
+              <dd>{active === undefined ? '—' : active.time}</dd>
+            </div>
+          </dl>
+          <p className="v2-manual-note">保存后仍需人工批准；导出不会自动发布到平台。</p>
+        </aside>
       </div>
     </div>
   );

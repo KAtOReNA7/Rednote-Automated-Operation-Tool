@@ -426,6 +426,25 @@ export function InteractionPage(): React.JSX.Element {
             <p className="v2-manual-note">未连接平台，不会自动发送评论或私信。</p>
           </section>
         )}
+        <aside aria-label="互动上下文" className="v2-card v2-interaction-context">
+          <p className="v2-kicker">处理上下文</p>
+          <h2>{active?.type ?? '尚未选择互动'}</h2>
+          <dl className="v2-facts">
+            <div>
+              <dt>当前状态</dt>
+              <dd>{active === undefined ? '—' : statusLabels[active.status]}</dd>
+            </div>
+            <div>
+              <dt>关联内容</dt>
+              <dd>{active?.source ?? '未关联'}</dd>
+            </div>
+            <div>
+              <dt>发送方式</dt>
+              <dd>仅手动记录</dd>
+            </div>
+          </dl>
+          <p className="v2-manual-note">系统只生成并保存建议，绝不会自动发送评论或私信。</p>
+        </aside>
       </div>
     </div>
   );

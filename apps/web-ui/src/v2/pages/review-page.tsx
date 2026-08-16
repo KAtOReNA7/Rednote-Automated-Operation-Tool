@@ -99,6 +99,10 @@ export function ReviewPage(): React.JSX.Element {
     });
     if (result?.ok) setReview(result.value);
   };
+  const metricLabel = FIELDS.find(({ key }) => key === 'views')?.label ?? '浏览量';
+  const chartRows = review?.details ?? [];
+  const trendValues = chartRows.map((item) => item.views);
+  const maxValue = Math.max(1, ...trendValues);
   return (
     <div className="v2-page v2-review-page">
       <PageHeader
@@ -122,6 +126,114 @@ export function ReviewPage(): React.JSX.Element {
           </label>
         }
       />
+      <section aria-label="本地指标图表" className="v2-review-analytics">
+        <article className="v2-card v2-review-kpis">
+          <div>
+            <p className="v2-kicker">
+              {WINDOWS[metricWindow]} · 有效样本 {chartRows.length}
+            </p>
+            <h2>真实 KPI 摘要</h2>
+          </div>
+          {review === null || chartRows.length === 0 ? (
+            <p>尚未录入当前观察窗口的数据。</p>
+          ) : (
+            <div className="v2-metrics">
+              {[
+                ['浏览量', review.totals.views],
+                ['点赞数', review.totals.likes],
+                ['收藏数', review.totals.collections],
+                ['评论数', review.totals.comments],
+                ['新增关注', review.totals.newFollowers],
+              ].map(([label, value]) => (
+                <div key={label}>
+                  <span>{label}</span>
+                  <strong>{value}</strong>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+        <article className="v2-card v2-chart-card">
+          <header>
+            <div>
+              <p className="v2-kicker">观察窗口：{WINDOWS[metricWindow]}</p>
+              <h2>表现趋势</h2>
+            </div>
+            <span className="v2-status v2-status--neutral">{metricLabel}</span>
+          </header>
+          {chartRows.length === 0 ? (
+            <p className="v2-chart-empty">尚无可绘制的数据；图表不会以 0 代替未知。</p>
+          ) : (
+            <svg
+              aria-label="浏览量趋势图"
+              className="v2-trend-chart"
+              role="img"
+              viewBox="0 0 520 150"
+            >
+              <title>浏览量趋势（按已保存内容）</title>
+              <path
+                d="M32 124H504M32 22V124"
+                fill="none"
+                stroke="currentColor"
+                strokeOpacity=".18"
+              />
+              {trendValues.map((value, index) => {
+                const x = 70 + index * (380 / Math.max(1, trendValues.length - 1));
+                const y = 112 - (value / maxValue) * 72;
+                return (
+                  <g key={chartRows[index]?.packageId}>
+                    <circle cx={x} cy={y} fill="currentColor" r="5" />
+                    <text x={x} y="142" textAnchor="middle">
+                      {index + 1}
+                    </text>
+                  </g>
+                );
+              })}
+              {trendValues.length > 1 ? (
+                <polyline
+                  fill="none"
+                  points={trendValues
+                    .map(
+                      (value, index) =>
+                        `${70 + index * (380 / (trendValues.length - 1))},${112 - (value / maxValue) * 72}`,
+                    )
+                    .join(' ')}
+                  stroke="currentColor"
+                  strokeWidth="3"
+                />
+              ) : null}
+            </svg>
+          )}
+          <p className="v2-chart-legend">
+            指标：浏览量；横轴为本窗口内已保存内容，数值可在下方录入区核对。
+          </p>
+        </article>
+        <article className="v2-card v2-chart-card">
+          <header>
+            <div>
+              <p className="v2-kicker">当前观察窗口</p>
+              <h2>内容表现对比</h2>
+            </div>
+            <span className="v2-status v2-status--neutral">浏览量</span>
+          </header>
+          {chartRows.length === 0 ? (
+            <p className="v2-chart-empty">暂无已保存内容指标。</p>
+          ) : (
+            <div className="v2-bar-chart">
+              {chartRows.map((item) => (
+                <div key={item.packageId}>
+                  <span>{item.title}</span>
+                  <i
+                    aria-label={`${item.title} 浏览量 ${item.views}`}
+                    style={{ width: `${Math.max(4, (item.views / maxValue) * 100)}%` }}
+                  />
+                  <b>{item.views}</b>
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+      </section>
       <section className="v2-metric-intake">
         <h2>指标录入</h2>
         {packages.length === 0 ? (
