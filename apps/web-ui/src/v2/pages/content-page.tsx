@@ -211,24 +211,16 @@ export function ContentPage(): React.JSX.Element {
             )}
           </>
         }
-        description="封面、标题、正文、标签、建议日期时间和素材说明在一个工作区完成编辑、批准与本地导出。"
-        eyebrow="六字段内容包 · 完全本地"
-        title="内容"
+        description="封面、文案、状态和检查信息同屏，但只保留一个主要任务。"
+        eyebrow="内容工作台"
+        title="把一份内容做成可确认的版本"
       />
-      <p className="v2-kicker">内容包仅在受控预览确认后生成，并保存到本机。</p>
       {error === '' ? null : (
         <div className="v2-form-error" ref={errorRef} role="alert" tabIndex={-1}>
           <Icon name="warning-circle" />
           <span>{error}</span>
         </div>
       )}
-      <section className="v2-workspace-intro" aria-label="内容工作台说明">
-        <div>
-          <p className="v2-kicker">内容工作台</p>
-          <h2>把一份内容做成可确认的版本</h2>
-        </div>
-        <p>从左侧选择锁定计划项，在中间编辑六字段内容，在右侧核对版本与审批状态。</p>
-      </section>
       <div className="v2-content-grid v2-content-canvas">
         <section aria-label="内容包列表" className="v2-card v2-package-list v2-content-queue">
           <header>

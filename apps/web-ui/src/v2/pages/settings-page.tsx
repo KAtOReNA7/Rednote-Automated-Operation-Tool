@@ -357,8 +357,8 @@ function ProviderSettings(): React.JSX.Element {
             </div>
           )}
           {view.capabilityProbe.latestRun === null ? null : (
-            <div className="v2-provider-blockers" data-testid="v2-probe-diagnostics">
-              <h4>最近一次能力检查</h4>
+            <details className="v2-provider-blockers" data-testid="v2-probe-diagnostics">
+              <summary>最近一次能力检查与脱敏诊断</summary>
               <p>
                 <strong>{probeSummaryLabel[view.capabilityProbe.summaryState]}</strong> · 已计划{' '}
                 {view.capabilityProbe.latestRun.plannedRequestCount} · 已发送{' '}
@@ -407,7 +407,7 @@ function ProviderSettings(): React.JSX.Element {
                   value={view.capabilityProbe.diagnosticText}
                 />
               </label>
-            </div>
+            </details>
           )}
           <hr />
           <h3 id="v2-provider-budget">费用与预算</h3>
@@ -476,8 +476,8 @@ export function SettingsPage(): React.JSX.Element {
             保存人设
           </Button>
         }
-        description="普通设置表达业务含义；保存后会在重新启动 V2 时恢复。"
-        eyebrow="账号人设与本地运行"
+        description="把账号表达、AI 服务、能力验证和费用边界分开管理。"
+        eyebrow="工作区配置"
         title="设置"
       />
       <section className="v2-workspace-intro v2-settings-intro" aria-label="设置说明">

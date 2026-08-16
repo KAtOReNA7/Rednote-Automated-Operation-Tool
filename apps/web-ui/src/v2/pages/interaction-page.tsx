@@ -43,7 +43,7 @@ export function InteractionPage(): React.JSX.Element {
   );
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
-  const [intakeOpen, setIntakeOpen] = useState(false);
+  const [intakeOpen, setIntakeOpen] = useState(true);
   const [newText, setNewText] = useState('');
   const [relatedId, setRelatedId] = useState('');
   const [sentConfirmed, setSentConfirmed] = useState(false);
@@ -212,25 +212,16 @@ export function InteractionPage(): React.JSX.Element {
             批量确认建议 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
           </Button>
         }
-        description="主动粘贴一条评论或私信，在本机生成、编辑和确认回复建议。"
-        eyebrow={`评论 ${session.interactions.filter(({ type }) => type === '评论').length} 条 · 私信 ${session.interactions.filter(({ type }) => type === '私信').length} 条 · 本地保存`}
-        title="互动"
+        description="评论与私信统一进入本地工作台；AI 只提供建议，永不自动发送。"
+        eyebrow="人工互动收件箱"
+        title="每一条回复，都由你最后决定"
       />
-      <p className="v2-kicker">回复建议仅在你预览并确认后生成；系统不会发送消息。</p>
-      <p className="v2-manual-note">数据保存在本地项目数据中，默认保留至你明确删除，不会上传。</p>
       {error === '' ? null : (
         <div className="v2-form-error" ref={errorRef} role="alert" tabIndex={-1}>
           <Icon name="warning-circle" />
           <span>{error}</span>
         </div>
       )}
-      <section className="v2-workspace-intro" aria-label="互动收件箱说明">
-        <div>
-          <p className="v2-kicker">互动收件箱</p>
-          <h2>筛选、编辑并确认每一条人工互动</h2>
-        </div>
-        <p>系统只保存回复建议与人工发送记录；不会连接平台，也不会自动发送评论或私信。</p>
-      </section>
       <section aria-label="添加本地互动" className="v2-card v2-interaction-intake">
         <header>
           <div>

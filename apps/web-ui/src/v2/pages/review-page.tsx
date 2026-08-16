@@ -107,8 +107,8 @@ export function ReviewPage(): React.JSX.Element {
     <div className="v2-page v2-review-page">
       <PageHeader
         title="数据复盘"
-        eyebrow="本地数据"
-        description="录入已审批内容的发布数据，形成真实汇总和下周策略建议。"
+        eyebrow="真实表现"
+        description="先看结果，再决定下周策略。所有数字都来自你录入的真实发布数据。"
         actions={
           <label className="v2-field">
             <span>观察窗口</span>

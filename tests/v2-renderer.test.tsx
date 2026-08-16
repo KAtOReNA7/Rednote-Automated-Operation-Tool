@@ -44,9 +44,16 @@ describe('V2 renderer shell', () => {
       await user.click(within(navigation).getByRole('link', { name: route.label }));
       await waitFor(() => expect(window.location.hash).toBe(`#/v2/${route.id}`));
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
-        route.id === 'overview' ? '今天值得关注什么' : route.label,
-      );
+      const pageTitle = {
+        content: '把一份内容做成可确认的版本',
+        interaction: '每一条回复，都由你最后决定',
+        library: '把书变成可持续经营的内容资产',
+        overview: '今天值得关注什么',
+        review: '数据复盘',
+        settings: '设置',
+        'weekly-plan': '本周计划',
+      }[route.id];
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(pageTitle);
     }
   });
 
@@ -71,8 +78,10 @@ describe('V2 renderer shell', () => {
     const user = userEvent.setup();
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '内容' }));
-    expect(screen.getByRole('heading', { level: 1, name: '内容' })).toBeVisible();
-    expect(screen.getByText(/内容包仅在受控预览确认后生成/u)).toBeVisible();
+    expect(
+      screen.getByRole('heading', { level: 1, name: '把一份内容做成可确认的版本' }),
+    ).toBeVisible();
+    expect(screen.getByText(/封面、文案、状态和检查信息同屏/u)).toBeVisible();
     expect(screen.getByRole('img', { name: /封面建议/u })).toHaveAttribute(
       'src',
       expect.stringContaining('morgue-cover.png'),

@@ -31,9 +31,9 @@ export function LibraryPage(): React.JSX.Element {
             </Button>
           </>
         }
-        description="围绕运营价值、内容角度和历史表现管理作品。"
-        eyebrow="作品资料库 · 本地运营视图"
-        title="书库"
+        description="从作品、角度到历史表现，快速找到下一条值得做的内容。"
+        eyebrow="作品资料库"
+        title="把书变成可持续经营的内容资产"
       />
       <section className="v2-library-overview" aria-label="书库概览">
         <div>

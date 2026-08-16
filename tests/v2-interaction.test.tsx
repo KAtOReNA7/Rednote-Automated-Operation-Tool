@@ -531,8 +531,8 @@ describe('V2-R05 interaction renderer and managed files', () => {
     const user = userEvent.setup();
     render(<V2App />);
     expect(await screen.findByText('尚无本地互动')).toBeVisible();
-    expect(screen.getByText('回复建议仅在你预览并确认后生成；系统不会发送消息。')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: '新增互动' }));
+    expect(screen.getByText(/AI 只提供建议，永不自动发送/u)).toBeVisible();
+    expect(screen.getByRole('button', { name: '收起录入' })).toBeVisible();
     await user.type(screen.getByLabelText('粘贴一条评论或私信'), '键盘录入评论');
     await user.click(screen.getByRole('button', { name: '保存本地互动' }));
     expect((await screen.findAllByText('键盘录入评论')).length).toBeGreaterThan(0);
@@ -568,7 +568,6 @@ describe('V2-R05 interaction renderer and managed files', () => {
     const user = userEvent.setup();
     render(<V2App />);
 
-    await user.click(screen.getByRole('button', { name: '新增互动' }));
     expect(screen.queryByRole('option', { name: '《莫格街凶杀案》' })).not.toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: '关联内容包（可选）' })).toHaveValue('');
     restoreContent({
@@ -638,7 +637,6 @@ describe('V2-R05 interaction renderer and managed files', () => {
     const user = userEvent.setup();
     render(<V2App />);
 
-    await user.click(screen.getByRole('button', { name: '新增互动' }));
     await user.type(screen.getByLabelText('粘贴一条评论或私信'), '尚未确认同步的评论');
     await user.click(screen.getByRole('button', { name: '保存本地互动' }));
 

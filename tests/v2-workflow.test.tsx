@@ -114,9 +114,8 @@ describe('V2 deterministic session workflows', () => {
     await user.click(screen.getByRole('link', { name: '互动' }));
     expect(screen.getByRole('heading', { name: '尚无本地互动' })).toBeVisible();
     expect(screen.queryByRole('button', { name: /手动发送/u })).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '新增互动' }));
     expect(screen.getByRole('button', { name: '保存本地互动' })).toBeDisabled();
-    expect(document.body).toHaveTextContent('系统不会发送消息');
+    expect(document.body).toHaveTextContent('永不自动发送');
   });
 
   it('keeps the Figma workspace structures reachable without changing local workflows', async () => {
@@ -130,9 +129,7 @@ describe('V2 deterministic session workflows', () => {
 
     await user.click(screen.getByRole('link', { name: '互动' }));
     expect(document.querySelector('.v2-interaction-grid')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '新增互动' })).toBeVisible();
-    expect(screen.queryByLabelText('粘贴一条评论或私信')).not.toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '新增互动' }));
+    expect(screen.getByRole('button', { name: '收起录入' })).toBeVisible();
     expect(screen.getByLabelText('粘贴一条评论或私信')).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '数据复盘' }));

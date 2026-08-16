@@ -216,52 +216,58 @@ export function AppFrame({
   }, [activeRoute]);
   return (
     <div className="v2-shell" data-v2-mock={window.rednoteV2 === undefined} data-v2-shell>
-      <header className="v2-window-bar">
-        <div className="v2-brand">
-          <Icon name="bookmark-simple" size={21} />
-          <span>Rednote V2</span>
+      <aside aria-label="主导航" className="v2-sidebar">
+        <a className="v2-side-brand" href={toV2Hash('overview')}>
+          <span aria-hidden="true">◉</span>
+          <strong>Rednote Studio</strong>
+        </a>
+        <nav className="v2-nav">
+          {V2_ROUTES.map((route) => (
+            <a
+              aria-current={activeRoute === route.id ? 'page' : undefined}
+              className="v2-nav-item"
+              data-active={activeRoute === route.id}
+              data-v2-navigation-item
+              href={toV2Hash(route.id)}
+              key={route.id}
+            >
+              <Icon name={route.icon} size={21} />
+              <span>{route.label}</span>
+            </a>
+          ))}
+        </nav>
+        <button
+          className="v2-account"
+          onClick={() => notify('当前版本为本机单用户工作区。')}
+          type="button"
+        >
+          <Icon name="user-circle" size={29} />
+          <span>
+            <strong>{session.persona.name}</strong>
+            <small>本地工作区 · 悬疑推理图书账号</small>
+          </span>
+          <Icon name="caret-down" size={15} />
+        </button>
+      </aside>
+      <div className="v2-workspace">
+        <header className="v2-window-bar">
+          <div className="v2-brand">
+            <Icon name="bookmark-simple" size={19} />
+            <span>Rednote V2</span>
+          </div>
+          <strong className="v2-mock-label">
+            {providerStatus === 'READY'
+              ? '本地工作区已连接 · AI 服务已就绪'
+              : providerStatus === 'VERIFY'
+                ? '本地工作区已连接 · AI 能力待验证'
+                : providerStatus === 'CONFIGURE'
+                  ? '本地工作区已连接 · AI 服务待配置'
+                  : '本地工作区未连接 · AI 服务不可用'}
+          </strong>
+        </header>
+        <div className="v2-app-body">
+          <main className="v2-main">{children}</main>
         </div>
-        <strong className="v2-mock-label">
-          {providerStatus === 'READY'
-            ? '本地工作区已连接 · AI 服务已就绪'
-            : providerStatus === 'VERIFY'
-              ? '本地工作区已连接 · AI 能力待验证'
-              : providerStatus === 'CONFIGURE'
-                ? '本地工作区已连接 · AI 服务待配置'
-                : '本地工作区未连接 · AI 服务不可用'}
-        </strong>
-      </header>
-      <div className="v2-app-body">
-        <aside aria-label="主导航" className="v2-sidebar">
-          <nav className="v2-nav">
-            {V2_ROUTES.map((route) => (
-              <a
-                aria-current={activeRoute === route.id ? 'page' : undefined}
-                className="v2-nav-item"
-                data-active={activeRoute === route.id}
-                data-v2-navigation-item
-                href={toV2Hash(route.id)}
-                key={route.id}
-              >
-                <Icon name={route.icon} size={21} />
-                <span>{route.label}</span>
-              </a>
-            ))}
-          </nav>
-          <button
-            className="v2-account"
-            onClick={() => notify('当前版本为本机单用户工作区。')}
-            type="button"
-          >
-            <Icon name="user-circle" size={29} />
-            <span>
-              <strong>{session.persona.name}</strong>
-              <small>个人悬疑推理图书账号</small>
-            </span>
-            <Icon name="caret-down" size={15} />
-          </button>
-        </aside>
-        <main className="v2-main">{children}</main>
       </div>
     </div>
   );

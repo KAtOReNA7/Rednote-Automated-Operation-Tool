@@ -517,6 +517,7 @@ describe('V2 R07 provider action renderer', () => {
     });
     window.history.replaceState(null, '', '#/v2/settings');
     render(<V2App />);
+    await user.click(await screen.findByText('最近一次能力检查与脱敏诊断'));
     expect(await screen.findByText(/部分完成：仍有能力保持未知/)).toBeVisible();
     expect(screen.getByText(/research \+ writing/)).toBeVisible();
     expect(screen.getByText(/同一请求已去重并映射到 research、writing/)).toBeVisible();
@@ -542,6 +543,7 @@ describe('V2 R07 provider action renderer', () => {
       writing: { modelId: 'shared-model', protocolMode: null, state: 'UNKNOWN' },
     };
     render(<V2App />);
+    await user.click(await screen.findByText('最近一次能力检查与脱敏诊断'));
     expect(await screen.findByText('未确认任何能力')).toBeVisible();
   });
 
