@@ -174,7 +174,7 @@ export function ContentPage(): React.JSX.Element {
   const allSelected = selectable.length > 0 && selectedIds.length === selectable.length;
 
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-content-page">
       <PageHeader
         actions={
           <>

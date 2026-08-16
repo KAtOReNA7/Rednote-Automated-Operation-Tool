@@ -458,7 +458,7 @@ export function SettingsPage(): React.JSX.Element {
       ? { builtAt: '开发测试环境', commit: 'development', v2DataVersion: 1 }
       : __REDNOTE_BUILD_INFO__;
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-settings-page">
       <PageHeader
         actions={
           <Button icon="check" onClick={() => void save()} tone="primary">

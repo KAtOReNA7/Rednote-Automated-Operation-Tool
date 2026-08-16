@@ -100,7 +100,7 @@ export function ReviewPage(): React.JSX.Element {
     if (result?.ok) setReview(result.value);
   };
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-review-page">
       <PageHeader
         title="数据复盘"
         eyebrow="本地数据"

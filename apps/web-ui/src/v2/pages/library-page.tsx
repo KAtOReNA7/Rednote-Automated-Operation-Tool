@@ -9,7 +9,7 @@ export function LibraryPage(): React.JSX.Element {
     `${book.title}${book.author}${book.angle}`.toLowerCase().includes(query.toLowerCase()),
   );
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-library-page">
       <PageHeader
         actions={
           <>

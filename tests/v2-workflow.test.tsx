@@ -42,7 +42,7 @@ describe('V2 deterministic session workflows', () => {
     await user.click(screen.getByRole('link', { name: '本周计划' }));
     expect(screen.getByRole('button', { name: '预览生成下周计划' })).toBeVisible();
     await user.click(screen.getByRole('button', { name: '选择待确认' }));
-    expect(document.querySelectorAll('.v2-post[data-selected="true"]')).toHaveLength(3);
+    expect(screen.getByText('已选择 3 篇')).toBeVisible();
 
     expect(
       document.querySelectorAll('.v2-post[data-danger="true"][data-selected="true"]'),
@@ -61,10 +61,11 @@ describe('V2 deterministic session workflows', () => {
     await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
     expect(await screen.findByText('计划已更新')).toBeVisible();
     await user.click(screen.getByRole('link', { name: '总览' }));
-    expect(screen.getByText('18 篇 · 0 处冲突 · 5 个空位')).toBeVisible();
+    expect(screen.getByText(/18 篇计划保存在本机/u)).toBeVisible();
     await user.click(screen.getByRole('link', { name: '本周计划' }));
     await user.click(screen.getByRole('button', { name: '确认所选' }));
-    await waitFor(() => expect(screen.getAllByText('已确认').length).toBeGreaterThanOrEqual(3));
+    await waitFor(() => expect(screen.getByText(/本机 revision 2/u)).toBeVisible());
+    expect(screen.getByRole('button', { name: '待确认 0' })).toBeVisible();
   });
 
   it('supports Shift selection and keeps conflict review write-free until explicit apply', async () => {

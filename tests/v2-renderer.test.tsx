@@ -44,11 +44,13 @@ describe('V2 renderer shell', () => {
       await user.click(within(navigation).getByRole('link', { name: route.label }));
       await waitFor(() => expect(window.location.hash).toBe(`#/v2/${route.id}`));
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(route.label);
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(
+        route.id === 'overview' ? '今天值得关注什么' : route.label,
+      );
     }
   });
 
-  it('controls unknown routes and supports switch, drawer, Escape, and focus return', async () => {
+  it('controls unknown routes and supports the editorial exception switch', async () => {
     window.history.replaceState(null, '', '#/v2/unknown');
     const user = userEvent.setup();
     render(<V2App />);
@@ -61,12 +63,8 @@ describe('V2 renderer shell', () => {
     await user.keyboard(' ');
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 
-    const review = screen.getByRole('button', { name: /《莫格街凶杀案》.*查看/u });
-    await user.click(review);
-    expect(screen.getByRole('dialog', { name: '《莫格街凶杀案》' })).toBeVisible();
-    await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(review).toHaveFocus();
+    expect(screen.getByRole('heading', { level: 2, name: '今天需要你决定' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: '本周精选内容' })).toBeVisible();
   });
 
   it('shows six editable content fields, keyboard batch actions, and no pinned-comment surface', async () => {

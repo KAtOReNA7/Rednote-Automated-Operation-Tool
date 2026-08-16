@@ -878,7 +878,7 @@ describe('V2 renderer persistence wiring', () => {
     exposeBridge(bridgeFor(facade));
     render(<V2App />);
     await waitFor(() => expect(screen.getByText(/本机 revision 2/u)).toBeInTheDocument());
-    expect(screen.getAllByText('已确认')).toHaveLength(3);
+    expect(screen.getByRole('button', { name: '待确认 0' })).toBeVisible();
     expect(
       database
         .prepare(

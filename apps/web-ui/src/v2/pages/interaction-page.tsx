@@ -204,7 +204,7 @@ export function InteractionPage(): React.JSX.Element {
   const detailActions = active === undefined ? [] : detailActionsByStatus[active.status];
 
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-interaction-page">
       <PageHeader
         actions={
           <Button disabled={busy} icon="check" onClick={confirmSelected} tone="primary">

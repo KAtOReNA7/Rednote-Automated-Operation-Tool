@@ -46,6 +46,12 @@ export function WeeklyPlanPage(): React.JSX.Element {
   });
   const targetWeekKey = nextWeek.weekKey;
   const today = shanghaiDateText();
+  const [focusedDay, setFocusedDay] = useState<(typeof dayOrder)[number]>(() => {
+    const current = dayOrder.find((day) =>
+      session.plan.some((item) => item.day === day && item.date === today),
+    );
+    return current ?? '周一';
+  });
   const [targetPlan, setTargetPlan] = useState<{
     readonly revision: number;
     readonly weekKey: string;
@@ -90,6 +96,9 @@ export function WeeklyPlanPage(): React.JSX.Element {
     });
   };
   const selectPending = (): void => {
+    const firstPendingDay = pending[0]?.day;
+    if (dayOrder.includes(firstPendingDay as (typeof dayOrder)[number]))
+      setFocusedDay(firstPendingDay as (typeof dayOrder)[number]);
     setUi((current) => ({
       ...current,
       planSelectedIds: pending.map(({ id }) => id),
@@ -253,7 +262,18 @@ export function WeeklyPlanPage(): React.JSX.Element {
             <button
               data-active={filter === value}
               key={value}
-              onClick={() => setUi((current) => ({ ...current, planFilter: value }))}
+              onClick={() => {
+                setUi((current) => ({ ...current, planFilter: value }));
+                const firstMatch = session.plan.find(({ status }) =>
+                  value === 'all'
+                    ? true
+                    : value === 'pending'
+                      ? status === '待审批'
+                      : status === '时间冲突',
+                );
+                if (dayOrder.includes(firstMatch?.day as (typeof dayOrder)[number]))
+                  setFocusedDay(firstMatch?.day as (typeof dayOrder)[number]);
+              }}
               type="button"
             >
               {label}
@@ -271,63 +291,97 @@ export function WeeklyPlanPage(): React.JSX.Element {
           </Button>
         </div>
       </div>
+      <section aria-label="选择查看日期" className="v2-week-strip">
+        {dayOrder.map((day) => {
+          const dayItems = session.plan.filter((item) => item.day === day);
+          const visibleItems = dayItems.filter((item) => visible(item.status));
+          const date = shortDate(dayItems[0]?.date ?? '');
+          const attentionCount = dayItems.filter(
+            ({ status }) => status === '待审批' || status === '时间冲突',
+          ).length;
+          return (
+            <button
+              aria-pressed={focusedDay === day}
+              data-attention={attentionCount > 0}
+              data-today={dayItems.some((item) => item.date === today)}
+              key={day}
+              onClick={() => setFocusedDay(day)}
+              type="button"
+            >
+              <span>{day}</span>
+              <strong>{date}</strong>
+              <small>
+                {visibleItems.length} 篇{attentionCount > 0 ? ` · ${attentionCount} 待处理` : ''}
+              </small>
+            </button>
+          );
+        })}
+      </section>
       <div className="v2-plan-grid">
-        <section aria-label="一周内容排程" className="v2-calendar">
-          {dayOrder.map((day) => {
-            const dayItems = session.plan.filter((item) => item.day === day);
-            const date = shortDate(dayItems[0]?.date ?? '');
-            return (
-              <section className="v2-day" data-today={day === '周日'} key={day}>
-                <header>
-                  <strong>{day}</strong>
-                  <span>{date}</span>
-                  {dayItems.some((item) => item.date === today) ? <b>今天</b> : null}
-                </header>
-                <div>
-                  {dayItems
-                    .filter((item) => visible(item.status))
-                    .map((item) => {
-                      const selected = selectedIds.includes(item.id);
-                      return (
-                        <article
-                          className="v2-post"
-                          data-danger={item.status === '时间冲突'}
-                          data-selected={selected}
-                          key={item.id}
-                        >
-                          <div>
-                            <span>{item.time}</span>
-                            <StatusPill status={item.status} />
-                          </div>
-                          <button
-                            onClick={() => notify(`${item.title}详情尚未进入 R03。`)}
-                            type="button"
-                          >
-                            {item.title}
-                          </button>
-                          <p>{item.book}</p>
-                          <button
-                            aria-label={`${selected ? '取消选择' : '选择'} ${item.title}`}
-                            aria-pressed={selected}
-                            className="v2-select-post"
-                            disabled={locked || item.status === '已跳过'}
-                            onClick={(event) => toggleCandidate(item.id, event.shiftKey)}
-                            type="button"
-                          >
-                            <Icon name={selected ? 'check-square' : 'square'} size={17} />
-                            {selected ? '已选择' : '选择'}
-                          </button>
-                        </article>
-                      );
-                    })}
-                </div>
-                <button className="v2-add-slot" disabled type="button">
-                  <Icon name="plus" size={16} />
-                  空闲时段
-                </button>
-              </section>
-            );
-          })}
+        <section aria-label="一周内容排程" className="v2-day-focus">
+          <header>
+            <div>
+              <p className="v2-kicker">当前查看</p>
+              <h2>
+                {focusedDay} ·{' '}
+                {shortDate(session.plan.find((item) => item.day === focusedDay)?.date ?? '')}
+              </h2>
+            </div>
+            <span>
+              {
+                session.plan.filter((item) => item.day === focusedDay && visible(item.status))
+                  .length
+              }{' '}
+              篇内容
+            </span>
+          </header>
+          <div className="v2-day-focus-list">
+            {session.plan
+              .filter((item) => item.day === focusedDay && visible(item.status))
+              .map((item) => {
+                const selected = selectedIds.includes(item.id);
+                return (
+                  <article
+                    className="v2-post"
+                    data-danger={item.status === '时间冲突'}
+                    data-selected={selected}
+                    key={item.id}
+                  >
+                    <div>
+                      <time>{item.time}</time>
+                      <StatusPill status={item.status} />
+                    </div>
+                    <button onClick={() => notify(`${item.title}详情尚未进入 R03。`)} type="button">
+                      {item.title}
+                    </button>
+                    <p>{item.book}</p>
+                    <button
+                      aria-label={`${selected ? '取消选择' : '选择'} ${item.title}`}
+                      aria-pressed={selected}
+                      className="v2-select-post"
+                      disabled={locked || item.status === '已跳过'}
+                      onClick={(event) => toggleCandidate(item.id, event.shiftKey)}
+                      type="button"
+                    >
+                      <Icon name={selected ? 'check-square' : 'square'} size={17} />
+                      {selected ? '已选择' : '选择'}
+                    </button>
+                  </article>
+                );
+              })}
+            {session.plan.filter((item) => item.day === focusedDay && visible(item.status))
+              .length === 0 ? (
+              <div className="v2-day-focus-empty">
+                <Icon name="calendar-blank" size={24} />
+                <strong>当前筛选下没有内容</strong>
+                <p>切换上方日期，或返回“全部”查看本周安排。</p>
+              </div>
+            ) : null}
+          </div>
+          <button className="v2-add-slot" disabled type="button">
+            <Icon name="plus" size={16} />
+            空闲时段
+          </button>
         </section>
         <aside className="v2-stack">
           <section className="v2-card v2-side-card v2-rhythm-card">
