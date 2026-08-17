@@ -42,13 +42,24 @@ function stableKey(prefix: string, values: readonly string[]): string {
   return `${prefix}-${hash.toString(16).padStart(8, '0')}`;
 }
 
+function displayGeneratedAt(value: string): string {
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp) || timestamp <= Date.UTC(1970, 0, 2)) return '未知';
+  return new Intl.DateTimeFormat('zh-CN', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  }).format(new Date(timestamp));
+}
+
 export function ContentPage(): React.JSX.Element {
-  const { notify, session, setSession, setUi, ui } = useV2Controller();
+  const { navigate, notify, session, setSession, setUi, ui } = useV2Controller();
   const { activeContentId: activeId, contentSelectedIds: selectedIds } = ui;
   const active = session.content.find(({ id }) => id === activeId) ?? session.content[0];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [exportId, setExportId] = useState('');
+  const [queueQuery, setQueueQuery] = useState('');
+  const [queueStatus, setQueueStatus] = useState<'ALL' | 'ATTENTION'>('ALL');
   const errorRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<EditableFields>(() => editableFields(active));
 
@@ -172,12 +183,20 @@ export function ContentPage(): React.JSX.Element {
       : selectedPackages.map(({ candidateId }) => candidateId);
   const selectable = session.content.length === 0 ? generationCandidates : session.content;
   const allSelected = selectable.length > 0 && selectedIds.length === selectable.length;
+  const filteredSelectable = selectable.filter((item) => {
+    const searchMatches = `${item.book}\n${item.title}`
+      .toLocaleLowerCase('zh-CN')
+      .includes(queueQuery.trim().toLocaleLowerCase('zh-CN'));
+    const needsAttention = !['已确认', '已批准'].includes(item.status);
+    return searchMatches && (queueStatus === 'ALL' || needsAttention);
+  });
+  const canPreviewGeneration = selectedPlanItemIds.length > 0;
 
   return (
     <div className="v2-page v2-content-page">
       <PageHeader
         actions={
-          <>
+          canPreviewGeneration ? (
             <ContentCopyGenerationControl
               onComplete={async () => {
                 const refreshed = await window.rednoteV2?.readContentPackages({
@@ -188,28 +207,7 @@ export function ContentPage(): React.JSX.Element {
               selectedPlanItemIds={selectedPlanItemIds}
               weekKey={session.weekKey}
             />
-            {session.content.length === 0 ? null : (
-              <>
-                {exportId === '' ? null : (
-                  <Button disabled={busy} icon="export" onClick={openExport}>
-                    打开导出目录
-                  </Button>
-                )}
-                <Button disabled={busy} icon="export" onClick={exportSelected}>
-                  导出所选 {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
-                </Button>
-                <Button
-                  disabled={busy}
-                  icon="check"
-                  onClick={() => approve(selectedIds)}
-                  tone="primary"
-                >
-                  {window.rednoteV2 === undefined ? '批量通过' : '批量批准'}{' '}
-                  {selectedPackages.length > 0 ? `(${selectedPackages.length})` : ''}
-                </Button>
-              </>
-            )}
-          </>
+          ) : null
         }
         description="封面、文案、状态和检查信息同屏，但只保留一个主要任务。"
         eyebrow="内容工作台"
@@ -221,102 +219,163 @@ export function ContentPage(): React.JSX.Element {
           <span>{error}</span>
         </div>
       )}
-      <div className="v2-content-grid v2-content-canvas">
-        <section aria-label="内容包列表" className="v2-card v2-package-list v2-content-queue">
+      <div className="v2-content-grid v2-content-canvas v2-content-workbench">
+        <section
+          aria-label="内容包列表"
+          className="v2-card v2-package-list v2-content-queue v2-content-queue-rail"
+        >
           <header>
-            <strong>
-              {session.content.length === 0 ? '选择锁定计划项' : `内容包 ${session.content.length}`}
-            </strong>
-            <button
-              onClick={() =>
-                setUi((current) => ({
-                  ...current,
-                  contentSelectedIds: allSelected ? [] : selectable.map(({ id }) => id),
-                }))
-              }
-              type="button"
-            >
-              {allSelected ? '清除选择' : '全选'}
-            </button>
+            <span>
+              <strong>内容队列</strong>
+              <small>
+                {session.content.length === 0
+                  ? `${selectable.length} 个锁定计划项`
+                  : `${session.content.length} 个内容版本`}
+              </small>
+            </span>
+            {selectable.length === 0 ? null : (
+              <button
+                onClick={() =>
+                  setUi((current) => ({
+                    ...current,
+                    contentSelectedIds: allSelected ? [] : selectable.map(({ id }) => id),
+                  }))
+                }
+                type="button"
+              >
+                {allSelected ? '清除选择' : '全选'}
+              </button>
+            )}
           </header>
-          {selectable.map((item) => {
-            const selected = selectedIds.includes(item.id);
-            const label = item.book;
-            const subtitle = item.title;
-            return (
-              <article data-active={'versionId' in item && active?.id === item.id} key={item.id}>
-                <button
-                  aria-label={`${selected ? '取消选择' : '选择'} ${label}`}
-                  onClick={() =>
-                    setUi((current) => ({
-                      ...current,
-                      contentSelectedIds: selected
-                        ? current.contentSelectedIds.filter((id) => id !== item.id)
-                        : [...current.contentSelectedIds, item.id],
-                    }))
-                  }
-                  type="button"
-                >
-                  <Icon name={selected ? 'check-square' : 'square'} />
-                </button>
-                <button
-                  disabled={!('versionId' in item)}
-                  onClick={() => setUi((current) => ({ ...current, activeContentId: item.id }))}
-                  type="button"
-                >
-                  <span>
-                    <strong>{label}</strong>
-                    <small>{subtitle}</small>
-                  </span>
-                  <StatusPill status={item.status} />
-                </button>
-              </article>
-            );
-          })}
+          <div className="v2-content-queue-items">
+            {filteredSelectable.map((item) => {
+              const selected = selectedIds.includes(item.id);
+              const label = item.book;
+              const subtitle = item.title;
+              return (
+                <article data-active={'versionId' in item && active?.id === item.id} key={item.id}>
+                  <button
+                    aria-label={`${selected ? '取消选择' : '选择'} ${label}`}
+                    onClick={() =>
+                      setUi((current) => ({
+                        ...current,
+                        contentSelectedIds: selected
+                          ? current.contentSelectedIds.filter((id) => id !== item.id)
+                          : [...current.contentSelectedIds, item.id],
+                      }))
+                    }
+                    type="button"
+                  >
+                    <Icon name={selected ? 'check-square' : 'square'} />
+                  </button>
+                  <button
+                    disabled={!('versionId' in item)}
+                    onClick={() => setUi((current) => ({ ...current, activeContentId: item.id }))}
+                    type="button"
+                  >
+                    <span>
+                      <strong>{label}</strong>
+                      <small>{subtitle}</small>
+                    </span>
+                    <StatusPill status={item.status} />
+                  </button>
+                </article>
+              );
+            })}
+            {selectable.length === 0 ? (
+              <div className="v2-content-queue-empty">
+                <Icon name="calendar-blank" size={24} />
+                <strong>暂无锁定计划项</strong>
+                <small>先在本周计划中锁定内容。</small>
+              </div>
+            ) : filteredSelectable.length === 0 ? (
+              <div className="v2-content-queue-empty">
+                <strong>没有匹配内容</strong>
+                <small>调整筛选或搜索关键词。</small>
+              </div>
+            ) : null}
+          </div>
+          <footer className="v2-content-queue-tools">
+            <label>
+              <Icon name="magnifying-glass" size={15} />
+              <input
+                aria-label="搜索内容队列"
+                onChange={(event) => setQueueQuery(event.target.value)}
+                placeholder="搜索作品或标题"
+                value={queueQuery}
+              />
+            </label>
+            <div aria-label="内容筛选" className="v2-segmented" role="group">
+              <button
+                aria-pressed={queueStatus === 'ALL'}
+                onClick={() => setQueueStatus('ALL')}
+                type="button"
+              >
+                全部
+              </button>
+              <button
+                aria-pressed={queueStatus === 'ATTENTION'}
+                onClick={() => setQueueStatus('ATTENTION')}
+                type="button"
+              >
+                待处理
+              </button>
+            </div>
+          </footer>
         </section>
         {active === undefined ? (
-          <section aria-label="尚未生成内容" className="v2-card v2-package-detail">
-            <Icon name="file-text" size={34} />
-            <h2>尚未生成内容包</h2>
-            <p>
-              {session.planStatus === 'CONFIRMED'
-                ? '请在左侧明确选择 3 个计划项，然后预览并生成受控模型内容。'
-                : '当前周计划尚未锁定；生成操作保持禁用门禁。'}
-            </p>
+          <section
+            aria-label="尚未生成内容"
+            className="v2-card v2-package-detail v2-content-empty-stage"
+          >
+            <div className="v2-content-empty-copy">
+              <div className="v2-content-empty-icon">
+                <Icon name="file-text" size={34} />
+              </div>
+              <p className="v2-kicker">编辑工作区</p>
+              {generationCandidates.length > 0 ? (
+                <>
+                  <h2>选择一项内容开始编辑</h2>
+                  <p>选择后可检查封面、文案、版本状态和建议发布时间。</p>
+                  <p className="v2-content-empty-note">当前没有发起模型请求，也不会产生费用。</p>
+                </>
+              ) : (
+                <>
+                  <h2>尚无可编辑内容</h2>
+                  <p>先在本周计划中锁定内容，再返回这里生成版本。</p>
+                  <Button
+                    icon="calendar-blank"
+                    onClick={() => navigate('weekly-plan')}
+                    tone="primary"
+                  >
+                    前往本周计划
+                  </Button>
+                  <p className="v2-content-empty-note">
+                    此按钮只切换页面，不会调用模型或产生费用。
+                  </p>
+                </>
+              )}
+            </div>
           </section>
         ) : (
           <section
             aria-label={`${active.book} 内容包`}
-            className="v2-card v2-package-detail v2-content-stage"
+            className="v2-card v2-package-detail v2-content-stage v2-content-editor-stage"
           >
-            <div className="v2-section-head">
-              <div>
-                <p className="v2-kicker">{active.book}</p>
-                <h2>{active.title}</h2>
-                <small>
-                  v{active.version} · revision {active.revision} · {active.status}
-                </small>
-                <small>
-                  文案：{active.provenance.copyModelId ?? '历史版本'} · 封面：
-                  {active.provenance.coverModelId ?? '历史版本'} · 生成时间：
-                  {active.provenance.generatedAt}
-                </small>
-              </div>
-              <div className="v2-header-actions">
-                <Button disabled={busy} icon="check" onClick={() => approve([active.id])}>
-                  批准当前版本
-                </Button>
-                <Button disabled={busy} icon="pencil-simple" onClick={save} tone="primary">
-                  保存内容
-                </Button>
-              </div>
-            </div>
-            <section aria-label="AI 生成" className="v2-provider-generation-panel">
-              <h3>AI 生成</h3>
-              <p>
-                每个动作先显示真实模型、能力、费用和 Search / Fetch 关闭状态；旧版本不会被覆盖。
-              </p>
-              <div className="v2-inline-actions">
+            <div className="v2-package-grid v2-content-editor-grid">
+              <div className="v2-content-cover-column">
+                <figure className="v2-content-cover-stage">
+                  <img alt={active.coverAlt} src={active.cover} />
+                  <figcaption>
+                    <Icon name="image-square" size={16} />
+                    封面 ·{' '}
+                    {active.provenance.coverSource === 'GENERATED_IMAGE'
+                      ? '模型生成版本'
+                      : active.provenance.copyModelRunId === null
+                        ? '历史版本'
+                        : '待补封面'}
+                  </figcaption>
+                </figure>
                 <ProviderActionControl
                   intent={{
                     expectedRevision: active.revision,
@@ -334,21 +393,22 @@ export function ContentPage(): React.JSX.Element {
                   }}
                 />
               </div>
-            </section>
-            <div className="v2-package-grid">
-              <figure>
-                <img alt={active.coverAlt} src={active.cover} />
-                <figcaption>
-                  <Icon name="image-square" size={16} />
-                  封面 ·{' '}
-                  {active.provenance.coverSource === 'GENERATED_IMAGE'
-                    ? '模型生成版本'
-                    : active.provenance.copyModelRunId === null
-                      ? '历史版本'
-                      : '待补封面（当前为历史演示封面）'}
-                </figcaption>
-              </figure>
               <div className="v2-package-fields">
+                <div className="v2-content-editor-heading">
+                  <p className="v2-kicker">{active.book}</p>
+                  <h2>{active.title}</h2>
+                  <div className="v2-content-version-line">
+                    <StatusPill status={active.status} />
+                    <small>
+                      v{active.version} · revision {active.revision}
+                    </small>
+                  </div>
+                  <small className="v2-content-provenance">
+                    文案 {active.provenance.copyModelId ?? '历史版本'} · 封面{' '}
+                    {active.provenance.coverModelId ?? '历史版本'} ·{' '}
+                    {displayGeneratedAt(active.provenance.generatedAt)}
+                  </small>
+                </div>
                 <label className="v2-field">
                   <span>标题</span>
                   <input
@@ -389,8 +449,24 @@ export function ContentPage(): React.JSX.Element {
                     value={draft.materials}
                   />
                 </label>
+                <div className="v2-content-save-row">
+                  <Button disabled={busy} icon="pencil-simple" onClick={save} tone="primary">
+                    保存新版本
+                  </Button>
+                  <Button disabled={busy} icon="check" onClick={() => approve([active.id])}>
+                    提交审批
+                  </Button>
+                </div>
               </div>
             </div>
+            <details className="v2-content-generation-check">
+              <summary>生成检查：模型、能力、费用与外部工具</summary>
+              <p>
+                文案模型 {active.provenance.copyModelId ?? '历史版本'}；封面模型{' '}
+                {active.provenance.coverModelId ?? '历史版本'}。Search / Fetch
+                保持关闭，每次操作均先预览再确认。
+              </p>
+            </details>
           </section>
         )}
         <aside
@@ -398,21 +474,81 @@ export function ContentPage(): React.JSX.Element {
           className="v2-card v2-content-inspector v2-workspace-inspector"
         >
           <p className="v2-kicker">版本检查器</p>
-          <h2>{active === undefined ? '等待选择内容' : '准备确认当前版本'}</h2>
+          <h2>
+            {active === undefined
+              ? generationCandidates.length === 0
+                ? '尚无可检查版本'
+                : '等待选择内容'
+              : `v${active.version} · ${active.status}`}
+          </h2>
           <dl className="v2-facts">
             <div>
               <dt>封面</dt>
               <dd>{active === undefined ? '—' : active.coverAlt === '' ? '待补充' : '已关联'}</dd>
             </div>
             <div>
-              <dt>版本状态</dt>
-              <dd>{active?.status ?? '未生成'}</dd>
+              <dt>文案</dt>
+              <dd>
+                {active === undefined ? '未关联' : draft.body.trim() === '' ? '待补充' : '已保存'}
+              </dd>
+            </div>
+            <div>
+              <dt>标签</dt>
+              <dd>
+                {active === undefined
+                  ? '未关联'
+                  : active.tags.length > 0
+                    ? `${active.tags.length} 个`
+                    : '待补充'}
+              </dd>
+            </div>
+            <div>
+              <dt>剧透警告</dt>
+              <dd>{active === undefined ? '等待内容' : '随正文人工检查'}</dd>
             </div>
             <div>
               <dt>建议时间</dt>
               <dd>{active === undefined ? '—' : active.time}</dd>
             </div>
           </dl>
+          <div className="v2-content-history">
+            <strong>历史版本</strong>
+            <small>
+              {active === undefined
+                ? '等待选择内容后显示。'
+                : `当前 v${active.version}，保存修改将追加新版本。`}
+            </small>
+          </div>
+          {active === undefined ? null : (
+            <div className="v2-content-inspector-actions">
+              <Button
+                disabled={busy}
+                icon="check"
+                onClick={() => approve([active.id])}
+                tone="primary"
+              >
+                批准当前版本
+              </Button>
+              {selectedPackages.length > 1 ? (
+                <Button disabled={busy} icon="check" onClick={() => approve(selectedIds)}>
+                  {window.rednoteV2 === undefined ? '批量通过' : '批量批准'} (
+                  {selectedPackages.length})
+                </Button>
+              ) : null}
+              <Button
+                disabled={busy || selectedPackages.length === 0}
+                icon="export"
+                onClick={exportSelected}
+              >
+                导出所选
+              </Button>
+              {exportId === '' ? null : (
+                <Button disabled={busy} icon="export" onClick={openExport}>
+                  打开导出目录
+                </Button>
+              )}
+            </div>
+          )}
           <p className="v2-manual-note">保存后仍需人工批准；导出不会自动发布到平台。</p>
         </aside>
       </div>

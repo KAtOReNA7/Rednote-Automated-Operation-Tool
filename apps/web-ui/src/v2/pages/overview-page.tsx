@@ -36,14 +36,14 @@ export function OverviewPage(): React.JSX.Element {
     <div className="v2-page v2-overview-page">
       <header className="v2-page-header">
         <div>
-          <p className="v2-kicker">为你精选</p>
+          <p className="v2-kicker">今日编辑台</p>
           <h1>今天值得关注什么</h1>
-          <p>只展示需要判断的事项、当前精选内容与已经记录的真实表现。</p>
+          <p>结果、异常和下一步动作都在首屏完成。</p>
         </div>
         <div className="v2-header-actions">
           <button
             aria-checked={ui.onlyExceptions}
-            className="v2-switch"
+            className="v2-switch v2-overview-exception-switch"
             onClick={toggleExceptions}
             onKeyDown={(event) => {
               if (event.key === 'Enter' || event.key === ' ') {
@@ -70,11 +70,14 @@ export function OverviewPage(): React.JSX.Element {
         </div>
       </header>
 
-      <section aria-label="今日运营摘要" className="v2-editorial-lead">
-        <article className="v2-feature-hero" data-has-content={heroContent !== undefined}>
-          <div>
-            <p className="v2-kicker">趋势选题</p>
-            <h2>{locked ? '本周内容已进入执行节奏' : '先完成本周最重要的决定'}</h2>
+      <section aria-label="今日运营摘要" className="v2-editorial-lead v2-overview-lead">
+        <article
+          className="v2-feature-hero v2-overview-hero"
+          data-has-content={heroContent !== undefined}
+        >
+          <div className="v2-overview-hero-copy">
+            <p className="v2-kicker">本周编辑精选</p>
+            <h2>{locked ? '让计划像一张专辑，形成连续的内容节奏' : '先完成本周最重要的决定'}</h2>
             <p>
               {currentPlan.length} 篇计划保存在本机；{pendingCount} 篇待确认
               {conflictCount > 0 ? `，${conflictCount} 处时间冲突需要处理` : '，当前没有时间冲突'}。
@@ -83,12 +86,18 @@ export function OverviewPage(): React.JSX.Element {
               查看本周计划
             </Button>
           </div>
+          <div className="v2-overview-feature-card">
+            <small>本周主打</small>
+            <strong title={heroContent?.book ?? '等待首份内容'}>
+              {heroContent?.book ?? '等待首份内容'}
+            </strong>
+            <span>{heroContent?.title ?? '完成周计划后形成本周内容主线'}</span>
+          </div>
         </article>
 
         <section className="v2-card v2-today-decisions">
           <header>
             <div>
-              <p className="v2-kicker">只呈现需要行动的结果</p>
               <h2>今天需要你决定</h2>
             </div>
             <span>{decisionCount}</span>
@@ -108,17 +117,16 @@ export function OverviewPage(): React.JSX.Element {
         </section>
       </section>
 
-      <section className="v2-featured-section">
+      <section className="v2-featured-section v2-overview-shelf-section">
         <header className="v2-section-head">
           <div>
-            <p className="v2-kicker">保存在本机的当前版本</p>
-            <h2>本周精选内容</h2>
+            <h2>当前内容</h2>
           </div>
           <button onClick={() => navigate('content')} type="button">
             查看全部 <Icon name="arrow-right" size={15} />
           </button>
         </header>
-        <div className="v2-featured-row">
+        <div className="v2-featured-row v2-overview-shelf-row">
           {featuredContent.length === 0 ? (
             <section className="v2-card v2-editorial-empty">
               <Icon name="file-text" size={24} />
@@ -129,13 +137,33 @@ export function OverviewPage(): React.JSX.Element {
             </section>
           ) : (
             <div className="v2-featured-grid">
-              {featuredContent.map((item) => (
-                <button key={item.id} onClick={() => navigate('content')} type="button">
-                  <img alt={item.coverAlt} src={item.cover} />
+              {featuredContent.map((item, index) => (
+                <button
+                  data-tone={index % 4}
+                  key={item.id}
+                  onClick={() => navigate('content')}
+                  type="button"
+                >
+                  <img alt="" src={item.cover} />
                   <span>
-                    <small>{item.book}</small>
-                    <strong>{item.title}</strong>
+                    <strong>{item.book}</strong>
+                    <small>{item.title}</small>
                     <em>{item.status}</em>
+                  </span>
+                </button>
+              ))}
+              {Array.from({ length: Math.max(0, 4 - featuredContent.length) }, (_, index) => (
+                <button
+                  className="v2-featured-empty-slot"
+                  key={`empty-${index}`}
+                  onClick={() => navigate('content')}
+                  type="button"
+                >
+                  <Icon name="plus" size={18} />
+                  <span>
+                    <strong>等待下一份内容</strong>
+                    <small>从已锁定计划生成</small>
+                    <em>未生成</em>
                   </span>
                 </button>
               ))}

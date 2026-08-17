@@ -221,8 +221,8 @@ export function WeeklyPlanPage(): React.JSX.Element {
             }}
           />
         }
-        description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
-        eyebrow={`查看计划周 ${session.weekKey} · 自然当前周 ${currentWeek.weekKey}（${currentWeek.startDate} 至 ${currentWeek.endDate}）`}
+        description={`${currentWeek.startDate}—${currentWeek.endDate} · Asia/Shanghai · 本机 revision ${session.planRevision}`}
+        eyebrow="编辑日历"
         title="本周计划"
       />
       {!planConsistent ? (
@@ -232,15 +232,25 @@ export function WeeklyPlanPage(): React.JSX.Element {
             <strong>本地计划日期与周标识不一致</strong>
             <p>请使用现有日期编辑并保存后再生成；系统不会猜测或覆盖你的计划。</p>
           </div>
+          <Button
+            onClick={() => {
+              if (locked) unlock();
+              else notify('请在下方选择内容，再使用“自由选择日期时间”完成修正。');
+            }}
+            tone="quiet"
+          >
+            {locked ? '解锁并调整' : '查看调整方式'}
+          </Button>
         </section>
       ) : null}
-      <section className="v2-weekly-context" aria-label="计划边界说明">
+      <section className="v2-weekly-context v2-weekly-meta" aria-label="计划边界说明">
         <p className="v2-plan-boundary">
           下周预览目标：{nextWeek.weekKey} · {nextWeek.startDate} 至 {nextWeek.endDate}。
+          Asia/Shanghai (UTC+8)。
         </p>
         <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
       </section>
-      {locked ? (
+      {locked && planConsistent ? (
         <section className="v2-locked-banner" role="status">
           <Icon name="check-circle" />
           <div>
@@ -252,48 +262,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
           </Button>
         </section>
       ) : null}
-      <div className="v2-plan-toolbar">
-        <div aria-label="筛选计划" className="v2-segments">
-          {(
-            [
-              ['all', `全部 ${session.plan.length}`],
-              ['pending', `待确认 ${pending.length}`],
-              ['conflict', `时间冲突 ${conflicts.length}`],
-            ] as const
-          ).map(([value, label]) => (
-            <button
-              data-active={filter === value}
-              key={value}
-              onClick={() => {
-                setUi((current) => ({ ...current, planFilter: value }));
-                const firstMatch = session.plan.find(({ status }) =>
-                  value === 'all'
-                    ? true
-                    : value === 'pending'
-                      ? status === '待审批'
-                      : status === '时间冲突',
-                );
-                if (dayOrder.includes(firstMatch?.day as (typeof dayOrder)[number]))
-                  setFocusedDay(firstMatch?.day as (typeof dayOrder)[number]);
-              }}
-              type="button"
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-        <div>
-          <Button
-            disabled={locked || pending.length === 0}
-            icon="check-square"
-            onClick={selectPending}
-            tone="quiet"
-          >
-            选择待确认
-          </Button>
-        </div>
-      </div>
-      <section aria-label="选择查看日期" className="v2-week-strip">
+      <section aria-label="选择查看日期" className="v2-week-strip v2-weekly-date-ribbon">
         {dayOrder.map((day) => {
           const dayItems = session.plan.filter((item) => item.day === day);
           const visibleItems = dayItems.filter((item) => visible(item.status));
@@ -319,8 +288,8 @@ export function WeeklyPlanPage(): React.JSX.Element {
           );
         })}
       </section>
-      <div className="v2-plan-grid">
-        <section aria-label="一周内容排程" className="v2-day-focus">
+      <div className="v2-plan-grid v2-weekly-stage">
+        <section aria-label="一周内容排程" className="v2-day-focus v2-weekly-day-stage">
           <header>
             <div>
               <p className="v2-kicker">当前查看</p>
@@ -337,6 +306,37 @@ export function WeeklyPlanPage(): React.JSX.Element {
               篇内容
             </span>
           </header>
+          <div className="v2-plan-toolbar v2-weekly-inline-filters">
+            <div aria-label="筛选计划" className="v2-segments">
+              {(
+                [
+                  ['all', `全部 ${session.plan.length}`],
+                  ['pending', `待确认 ${pending.length}`],
+                  ['conflict', `时间冲突 ${conflicts.length}`],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  data-active={filter === value}
+                  key={value}
+                  onClick={() => {
+                    setUi((current) => ({ ...current, planFilter: value }));
+                    const firstMatch = session.plan.find(({ status }) =>
+                      value === 'all'
+                        ? true
+                        : value === 'pending'
+                          ? status === '待审批'
+                          : status === '时间冲突',
+                    );
+                    if (dayOrder.includes(firstMatch?.day as (typeof dayOrder)[number]))
+                      setFocusedDay(firstMatch?.day as (typeof dayOrder)[number]);
+                  }}
+                  type="button"
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div className="v2-day-focus-list">
             {session.plan
               .filter((item) => item.day === focusedDay && visible(item.status))
@@ -385,7 +385,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
             空闲时段
           </button>
         </section>
-        <aside className="v2-stack">
+        <aside aria-label="本周节奏和批量操作" className="v2-stack v2-weekly-rail">
           <section className="v2-card v2-side-card v2-rhythm-card">
             <p className="v2-kicker">保持全局视角</p>
             <h2>本周节奏</h2>
@@ -425,6 +425,14 @@ export function WeeklyPlanPage(): React.JSX.Element {
           <section className="v2-card v2-side-card v2-quick-actions">
             <p className="v2-kicker">不依赖拖拽</p>
             <h2>快速操作</h2>
+            <Button
+              disabled={locked || pending.length === 0}
+              icon="check-square"
+              onClick={selectPending}
+              tone="quiet"
+            >
+              选择待确认
+            </Button>
             <Button
               disabled={locked || selectedIds.length === 0}
               icon="calendar-blank"

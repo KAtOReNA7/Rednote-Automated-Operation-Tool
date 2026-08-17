@@ -71,7 +71,7 @@ describe('V2 renderer shell', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 
     expect(screen.getByRole('heading', { level: 2, name: '今天需要你决定' })).toBeVisible();
-    expect(screen.getByRole('heading', { level: 2, name: '本周精选内容' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: '当前内容' })).toBeVisible();
   });
 
   it('shows six editable content fields, keyboard batch actions, and no pinned-comment surface', async () => {
