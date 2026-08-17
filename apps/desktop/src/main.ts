@@ -20,14 +20,13 @@ import {
 import { createSecureWebPreferences } from './window-factory.js';
 import { createWindowStateStore } from './window-state.js';
 import { DesktopSettingsRuntime } from './settings-runtime.js';
+import { resolveDesktopRendererUrl, resolveDesktopShellSelection } from './shell-mode.js';
 import { registerV2Ipc, V2DesktopRuntime } from './v2-runtime.js';
 
 const APP_PROTOCOL = 'rednote';
-const LEGACY_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`;
-const V2_RENDERER_URL = `${APP_PROTOCOL}://app/v2.html`;
-const DEVELOPMENT_URL_PATTERN = /^http:\/\/127\.0\.0\.1:\d{1,5}(?:\/.*)?$/u;
 const isSmokeMode = process.argv.includes('--issue006-smoke');
-const isV2ShellMode = process.argv.includes('--v2-shell');
+const shellSelection = resolveDesktopShellSelection(process.argv);
+const isV2ShellMode = shellSelection.mode === 'v2';
 const smokeOutputPath = resolveSmokeOutputPath(process.argv);
 const SMOKE_PROCESS_SAMPLE_PREFIX = '__REDNOTE_SMOKE_PROCESS_SAMPLE__:';
 const MAX_SMOKE_PROCESS_COUNT = 32;
@@ -169,11 +168,7 @@ if (smokeWorkspacePath !== null) {
 }
 
 function rendererUrl(): string {
-  const candidate = process.env.DESKTOP_DEV_SERVER_URL;
-  if (candidate !== undefined && DEVELOPMENT_URL_PATTERN.test(candidate)) {
-    return isV2ShellMode ? new URL('/v2.html', candidate).toString() : candidate;
-  }
-  return isV2ShellMode ? V2_RENDERER_URL : LEGACY_RENDERER_URL;
+  return resolveDesktopRendererUrl(shellSelection.mode, process.env.DESKTOP_DEV_SERVER_URL);
 }
 
 function registerLocalRendererProtocol(rendererRoot: string): void {
@@ -637,7 +632,12 @@ async function startApplication(): Promise<void> {
   await startLegacyApplication(expectedRendererUrl, sessionSecurityAudit);
 }
 
-if (!app.requestSingleInstanceLock()) {
+if (shellSelection.error !== null) {
+  process.stderr.write(
+    'REDNOTE_SHELL_ARGUMENT_CONFLICT: --legacy-shell and --v2-shell cannot be used together.\n',
+  );
+  app.exit(2);
+} else if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on('second-instance', () => {
