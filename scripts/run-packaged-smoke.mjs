@@ -23,6 +23,7 @@ import {
   startIssue013CapabilityFixture,
 } from './issue013-capability-smoke-fixture.mjs';
 import { createPortableTemp } from './portable-temp.mjs';
+import { R08_EXPERIENCE_FILES } from './package-contract.mjs';
 import { startR07PackagedProviderFixture } from './r07-packaged-provider-fixture.mjs';
 
 const projectRoot = resolve(import.meta.dirname, '..');
@@ -146,16 +147,17 @@ const unpackedApp = join(resourcesPath, 'app');
 await stat(executablePath);
 await stat(appAsar);
 const [v2Launcher, legacyLauncher, checklist] = await Promise.all([
-  readFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), 'utf8'),
-  readFile(join(packageDirectory, '返回当前绿色版本.cmd'), 'utf8'),
-  readFile(join(packageDirectory, 'V2-R07-体验清单.txt'), 'utf8'),
+  readFile(join(packageDirectory, R08_EXPERIENCE_FILES.defaultLauncher), 'utf8'),
+  readFile(join(packageDirectory, R08_EXPERIENCE_FILES.legacyLauncher), 'utf8'),
+  readFile(join(packageDirectory, R08_EXPERIENCE_FILES.checklist), 'utf8'),
 ]);
 if (
   !v2Launcher.includes('%~dp0RednoteMysteryOperations.exe') ||
-  (v2Launcher.match(/--v2-shell/gu) ?? []).length !== 1 ||
+  /--(?:legacy|v2)-shell/u.test(v2Launcher) ||
+  (legacyLauncher.match(/--legacy-shell/gu) ?? []).length !== 1 ||
   legacyLauncher.includes('--v2-shell') ||
-  !checklist.startsWith('Rednote V2-R07 打包运行时体验清单') ||
-  !checklist.includes('等待用户本人验收，禁止合并。') ||
+  !checklist.startsWith('Rednote Studio V2-R08 精确构建体验清单') ||
+  !checklist.includes('PR 保持 Draft，禁止提前合并。') ||
   (process.env.REDNOTE_EXACT_HEAD_SHA !== undefined &&
     !checklist.includes(process.env.REDNOTE_EXACT_HEAD_SHA))
 ) {
@@ -204,6 +206,7 @@ if (!r07BlackboxOnly) {
       executablePath,
       [
         '--issue006-smoke',
+        '--legacy-shell',
         `--issue006-smoke-output=${outputPath}`,
         `--issue010-smoke-workspace=${smokeWorkspace}`,
         `--issue011-smoke-mode=${mode}`,
@@ -290,7 +293,6 @@ if (!r07BlackboxOnly) {
           executablePath,
           [
             '--issue006-smoke',
-            '--v2-shell',
             `--issue006-smoke-output=${outputPath}`,
             `--issue010-smoke-workspace=${smokeWorkspace}`,
           ],
@@ -369,7 +371,6 @@ if (!r07BlackboxOnly) {
         executablePath,
         [
           '--issue006-smoke',
-          '--v2-shell',
           `--issue006-smoke-output=${outputPath}`,
           `--issue010-smoke-workspace=${smokeWorkspace}`,
           `--r07-blackbox-port=${fixture.port}`,

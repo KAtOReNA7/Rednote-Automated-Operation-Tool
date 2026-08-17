@@ -75,7 +75,7 @@ jobs:
       - name: Audit dependencies
         run: npm run audit:dependencies
 
-      - name: Prepare exact-head V2-R05 artifact name
+      - name: Prepare exact-head V2-R08 artifact name
         if: github.event_name == 'pull_request'
         env:
           REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -84,7 +84,7 @@ jobs:
           $exactHeadSha = [System.Environment]::GetEnvironmentVariable('REDNOTE_EXACT_HEAD_SHA')
           $environmentFile = [System.Environment]::GetEnvironmentVariable('GITHUB_ENV')
           $shortSha = $exactHeadSha.Substring(0, 8)
-          "V2_ARTIFACT_NAME=rednote-v2-r05-windows-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "V2_ARTIFACT_NAME=rednote-v2-r08-windows-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
 
       - name: Upload exact-head V2 Windows experience directory
         if: github.event_name == 'pull_request'

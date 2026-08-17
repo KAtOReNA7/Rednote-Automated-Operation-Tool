@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useCallback, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-import { Button } from './components.js';
+import { Button, Icon, useDialog } from './components.js';
 
 const capabilityLabels = {
   STALE: '已过期',
@@ -13,6 +14,12 @@ const credentialLabels = {
   CONFIGURED: '已配置',
   NOT_CONFIGURED: '未配置',
   REAUTH_REQUIRED: '需重新认证',
+} as const;
+
+const modelSlotLabels = {
+  image: '图片',
+  research: '研究',
+  writing: '写作',
 } as const;
 
 type ProviderActionIntentWithoutCost = V2ProviderActionIntentContract extends infer Action
@@ -32,20 +39,39 @@ export function ProviderActionControl({
   intent,
   label,
   onSuccess,
+  presentation = 'inline',
 }: {
   readonly disabled?: boolean;
   readonly disabledReason?: string | undefined;
   readonly intent: ProviderActionIntentWithoutCost;
   readonly label: string;
   readonly onSuccess: () => Promise<void>;
+  readonly presentation?: 'dialog' | 'inline';
 }): React.JSX.Element {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [preview, setPreview] = useState<V2ProviderActionPreviewContract | null>(null);
+  const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
   const [unknownCostApproved, setUnknownCostApproved] = useState(false);
   const [status, setStatus] = useState<
     'BLOCKED' | 'CANCELLED' | 'IDLE' | 'PREVIEW' | 'SUCCEEDED' | 'UNCERTAIN'
   >('IDLE');
+  const busyRef = useRef(false);
+  const confirmingRef = useRef(false);
+  const titleId = useId();
+
+  const closePreview = useCallback((): void => {
+    if (busyRef.current) return;
+    setPreview(null);
+    setUnknownCostApproved(false);
+    setMessage('已取消，未调用模型、未写入结果。');
+    setStatus('CANCELLED');
+  }, []);
+  const dialogRef = useDialog(
+    presentation === 'dialog' && preview !== null,
+    closePreview,
+    returnFocus,
+  );
 
   const inspect = async (approveUnknownCost = unknownCostApproved): Promise<void> => {
     const bridge = window.rednoteV2;
@@ -54,6 +80,7 @@ export function ProviderActionControl({
       setStatus('BLOCKED');
       return;
     }
+    busyRef.current = true;
     setBusy(true);
     setMessage('');
     try {
@@ -69,6 +96,7 @@ export function ProviderActionControl({
       setPreview(result.value);
       setStatus('PREVIEW');
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };
@@ -80,9 +108,12 @@ export function ProviderActionControl({
       bridge?.confirmProviderAction === undefined ||
       currentPreview === null ||
       currentPreview.previewToken === null ||
-      !currentPreview.canConfirm
+      !currentPreview.canConfirm ||
+      confirmingRef.current
     )
       return;
+    confirmingRef.current = true;
+    busyRef.current = true;
     setBusy(true);
     setMessage('');
     try {
@@ -107,27 +138,16 @@ export function ProviderActionControl({
       );
       setStatus('SUCCEEDED');
     } finally {
+      busyRef.current = false;
+      confirmingRef.current = false;
       setBusy(false);
     }
   };
 
-  return (
-    <section className="v2-provider-action" data-status={status}>
-      {preview === null ? (
-        <>
-          <Button
-            disabled={disabled || busy}
-            icon="sparkle"
-            onClick={() => void inspect()}
-            tone="primary"
-          >
-            {label}
-          </Button>
-          {disabled && disabledReason !== undefined ? <small>{disabledReason}</small> : null}
-        </>
-      ) : (
-        <div aria-live="polite" className="v2-card v2-provider-preview">
-          <strong>调用前预览</strong>
+  const previewContent =
+    preview === null ? null : (
+      <>
+        <div className="v2-provider-preview-body">
           <p>{preview.summary}</p>
           <dl>
             {preview.targetWeekKey === undefined ? null : (
@@ -144,7 +164,7 @@ export function ProviderActionControl({
             </div>
             <div>
               <dt>模型槽</dt>
-              <dd>{preview.modelSlot === 'research' ? '研究' : '写作'}</dd>
+              <dd>{modelSlotLabels[preview.modelSlot]}</dd>
             </div>
             <div>
               <dt>模型 ID</dt>
@@ -224,28 +244,82 @@ export function ProviderActionControl({
               <span>我了解费用未知，仍授权本次最多 {preview.requestCount} 个请求</span>
             </label>
           ) : null}
-          <div className="v2-provider-preview-actions">
-            <Button
-              disabled={busy}
-              onClick={() => {
-                setPreview(null);
-                setUnknownCostApproved(false);
-                setMessage('已取消，未调用模型、未写入结果。');
-                setStatus('CANCELLED');
-              }}
-            >
-              取消
-            </Button>
-            <Button
-              disabled={busy || !preview.canConfirm || preview.previewToken === null}
-              onClick={() => void confirm()}
-              tone="primary"
-            >
-              确认并执行一次
-            </Button>
-          </div>
+        </div>
+        <div className="v2-provider-preview-actions">
+          <Button disabled={busy} onClick={closePreview}>
+            取消
+          </Button>
+          <Button
+            disabled={busy || !preview.canConfirm || preview.previewToken === null}
+            onClick={() => void confirm()}
+            tone="primary"
+          >
+            {busy ? '正在执行…' : '确认并执行一次'}
+          </Button>
+        </div>
+      </>
+    );
+
+  return (
+    <section className="v2-provider-action" data-status={status}>
+      {preview === null || presentation === 'dialog' ? (
+        <>
+          <Button
+            disabled={disabled || busy}
+            icon="sparkle"
+            onClick={(event) => {
+              setReturnFocus(event.currentTarget);
+              void inspect();
+            }}
+            tone="primary"
+          >
+            {label}
+          </Button>
+          {disabled && disabledReason !== undefined ? <small>{disabledReason}</small> : null}
+        </>
+      ) : (
+        <div aria-live="polite" className="v2-card v2-provider-preview">
+          <strong>调用前预览</strong>
+          {previewContent}
         </div>
       )}
+      {presentation === 'dialog' && preview !== null
+        ? createPortal(
+            <div
+              className="v2-overlay v2-provider-preview-overlay"
+              onMouseDown={closePreview}
+              role="presentation"
+            >
+              <div
+                aria-labelledby={titleId}
+                aria-modal="true"
+                className="v2-modal v2-provider-preview-dialog"
+                data-provider-preview-dialog
+                onMouseDown={(event) => event.stopPropagation()}
+                ref={dialogRef}
+                role="dialog"
+              >
+                <div className="v2-overlay-head v2-provider-preview-head">
+                  <div>
+                    <p className="v2-kicker">受控模型操作</p>
+                    <h2 id={titleId}>调用前预览</h2>
+                  </div>
+                  <button
+                    aria-label="关闭调用前预览"
+                    className="v2-icon-button"
+                    disabled={busy}
+                    onClick={closePreview}
+                    type="button"
+                  >
+                    <Icon name="x" />
+                  </button>
+                </div>
+                {previewContent}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
       {message === '' ? null : (
         <div
           aria-live="polite"

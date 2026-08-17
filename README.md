@@ -2,8 +2,8 @@
   <a href="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml">
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
-  <img alt="V2 R01 to R06 accepted" src="https://img.shields.io/badge/V2--R01%E2%80%94R06-用户已验收-2ea44f" />
-  <img alt="V2 R07 compatibility verification" src="https://img.shields.io/badge/V2--R07-兼容修复与复验中-2563eb" />
+  <img alt="V2 R01 to R07 accepted" src="https://img.shields.io/badge/V2--R01%E2%80%94R07-用户已验收-2ea44f" />
+  <img alt="V2 R08 integration pending exact-head acceptance" src="https://img.shields.io/badge/V2--R08-待精确构建体验验收-2563eb" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Development preview" src="https://img.shields.io/badge/状态-开发预览版-c69026" />
 </p>
@@ -14,23 +14,24 @@
 一个桌面应用里，数据保存在本机，所有对外发布与发送动作仍由用户亲自在官方平台完成。
 
 > [!IMPORTANT]
-> 当前版本是**开发预览版**，不是可以直接投入日常运营的正式产品。V2-R01—R06 已获用户验收；
-> R07 功能已实现，图片能力已有支持证据，文本 structuredJson 仍在进行兼容修复与用户复验。
-> 当前立即下一步是完成 R07；验收后才进入 V2-D-FINAL，随后才是 R08。
+> 当前版本是**开发预览版**，不是可以直接投入日常运营的正式产品。V2-R01—R07 已获用户验收；
+> V2-D-FINAL 与 R08 N1—N7 视觉已通过用户验收。当前 R08 工作树已实现默认 V2 入口、显式旧版
+> 回退和发布材料同步，仍须提交后由同一精确 HEAD 的 Windows 包完成体验验收。PR #17 保持 Draft、
+> 尚未合并；R09 尚未开始。
 
 ## 现在能做什么
 
 - **账号人设**：保存账号名称、定位、语气和目标读者，关闭再打开仍能恢复。
 - **本周计划**：生成确定性候选，按周查看，支持单选、批量选择、跨周和任意日期时间改期。
-- **内容包**：从已锁定计划生成 3 个本地 Scripted 内容包，编辑并保留版本，单篇或批量批准后导出。
-- **互动回复**：手动粘贴评论或私信，可关联已有内容包，生成可编辑的 Scripted 回复建议。
+- **内容包**：从已锁定计划生成本地内容包，编辑并保留版本，单篇或批量批准后导出。
+- **互动回复**：手动粘贴评论或私信，可关联已有内容包，生成可编辑的回复建议。
 - **数据复盘**：为已批准内容包手工录入 24H、72H、7D 指标，查看单篇明细、本地汇总和确定性建议。
 - **受控 Provider**：配置研究、写作和图片模型槽；周计划、文案、封面和回复都先预览，再由用户逐次确认。
 - **本地恢复**：计划、内容包、互动、指标和状态保存在本机 SQLite 与受控文件目录中。
 
 内容包固定包含 6 项：封面、标题、正文、标签、建议发布时间、素材说明。**不包含置顶评论。**
-Scripted 流程仍可在没有外部服务时使用。受控 Provider 默认不会发起请求；费用未知时必须由用户
-明确确认。软件不会读取平台收件箱，也不会替用户发送评论或私信。
+受控 Provider 默认不会发起请求；费用未知时必须由用户明确确认。软件不会读取平台收件箱，也
+不会替用户发送评论或私信。
 
 ## 还不能做什么
 
@@ -38,7 +39,7 @@ Scripted 流程仍可在没有外部服务时使用。受控 Provider 默认不�
 - 受控模型和图片 Provider 已接线，但仓库测试不证明真实供应商的质量、稳定性或费用表现。
 - 搜索、页面抓取、OCR、平台指标导入和小红书业务 API 仍未接入 V2。
 - 书库核心业务尚未迁移到 V2；数据复盘目前只接受用户手工录入。
-- R07 真实文本端到端调用尚未通过用户复验；V2-D-FINAL 和 R08 因此尚未开始。
+- R08 尚未完成提交后精确 HEAD 的 Windows 打包体验验收，也尚未合并到 `main`。
 - 目前没有正式安装器、自动更新或面向生产环境的发布版本。
 
 ## 当前页面
@@ -55,17 +56,16 @@ Scripted 流程仍可在没有外部服务时使用。受控 Provider 默认不�
 
 ## V2 开发进度
 
-| 阶段       | 用户结果                                            | 当前结论                 |
-| ---------- | --------------------------------------------------- | ------------------------ |
-| V2-R01—R06 | 产品壳、持久化、内容运营闭环与本地数据复盘          | 用户已验收               |
-| **V2-R07** | **受控 Provider、能力探测、逐次预览确认和结果追溯** | **兼容修复与用户复验中** |
-| V2-D-FINAL | 在 Figma 中统一七页视觉、关键状态、响应式与交互细节 | R07 验收后开始           |
-| V2-R08     | 落地已验收设计、切换 V2 默认入口并处理旧界面归档    | D-FINAL 通过后实施       |
-| 发布准备   | 安装、升级、备份恢复、诊断和 Windows 端到端验收     | 范围尚未冻结             |
+| 阶段       | 用户结果                                              | 当前结论               |
+| ---------- | ----------------------------------------------------- | ---------------------- |
+| V2-R01—R07 | 产品壳、持久化、内容运营闭环、本地复盘与受控 Provider | 用户已验收             |
+| V2-D-FINAL | 在 Figma 中统一七页视觉、关键状态、响应式与交互细节   | 用户已验收             |
+| **V2-R08** | **落地 N1—N7、默认 V2 入口与显式旧版回退**            | **待精确构建体验验收** |
+| 发布准备   | 安装、升级、备份恢复、诊断和 Windows 端到端验收       | 范围尚未冻结           |
 
-当前视觉可以用于功能验证，但设计债务还没有收口。当前先完成 R07 文本响应兼容修复与用户复验；
-R07 获得验收后，再根据[最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)
-进入 V2-D-FINAL。此关未通过前，不实施 R08，也不把 V2 设为默认入口。
+N1—N7 已按[最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)完成并获用户验收。
+当前只收口 R08 默认入口和精确构建体验材料；提交后仍须由 Windows required CI 与同一 HEAD 的体验
+包验证，不能据此提前宣称 R08 全部验收完成或产品已正式发布。
 
 ## 快速开始
 
@@ -84,13 +84,14 @@ Set-Location '.\Rednote-Automated-Operation-Tool'
 npm ci
 ```
 
-### 启动 V2
+### 启动默认 V2
 
 ```powershell
-npm run desktop:dev -- --v2-shell
+npm run desktop:dev
 ```
 
-不带 `--v2-shell` 的 `npm run desktop:dev` 会启动保留的旧产品界面，仅用于兼容和回退。
+`--v2-shell` 仍是兼容别名，但不再是进入 V2 的必要参数。只有显式执行
+`npm run desktop:dev -- --legacy-shell` 才会启动保留的旧版回退界面；同时提供两个互斥参数会被拒绝。
 
 ### 本地验证
 
@@ -165,5 +166,5 @@ Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferr
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  V2-R01—R06 已验收，R07 兼容修复与复验中；最终发布和互动发送始终由用户手动完成。
+  V2-R01—R07 与 N1—N7 视觉已验收，R08 待精确构建体验验收；最终发布和互动发送始终由用户手动完成。
 </p>

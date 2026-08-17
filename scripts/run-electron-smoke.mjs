@@ -47,6 +47,7 @@ for (const mode of ['disabled', 'enabled']) {
     [
       '.',
       '--issue006-smoke',
+      '--legacy-shell',
       `--issue006-smoke-output=${outputPath}`,
       `--issue010-smoke-workspace=${smokeWorkspace}`,
       `--issue011-smoke-mode=${mode}`,
@@ -134,7 +135,6 @@ for (const mode of ['disabled', 'enabled']) {
         [
           '.',
           '--issue006-smoke',
-          '--v2-shell',
           `--issue006-smoke-output=${outputPath}`,
           `--issue010-smoke-workspace=${smokeWorkspace}`,
         ],
@@ -197,6 +197,28 @@ for (const mode of ['disabled', 'enabled']) {
     await rm(smokeWorkspace, { force: true, maxRetries: 20, recursive: true, retryDelay: 100 });
     await temporary.cleanup();
   }
+}
+
+{
+  const child = spawn(electron, ['.', '--legacy-shell', '--v2-shell'], {
+    cwd: projectRoot,
+    env: childEnvironment,
+    stdio: ['ignore', 'ignore', 'pipe'],
+    windowsHide: true,
+  });
+  let stderr = '';
+  child.stderr.setEncoding('utf8');
+  child.stderr.on('data', (chunk) => {
+    stderr += chunk;
+  });
+  const exitCode = await waitForExit(child);
+  if (exitCode !== 2 || !stderr.includes('REDNOTE_SHELL_ARGUMENT_CONFLICT')) {
+    throw new Error(
+      `Conflicting shell arguments were not rejected deterministically: exit=${String(exitCode)} stderr=${stderr.slice(0, 256)}`,
+    );
+  }
+  await assertProcessesExited([child.pid]);
+  results.push({ conflictRejected: true, exitCode, mode: 'argument-conflict' });
 }
 
 process.stdout.write(`${JSON.stringify({ externalConnections: 0, packaged: false, results })}\n`);

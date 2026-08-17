@@ -13,8 +13,35 @@ import {
   V2_SMOKE_TITLE_PREFIX,
 } from '../apps/desktop/src/smoke-report.js';
 import { validateDesktopIpcRequest } from '../apps/desktop/src/ipc-policy.js';
+import {
+  resolveDesktopRendererUrl,
+  resolveDesktopShellSelection,
+} from '../apps/desktop/src/shell-mode.js';
 
 describe('desktop process contracts', () => {
+  it.each([
+    [[], { error: null, mode: 'v2' }],
+    [['--v2-shell'], { error: null, mode: 'v2' }],
+    [['--legacy-shell'], { error: null, mode: 'legacy' }],
+    [['--legacy-shell', '--v2-shell'], { error: 'SHELL_ARGUMENT_CONFLICT', mode: 'v2' }],
+    [['--v2-shell', '--legacy-shell'], { error: 'SHELL_ARGUMENT_CONFLICT', mode: 'v2' }],
+  ] as const)('resolves desktop shell arguments %j deterministically', (argv, expected) => {
+    expect(resolveDesktopShellSelection(argv)).toEqual(expected);
+  });
+
+  it.each([
+    ['v2', undefined, 'rednote://app/v2.html'],
+    ['legacy', undefined, 'rednote://app/index.html'],
+    ['v2', 'http://127.0.0.1:5173/', 'http://127.0.0.1:5173/v2.html'],
+    ['legacy', 'http://127.0.0.1:5173/', 'http://127.0.0.1:5173/'],
+    ['v2', 'http://localhost:5173/', 'rednote://app/v2.html'],
+  ] as const)(
+    'resolves %s renderer consistently for development URL %s',
+    (mode, developmentUrl, expected) => {
+      expect(resolveDesktopRendererUrl(mode, developmentUrl)).toBe(expected);
+    },
+  );
+
   it('exposes exactly the fixed desktop and settings IPC allowlist', () => {
     const entries = Object.entries(DESKTOP_IPC_CHANNELS);
     const keys = entries.map(([key]) => key);

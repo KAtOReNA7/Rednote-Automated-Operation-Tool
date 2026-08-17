@@ -13,6 +13,12 @@ import {
   getCurrentFuseWire,
 } from '@electron/fuses';
 
+import {
+  ensureTrackedWorktreeClean,
+  R08_EXPERIENCE_FILES,
+  renderWindowsLauncher,
+} from './package-contract.mjs';
+
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(import.meta.dirname, '..');
 const buildDirectory = join(projectRoot, '.vite');
@@ -22,6 +28,7 @@ if (outputVariant !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(outputVari
 }
 const outputDirectory =
   outputVariant === undefined ? join(projectRoot, 'out') : join(projectRoot, 'out', outputVariant);
+await ensureTrackedWorktreeClean(projectRoot);
 const packagingScratchDirectory = await mkdtemp(join(projectRoot, '.rednote-package-'));
 process.env.TEMP = packagingScratchDirectory;
 process.env.TMP = packagingScratchDirectory;
@@ -53,16 +60,22 @@ async function writeExperienceFiles(packageDirectory) {
   ) {
     throw new Error('Experience checklist commit does not match the exact build HEAD.');
   }
-  const command = (args) =>
-    `@echo off\r\nsetlocal\r\ncd /d "%~dp0"\r\nstart "" "%~dp0RednoteMysteryOperations.exe"${args}\r\n`;
   const checklist = (
-    await readFile(join(projectRoot, 'scripts', 'v2-r03-experience-checklist.txt'), 'utf8')
+    await readFile(join(projectRoot, 'scripts', 'v2-r08-experience-checklist.txt'), 'utf8')
   ).replace('{{EXACT_HEAD}}', commit);
   await Promise.all([
-    writeFile(join(packageDirectory, '启动 Rednote V2 体验.cmd'), command(' --v2-shell'), 'utf8'),
-    writeFile(join(packageDirectory, '返回当前绿色版本.cmd'), command(''), 'utf8'),
     writeFile(
-      join(packageDirectory, 'V2-R07-体验清单.txt'),
+      join(packageDirectory, R08_EXPERIENCE_FILES.defaultLauncher),
+      renderWindowsLauncher('default'),
+      'utf8',
+    ),
+    writeFile(
+      join(packageDirectory, R08_EXPERIENCE_FILES.legacyLauncher),
+      renderWindowsLauncher('legacy'),
+      'utf8',
+    ),
+    writeFile(
+      join(packageDirectory, R08_EXPERIENCE_FILES.checklist),
       checklist.replace(/\r?\n/gu, '\r\n'),
       'utf8',
     ),

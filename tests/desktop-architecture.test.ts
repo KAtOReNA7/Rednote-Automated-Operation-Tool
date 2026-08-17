@@ -109,17 +109,26 @@ describe('Issue 006 architecture boundaries', () => {
     expect(packageScript).not.toMatch(
       /@electron-forge\/maker|electron-builder|electron-updater|publishConfig|osxSign|windowsSign|certificateFile|githubRelease|squirrel|wix|msi/iu,
     );
+    expect(packageScript.indexOf('await ensureTrackedWorktreeClean(projectRoot)')).toBeLessThan(
+      packageScript.indexOf('await rm(outputDirectory'),
+    );
   });
 
-  it('keeps legacy default and gates the isolated V2 shell on one exact argument', () => {
+  it('defaults to V2 while retaining one explicit legacy fallback and a compatible V2 alias', () => {
     const main = read('apps/desktop/src/main.ts');
-    expect(main).toContain("process.argv.includes('--v2-shell')");
-    expect(main).toContain('const LEGACY_RENDERER_URL = `${APP_PROTOCOL}://app/index.html`');
-    expect(main).toContain('const V2_RENDERER_URL = `${APP_PROTOCOL}://app/v2.html`');
+    const selection = read('apps/desktop/src/shell-mode.ts');
+    expect(selection).toContain("const LEGACY_SHELL_ARGUMENT = '--legacy-shell'");
+    expect(selection).toContain("const V2_SHELL_ARGUMENT = '--v2-shell'");
+    expect(selection).toContain("mode: legacyRequested ? 'legacy' : 'v2'");
+    expect(selection).toContain("error: 'SHELL_ARGUMENT_CONFLICT'");
+    expect(selection).toContain("LEGACY_RENDERER_URL = 'rednote://app/index.html'");
+    expect(selection).toContain("V2_RENDERER_URL = 'rednote://app/v2.html'");
+    expect(main).toContain('resolveDesktopRendererUrl(shellSelection.mode');
     expect(main).toContain("join(app.getAppPath(), '.vite', 'build', 'v2-preload.cjs')");
     expect(main).toContain('const runtime = await V2DesktopRuntime.open');
     expect(main).toContain('removeIpcHandlers = registerV2Ipc');
     expect(main).toContain('if (isV2ShellMode)');
+    expect(main).toContain('REDNOTE_SHELL_ARGUMENT_CONFLICT');
   });
 
   it('flips every required Electron fuse explicitly', () => {

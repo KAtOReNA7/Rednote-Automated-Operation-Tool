@@ -46,6 +46,12 @@ export function WeeklyPlanPage(): React.JSX.Element {
   });
   const targetWeekKey = nextWeek.weekKey;
   const today = shanghaiDateText();
+  const [focusedDay, setFocusedDay] = useState<(typeof dayOrder)[number]>(() => {
+    const current = dayOrder.find((day) =>
+      session.plan.some((item) => item.day === day && item.date === today),
+    );
+    return current ?? '周一';
+  });
   const [targetPlan, setTargetPlan] = useState<{
     readonly revision: number;
     readonly weekKey: string;
@@ -90,6 +96,9 @@ export function WeeklyPlanPage(): React.JSX.Element {
     });
   };
   const selectPending = (): void => {
+    const firstPendingDay = pending[0]?.day;
+    if (dayOrder.includes(firstPendingDay as (typeof dayOrder)[number]))
+      setFocusedDay(firstPendingDay as (typeof dayOrder)[number]);
     setUi((current) => ({
       ...current,
       planSelectedIds: pending.map(({ id }) => id),
@@ -212,8 +221,8 @@ export function WeeklyPlanPage(): React.JSX.Element {
             }}
           />
         }
-        description={`七日周历支持单篇、批量与 Shift 连续选择；所有时间均为 Asia/Shanghai (UTC+8)。 · 本机 revision ${session.planRevision}`}
-        eyebrow={`查看计划周 ${session.weekKey} · 自然当前周 ${currentWeek.weekKey}（${currentWeek.startDate} 至 ${currentWeek.endDate}）`}
+        description={`${currentWeek.startDate}—${currentWeek.endDate} · Asia/Shanghai · 本机 revision ${session.planRevision}`}
+        eyebrow="编辑日历"
         title="本周计划"
       />
       {!planConsistent ? (
@@ -223,13 +232,25 @@ export function WeeklyPlanPage(): React.JSX.Element {
             <strong>本地计划日期与周标识不一致</strong>
             <p>请使用现有日期编辑并保存后再生成；系统不会猜测或覆盖你的计划。</p>
           </div>
+          <Button
+            onClick={() => {
+              if (locked) unlock();
+              else notify('请在下方选择内容，再使用“自由选择日期时间”完成修正。');
+            }}
+            tone="quiet"
+          >
+            {locked ? '解锁并调整' : '查看调整方式'}
+          </Button>
         </section>
       ) : null}
-      <p className="v2-plan-boundary">
-        下周预览目标：{nextWeek.weekKey} · {nextWeek.startDate} 至 {nextWeek.endDate}。
-      </p>
-      <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
-      {locked ? (
+      <section className="v2-weekly-context v2-weekly-meta" aria-label="计划边界说明">
+        <p className="v2-plan-boundary">
+          下周预览目标：{nextWeek.weekKey} · {nextWeek.startDate} 至 {nextWeek.endDate}。
+          Asia/Shanghai (UTC+8)。
+        </p>
+        <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
+      </section>
+      {locked && planConsistent ? (
         <section className="v2-locked-banner" role="status">
           <Icon name="check-circle" />
           <div>
@@ -241,96 +262,131 @@ export function WeeklyPlanPage(): React.JSX.Element {
           </Button>
         </section>
       ) : null}
-      <div className="v2-plan-toolbar">
-        <div aria-label="筛选计划" className="v2-segments">
-          {(
-            [
-              ['all', `全部 ${session.plan.length}`],
-              ['pending', `待确认 ${pending.length}`],
-              ['conflict', `时间冲突 ${conflicts.length}`],
-            ] as const
-          ).map(([value, label]) => (
+      <section aria-label="选择查看日期" className="v2-week-strip v2-weekly-date-ribbon">
+        {dayOrder.map((day) => {
+          const dayItems = session.plan.filter((item) => item.day === day);
+          const visibleItems = dayItems.filter((item) => visible(item.status));
+          const date = shortDate(dayItems[0]?.date ?? '');
+          const attentionCount = dayItems.filter(
+            ({ status }) => status === '待审批' || status === '时间冲突',
+          ).length;
+          return (
             <button
-              data-active={filter === value}
-              key={value}
-              onClick={() => setUi((current) => ({ ...current, planFilter: value }))}
+              aria-pressed={focusedDay === day}
+              data-attention={attentionCount > 0}
+              data-today={dayItems.some((item) => item.date === today)}
+              key={day}
+              onClick={() => setFocusedDay(day)}
               type="button"
             >
-              {label}
+              <span>{day}</span>
+              <strong>{date}</strong>
+              <small>
+                {visibleItems.length} 篇{attentionCount > 0 ? ` · ${attentionCount} 待处理` : ''}
+              </small>
             </button>
-          ))}
-        </div>
-        <div>
-          <Button
-            disabled={locked || pending.length === 0}
-            icon="check-square"
-            onClick={selectPending}
-            tone="quiet"
-          >
-            选择待确认
-          </Button>
-        </div>
-      </div>
-      <div className="v2-plan-grid">
-        <section aria-label="一周内容排程" className="v2-calendar">
-          {dayOrder.map((day) => {
-            const dayItems = session.plan.filter((item) => item.day === day);
-            const date = shortDate(dayItems[0]?.date ?? '');
-            return (
-              <section className="v2-day" data-today={day === '周日'} key={day}>
-                <header>
-                  <strong>{day}</strong>
-                  <span>{date}</span>
-                  {dayItems.some((item) => item.date === today) ? <b>今天</b> : null}
-                </header>
-                <div>
-                  {dayItems
-                    .filter((item) => visible(item.status))
-                    .map((item) => {
-                      const selected = selectedIds.includes(item.id);
-                      return (
-                        <article
-                          className="v2-post"
-                          data-danger={item.status === '时间冲突'}
-                          data-selected={selected}
-                          key={item.id}
-                        >
-                          <div>
-                            <span>{item.time}</span>
-                            <StatusPill status={item.status} />
-                          </div>
-                          <button
-                            onClick={() => notify(`${item.title}详情尚未进入 R03。`)}
-                            type="button"
-                          >
-                            {item.title}
-                          </button>
-                          <p>{item.book}</p>
-                          <button
-                            aria-label={`${selected ? '取消选择' : '选择'} ${item.title}`}
-                            aria-pressed={selected}
-                            className="v2-select-post"
-                            disabled={locked || item.status === '已跳过'}
-                            onClick={(event) => toggleCandidate(item.id, event.shiftKey)}
-                            type="button"
-                          >
-                            <Icon name={selected ? 'check-square' : 'square'} size={17} />
-                            {selected ? '已选择' : '选择'}
-                          </button>
-                        </article>
-                      );
-                    })}
-                </div>
-                <button className="v2-add-slot" disabled type="button">
-                  <Icon name="plus" size={16} />
-                  空闲时段
+          );
+        })}
+      </section>
+      <div className="v2-plan-grid v2-weekly-stage">
+        <section aria-label="一周内容排程" className="v2-day-focus v2-weekly-day-stage">
+          <header>
+            <div>
+              <p className="v2-kicker">当前查看</p>
+              <h2>
+                {focusedDay} ·{' '}
+                {shortDate(session.plan.find((item) => item.day === focusedDay)?.date ?? '')}
+              </h2>
+            </div>
+            <span>
+              {
+                session.plan.filter((item) => item.day === focusedDay && visible(item.status))
+                  .length
+              }{' '}
+              篇内容
+            </span>
+          </header>
+          <div className="v2-plan-toolbar v2-weekly-inline-filters">
+            <div aria-label="筛选计划" className="v2-segments">
+              {(
+                [
+                  ['all', `全部 ${session.plan.length}`],
+                  ['pending', `待确认 ${pending.length}`],
+                  ['conflict', `时间冲突 ${conflicts.length}`],
+                ] as const
+              ).map(([value, label]) => (
+                <button
+                  data-active={filter === value}
+                  key={value}
+                  onClick={() => {
+                    setUi((current) => ({ ...current, planFilter: value }));
+                    const firstMatch = session.plan.find(({ status }) =>
+                      value === 'all'
+                        ? true
+                        : value === 'pending'
+                          ? status === '待审批'
+                          : status === '时间冲突',
+                    );
+                    if (dayOrder.includes(firstMatch?.day as (typeof dayOrder)[number]))
+                      setFocusedDay(firstMatch?.day as (typeof dayOrder)[number]);
+                  }}
+                  type="button"
+                >
+                  {label}
                 </button>
-              </section>
-            );
-          })}
+              ))}
+            </div>
+          </div>
+          <div className="v2-day-focus-list">
+            {session.plan
+              .filter((item) => item.day === focusedDay && visible(item.status))
+              .map((item) => {
+                const selected = selectedIds.includes(item.id);
+                return (
+                  <article
+                    className="v2-post"
+                    data-danger={item.status === '时间冲突'}
+                    data-selected={selected}
+                    key={item.id}
+                  >
+                    <div>
+                      <time>{item.time}</time>
+                      <StatusPill status={item.status} />
+                    </div>
+                    <button onClick={() => notify(`${item.title}详情尚未进入 R03。`)} type="button">
+                      {item.title}
+                    </button>
+                    <p>{item.book}</p>
+                    <button
+                      aria-label={`${selected ? '取消选择' : '选择'} ${item.title}`}
+                      aria-pressed={selected}
+                      className="v2-select-post"
+                      disabled={locked || item.status === '已跳过'}
+                      onClick={(event) => toggleCandidate(item.id, event.shiftKey)}
+                      type="button"
+                    >
+                      <Icon name={selected ? 'check-square' : 'square'} size={17} />
+                      {selected ? '已选择' : '选择'}
+                    </button>
+                  </article>
+                );
+              })}
+            {session.plan.filter((item) => item.day === focusedDay && visible(item.status))
+              .length === 0 ? (
+              <div className="v2-day-focus-empty">
+                <Icon name="calendar-blank" size={24} />
+                <strong>当前筛选下没有内容</strong>
+                <p>切换上方日期，或返回“全部”查看本周安排。</p>
+              </div>
+            ) : null}
+          </div>
+          <button className="v2-add-slot" disabled type="button">
+            <Icon name="plus" size={16} />
+            空闲时段
+          </button>
         </section>
-        <aside className="v2-stack">
-          <section className="v2-card v2-side-card">
+        <aside aria-label="本周节奏和批量操作" className="v2-stack v2-weekly-rail">
+          <section className="v2-card v2-side-card v2-rhythm-card">
             <p className="v2-kicker">保持全局视角</p>
             <h2>本周节奏</h2>
             <dl className="v2-facts">
@@ -369,6 +425,14 @@ export function WeeklyPlanPage(): React.JSX.Element {
           <section className="v2-card v2-side-card v2-quick-actions">
             <p className="v2-kicker">不依赖拖拽</p>
             <h2>快速操作</h2>
+            <Button
+              disabled={locked || pending.length === 0}
+              icon="check-square"
+              onClick={selectPending}
+              tone="quiet"
+            >
+              选择待确认
+            </Button>
             <Button
               disabled={locked || selectedIds.length === 0}
               icon="calendar-blank"

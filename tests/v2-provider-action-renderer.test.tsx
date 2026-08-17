@@ -254,6 +254,148 @@ describe('V2 R07 provider action renderer', () => {
     expect(confirmProviderAction).toHaveBeenCalledTimes(1);
   });
 
+  it('opens the cover preview as an independent accessible dialog and closes without execution', async () => {
+    const previewProviderAction = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        blockReasons: [],
+        budgetState: 'ALLOWED',
+        canConfirm: true,
+        capabilityState: 'SUPPORTED',
+        configFingerprint: 'fixture-config',
+        credentialBinding: 'fixture-credential',
+        credentialState: 'CONFIGURED',
+        expiresAt: '2026-08-18T12:02:00.000Z',
+        feeEstimateMicroUsd: '4200',
+        fetchEnabled: false,
+        kind: 'CONTENT_COVER',
+        modelId: 'image-model',
+        modelSlot: 'image',
+        protocolMode: 'IMAGES_GENERATIONS',
+        previewToken: 'cover-preview-token',
+        providerConfigured: true,
+        readinessBinding: 'fixture-ready',
+        reasonCode: 'READY',
+        reasonMessage: 'ready',
+        requestCount: 1,
+        searchEnabled: false,
+        summary: '为当前内容版本生成一张本地封面。',
+      },
+    });
+    const confirmProviderAction = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        costAmountMicroUsd: '4200',
+        costState: 'PRICED',
+        externalRequestCount: 1,
+        kind: 'CONTENT_COVER',
+        status: 'SUCCEEDED',
+      },
+    });
+    expose({ confirmProviderAction, previewProviderAction });
+    const user = userEvent.setup();
+    render(
+      <div data-testid="content-workspace">
+        <ProviderActionControl
+          intent={{
+            expectedRevision: 1,
+            expectedVersionId: 'version-one',
+            kind: 'CONTENT_COVER',
+            packageId: 'package-one',
+            weekKey: '2026-W34',
+          }}
+          label="生成或重新生成封面"
+          onSuccess={vi.fn().mockResolvedValue(undefined)}
+          presentation="dialog"
+        />
+      </div>,
+    );
+    const trigger = screen.getByRole('button', { name: '生成或重新生成封面' });
+    await user.click(trigger);
+    const dialog = await screen.findByRole('dialog', { name: '调用前预览' });
+    expect(dialog).toHaveAttribute('aria-modal', 'true');
+    expect(screen.getByTestId('content-workspace').contains(dialog)).toBe(false);
+    expect(dialog.parentElement?.parentElement).toBe(document.body);
+    expect(screen.getByRole('button', { name: '取消' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeVisible();
+
+    window.dispatchEvent(new Event('resize'));
+    expect(screen.getByRole('dialog', { name: '调用前预览' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '取消' }));
+    expect(screen.queryByRole('dialog', { name: '调用前预览' })).not.toBeInTheDocument();
+    expect(confirmProviderAction).not.toHaveBeenCalled();
+    expect(trigger).toHaveFocus();
+
+    await user.click(trigger);
+    expect(await screen.findByRole('dialog', { name: '调用前预览' })).toBeVisible();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog', { name: '调用前预览' })).not.toBeInTheDocument();
+    expect(confirmProviderAction).not.toHaveBeenCalled();
+    expect(trigger).toHaveFocus();
+  });
+
+  it('executes a dialog preview at most once when confirmation is double-clicked', async () => {
+    const previewProviderAction = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        blockReasons: [],
+        budgetState: 'ALLOWED',
+        canConfirm: true,
+        capabilityState: 'SUPPORTED',
+        configFingerprint: 'fixture-config',
+        credentialBinding: 'fixture-credential',
+        credentialState: 'CONFIGURED',
+        expiresAt: '2026-08-18T12:02:00.000Z',
+        feeEstimateMicroUsd: '4200',
+        fetchEnabled: false,
+        kind: 'CONTENT_COVER',
+        modelId: 'image-model',
+        modelSlot: 'image',
+        protocolMode: 'IMAGES_GENERATIONS',
+        previewToken: 'cover-preview-token',
+        providerConfigured: true,
+        readinessBinding: 'fixture-ready',
+        reasonCode: 'READY',
+        reasonMessage: 'ready',
+        requestCount: 1,
+        searchEnabled: false,
+        summary: '为当前内容版本生成一张本地封面。',
+      },
+    });
+    const confirmProviderAction = vi.fn().mockResolvedValue({
+      ok: true,
+      value: {
+        costAmountMicroUsd: '4200',
+        costState: 'PRICED',
+        externalRequestCount: 1,
+        kind: 'CONTENT_COVER',
+        status: 'SUCCEEDED',
+      },
+    });
+    const onSuccess = vi.fn().mockResolvedValue(undefined);
+    expose({ confirmProviderAction, previewProviderAction });
+    const user = userEvent.setup();
+    render(
+      <ProviderActionControl
+        intent={{
+          expectedRevision: 1,
+          expectedVersionId: 'version-one',
+          kind: 'CONTENT_COVER',
+          packageId: 'package-one',
+          weekKey: '2026-W34',
+        }}
+        label="生成或重新生成封面"
+        onSuccess={onSuccess}
+        presentation="dialog"
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: '生成或重新生成封面' }));
+    await user.dblClick(await screen.findByRole('button', { name: '确认并执行一次' }));
+    expect(confirmProviderAction).toHaveBeenCalledTimes(1);
+    expect(onSuccess).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole('dialog', { name: '调用前预览' })).not.toBeInTheDocument();
+  });
+
   it('persists provider settings, keeps credentials write-only, and probes only after preview', async () => {
     let settings: V2ProviderSettingsView = {
       accounting: {
@@ -517,6 +659,7 @@ describe('V2 R07 provider action renderer', () => {
     });
     window.history.replaceState(null, '', '#/v2/settings');
     render(<V2App />);
+    await user.click(await screen.findByText('最近一次能力检查与脱敏诊断'));
     expect(await screen.findByText(/部分完成：仍有能力保持未知/)).toBeVisible();
     expect(screen.getByText(/research \+ writing/)).toBeVisible();
     expect(screen.getByText(/同一请求已去重并映射到 research、writing/)).toBeVisible();
@@ -542,6 +685,7 @@ describe('V2 R07 provider action renderer', () => {
       writing: { modelId: 'shared-model', protocolMode: null, state: 'UNKNOWN' },
     };
     render(<V2App />);
+    await user.click(await screen.findByText('最近一次能力检查与脱敏诊断'));
     expect(await screen.findByText('未确认任何能力')).toBeVisible();
   });
 

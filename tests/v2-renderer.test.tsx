@@ -44,11 +44,20 @@ describe('V2 renderer shell', () => {
       await user.click(within(navigation).getByRole('link', { name: route.label }));
       await waitFor(() => expect(window.location.hash).toBe(`#/v2/${route.id}`));
       expect(screen.getAllByRole('heading', { level: 1 })).toHaveLength(1);
-      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(route.label);
+      const pageTitle = {
+        content: '把一份内容做成可确认的版本',
+        interaction: '每一条回复，都由你最后决定',
+        library: '把书变成可持续经营的内容资产',
+        overview: '今天值得关注什么',
+        review: '数据复盘',
+        settings: '设置',
+        'weekly-plan': '本周计划',
+      }[route.id];
+      expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(pageTitle);
     }
   });
 
-  it('controls unknown routes and supports switch, drawer, Escape, and focus return', async () => {
+  it('controls unknown routes and supports the editorial exception switch', async () => {
     window.history.replaceState(null, '', '#/v2/unknown');
     const user = userEvent.setup();
     render(<V2App />);
@@ -61,20 +70,18 @@ describe('V2 renderer shell', () => {
     await user.keyboard(' ');
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 
-    const review = screen.getByRole('button', { name: /《莫格街凶杀案》.*查看/u });
-    await user.click(review);
-    expect(screen.getByRole('dialog', { name: '《莫格街凶杀案》' })).toBeVisible();
-    await user.keyboard('{Escape}');
-    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
-    expect(review).toHaveFocus();
+    expect(screen.getByRole('heading', { level: 2, name: '今天需要你决定' })).toBeVisible();
+    expect(screen.getByRole('heading', { level: 2, name: '当前内容' })).toBeVisible();
   });
 
   it('shows six editable content fields, keyboard batch actions, and no pinned-comment surface', async () => {
     const user = userEvent.setup();
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '内容' }));
-    expect(screen.getByRole('heading', { level: 1, name: '内容' })).toBeVisible();
-    expect(screen.getByText(/内容包仅在受控预览确认后生成/u)).toBeVisible();
+    expect(
+      screen.getByRole('heading', { level: 1, name: '把一份内容做成可确认的版本' }),
+    ).toBeVisible();
+    expect(screen.getByText(/封面、文案、状态和检查信息同屏/u)).toBeVisible();
     expect(screen.getByRole('img', { name: /封面建议/u })).toHaveAttribute(
       'src',
       expect.stringContaining('morgue-cover.png'),

@@ -51,13 +51,14 @@ function projectProgress(content: string): ProjectProgress | null {
 
 describe('repository-facing documentation', () => {
   it('keeps the README focused on the current V2 path and links legacy details instead', () => {
-    expect(readme).toContain('V2-R01—R06 已验收');
-    expect(readme).toMatch(/R07.+兼容修复与.+复验中/u);
-    expect(readme).toMatch(/R07.+验收后.+V2-D-FINAL/su);
-    expect(readme).not.toMatch(/R07.{0,12}已验收/u);
-    expect(readme).toContain('V2-D-FINAL');
-    expect(readme).toContain('R07');
-    expect(readme).toContain('R08');
+    expect(readme).toContain('V2-R01—R07 已获用户验收');
+    expect(readme).toMatch(/V2-D-FINAL 与 R08 N1—N7 视觉已通过用户验收/u);
+    expect(readme).toMatch(/R08.+待精确构建体验验收/su);
+    expect(readme).toMatch(/PR #17 保持 Draft/u);
+    expect(readme).toMatch(/R09 尚未开始/u);
+    expect(readme).toContain('npm run desktop:dev -- --legacy-shell');
+    expect(readme).toMatch(/npm run desktop:dev\r?\n```/u);
+    expect(readme).not.toMatch(/R07.+兼容修复与.+复验中/u);
     expect(readme).toContain('Issue 022—028');
     expect(readme).toContain('Issue 029A');
     expect(readme).toContain('Minimal Issue 030');

@@ -43,6 +43,7 @@ export function InteractionPage(): React.JSX.Element {
   );
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
+  const [intakeOpen, setIntakeOpen] = useState(false);
   const [newText, setNewText] = useState('');
   const [relatedId, setRelatedId] = useState('');
   const [sentConfirmed, setSentConfirmed] = useState(false);
@@ -204,69 +205,114 @@ export function InteractionPage(): React.JSX.Element {
   const detailActions = active === undefined ? [] : detailActionsByStatus[active.status];
 
   return (
-    <div className="v2-page">
+    <div className="v2-page v2-interaction-page">
       <PageHeader
         actions={
           <Button disabled={busy} icon="check" onClick={confirmSelected} tone="primary">
             批量确认建议 {selectedIds.length > 0 ? `(${selectedIds.length})` : ''}
           </Button>
         }
-        description="主动粘贴一条评论或私信，在本机生成、编辑和确认回复建议。"
-        eyebrow={`评论 ${session.interactions.filter(({ type }) => type === '评论').length} 条 · 私信 ${session.interactions.filter(({ type }) => type === '私信').length} 条 · 本地保存`}
-        title="互动"
+        description="评论与私信统一进入本地工作台；AI 只提供建议，永不自动发送。"
+        eyebrow="人工互动收件箱"
+        title="每一条回复，都由你最后决定"
       />
-      <p className="v2-kicker">回复建议仅在你预览并确认后生成；系统不会发送消息。</p>
-      <p className="v2-manual-note">数据保存在本地项目数据中，默认保留至你明确删除，不会上传。</p>
       {error === '' ? null : (
         <div className="v2-form-error" ref={errorRef} role="alert" tabIndex={-1}>
           <Icon name="warning-circle" />
           <span>{error}</span>
         </div>
       )}
-      <section aria-label="添加本地互动" className="v2-card v2-reply-detail">
-        <div className="v2-segments">
-          {(['评论', '私信'] as const).map((value) => (
-            <button
-              data-active={tab === value}
-              key={value}
-              onClick={() => changeTab(value)}
-              type="button"
+      <section aria-label="添加本地互动" className="v2-card v2-interaction-intake">
+        <header>
+          <div>
+            <p className="v2-kicker">导入互动</p>
+            <h2>粘贴一条评论或私信</h2>
+          </div>
+          <Button
+            aria-label={intakeOpen ? '收起录入' : '新增互动'}
+            icon="plus"
+            onClick={() => setIntakeOpen((open) => !open)}
+            tone="quiet"
+          >
+            {intakeOpen ? '收起导入' : '选择评论'}
+          </Button>
+        </header>
+        {intakeOpen ? (
+          <div className="v2-interaction-composer">
+            <div className="v2-segments">
+              {(['评论', '私信'] as const).map((value) => (
+                <button
+                  data-active={tab === value}
+                  key={value}
+                  onClick={() => changeTab(value)}
+                  type="button"
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+            <label className="v2-field">
+              <span>粘贴一条{tab}</span>
+              <textarea
+                aria-label="粘贴一条评论或私信"
+                onChange={(event) => setNewText(event.target.value)}
+                rows={3}
+                value={newText}
+              />
+            </label>
+            <label className="v2-field">
+              <span>关联内容包（可选）</span>
+              <select onChange={(event) => setRelatedId(event.target.value)} value={relatedId}>
+                <option value="">不关联</option>
+                {session.content.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.book}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Button
+              disabled={busy || newText.trim() === ''}
+              icon="plus"
+              onClick={create}
+              tone="primary"
             >
-              {value}
-            </button>
-          ))}
-        </div>
-        <label className="v2-field">
-          <span>粘贴一条{tab}</span>
-          <textarea
-            aria-label="粘贴一条评论或私信"
-            onChange={(event) => setNewText(event.target.value)}
-            rows={3}
-            value={newText}
-          />
-        </label>
-        <label className="v2-field">
-          <span>关联内容包（可选）</span>
-          <select onChange={(event) => setRelatedId(event.target.value)} value={relatedId}>
-            <option value="">不关联</option>
-            {session.content.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.book}
-              </option>
-            ))}
-          </select>
-        </label>
-        <Button
-          disabled={busy || newText.trim() === ''}
-          icon="plus"
-          onClick={create}
-          tone="primary"
-        >
-          保存本地互动
-        </Button>
+              保存本地互动
+            </Button>
+          </div>
+        ) : (
+          <>
+            <p className="v2-manual-note">选择一条评论或私信，本操作不会连接或发送到任何平台。</p>
+            <Button disabled tone="primary">
+              保存到本地
+            </Button>
+          </>
+        )}
       </section>
       <div className="v2-interaction-grid">
-        <section aria-label="本地互动列表" className="v2-card v2-inbox">
+        <section aria-label="本地互动列表" className="v2-card v2-inbox v2-interaction-inbox">
+          <header className="v2-interaction-list-head">
+            <div>
+              <h2>待处理</h2>
+              <p>
+                评论 {session.interactions.filter(({ type }) => type === '评论').length} · 私信{' '}
+                {session.interactions.filter(({ type }) => type === '私信').length}
+              </p>
+            </div>
+            <div className="v2-segments" aria-label="互动类型">
+              {(['评论', '私信'] as const).map((value) => (
+                <button
+                  aria-pressed={tab === value}
+                  data-active={tab === value}
+                  key={value}
+                  onClick={() => changeTab(value)}
+                  type="button"
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </header>
           <label className="v2-field">
             <span>状态筛选</span>
             <select
@@ -282,7 +328,10 @@ export function InteractionPage(): React.JSX.Element {
             </select>
           </label>
           {filtered.length === 0 ? (
-            <p className="v2-manual-note">当前筛选下没有本地互动。</p>
+            <div className="v2-interaction-empty-list">
+              <strong>当前没有待处理互动</strong>
+              <p>从上方导入评论或私信后，它会出现在这里。</p>
+            </div>
           ) : null}
           {filtered.map((item) => {
             const selected = selectedIds.includes(item.id);
@@ -319,12 +368,20 @@ export function InteractionPage(): React.JSX.Element {
           })}
         </section>
         {active === undefined ? (
-          <section aria-label="尚无互动详情" className="v2-card v2-reply-detail">
+          <section
+            aria-label="尚无互动详情"
+            className="v2-card v2-reply-detail v2-interaction-empty-editor"
+          >
+            <p className="v2-kicker">回复建议</p>
             <h2>尚无本地互动</h2>
-            <p>请先在上方主动粘贴一条评论或私信。</p>
+            <p>先从上方导入一条评论或私信。选择后可查看原始消息、关联内容并编辑回复建议。</p>
+            <div>
+              <strong>下一步</strong>
+              <span>点击“选择评论”，完成一次本地导入。</span>
+            </div>
           </section>
         ) : (
-          <section aria-label="回复详情" className="v2-card v2-reply-detail">
+          <section aria-label="回复详情" className="v2-card v2-reply-detail v2-reply-editor">
             <div>
               <p className="v2-kicker">
                 {active.source === 'MODEL' ? '模型生成建议' : '本地导入记录'}
@@ -426,6 +483,31 @@ export function InteractionPage(): React.JSX.Element {
             <p className="v2-manual-note">未连接平台，不会自动发送评论或私信。</p>
           </section>
         )}
+        <aside
+          aria-label="互动上下文"
+          className="v2-card v2-interaction-context v2-workspace-inspector"
+        >
+          <p className="v2-kicker">处理上下文</p>
+          <h2>{active?.type ?? '尚未选择互动'}</h2>
+          <dl className="v2-facts">
+            <div>
+              <dt>当前状态</dt>
+              <dd>{active === undefined ? '—' : statusLabels[active.status]}</dd>
+            </div>
+            <div>
+              <dt>关联内容</dt>
+              <dd>{active?.source ?? '未关联'}</dd>
+            </div>
+            <div>
+              <dt>发送方式</dt>
+              <dd>仅手动记录</dd>
+            </div>
+          </dl>
+          <div className="v2-interaction-safety">
+            <strong>安全边界</strong>
+            <p>系统只生成并保存建议，绝不会自动发送评论或私信。</p>
+          </div>
+        </aside>
       </div>
     </div>
   );
