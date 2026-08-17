@@ -1,7 +1,7 @@
 /* The isolated V2 layer keeps one auditable selector per line and is shipped minified by Vite. */
 /* prettier-ignore */
 @layer v2 {
-  .v2-body { --v2-paper: #fbfaf7; --v2-white: #fff; --v2-line: #dfdad1; --v2-soft: #f1ede7; --v2-ink: #282522; --v2-muted: #827b73; --v2-red: #a93d3b; --v2-red-soft: #f8ece9; --v2-green: #4f7d63; --v2-green-soft: #edf5ef; margin: 0; min-width: 320px; min-height: 100vh; overflow-x: hidden; background: #e9e5de; color: var(--v2-ink); font-family: 'Noto Sans SC', 'Microsoft YaHei UI', 'Segoe UI', sans-serif; }
+  .v2-body { --v2-paper: #fbfaf7; --v2-white: #fff; --v2-line: #dfdad1; --v2-soft: #f1ede7; --v2-ink: #282522; --v2-muted: #827b73; --v2-red: #a93d3b; --v2-red-soft: #f8ece9; --v2-green: #4f7d63; --v2-green-soft: #edf5ef; margin: 0; min-width: 320px; min-height: 100vh; overflow-x: auto; background: #e9e5de; color: var(--v2-ink); font-family: 'Noto Sans SC', 'Microsoft YaHei UI', 'Segoe UI', sans-serif; }
   .v2-body * { box-sizing: border-box; }
   .v2-body :is(button, input, textarea, select) { color: inherit; font: inherit; }
   .v2-body button { cursor: pointer; }
@@ -2317,6 +2317,312 @@
     .v2-review-dashboard,
     .v2-review-empty-state {
       grid-template-columns: minmax(0, 1fr) minmax(300px, 0.65fr);
+    }
+  }
+}
+
+@layer v2 {
+  /* R08 desktop window contract: one fluid frame for every North Star page. */
+  .v2-workspace {
+    min-width: 0;
+    container-name: v2-workspace;
+    container-type: inline-size;
+  }
+
+  .v2-main {
+    min-width: 0;
+  }
+
+  :is(
+    .v2-overview-page,
+    .v2-weekly-page,
+    .v2-content-page,
+    .v2-interaction-page,
+    .v2-library-page,
+    .v2-review-page,
+    .v2-settings-page
+  ) {
+    width: min(calc(100% - 64px), 1720px);
+    max-width: 1720px;
+    margin-right: auto;
+    margin-left: auto;
+  }
+
+  :is(
+      .v2-page-header,
+      .v2-header-actions,
+      .v2-editorial-lead,
+      .v2-overview-shelf-row,
+      .v2-week-strip,
+      .v2-plan-grid,
+      .v2-content-grid,
+      .v2-interaction-grid,
+      .v2-library-feature,
+      .v2-library-shelf,
+      .v2-review-dashboard,
+      .v2-review-empty-state,
+      .v2-settings-board
+    )
+    > * {
+    min-width: 0;
+  }
+
+  .v2-page-header {
+    width: 100%;
+  }
+
+  .v2-header-actions {
+    min-width: 0;
+    max-width: 48%;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .v2-overview-lead {
+    grid-template-columns: minmax(0, 1fr) clamp(320px, 24%, 380px);
+  }
+
+  .v2-overview-shelf-row {
+    grid-template-columns: minmax(0, 1fr) clamp(220px, 17%, 270px);
+  }
+
+  .v2-overview-page .v2-featured-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .v2-weekly-date-ribbon {
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    max-width: 100%;
+  }
+
+  .v2-weekly-stage {
+    grid-template-columns: minmax(0, 1fr) clamp(300px, 24%, 360px);
+  }
+
+  .v2-content-workbench {
+    max-width: none;
+    grid-template-columns:
+      clamp(220px, 17%, 280px)
+      minmax(420px, 1fr)
+      clamp(230px, 18%, 290px) !important;
+  }
+
+  .v2-content-editor-stage .v2-package-fields {
+    width: min(100%, 880px);
+  }
+
+  .v2-interaction-grid {
+    grid-template-columns:
+      clamp(260px, 19%, 320px)
+      minmax(420px, 1fr)
+      clamp(230px, 18%, 290px) !important;
+  }
+
+  .v2-library-feature {
+    grid-template-columns: clamp(140px, 15%, 190px) minmax(0, 1fr);
+  }
+
+  .v2-library-shelf {
+    grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr)) !important;
+  }
+
+  .v2-review-dashboard,
+  .v2-review-empty-state {
+    grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.7fr);
+  }
+
+  .v2-review-dashboard .v2-chart-card,
+  .v2-review-dashboard svg,
+  .v2-review-dashboard .v2-bar-chart {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .v2-settings-board {
+    grid-template-columns:
+      clamp(190px, 15%, 230px)
+      minmax(460px, 1fr)
+      clamp(236px, 19%, 300px) !important;
+  }
+
+  .v2-settings-board:has(.v2-provider-settings[data-section='advanced']) {
+    grid-template-columns: clamp(190px, 15%, 230px) minmax(0, 1fr) !important;
+  }
+
+  .v2-settings-main :is(input, textarea, select) {
+    width: 100%;
+  }
+
+  @container v2-workspace (max-width: 1120px) {
+    :is(
+      .v2-overview-page,
+      .v2-weekly-page,
+      .v2-content-page,
+      .v2-interaction-page,
+      .v2-library-page,
+      .v2-review-page,
+      .v2-settings-page
+    ) {
+      width: calc(100% - 48px);
+    }
+
+    .v2-page-header {
+      gap: 20px;
+    }
+
+    .v2-overview-lead {
+      grid-template-columns: minmax(0, 1fr) minmax(290px, 0.72fr);
+    }
+
+    .v2-weekly-stage {
+      grid-template-columns: 1fr;
+    }
+
+    .v2-weekly-rail {
+      grid-template-columns: minmax(0, 1fr) minmax(280px, 0.72fr);
+    }
+
+    .v2-content-workbench {
+      grid-template-columns: minmax(220px, 0.38fr) minmax(0, 1fr) !important;
+    }
+
+    .v2-content-page .v2-content-inspector {
+      grid-column: 1 / -1;
+      min-height: 0 !important;
+      height: auto;
+    }
+
+    .v2-interaction-grid {
+      grid-template-columns: minmax(240px, 0.38fr) minmax(0, 1fr) !important;
+    }
+
+    .v2-interaction-context {
+      grid-column: 1 / -1;
+      display: flex;
+      min-height: 0 !important;
+      height: auto !important;
+    }
+
+    .v2-library-shelf {
+      grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr)) !important;
+    }
+
+    .v2-review-dashboard,
+    .v2-review-empty-state {
+      grid-template-columns: 1fr;
+    }
+
+    .v2-settings-board,
+    .v2-settings-board:has(.v2-provider-settings[data-section='advanced']) {
+      grid-template-columns: minmax(190px, 0.3fr) minmax(0, 1fr) !important;
+    }
+
+    .v2-settings-rail {
+      grid-column: 1 / -1;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      margin-top: 0;
+    }
+  }
+
+  @container v2-workspace (max-width: 860px) {
+    :is(
+      .v2-overview-page,
+      .v2-weekly-page,
+      .v2-content-page,
+      .v2-interaction-page,
+      .v2-library-page,
+      .v2-review-page,
+      .v2-settings-page
+    ) {
+      width: calc(100% - 32px);
+      padding-top: 24px;
+    }
+
+    .v2-page-header {
+      display: grid;
+      min-height: 0 !important;
+      gap: 14px;
+    }
+
+    .v2-header-actions {
+      max-width: 100%;
+      justify-content: flex-start;
+    }
+
+    .v2-overview-lead,
+    .v2-overview-shelf-row,
+    .v2-content-workbench,
+    .v2-interaction-grid,
+    .v2-review-dashboard,
+    .v2-review-empty-state,
+    .v2-settings-board,
+    .v2-settings-board:has(.v2-provider-settings[data-section='advanced']) {
+      grid-template-columns: 1fr !important;
+    }
+
+    .v2-overview-feature-card {
+      display: grid;
+    }
+
+    .v2-overview-page .v2-featured-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .v2-weekly-date-ribbon {
+      grid-template-columns: repeat(7, minmax(112px, 1fr));
+      overflow-x: auto;
+      overscroll-behavior-inline: contain;
+    }
+
+    .v2-weekly-rail,
+    .v2-settings-rail {
+      grid-template-columns: 1fr;
+    }
+
+    .v2-content-page .v2-content-inspector,
+    .v2-interaction-context,
+    .v2-settings-rail {
+      grid-column: 1;
+    }
+
+    .v2-interaction-intake {
+      grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .v2-interaction-intake > header > div,
+    .v2-interaction-intake > .v2-manual-note {
+      grid-column: 1;
+    }
+
+    .v2-interaction-intake > header > .v2-button,
+    .v2-interaction-intake > .v2-manual-note + .v2-button {
+      grid-column: 2;
+    }
+
+    .v2-review-kpis .v2-metrics {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      height: auto;
+    }
+
+    .v2-review-dashboard .v2-review-kpis {
+      height: auto;
+    }
+
+    .v2-review-empty-steps {
+      height: auto;
+      grid-template-columns: 1fr;
+    }
+
+    .v2-review-empty-steps .v2-button {
+      grid-column: 1;
+      grid-row: auto;
+      justify-self: start;
+    }
+
+    .v2-settings-section-nav {
+      width: 100%;
+      min-height: 0;
+      position: static;
     }
   }
 }
