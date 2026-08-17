@@ -308,7 +308,7 @@ export function StatusPill({ status }: { readonly status: string }): React.JSX.E
   return <span className={`v2-status v2-status--${tone}`}>{status}</span>;
 }
 
-function useDialog(
+export function useDialog(
   open: boolean,
   onClose: () => void,
   returnFocus: HTMLElement | null,

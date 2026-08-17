@@ -391,6 +391,7 @@ export function ContentPage(): React.JSX.Element {
                     });
                     if (result?.ok === true) applyWorkspace(result.value);
                   }}
+                  presentation="dialog"
                 />
               </div>
               <div className="v2-package-fields">

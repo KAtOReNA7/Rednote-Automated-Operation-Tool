@@ -769,6 +769,133 @@ async function readContentState(client, sessionId) {
   );
 }
 
+async function openCoverPreview(client, sessionId) {
+  await navigate(client, sessionId, 'content', routeSelectors.content);
+  const opened = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const button = [...document.querySelectorAll('.v2-content-page button')]
+        .find((element) => /生成或重新生成封面/u.test(element.textContent ?? ''));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    })()`,
+  );
+  assert(opened, 'Cover generation preview trigger was not available.');
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]') !== null`,
+      ),
+    'cover generation preview dialog',
+  );
+}
+
+async function measureCoverPreview(client, sessionId) {
+  const measurement = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const dialog = document.querySelector('[data-provider-preview-dialog]');
+      const overlay = dialog?.parentElement;
+      const footer = dialog?.querySelector('.v2-provider-preview-actions');
+      const cancel = [...(footer?.querySelectorAll('button') ?? [])]
+        .find((element) => /取消/u.test(element.textContent ?? ''));
+      const confirm = [...(footer?.querySelectorAll('button') ?? [])]
+        .find((element) => /确认并执行一次/u.test(element.textContent ?? ''));
+      const close = dialog?.querySelector('button[aria-label="关闭调用前预览"]');
+      const rect = dialog?.getBoundingClientRect();
+      const footerRect = footer?.getBoundingClientRect();
+      return {
+        bodyScrollWidth: document.body.scrollWidth,
+        cancelEnabled: cancel instanceof HTMLButtonElement && !cancel.disabled,
+        clientWidth: document.documentElement.clientWidth,
+        closeEnabled: close instanceof HTMLButtonElement && !close.disabled,
+        confirmPresent: confirm instanceof HTMLButtonElement,
+        dialogBottom: Math.round(rect?.bottom ?? -1),
+        dialogHeight: Math.round(rect?.height ?? -1),
+        dialogLeft: Math.round(rect?.left ?? -1),
+        dialogRight: Math.round(rect?.right ?? -1),
+        dialogTop: Math.round(rect?.top ?? -1),
+        footerBottom: Math.round(footerRect?.bottom ?? -1),
+        footerTop: Math.round(footerRect?.top ?? -1),
+        innerHeight: window.innerHeight,
+        innerWidth: window.innerWidth,
+        outsideWorkbench: dialog?.closest('.v2-content-workbench') === null,
+        portalParentIsBody: overlay?.parentElement === document.body,
+        scrollWidth: document.documentElement.scrollWidth,
+      };
+    })()`,
+  );
+  assert(measurement.portalParentIsBody, 'Cover preview was not portaled to document.body.');
+  assert(measurement.outsideWorkbench, 'Cover preview remained inside the content workbench.');
+  assert(
+    measurement.scrollWidth === measurement.clientWidth,
+    'Cover preview caused horizontal overflow.',
+  );
+  assert(
+    measurement.bodyScrollWidth === measurement.clientWidth,
+    'Cover preview body exceeded viewport.',
+  );
+  assert(
+    measurement.dialogLeft >= 0 && measurement.dialogRight <= measurement.innerWidth + 1,
+    `Cover preview left the horizontal viewport: ${JSON.stringify(measurement)}.`,
+  );
+  assert(
+    measurement.dialogTop >= 0 && measurement.dialogBottom <= measurement.innerHeight + 1,
+    `Cover preview left the vertical viewport: ${JSON.stringify(measurement)}.`,
+  );
+  assert(
+    measurement.footerTop >= measurement.dialogTop &&
+      measurement.footerBottom <= measurement.innerHeight + 1,
+    `Cover preview actions were not visible: ${JSON.stringify(measurement)}.`,
+  );
+  assert(measurement.cancelEnabled, 'Cover preview cancel action was not clickable.');
+  assert(measurement.closeEnabled, 'Cover preview close action was not clickable.');
+  assert(measurement.confirmPresent, 'Cover preview confirmation action was missing.');
+  return measurement;
+}
+
+async function closeCoverPreview(client, sessionId, mode) {
+  if (mode === 'cancel') {
+    const closed = await evaluate(
+      client,
+      sessionId,
+      `(() => {
+        const button = [...document.querySelectorAll('.v2-provider-preview-actions button')]
+          .find((element) => /取消/u.test(element.textContent ?? ''));
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+        button.click();
+        return true;
+      })()`,
+    );
+    assert(closed, 'Cover preview cancel action could not be used.');
+  } else {
+    await client.send(
+      'Input.dispatchKeyEvent',
+      { code: 'Escape', key: 'Escape', type: 'keyDown' },
+      sessionId,
+    );
+    await client.send(
+      'Input.dispatchKeyEvent',
+      { code: 'Escape', key: 'Escape', type: 'keyUp' },
+      sessionId,
+    );
+  }
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]') === null`,
+      ),
+    `cover generation preview ${mode} close`,
+  );
+}
+
 async function setZoomEquivalent(client, sessionId, factor) {
   await client.send(
     'Emulation.setDeviceMetricsOverride',
@@ -1012,6 +1139,52 @@ try {
     );
   }
 
+  const coverPreview = [];
+  if (contentStateBefore !== null) {
+    await resizeViewport(client, sessionId, { height: 900, width: 1440 });
+    await openCoverPreview(client, sessionId);
+    for (const viewport of [
+      { height: 720, width: 1024 },
+      { height: 800, width: 1280 },
+      { height: 900, width: 1440 },
+      { height: 1080, width: 1920 },
+      { height: 1113, width: 2048 },
+    ]) {
+      await resizeViewport(client, sessionId, viewport);
+      coverPreview.push({ viewport, measurement: await measureCoverPreview(client, sessionId) });
+      if (evidenceDirectory !== null && [1024, 1440, 2048].includes(viewport.width)) {
+        await captureViewport(
+          client,
+          sessionId,
+          join(
+            evidenceDirectory,
+            `${evidencePrefix}-cover-preview-${String(viewport.width)}x${String(viewport.height)}.png`,
+          ),
+        );
+      }
+    }
+    await setZoomEquivalent(client, sessionId, 1.25);
+    coverPreview.push({
+      viewport: { effectiveZoom: 1.25, height: 720, width: 1152 },
+      measurement: await measureCoverPreview(client, sessionId),
+    });
+    await clearZoomEquivalent(client, sessionId);
+    await resizeViewport(client, sessionId, { height: 900, width: 1440 });
+    await closeCoverPreview(client, sessionId, 'cancel');
+    assert(
+      JSON.stringify(await readContentState(client, sessionId)) ===
+        JSON.stringify(contentStateBefore),
+      'Content selection or draft changed after cancelling the cover preview.',
+    );
+    await openCoverPreview(client, sessionId);
+    await closeCoverPreview(client, sessionId, 'escape');
+    assert(
+      JSON.stringify(await readContentState(client, sessionId)) ===
+        JSON.stringify(contentStateBefore),
+      'Content selection or draft changed after closing the cover preview with Escape.',
+    );
+  }
+
   await resizeViewport(client, sessionId, { height: 900, width: 1440 });
   assert(await selectWeeklyState(client, sessionId), 'Weekly-plan state control was not found.');
   const stateBefore = await readWeeklyState(client, sessionId);
@@ -1068,6 +1241,7 @@ try {
   process.stdout.write(
     `${JSON.stringify({
       contentDynamic,
+      coverPreview,
       directNavigation,
       dynamic,
       externalBusinessConnections: 0,

@@ -1317,6 +1317,108 @@
 }
 
 @layer v2 {
+  /* R08 closeout: keep the cover provider preview independent from the narrow editor rail. */
+  .v2-provider-preview-overlay {
+    padding: 16px;
+  }
+
+  .v2-provider-preview-dialog {
+    width: min(680px, calc(100vw - 32px));
+    max-height: min(780px, calc(100vh - 32px));
+    overflow: hidden;
+    padding: 0;
+  }
+
+  .v2-provider-preview-head {
+    flex: none;
+    border-bottom: 1px solid var(--v2-line);
+    padding: 20px 22px 16px;
+  }
+
+  .v2-provider-preview-head h2 {
+    margin-top: 3px;
+    font-size: 24px;
+    line-height: 1.2;
+  }
+
+  .v2-provider-preview-body {
+    min-height: 0;
+    overflow-y: auto;
+    padding: 18px 22px;
+    overscroll-behavior: contain;
+  }
+
+  .v2-provider-preview-body > p {
+    color: var(--v2-muted);
+    line-height: 1.6;
+  }
+
+  .v2-provider-preview-body dl {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px 18px;
+    margin: 16px 0;
+  }
+
+  .v2-provider-preview-body dl div {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: minmax(76px, auto) minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .v2-provider-preview-body :is(dt, dd) {
+    min-width: 0;
+    margin: 0;
+  }
+
+  .v2-provider-preview-body dt {
+    color: var(--v2-muted);
+  }
+
+  .v2-provider-preview-body dd {
+    overflow-wrap: anywhere;
+    text-align: right;
+  }
+
+  .v2-provider-preview-dialog .v2-provider-preview-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    flex: none;
+    border-top: 1px solid var(--v2-line);
+    background: rgb(250 250 252 / 98%);
+    padding: 14px 22px 18px;
+  }
+
+  @media (max-width: 640px), (max-height: 640px) {
+    .v2-provider-preview-dialog {
+      max-height: calc(100vh - 20px);
+    }
+
+    .v2-provider-preview-head {
+      padding: 14px 16px 12px;
+    }
+
+    .v2-provider-preview-head h2 {
+      font-size: 20px;
+    }
+
+    .v2-provider-preview-body {
+      padding: 14px 16px;
+    }
+
+    .v2-provider-preview-body dl {
+      grid-template-columns: 1fr;
+    }
+
+    .v2-provider-preview-dialog .v2-provider-preview-actions {
+      padding: 12px 16px 14px;
+    }
+  }
+}
+
+@layer v2 {
   /* R08 North Star V2 stage B: Figma N4-N7 page geometry and states. */
   .v2-shell:has(.v2-interaction-page, .v2-library-page, .v2-review-page, .v2-settings-page)
     .v2-window-bar {
