@@ -35,6 +35,8 @@ const matrix = Object.freeze([
   { height: 1080, width: 1920 },
   { height: 1113, width: 2048 },
 ]);
+const minimumUsableViewport = Object.freeze({ height: 600, width: 960 });
+const viewportNegotiations = new Map();
 const evidenceDirectory =
   process.env.REDNOTE_RESPONSIVE_EVIDENCE_DIR === undefined
     ? null
@@ -201,6 +203,7 @@ async function waitForBrowserEndpoint(port) {
 }
 
 async function resizeViewport(client, sessionId, desired) {
+  await client.send('Emulation.clearDeviceMetricsOverride', {}, sessionId);
   for (let attempt = 0; attempt < 4; attempt += 1) {
     await evaluate(
       client,
@@ -219,17 +222,78 @@ async function resizeViewport(client, sessionId, desired) {
       `${String(desired.width)}x${String(desired.height)} Electron viewport`,
       5_000,
     );
-    if (viewport.width === desired.width && Math.abs(viewport.height - desired.height) <= 1)
+    if (viewport.width === desired.width && Math.abs(viewport.height - desired.height) <= 1) {
+      viewportNegotiations.set(`${String(desired.width)}x${String(desired.height)}`, {
+        actual: viewport,
+        mode: 'native',
+        requested: desired,
+      });
       return viewport;
+    }
     await delay(100);
   }
-  const actual = await evaluate(
+  const geometry = await evaluate(
     client,
     sessionId,
-    `({ height: window.innerHeight, width: window.innerWidth })`,
+    `({
+      available: { height: screen.availHeight, width: screen.availWidth },
+      inner: { height: window.innerHeight, width: window.innerWidth },
+      outer: { height: window.outerHeight, width: window.outerWidth }
+    })`,
   );
+  const attainable = {
+    height: geometry.inner.height + Math.max(0, geometry.available.height - geometry.outer.height),
+    width: geometry.inner.width + Math.max(0, geometry.available.width - geometry.outer.width),
+  };
+  const widthLimited =
+    geometry.inner.width !== desired.width && desired.width > attainable.width + 1;
+  const heightLimited =
+    Math.abs(geometry.inner.height - desired.height) > 1 && desired.height > attainable.height + 1;
+  const workAreaLimited =
+    (geometry.inner.width === desired.width || widthLimited) &&
+    (Math.abs(geometry.inner.height - desired.height) <= 1 || heightLimited) &&
+    (widthLimited || heightLimited);
+  if (
+    workAreaLimited &&
+    geometry.inner.width >= minimumUsableViewport.width &&
+    geometry.inner.height >= minimumUsableViewport.height
+  ) {
+    await client.send(
+      'Emulation.setDeviceMetricsOverride',
+      {
+        deviceScaleFactor: 1,
+        height: desired.height,
+        mobile: false,
+        screenHeight: desired.height,
+        screenWidth: desired.width,
+        width: desired.width,
+      },
+      sessionId,
+    );
+    const emulated = await waitFor(
+      async () => {
+        const viewport = await evaluate(
+          client,
+          sessionId,
+          `({ height: window.innerHeight, width: window.innerWidth })`,
+        );
+        return viewport.width === desired.width && Math.abs(viewport.height - desired.height) <= 1
+          ? viewport
+          : false;
+      },
+      `${String(desired.width)}x${String(desired.height)} work-area constrained viewport`,
+    );
+    viewportNegotiations.set(`${String(desired.width)}x${String(desired.height)}`, {
+      actual: emulated,
+      availableWorkArea: geometry.available,
+      mode: 'work-area-emulated-1-to-1',
+      nativeClientViewport: geometry.inner,
+      requested: desired,
+    });
+    return emulated;
+  }
   throw new Error(
-    `Electron viewport mismatch: expected ${String(desired.width)}x${String(desired.height)}, got ${String(actual.width)}x${String(actual.height)}.`,
+    `Electron viewport mismatch: expected ${String(desired.width)}x${String(desired.height)}, got ${String(geometry.inner.width)}x${String(geometry.inner.height)}; geometry=${JSON.stringify(geometry)}.`,
   );
 }
 
@@ -986,6 +1050,7 @@ try {
     `Electron browser zoom did not change the rendered viewport: ${JSON.stringify({ before: zoomBefore, zoomed })}`,
   );
   await clearZoomEquivalent(client, sessionId);
+  await resizeViewport(client, sessionId, { height: 900, width: 1440 });
   const zoomReset = await waitFor(
     async () => {
       const value = await measureRoute(
@@ -1014,6 +1079,7 @@ try {
       },
       sequentialNavigation,
       statePreserved: true,
+      viewportNegotiations: [...viewportNegotiations.values()],
       zoom: { before: zoomBefore, reset: zoomReset, zoomed },
     })}\n`,
   );
