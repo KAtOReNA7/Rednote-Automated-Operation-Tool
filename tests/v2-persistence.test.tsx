@@ -844,10 +844,11 @@ describe('V2 renderer persistence wiring', () => {
     window.history.replaceState(null, '', '/v2.html#/v2/settings');
     const user = userEvent.setup();
     const first = render(<V2App />);
+    await user.click(await screen.findByRole('button', { name: '账号与文风' }));
     const name = await screen.findByRole('textbox', { name: '账号名称' });
     await user.clear(name);
     await user.type(name, '本机重启恢复账号');
-    await user.click(screen.getByRole('button', { name: '保存人设' }));
+    await user.click(screen.getByRole('button', { name: '保存更改' }));
     expect(await screen.findByText(/revision 1/u)).toBeInTheDocument();
     first.unmount();
     database.close();
@@ -856,6 +857,7 @@ describe('V2 renderer persistence wiring', () => {
     facade = new V2ApplicationFacade(new SqliteV2Repository(database));
     exposeBridge(bridgeFor(facade));
     const reopened = render(<V2App />);
+    await user.click(await screen.findByRole('button', { name: '账号与文风' }));
     await waitFor(() =>
       expect(screen.getByRole('textbox', { name: '账号名称' })).toHaveValue('本机重启恢复账号'),
     );

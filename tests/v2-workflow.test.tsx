@@ -114,6 +114,7 @@ describe('V2 deterministic session workflows', () => {
     await user.click(screen.getByRole('link', { name: '互动' }));
     expect(screen.getByRole('heading', { name: '尚无本地互动' })).toBeVisible();
     expect(screen.queryByRole('button', { name: /手动发送/u })).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '新增互动' }));
     expect(screen.getByRole('button', { name: '保存本地互动' })).toBeDisabled();
     expect(document.body).toHaveTextContent('永不自动发送');
   });
@@ -129,13 +130,25 @@ describe('V2 deterministic session workflows', () => {
 
     await user.click(screen.getByRole('link', { name: '互动' }));
     expect(document.querySelector('.v2-interaction-grid')).toBeInTheDocument();
+    expect(document.querySelector('.v2-interaction-list-head')).toBeInTheDocument();
+    expect(document.querySelector('.v2-interaction-safety')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '新增互动' }));
     expect(screen.getByRole('button', { name: '收起录入' })).toBeVisible();
     expect(screen.getByLabelText('粘贴一条评论或私信')).toBeVisible();
 
+    await user.click(screen.getByRole('link', { name: '书库' }));
+    expect(document.querySelector('.v2-library-feature')).toBeInTheDocument();
+    expect(document.querySelector('.v2-library-shelf')).toBeInTheDocument();
+
     await user.click(screen.getByRole('link', { name: '数据复盘' }));
-    expect(screen.getByText('尚未录入当前观察窗口的数据')).toBeVisible();
-    expect(screen.getByText(/不会用模拟数据补位/u)).toBeVisible();
+    expect(document.querySelector('.v2-review-empty-state')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: '完成两步即可看到真实趋势' })).toBeVisible();
+    expect(screen.getByText(/无数据时不显示假 KPI 或假趋势/u)).toBeVisible();
     expect(document.querySelector('.v2-chart-empty svg')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('link', { name: '设置' }));
+    expect(document.querySelector('.v2-settings-board')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '高级诊断' })).toBeVisible();
   });
 
   it('searches books, exposes the local review intake, and saves four persona fields in-session', async () => {
@@ -151,13 +164,14 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByRole('button', { name: '保存本页指标' })).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '设置' }));
+    await user.click(screen.getByRole('button', { name: '账号与文风' }));
     expect(screen.getAllByRole('textbox')).toHaveLength(4);
     const name = screen.getByDisplayValue('雾灯书页');
     await user.clear(name);
-    await user.click(screen.getByRole('button', { name: '保存人设' }));
+    await user.click(screen.getByRole('button', { name: '保存更改' }));
     expect(screen.getByText(/账号名称未填写/u)).toBeVisible();
     await user.type(name, '雾灯书页·本机');
-    await user.click(screen.getByRole('button', { name: '保存人设' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/本机设置桥接不可用/u);
+    await user.click(screen.getByRole('button', { name: '保存更改' }));
+    expect(await screen.findByText(/本机设置桥接不可用/u)).toBeVisible();
   });
 });

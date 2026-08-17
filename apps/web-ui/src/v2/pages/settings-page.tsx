@@ -32,13 +32,20 @@ const probeSummaryLabel = {
   STALE: '结果已过期',
 } as const;
 const settingsSections = [
-  ['provider', 'v2-provider-settings', 'AI 服务'],
   ['persona', 'v2-persona-settings', '账号与文风'],
+  ['provider', 'v2-provider-settings', 'AI 服务'],
   ['capabilities', 'v2-provider-capabilities', '能力与确认'],
   ['budget', 'v2-provider-budget', '费用与预算'],
+  ['advanced', 'v2-provider-diagnostics', '高级诊断'],
 ] as const;
 
-function ProviderSettings(): React.JSX.Element {
+function ProviderSettings({
+  activeSection,
+  onViewChange,
+}: {
+  readonly activeSection: string;
+  readonly onViewChange: (view: V2ProviderSettingsViewContract) => void;
+}): React.JSX.Element {
   const { notify } = useV2Controller();
   const [view, setView] = useState<V2ProviderSettingsViewContract | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -57,6 +64,7 @@ function ProviderSettings(): React.JSX.Element {
 
   const apply = (next: V2ProviderSettingsViewContract): void => {
     setView(next);
+    onViewChange(next);
     setBaseUrl(next.providerBaseUrl ?? '');
     setResearchModel(next.research.modelId ?? '');
     setWritingModel(next.writing.modelId ?? '');
@@ -207,7 +215,11 @@ function ProviderSettings(): React.JSX.Element {
   };
 
   return (
-    <section className="v2-card v2-settings v2-provider-settings" id="v2-provider-settings">
+    <section
+      className="v2-card v2-settings v2-provider-settings"
+      data-section={activeSection}
+      id="v2-provider-settings"
+    >
       <div className="v2-settings-title">
         <Icon name="sparkle" size={24} />
         <div>
@@ -215,6 +227,51 @@ function ProviderSettings(): React.JSX.Element {
           <p>连接既有本机 Provider、凭据、能力检查与费用账本。</p>
         </div>
       </div>
+      {activeSection === 'advanced' && view !== null ? (
+        <section className="v2-settings-advanced" id="v2-provider-diagnostics">
+          <p className="v2-kicker">高级诊断</p>
+          <h2>查看诊断信息</h2>
+          <p>仅在排查连接或能力问题时展开；默认保持折叠。</p>
+          <article>
+            <small>当前结论</small>
+            <strong>{probeSummaryLabel[view.capabilityProbe.summaryState]}</strong>
+            <span>
+              Provider {view.providerConfigured ? '配置完整' : '待配置'} · 凭据
+              {credentialLabel[view.credentialState]}
+            </span>
+          </article>
+          <article>
+            <h3>连接诊断</h3>
+            <dl>
+              <div>
+                <dt>Provider 配置</dt>
+                <dd>{view.providerConfigured ? '完整' : '待配置'}</dd>
+              </div>
+              <div>
+                <dt>凭据状态</dt>
+                <dd>{credentialLabel[view.credentialState]}</dd>
+              </div>
+              <div>
+                <dt>结构化文本</dt>
+                <dd>{capabilityLabel[view.writing.state]}</dd>
+              </div>
+              <div>
+                <dt>图片生成</dt>
+                <dd>{capabilityLabel[view.image?.state ?? 'UNKNOWN']}</dd>
+              </div>
+              <div>
+                <dt>费用上界</dt>
+                <dd>{view.accounting.priceReadyForContent ? '可估算' : '未知'}</dd>
+              </div>
+            </dl>
+            <Button onClick={() => void copyDiagnostic()}>复制脱敏诊断摘要</Button>
+          </article>
+          <aside>
+            <strong>隐私说明</strong>
+            <p>诊断不包含凭据、完整请求、完整响应或本机绝对路径。</p>
+          </aside>
+        </section>
+      ) : null}
       {loadError !== null ? (
         <div role="alert">
           <p>{loadError}</p>
@@ -222,204 +279,217 @@ function ProviderSettings(): React.JSX.Element {
         </div>
       ) : view === null ? (
         <p role="status">正在读取本机设置；不可用时不会生成模拟结果。</p>
-      ) : (
+      ) : activeSection === 'advanced' ? null : (
         <>
-          <p>
-            <strong>Provider：</strong>
-            {view.providerConfigured ? '配置完整' : '待配置'} · <strong>凭据：</strong>
-            {credentialLabel[view.credentialState]}
-          </p>
-          <label className="v2-field">
-            <span>Base URL</span>
-            <input
-              onChange={(event) => setBaseUrl(event.target.value)}
-              placeholder="例如：Provider 的 HTTPS API 地址"
-              value={baseUrl}
-            />
-          </label>
-          <label className="v2-field">
-            <span>研究模型 ID</span>
-            <input
-              onChange={(event) => setResearchModel(event.target.value)}
-              value={researchModel}
-            />
-          </label>
-          <label className="v2-field">
-            <span>写作模型 ID</span>
-            <input onChange={(event) => setWritingModel(event.target.value)} value={writingModel} />
-          </label>
-          <label className="v2-field">
-            <span>图片模型 ID</span>
-            <input
-              aria-label="图片模型 ID"
-              onChange={(event) => setImageModel(event.target.value)}
-              value={imageModel}
-            />
-            <small>必须是中转站明确支持 OpenAI Images Generations 接口的模型 ID。</small>
-          </label>
-          <Button onClick={() => void save()} tone="primary">
-            保存 AI 服务设置
-          </Button>
-          <hr />
-          <label className="v2-field" htmlFor="v2-provider-credential">
-            <span>设置或替换凭据</span>
-            <input
-              aria-label="设置或替换凭据"
-              autoComplete="new-password"
-              id="v2-provider-credential"
-              onChange={(event) => setCredential(event.target.value)}
-              type="password"
-              value={credential}
-            />
-            <small>保存后立即清空，永不回显旧凭据。</small>
-          </label>
-          <div className="v2-inline-actions">
-            <Button disabled={credential === ''} onClick={() => void saveCredential()}>
-              加密保存凭据
-            </Button>
-            <label>
+          <div className="v2-provider-core">
+            <p>
+              <strong>Provider：</strong>
+              {view.providerConfigured ? '配置完整' : '待配置'} · <strong>凭据：</strong>
+              {credentialLabel[view.credentialState]}
+            </p>
+            <label className="v2-field">
+              <span>Base URL</span>
               <input
-                checked={confirmClear}
-                onChange={(event) => setConfirmClear(event.target.checked)}
-                type="checkbox"
+                onChange={(event) => setBaseUrl(event.target.value)}
+                placeholder="例如：Provider 的 HTTPS API 地址"
+                value={baseUrl}
               />
-              我确认清除凭据
             </label>
-            <Button disabled={!confirmClear} onClick={() => void clearCredential()}>
-              清除凭据
+            <label className="v2-field">
+              <span>研究模型 ID</span>
+              <input
+                onChange={(event) => setResearchModel(event.target.value)}
+                value={researchModel}
+              />
+            </label>
+            <label className="v2-field">
+              <span>写作模型 ID</span>
+              <input
+                onChange={(event) => setWritingModel(event.target.value)}
+                value={writingModel}
+              />
+            </label>
+            <label className="v2-field">
+              <span>图片模型 ID</span>
+              <input
+                aria-label="图片模型 ID"
+                onChange={(event) => setImageModel(event.target.value)}
+                value={imageModel}
+              />
+              <small>必须是中转站明确支持 OpenAI Images Generations 接口的模型 ID。</small>
+            </label>
+            <Button id="v2-save-provider-settings" onClick={() => void save()} tone="primary">
+              保存 AI 服务设置
             </Button>
           </div>
           <hr />
-          <h3 id="v2-provider-capabilities">R07 所需能力</h3>
-          <p>
-            研究槽：{capabilityLabel[view.research.state]}
-            {view.research.protocolMode === null ? '' : ` · ${view.research.protocolMode}`} ·
-            写作槽：
-            {capabilityLabel[view.writing.state]}
-            {view.writing.protocolMode === null ? '' : ` · ${view.writing.protocolMode}`} · 图片槽
-            imageGeneration：{capabilityLabel[view.image?.state ?? 'UNKNOWN']}
-          </p>
-          <p>
-            能力检查只会在你预览并明确确认后启动。文本单次最长90秒、图片单次最长120秒、不会自动重试。
-          </p>
-          <Button onClick={() => void previewProbe()}>验证 R07 所需能力</Button>
-          {probeProgress === null ? null : (
-            <p role="status">
-              能力检查：{probeStatusLabel[probeProgress.status]} · 已发送{' '}
-              {probeProgress.sentRequestCount}/{probeProgress.plannedRequestCount} 个请求 · 已完成{' '}
-              {probeProgress.completedRequestCount}/{probeProgress.plannedRequestCount}
-            </p>
-          )}
-          {probe === null ? null : (
-            <div className="v2-provider-blockers">
-              <p>
-                预计请求 {probe.requestCount} 次 · 费用
-                {probe.feeEstimate === 'UNKNOWN' ? '无法估算' : probe.feeEstimate} · 预算
-                {probe.budgetReady ? '允许' : '已达到硬上限'}
-              </p>
-              <p>
-                模型：{probe.modelIds?.join('、') ?? '未配置'} · Search：
-                {probe.searchEnabled ? '开启' : '关闭'} · Fetch：
-                {probe.fetchEnabled ? '开启' : '关闭'}
-              </p>
-              <p>文本单次最长90秒、图片单次最长120秒、不会自动重试。</p>
-              {view.credentialState === 'CONFIGURED' ? null : (
-                <p className="v2-form-error">凭据未配置或需重新认证，请先在上方保存凭据。</p>
-              )}
-              {probe.requestCount === 0 ? (
-                <p role="status">当前必需能力已有有效证据，无需重复验证。</p>
-              ) : (
-                <>
-                  <label>
-                    <input
-                      checked={confirmProbe}
-                      onChange={(event) => setConfirmProbe(event.target.checked)}
-                      type="checkbox"
-                    />
-                    {probe.feeEstimate === 'UNKNOWN'
-                      ? `我了解费用未知，仍授权本次最多 ${probe.requestCount} 个能力检查请求`
-                      : '我确认启动本次能力检查'}
-                  </label>
-                  <Button
-                    disabled={
-                      !confirmProbe ||
-                      !probe.budgetReady ||
-                      view.credentialState !== 'CONFIGURED' ||
-                      !view.providerConfigured
-                    }
-                    onClick={() => void startProbe()}
-                    tone="primary"
-                  >
-                    确认并启动
-                  </Button>
-                </>
-              )}
-            </div>
-          )}
-          {view.capabilityProbe.latestRun === null ? null : (
-            <details className="v2-provider-blockers" data-testid="v2-probe-diagnostics">
-              <summary>最近一次能力检查与脱敏诊断</summary>
-              <p>
-                <strong>{probeSummaryLabel[view.capabilityProbe.summaryState]}</strong> · 已计划{' '}
-                {view.capabilityProbe.latestRun.plannedRequestCount} · 已发送{' '}
-                {view.capabilityProbe.latestRun.sentRequestCount} · 已完成{' '}
-                {view.capabilityProbe.latestRun.completedRequestCount}
-              </p>
-              <p>
-                Search：关闭 · Fetch：关闭 · 费用：
-                {view.capabilityProbe.latestRun.costState === 'UNKNOWN' ? '未知' : '已知'}
-              </p>
-              <ul className="v2-probe-step-list">
-                {view.capabilityProbe.steps.map((step) => (
-                  <li key={`${step.modelId}:${step.protocolMode}:${step.capability}`}>
-                    <strong>{step.mappedSlots.join(' + ')}</strong> · {step.modelId} ·{' '}
-                    {step.capability} · {step.protocolMode}
-                    <br />
-                    结论：{capabilityLabel[step.state]} · {step.sent ? '已发送' : '未发送'} ·{' '}
-                    {step.stale ? '已过期' : '当前'} · 错误码：{step.diagnosticCode}
-                    <br />
-                    {step.reason}
-                    {step.httpStatus === null ? '' : ` HTTP ${step.httpStatus}`}
-                    {step.errorCode == null ? '' : ` · code=${step.errorCode}`}
-                    {step.errorType == null ? '' : ` · type=${step.errorType}`}
-                    {step.errorParam == null ? '' : ` · param=${step.errorParam}`}
-                    {step.requestId == null ? '' : ` · requestId=${step.requestId}`}
-                    <br />
-                    receivedContentType={step.receivedContentType ?? 'MISSING'} · transportVariant=
-                    {step.transportVariant ?? 'REJECTED'} · responseStatus=
-                    {step.httpStatus ?? '未知'}
-                    {step.deduplicated
-                      ? `；同一请求已去重并映射到 ${step.mappedSlots.join('、')}`
-                      : ''}
-                    <br />
-                    观测时间：{step.observedAt ?? '无'}
-                  </li>
-                ))}
-              </ul>
-              <Button onClick={() => void copyDiagnostic()}>复制脱敏诊断</Button>
-              <label className="v2-field">
-                <span>脱敏诊断（只读，可手动选择）</span>
-                <textarea
-                  aria-label="脱敏诊断（只读）"
-                  readOnly
-                  ref={diagnosticRef}
-                  rows={Math.min(10, 4 + view.capabilityProbe.steps.length)}
-                  value={view.capabilityProbe.diagnosticText}
+          <details className="v2-provider-credential">
+            <summary>凭据管理</summary>
+            <label className="v2-field" htmlFor="v2-provider-credential">
+              <span>设置或替换凭据</span>
+              <input
+                aria-label="设置或替换凭据"
+                autoComplete="new-password"
+                id="v2-provider-credential"
+                onChange={(event) => setCredential(event.target.value)}
+                type="password"
+                value={credential}
+              />
+              <small>保存后立即清空，永不回显旧凭据。</small>
+            </label>
+            <div className="v2-inline-actions">
+              <Button disabled={credential === ''} onClick={() => void saveCredential()}>
+                加密保存凭据
+              </Button>
+              <label>
+                <input
+                  checked={confirmClear}
+                  onChange={(event) => setConfirmClear(event.target.checked)}
+                  type="checkbox"
                 />
+                我确认清除凭据
               </label>
-            </details>
-          )}
+              <Button disabled={!confirmClear} onClick={() => void clearCredential()}>
+                清除凭据
+              </Button>
+            </div>
+          </details>
           <hr />
-          <h3 id="v2-provider-budget">费用与预算</h3>
-          <p>
-            周计划价格：{view.accounting.priceReadyForWeeklyPlan ? '可估算' : '未配置'} · 内容价格：
-            {view.accounting.priceReadyForContent ? '可估算' : '未配置'} · 回复价格：
-            {view.accounting.priceReadyForReply ? '可估算' : '未配置'}
-          </p>
-          <p>
-            {view.accounting.hardStop ? '本月预算已阻止调用。' : '预算硬上限尚未触发。'}{' '}
-            价格不完整时必须逐次明确授权，未知费用不会记为 0。
-          </p>
+          <section className="v2-provider-capability-section" id="v2-provider-capabilities">
+            <h3>R07 所需能力</h3>
+            <p>
+              研究槽：{capabilityLabel[view.research.state]}
+              {view.research.protocolMode === null ? '' : ` · ${view.research.protocolMode}`} ·
+              写作槽：
+              {capabilityLabel[view.writing.state]}
+              {view.writing.protocolMode === null ? '' : ` · ${view.writing.protocolMode}`} · 图片槽
+              imageGeneration：{capabilityLabel[view.image?.state ?? 'UNKNOWN']}
+            </p>
+            <p>
+              能力检查只会在你预览并明确确认后启动。文本单次最长90秒、图片单次最长120秒、不会自动重试。
+            </p>
+            <Button onClick={() => void previewProbe()}>验证 R07 所需能力</Button>
+            {probeProgress === null ? null : (
+              <p role="status">
+                能力检查：{probeStatusLabel[probeProgress.status]} · 已发送{' '}
+                {probeProgress.sentRequestCount}/{probeProgress.plannedRequestCount} 个请求 · 已完成{' '}
+                {probeProgress.completedRequestCount}/{probeProgress.plannedRequestCount}
+              </p>
+            )}
+            {probe === null ? null : (
+              <div className="v2-provider-blockers">
+                <p>
+                  预计请求 {probe.requestCount} 次 · 费用
+                  {probe.feeEstimate === 'UNKNOWN' ? '无法估算' : probe.feeEstimate} · 预算
+                  {probe.budgetReady ? '允许' : '已达到硬上限'}
+                </p>
+                <p>
+                  模型：{probe.modelIds?.join('、') ?? '未配置'} · Search：
+                  {probe.searchEnabled ? '开启' : '关闭'} · Fetch：
+                  {probe.fetchEnabled ? '开启' : '关闭'}
+                </p>
+                <p>文本单次最长90秒、图片单次最长120秒、不会自动重试。</p>
+                {view.credentialState === 'CONFIGURED' ? null : (
+                  <p className="v2-form-error">凭据未配置或需重新认证，请先在上方保存凭据。</p>
+                )}
+                {probe.requestCount === 0 ? (
+                  <p role="status">当前必需能力已有有效证据，无需重复验证。</p>
+                ) : (
+                  <>
+                    <label>
+                      <input
+                        checked={confirmProbe}
+                        onChange={(event) => setConfirmProbe(event.target.checked)}
+                        type="checkbox"
+                      />
+                      {probe.feeEstimate === 'UNKNOWN'
+                        ? `我了解费用未知，仍授权本次最多 ${probe.requestCount} 个能力检查请求`
+                        : '我确认启动本次能力检查'}
+                    </label>
+                    <Button
+                      disabled={
+                        !confirmProbe ||
+                        !probe.budgetReady ||
+                        view.credentialState !== 'CONFIGURED' ||
+                        !view.providerConfigured
+                      }
+                      onClick={() => void startProbe()}
+                      tone="primary"
+                    >
+                      确认并启动
+                    </Button>
+                  </>
+                )}
+              </div>
+            )}
+            {view.capabilityProbe.latestRun === null ? null : (
+              <details className="v2-provider-blockers" data-testid="v2-probe-diagnostics">
+                <summary>最近一次能力检查与脱敏诊断</summary>
+                <p>
+                  <strong>{probeSummaryLabel[view.capabilityProbe.summaryState]}</strong> · 已计划{' '}
+                  {view.capabilityProbe.latestRun.plannedRequestCount} · 已发送{' '}
+                  {view.capabilityProbe.latestRun.sentRequestCount} · 已完成{' '}
+                  {view.capabilityProbe.latestRun.completedRequestCount}
+                </p>
+                <p>
+                  Search：关闭 · Fetch：关闭 · 费用：
+                  {view.capabilityProbe.latestRun.costState === 'UNKNOWN' ? '未知' : '已知'}
+                </p>
+                <ul className="v2-probe-step-list">
+                  {view.capabilityProbe.steps.map((step) => (
+                    <li key={`${step.modelId}:${step.protocolMode}:${step.capability}`}>
+                      <strong>{step.mappedSlots.join(' + ')}</strong> · {step.modelId} ·{' '}
+                      {step.capability} · {step.protocolMode}
+                      <br />
+                      结论：{capabilityLabel[step.state]} · {step.sent ? '已发送' : '未发送'} ·{' '}
+                      {step.stale ? '已过期' : '当前'} · 错误码：{step.diagnosticCode}
+                      <br />
+                      {step.reason}
+                      {step.httpStatus === null ? '' : ` HTTP ${step.httpStatus}`}
+                      {step.errorCode == null ? '' : ` · code=${step.errorCode}`}
+                      {step.errorType == null ? '' : ` · type=${step.errorType}`}
+                      {step.errorParam == null ? '' : ` · param=${step.errorParam}`}
+                      {step.requestId == null ? '' : ` · requestId=${step.requestId}`}
+                      <br />
+                      receivedContentType={step.receivedContentType ?? 'MISSING'} ·
+                      transportVariant=
+                      {step.transportVariant ?? 'REJECTED'} · responseStatus=
+                      {step.httpStatus ?? '未知'}
+                      {step.deduplicated
+                        ? `；同一请求已去重并映射到 ${step.mappedSlots.join('、')}`
+                        : ''}
+                      <br />
+                      观测时间：{step.observedAt ?? '无'}
+                    </li>
+                  ))}
+                </ul>
+                <Button onClick={() => void copyDiagnostic()}>复制脱敏诊断</Button>
+                <label className="v2-field">
+                  <span>脱敏诊断（只读，可手动选择）</span>
+                  <textarea
+                    aria-label="脱敏诊断（只读）"
+                    readOnly
+                    ref={diagnosticRef}
+                    rows={Math.min(10, 4 + view.capabilityProbe.steps.length)}
+                    value={view.capabilityProbe.diagnosticText}
+                  />
+                </label>
+              </details>
+            )}
+          </section>
+          <hr />
+          <section className="v2-provider-budget-section" id="v2-provider-budget">
+            <h3>费用与预算</h3>
+            <p>
+              周计划价格：{view.accounting.priceReadyForWeeklyPlan ? '可估算' : '未配置'} ·
+              内容价格：{view.accounting.priceReadyForContent ? '可估算' : '未配置'} · 回复价格：
+              {view.accounting.priceReadyForReply ? '可估算' : '未配置'}
+            </p>
+            <p>
+              {view.accounting.hardStop ? '本月预算已阻止调用。' : '预算硬上限尚未触发。'}{' '}
+              价格不完整时必须逐次明确授权，未知费用不会记为 0。
+            </p>
+          </section>
         </>
       )}
     </section>
@@ -429,6 +499,7 @@ function ProviderSettings(): React.JSX.Element {
 export function SettingsPage(): React.JSX.Element {
   const { notify, session, setSession, setUi, ui } = useV2Controller();
   const [activeSection, setActiveSection] = useState('provider');
+  const [providerView, setProviderView] = useState<V2ProviderSettingsViewContract | null>(null);
   const selectSection = (section: string, targetId: string): void => {
     setActiveSection(section);
     document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -472,8 +543,15 @@ export function SettingsPage(): React.JSX.Element {
     <div className="v2-page v2-settings-page">
       <PageHeader
         actions={
-          <Button icon="check" onClick={() => void save()} tone="primary">
-            保存人设
+          <Button
+            icon="check"
+            onClick={() => {
+              if (activeSection === 'persona') void save();
+              else document.getElementById('v2-save-provider-settings')?.click();
+            }}
+            tone="primary"
+          >
+            保存更改
           </Button>
         }
         description="把账号表达、AI 服务、能力验证和费用边界分开管理。"
@@ -503,73 +581,87 @@ export function SettingsPage(): React.JSX.Element {
           ))}
         </nav>
         <div className="v2-stack v2-settings-main">
-          <ProviderSettings />
-          <section className="v2-card v2-settings v2-persona-settings" id="v2-persona-settings">
-            <div className="v2-settings-title">
-              <Icon name="user-circle" size={24} />
-              <div>
-                <h2>账号人设</h2>
-                <p>决定计划、文案和回复建议如何表达。</p>
+          {activeSection === 'persona' ? null : (
+            <ProviderSettings activeSection={activeSection} onViewChange={setProviderView} />
+          )}
+          {activeSection === 'persona' ? (
+            <section className="v2-card v2-settings v2-persona-settings" id="v2-persona-settings">
+              <div className="v2-settings-title">
+                <Icon name="user-circle" size={24} />
+                <div>
+                  <h2>账号人设</h2>
+                  <p>决定计划、文案和回复建议如何表达。</p>
+                </div>
               </div>
-            </div>
-            {(
-              [
-                ['name', '账号名称'],
-                ['audience', '目标受众'],
-                ['tone', '表达语气'],
-              ] as const
-            ).map(([field, label]) => (
-              <label className="v2-field" key={field}>
-                <span>{label}</span>
-                <input
-                  aria-invalid={ui.personaErrors.includes(field)}
-                  onChange={(event) => update(field, event.target.value)}
-                  value={session.persona[field]}
+              {(
+                [
+                  ['name', '账号名称'],
+                  ['audience', '目标受众'],
+                  ['tone', '表达语气'],
+                ] as const
+              ).map(([field, label]) => (
+                <label className="v2-field" key={field}>
+                  <span>{label}</span>
+                  <input
+                    aria-invalid={ui.personaErrors.includes(field)}
+                    onChange={(event) => update(field, event.target.value)}
+                    value={session.persona[field]}
+                  />
+                  {ui.personaErrors.includes(field) ? (
+                    <small className="v2-form-error">{label}未填写或不符合本地长度限制</small>
+                  ) : null}
+                </label>
+              ))}
+              <label className="v2-field">
+                <span>内容边界</span>
+                <textarea
+                  aria-invalid={ui.personaErrors.includes('boundary')}
+                  onChange={(event) => update('boundary', event.target.value)}
+                  rows={4}
+                  value={session.persona.boundary}
                 />
-                {ui.personaErrors.includes(field) ? (
-                  <small className="v2-form-error">{label}未填写或不符合本地长度限制</small>
+                {ui.personaErrors.includes('boundary') ? (
+                  <small className="v2-form-error">内容边界未填写或不符合本地长度限制</small>
                 ) : null}
               </label>
-            ))}
-            <label className="v2-field">
-              <span>内容边界</span>
-              <textarea
-                aria-invalid={ui.personaErrors.includes('boundary')}
-                onChange={(event) => update('boundary', event.target.value)}
-                rows={4}
-                value={session.persona.boundary}
-              />
-              {ui.personaErrors.includes('boundary') ? (
-                <small className="v2-form-error">内容边界未填写或不符合本地长度限制</small>
-              ) : null}
-            </label>
-          </section>
+            </section>
+          ) : null}
         </div>
         <aside className="v2-settings-aside v2-settings-rail">
-          <section className="v2-card v2-settings-rail-card" aria-label="本地边界">
+          <section className="v2-card v2-settings-rail-card" aria-label="AI 服务状态">
             <Icon name="check-circle" />
             <div>
-              <p className="v2-kicker">本地边界</p>
+              <p className="v2-kicker">服务状态</p>
+              <h2>{providerView?.providerConfigured ? '已配置' : '待配置'}</h2>
+              <p>
+                凭据
+                {providerView === null ? '待读取' : credentialLabel[providerView.credentialState]} ·
+                文字
+                {providerView === null ? '待读取' : capabilityLabel[providerView.writing.state]}
+              </p>
+            </div>
+          </section>
+          <section className="v2-card v2-settings-rail-card" aria-label="构建版本">
+            <Icon name="check-circle" />
+            <div>
               <h2>人工确认优先</h2>
               <p>每次生成、审批和平台操作均需由用户明确确认。</p>
             </div>
           </section>
-          <section className="v2-card v2-settings-rail-card" aria-label="构建版本">
+          <section className="v2-card v2-settings-rail-card">
             <Icon name="file-text" />
             <div>
-              <h2>构建版本</h2>
+              <h2>本月预算</h2>
               <p>
-                commit <code>{buildInfo.commit.slice(0, 8)}</code>
+                {providerView?.accounting.hardStop
+                  ? '预算硬上限已阻止调用'
+                  : providerView?.accounting.priceReadyForContent
+                    ? '内容费用上界可估算'
+                    : '价格与预算尚未完整配置'}
               </p>
-              <p>构建时间：{buildInfo.builtAt}</p>
-              <p>V2 数据版本：v{buildInfo.v2DataVersion}</p>
-            </div>
-          </section>
-          <section className="v2-card v2-settings-rail-card">
-            <Icon name="paper-plane-tilt" />
-            <div>
-              <h2>平台操作</h2>
-              <p>发布、评论和私信仍由用户在官方端手动完成。</p>
+              <small>
+                commit {buildInfo.commit.slice(0, 8)} · 数据 v{buildInfo.v2DataVersion}
+              </small>
             </div>
           </section>
         </aside>

@@ -43,7 +43,7 @@ export function InteractionPage(): React.JSX.Element {
   );
   const [draft, setDraft] = useState('');
   const [error, setError] = useState('');
-  const [intakeOpen, setIntakeOpen] = useState(true);
+  const [intakeOpen, setIntakeOpen] = useState(false);
   const [newText, setNewText] = useState('');
   const [relatedId, setRelatedId] = useState('');
   const [sentConfirmed, setSentConfirmed] = useState(false);
@@ -225,11 +225,16 @@ export function InteractionPage(): React.JSX.Element {
       <section aria-label="添加本地互动" className="v2-card v2-interaction-intake">
         <header>
           <div>
-            <p className="v2-kicker">本地收件箱</p>
-            <h2>新增一条互动</h2>
+            <p className="v2-kicker">导入互动</p>
+            <h2>粘贴一条评论或私信</h2>
           </div>
-          <Button icon="plus" onClick={() => setIntakeOpen((open) => !open)} tone="quiet">
-            {intakeOpen ? '收起录入' : '新增互动'}
+          <Button
+            aria-label={intakeOpen ? '收起录入' : '新增互动'}
+            icon="plus"
+            onClick={() => setIntakeOpen((open) => !open)}
+            tone="quiet"
+          >
+            {intakeOpen ? '收起导入' : '选择评论'}
           </Button>
         </header>
         {intakeOpen ? (
@@ -276,13 +281,38 @@ export function InteractionPage(): React.JSX.Element {
             </Button>
           </div>
         ) : (
-          <p className="v2-manual-note">
-            需要记录一条评论或私信时再展开录入；不会连接或发送到任何平台。
-          </p>
+          <>
+            <p className="v2-manual-note">选择一条评论或私信，本操作不会连接或发送到任何平台。</p>
+            <Button disabled tone="primary">
+              保存到本地
+            </Button>
+          </>
         )}
       </section>
       <div className="v2-interaction-grid">
         <section aria-label="本地互动列表" className="v2-card v2-inbox v2-interaction-inbox">
+          <header className="v2-interaction-list-head">
+            <div>
+              <h2>待处理</h2>
+              <p>
+                评论 {session.interactions.filter(({ type }) => type === '评论').length} · 私信{' '}
+                {session.interactions.filter(({ type }) => type === '私信').length}
+              </p>
+            </div>
+            <div className="v2-segments" aria-label="互动类型">
+              {(['评论', '私信'] as const).map((value) => (
+                <button
+                  aria-pressed={tab === value}
+                  data-active={tab === value}
+                  key={value}
+                  onClick={() => changeTab(value)}
+                  type="button"
+                >
+                  {value}
+                </button>
+              ))}
+            </div>
+          </header>
           <label className="v2-field">
             <span>状态筛选</span>
             <select
@@ -298,7 +328,10 @@ export function InteractionPage(): React.JSX.Element {
             </select>
           </label>
           {filtered.length === 0 ? (
-            <p className="v2-manual-note">当前筛选下没有本地互动。</p>
+            <div className="v2-interaction-empty-list">
+              <strong>当前没有待处理互动</strong>
+              <p>从上方导入评论或私信后，它会出现在这里。</p>
+            </div>
           ) : null}
           {filtered.map((item) => {
             const selected = selectedIds.includes(item.id);
@@ -335,9 +368,17 @@ export function InteractionPage(): React.JSX.Element {
           })}
         </section>
         {active === undefined ? (
-          <section aria-label="尚无互动详情" className="v2-card v2-reply-detail">
+          <section
+            aria-label="尚无互动详情"
+            className="v2-card v2-reply-detail v2-interaction-empty-editor"
+          >
+            <p className="v2-kicker">回复建议</p>
             <h2>尚无本地互动</h2>
-            <p>请先在上方主动粘贴一条评论或私信。</p>
+            <p>先从上方导入一条评论或私信。选择后可查看原始消息、关联内容并编辑回复建议。</p>
+            <div>
+              <strong>下一步</strong>
+              <span>点击“选择评论”，完成一次本地导入。</span>
+            </div>
           </section>
         ) : (
           <section aria-label="回复详情" className="v2-card v2-reply-detail v2-reply-editor">
@@ -462,7 +503,10 @@ export function InteractionPage(): React.JSX.Element {
               <dd>仅手动记录</dd>
             </div>
           </dl>
-          <p className="v2-manual-note">系统只生成并保存建议，绝不会自动发送评论或私信。</p>
+          <div className="v2-interaction-safety">
+            <strong>安全边界</strong>
+            <p>系统只生成并保存建议，绝不会自动发送评论或私信。</p>
+          </div>
         </aside>
       </div>
     </div>

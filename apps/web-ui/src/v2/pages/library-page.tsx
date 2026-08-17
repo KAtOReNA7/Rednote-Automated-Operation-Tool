@@ -26,9 +26,12 @@ export function LibraryPage(): React.JSX.Element {
                 value={query}
               />
             </label>
-            <Button onClick={() => notify('数据导入尚未接入；当前书库为模拟数据。')}>
-              <Icon name="plus" size={16} /> 导入数据（未接入）
-            </Button>
+            <span className="v2-library-import-action">
+              <Button onClick={() => notify('数据导入尚未接入；当前书库只显示本机已有作品资料。')}>
+                <Icon name="plus" size={16} /> 导入数据
+              </Button>
+              <small>未接入</small>
+            </span>
           </>
         }
         description="从作品、角度到历史表现，快速找到下一条值得做的内容。"
@@ -59,13 +62,15 @@ export function LibraryPage(): React.JSX.Element {
             <section className="v2-library-feature" aria-label="重点作品">
               <div className="v2-library-feature-cover" data-tone="midnight">
                 <span>重点作品</span>
-                <strong>《{featuredBook.title}》</strong>
+                <strong>{featuredBook.title}</strong>
                 <small>中性封面占位 · 本地作品资料</small>
               </div>
-              <div>
-                <p className="v2-kicker">作品运营摘要</p>
+              <div className="v2-library-feature-copy">
+                <p className="v2-kicker">本周重点</p>
                 <h2>《{featuredBook.title}》</h2>
-                <p>{featuredBook.angle}</p>
+                <p>
+                  {featuredBook.angle} · {featuredBook.author}
+                </p>
                 <dl>
                   <div>
                     <dt>已发布</dt>
@@ -76,9 +81,22 @@ export function LibraryPage(): React.JSX.Element {
                     <dd>{featuredBook.saves}</dd>
                   </div>
                 </dl>
+                <Button
+                  onClick={() => notify(`已选择《${featuredBook.title}》的运营摘要。`)}
+                  tone="primary"
+                >
+                  查看运营摘要
+                </Button>
               </div>
             </section>
           )}
+          <header className="v2-library-shelf-head">
+            <div>
+              <h2>继续浏览</h2>
+              <p>按作品查看内容积累与真实表现</p>
+            </div>
+            <span>{recentBooks.length} 部作品</span>
+          </header>
           <section aria-label="近期作品卡片" className="v2-book-grid v2-library-shelf">
             {recentBooks.map((book, index) => {
               const tone = coverTones[index % coverTones.length];
@@ -92,7 +110,6 @@ export function LibraryPage(): React.JSX.Element {
                   </div>
                   <section className="v2-book-copy">
                     <p className="v2-kicker">{book.author}</p>
-                    <h2>《{book.title}》</h2>
                     <p className="v2-book-angle">{book.angle}</p>
                     <dl>
                       <div>
@@ -105,7 +122,7 @@ export function LibraryPage(): React.JSX.Element {
                       </div>
                     </dl>
                     <button
-                      onClick={() => notify(`《${book.title}》运营摘要仅作模拟展示。`)}
+                      onClick={() => notify(`已选择《${book.title}》的运营摘要。`)}
                       type="button"
                     >
                       查看运营摘要 <Icon name="arrow-right" size={14} />
