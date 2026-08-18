@@ -60,6 +60,7 @@ export function ContentPage(): React.JSX.Element {
   const [exportId, setExportId] = useState('');
   const [queueQuery, setQueueQuery] = useState('');
   const [queueStatus, setQueueStatus] = useState<'ALL' | 'ATTENTION'>('ALL');
+  const [imageServiceUnavailable, setImageServiceUnavailable] = useState(false);
   const errorRef = useRef<HTMLDivElement>(null);
   const [draft, setDraft] = useState<EditableFields>(() => editableFields(active));
 
@@ -67,6 +68,18 @@ export function ContentPage(): React.JSX.Element {
     setDraft(editableFields(active));
     setError('');
   }, [active?.id, active?.versionId]);
+
+  useEffect(() => {
+    let activeRequest = true;
+    void window.rednoteV2?.readProviderSettings?.().then((result) => {
+      if (activeRequest && result.ok) {
+        setImageServiceUnavailable(result.value.image?.state === 'TRANSIENT_FAILURE');
+      }
+    });
+    return () => {
+      activeRequest = false;
+    };
+  }, []);
 
   const fail = (message: string): void => {
     setError(message);
@@ -377,6 +390,12 @@ export function ContentPage(): React.JSX.Element {
                   </figcaption>
                 </figure>
                 <ProviderActionControl
+                  disabled={imageServiceUnavailable}
+                  disabledReason={
+                    imageServiceUnavailable
+                      ? '图片服务暂不可用（HTTP 503）；可在设置中手动重试图片能力。'
+                      : undefined
+                  }
                   intent={{
                     expectedRevision: active.revision,
                     expectedVersionId: active.versionId,

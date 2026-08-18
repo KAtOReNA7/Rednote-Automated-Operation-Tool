@@ -80,6 +80,7 @@ export interface V2ProviderActionPreview {
   readonly reasonCode:
     | 'BUDGET_HARD_STOP'
     | 'CAPABILITY_STALE'
+    | 'CAPABILITY_TRANSIENT_FAILURE'
     | 'CAPABILITY_UNKNOWN'
     | 'CAPABILITY_UNSUPPORTED'
     | 'CREDENTIAL_NOT_CONFIGURED'
@@ -208,6 +209,7 @@ export interface V2ContentCopyGenerationExecutionRequest {
 export type V2ProviderActionErrorCode =
   | 'BUDGET_HARD_STOP'
   | 'CAPABILITY_STALE'
+  | 'CAPABILITY_TRANSIENT_FAILURE'
   | 'CAPABILITY_UNKNOWN'
   | 'CAPABILITY_UNSUPPORTED'
   | 'CREDENTIAL_NOT_CONFIGURED'
@@ -558,7 +560,8 @@ export function providerActionModelSlot(kind: V2ProviderActionKind): V2ProviderM
 }
 
 export type V2CredentialState = 'CONFIGURED' | 'NOT_CONFIGURED' | 'REAUTH_REQUIRED';
-export type V2StructuredJsonState = 'STALE' | 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+export type V2StructuredJsonState =
+  'STALE' | 'SUPPORTED' | 'TRANSIENT_FAILURE' | 'UNKNOWN' | 'UNSUPPORTED';
 export type V2BudgetState = 'ALLOWED' | 'BLOCKED' | 'UNKNOWN';
 
 export interface V2StructuredProtocolCandidate {
@@ -572,7 +575,7 @@ export function selectV2StructuredProtocol(
   candidates: readonly V2StructuredProtocolCandidate[],
 ): Readonly<{
   protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' | null;
-  state: V2StructuredJsonState;
+  state: Exclude<V2StructuredJsonState, 'TRANSIENT_FAILURE'>;
 }> {
   const current = candidates.filter((candidate) => !candidate.stale);
   if (current.length === 0) {
@@ -601,6 +604,8 @@ export function selectV2StructuredProtocol(
 }
 
 export interface V2CapabilitySlotView {
+  readonly diagnosticCode: string | null;
+  readonly httpStatus: number | null;
   readonly modelId: string | null;
   readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly state: V2StructuredJsonState;
@@ -638,7 +643,7 @@ export interface V2CapabilityProbeStepDiagnostic {
   readonly reason: string;
   readonly sent: boolean;
   readonly stale: boolean;
-  readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+  readonly state: Exclude<V2StructuredJsonState, 'STALE'>;
   readonly transportVariant?:
     'NONSTANDARD_MIME_JSON' | 'REJECTED' | 'SSE_NORMALIZED' | 'STANDARD_JSON' | null;
 }
@@ -686,13 +691,51 @@ export interface V2ProviderSettingsView {
     readonly summaryState: V2CapabilityProbeSummaryState;
   };
   readonly credentialState: V2CredentialState;
+  readonly imageReady: boolean;
+  readonly overallState: 'BLOCKED' | 'DEGRADED' | 'READY';
   readonly providerBaseUrl: string | null;
   readonly providerConfigured: boolean;
   readonly research: V2CapabilitySlotView;
   readonly revision: number;
   readonly setupAvailable: boolean;
+  readonly textReady: boolean;
   readonly writing: V2CapabilitySlotView;
   readonly image?: V2CapabilitySlotView;
+}
+
+export function deriveV2ProviderServiceState(input: {
+  readonly credentialState: V2CredentialState;
+  readonly globalBlockingFailure?: boolean;
+  readonly imageState: V2StructuredJsonState;
+  readonly providerConfigured: boolean;
+  readonly researchState: V2StructuredJsonState;
+  readonly writingState: V2StructuredJsonState;
+}): Readonly<{
+  imageReady: boolean;
+  overallState: 'BLOCKED' | 'DEGRADED' | 'READY';
+  textReady: boolean;
+}> {
+  const textReady = input.researchState === 'SUPPORTED' && input.writingState === 'SUPPORTED';
+  const imageReady = input.imageState === 'SUPPORTED';
+  const configured =
+    input.providerConfigured &&
+    input.credentialState === 'CONFIGURED' &&
+    input.globalBlockingFailure !== true;
+  const anyReady =
+    input.researchState === 'SUPPORTED' ||
+    input.writingState === 'SUPPORTED' ||
+    input.imageState === 'SUPPORTED';
+  return Object.freeze({
+    imageReady,
+    overallState: !configured
+      ? 'BLOCKED'
+      : textReady && imageReady
+        ? 'READY'
+        : anyReady
+          ? 'DEGRADED'
+          : 'BLOCKED',
+    textReady,
+  });
 }
 export interface V2ProviderSettingsDraft {
   readonly expectedRevision: number;

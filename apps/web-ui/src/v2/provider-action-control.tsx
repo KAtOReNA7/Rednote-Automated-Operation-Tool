@@ -6,6 +6,7 @@ import { Button, Icon, useDialog } from './components.js';
 const capabilityLabels = {
   STALE: '已过期',
   SUPPORTED: '支持',
+  TRANSIENT_FAILURE: '暂不可用',
   UNKNOWN: '未知',
   UNSUPPORTED: '不支持',
 } as const;

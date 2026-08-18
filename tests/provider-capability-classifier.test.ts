@@ -67,6 +67,37 @@ describe('Issue 013 conservative capability classifier', () => {
     ).toMatchObject({ reasonCode, state: 'UNKNOWN' });
   });
 
+  it('preserves a content-type-less image 503 as a sent transient upstream failure', () => {
+    const imageStep: CapabilityProbeStep = {
+      ...STEP,
+      capability: 'imageGeneration',
+      kind: 'IMAGE',
+      modelSlots: ['IMAGE'],
+      protocolMode: 'NOT_APPLICABLE',
+    };
+    expect(
+      classifyCapabilityProbeResponse(
+        imageStep,
+        {
+          body: '',
+          headers: {},
+          receivedContentType: 'MISSING',
+          status: 503,
+          transportVariant: 'REJECTED',
+        },
+        NOW,
+      )[0],
+    ).toMatchObject({
+      reasonCode: 'AMBIGUOUS_OUTCOME',
+      safeDetails: {
+        receivedContentType: 'MISSING',
+        status: 503,
+        transportVariant: 'REJECTED',
+      },
+      state: 'UNKNOWN',
+    });
+  });
+
   it('uses UNSUPPORTED only for an explicit finite capability negative', () => {
     expect(
       classifyCapabilityProbeResponse(

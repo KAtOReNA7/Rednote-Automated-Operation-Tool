@@ -1516,6 +1516,7 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
     const messages: Readonly<Record<V2ProviderActionErrorCode, string>> = Object.freeze({
       BUDGET_HARD_STOP: '本地预算硬上限已阻止本次调用。',
       CAPABILITY_STALE: '能力证据已过期，请重新验证后再预览。',
+      CAPABILITY_TRANSIENT_FAILURE: '图片服务暂不可用（HTTP 503）；文字相关功能可继续。',
       CAPABILITY_UNKNOWN: '所需能力尚未验证，请先在设置中验证。',
       CAPABILITY_UNSUPPORTED: '当前模型不支持所需能力，请前往设置。',
       CREDENTIAL_NOT_CONFIGURED: '凭据尚未配置或需要重新认证，请前往设置。',

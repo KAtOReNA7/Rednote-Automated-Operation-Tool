@@ -192,7 +192,11 @@ describe('Issue 013 capability persistence migration', () => {
           rateLimitRequests: null,
           rateLimitTokens: null,
           reasonCode: 'SCHEMA_MISMATCH',
-          safeDetails: { status: 200 },
+          safeDetails: {
+            receivedContentType: 'MISSING',
+            status: 503,
+            transportVariant: 'REJECTED',
+          },
           source: 'PROBED',
           state: 'UNKNOWN',
         },
@@ -214,7 +218,11 @@ describe('Issue 013 capability persistence migration', () => {
           modelSlot: 'RESEARCH',
           protocolMode: 'RESPONSES',
           reasonCode: 'SCHEMA_MISMATCH',
-          safeDetails: { status: 200 },
+          safeDetails: {
+            receivedContentType: 'MISSING',
+            status: 503,
+            transportVariant: 'REJECTED',
+          },
           state: 'UNKNOWN',
         }),
       );

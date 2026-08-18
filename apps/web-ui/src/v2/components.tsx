@@ -192,7 +192,7 @@ export function AppFrame({
 }): React.JSX.Element {
   const { session } = useV2Controller();
   const [providerStatus, setProviderStatus] = useState<
-    'CONFIGURE' | 'READY' | 'UNAVAILABLE' | 'VERIFY'
+    'BLOCKED' | 'CONFIGURE' | 'DEGRADED' | 'READY' | 'UNAVAILABLE' | 'VERIFY'
   >(window.rednoteV2 === undefined ? 'UNAVAILABLE' : 'CONFIGURE');
   useEffect(() => {
     const bridge = window.rednoteV2;
@@ -202,15 +202,19 @@ export function AppFrame({
       if (!result.ok) return setProviderStatus('CONFIGURE');
       const settings = result.value;
       setProviderStatus(
-        settings.providerConfigured &&
-          settings.credentialState === 'CONFIGURED' &&
-          settings.research.state === 'SUPPORTED' &&
-          settings.writing.state === 'SUPPORTED' &&
-          settings.image?.state === 'SUPPORTED'
+        settings.overallState === 'READY'
           ? 'READY'
-          : settings.providerConfigured && settings.credentialState === 'CONFIGURED'
-            ? 'VERIFY'
-            : 'CONFIGURE',
+          : settings.overallState === 'DEGRADED'
+            ? 'DEGRADED'
+            : settings.providerConfigured && settings.credentialState === 'CONFIGURED'
+              ? settings.textReady ||
+                settings.imageReady ||
+                settings.capabilityProbe.steps.some(
+                  (step) => step.diagnosticCode === 'AUTHENTICATION_REJECTED',
+                )
+                ? 'BLOCKED'
+                : 'VERIFY'
+              : 'CONFIGURE',
       );
     });
   }, [activeRoute]);
@@ -258,11 +262,15 @@ export function AppFrame({
           <strong className="v2-mock-label">
             {providerStatus === 'READY'
               ? '本地工作区已连接 · AI 服务已就绪'
-              : providerStatus === 'VERIFY'
-                ? '本地工作区已连接 · AI 能力待验证'
-                : providerStatus === 'CONFIGURE'
-                  ? '本地工作区已连接 · AI 服务待配置'
-                  : '本地工作区未连接 · AI 服务不可用'}
+              : providerStatus === 'DEGRADED'
+                ? '本地工作区已连接 · AI 服务部分可用'
+                : providerStatus === 'BLOCKED'
+                  ? '本地工作区已连接 · AI 服务不可用'
+                  : providerStatus === 'VERIFY'
+                    ? '本地工作区已连接 · AI 能力待验证'
+                    : providerStatus === 'CONFIGURE'
+                      ? '本地工作区已连接 · AI 服务待配置'
+                      : '本地工作区未连接 · AI 服务不可用'}
           </strong>
         </header>
         <div className="v2-app-body">

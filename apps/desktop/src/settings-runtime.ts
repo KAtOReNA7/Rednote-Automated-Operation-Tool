@@ -7,7 +7,7 @@ import type {
   LocalApiStatusView,
   PairingView,
 } from '@mystery-operations/local-api';
-import { selectV2StructuredProtocol } from '@mystery-operations/v2';
+import { deriveV2ProviderServiceState, selectV2StructuredProtocol } from '@mystery-operations/v2';
 
 import {
   MIGRATIONS,
@@ -255,6 +255,7 @@ function v2ProbeDiagnosticCode(
   fallback: string,
 ): string {
   if (entry === undefined) return fallback;
+  if (entry.safeDetails.status === 503) return 'PROVIDER_UNAVAILABLE';
   if (entry.safeDetails.modelIdMismatch === 1) return 'MODEL_ID_MISMATCH';
   if (entry.safeDetails.modelNotFound === 1) return 'MODEL_NOT_FOUND';
   if (entry.safeDetails.endpointNotFound === 1) return 'ENDPOINT_OR_ROUTE_NOT_FOUND';
@@ -291,6 +292,7 @@ function v2ProbeReason(
     NOT_PROBED: '请求获得了符合强证据合同的明确结果。',
     OUTPUT_VARIANT_UNSUPPORTED: '图片仅返回 URL，未提供允许的 inline 图片证据。',
     PERMISSION_REJECTED: '凭据没有访问该能力的权限（HTTP 403）。',
+    PROVIDER_UNAVAILABLE: '图片服务暂不可用（HTTP 503）；文字相关功能可继续。',
     PROTOCOL_EXPLICITLY_UNSUPPORTED: 'Provider 明确表示当前协议不受支持。',
     RATE_LIMITED: 'Provider 限流（HTTP 429），能力保持未知。',
     SCHEMA_MISMATCH: '结构化输出未满足固定 Schema 证据，能力保持未知。',
@@ -590,7 +592,7 @@ export class DesktopSettingsRuntime {
         const fullyMapped = planned.modelSlots.every((modelSlot) =>
           matches.some((entry) => entry.modelSlot === modelSlot),
         );
-        const state =
+        const rawState =
           fullyMapped && matches.every((entry) => entry.state === primary?.state)
             ? (primary?.state ?? 'UNKNOWN')
             : ('UNKNOWN' as const);
@@ -598,6 +600,10 @@ export class DesktopSettingsRuntime {
           ? (latestRun?.reasonCode ?? 'AMBIGUOUS_OUTCOME')
           : (latestRun?.reasonCode ?? 'NOT_PROBED');
         const diagnosticCode = v2ProbeDiagnosticCode(primary, fallbackCode);
+        const state =
+          rawState === 'UNKNOWN' && diagnosticCode === 'PROVIDER_UNAVAILABLE'
+            ? ('TRANSIENT_FAILURE' as const)
+            : rawState;
         return Object.freeze({
           capability: planned.capability,
           deduplicated: planned.modelSlots.length > 1,
@@ -620,7 +626,9 @@ export class DesktopSettingsRuntime {
         });
       }),
     );
-    const confirmedCount = steps.filter((step) => step.state !== 'UNKNOWN').length;
+    const confirmedCount = steps.filter(
+      (step) => step.state === 'SUPPORTED' || step.state === 'UNSUPPORTED',
+    ).length;
     const summaryState: V2CapabilityProbeSummaryState =
       capability.activeRun?.status === 'RUNNING'
         ? 'RUNNING'
@@ -691,7 +699,13 @@ export class DesktopSettingsRuntime {
               state: candidate.state,
             })),
         );
-        return { modelId, protocolMode: selected.protocolMode, state: selected.state };
+        return {
+          diagnosticCode: null,
+          httpStatus: null,
+          modelId,
+          protocolMode: selected.protocolMode,
+          state: selected.state,
+        };
       }
       const currentEntries = entries.filter((candidate) => !candidate.stale);
       const supported =
@@ -710,7 +724,15 @@ export class DesktopSettingsRuntime {
               currentEntries.every((candidate) => candidate.state === 'UNSUPPORTED')
             ? ('UNSUPPORTED' as const)
             : ('UNKNOWN' as const);
+      const transient =
+        supported === undefined
+          ? currentEntries.find(
+              (candidate) => candidate.state === 'UNKNOWN' && candidate.safeDetails.status === 503,
+            )
+          : undefined;
       return {
+        diagnosticCode: transient === undefined ? null : 'PROVIDER_UNAVAILABLE',
+        httpStatus: transient?.safeDetails.status ?? null,
         modelId,
         protocolMode:
           supported?.protocolMode === 'RESPONSES' || supported?.protocolMode === 'CHAT_COMPLETIONS'
@@ -721,9 +743,29 @@ export class DesktopSettingsRuntime {
         state:
           currentEntries.length === 0 && (entries.length > 0 || capability.derivedState === 'STALE')
             ? ('STALE' as const)
-            : state,
+            : transient !== undefined && supported === undefined
+              ? ('TRANSIENT_FAILURE' as const)
+              : state,
       };
     };
+    const providerConfigured =
+      bundle.settings.providerBaseUrl !== null &&
+      bundle.settings.researchModelId !== null &&
+      bundle.settings.writingModelId !== null &&
+      bundle.settings.imageModelId !== null;
+    const research = Object.freeze(slot('RESEARCH', bundle.settings.researchModelId));
+    const writing = Object.freeze(slot('WRITING', bundle.settings.writingModelId));
+    const image = Object.freeze(slot('IMAGE', bundle.settings.imageModelId, 'imageGeneration'));
+    const serviceState = deriveV2ProviderServiceState({
+      credentialState,
+      globalBlockingFailure: relevantEntries.some(
+        (entry) => !entry.stale && entry.reasonCode === 'AUTHENTICATION_REJECTED',
+      ),
+      imageState: image.state,
+      providerConfigured,
+      researchState: research.state,
+      writingState: writing.state,
+    });
     return Object.freeze({
       accounting: Object.freeze({
         hardLimitMicroUsd: accounting.hardLimitMicroUsd,
@@ -742,17 +784,16 @@ export class DesktopSettingsRuntime {
         summaryState,
       }),
       credentialState,
+      imageReady: serviceState.imageReady,
+      overallState: serviceState.overallState,
       providerBaseUrl: bundle.settings.providerBaseUrl,
-      providerConfigured:
-        bundle.settings.providerBaseUrl !== null &&
-        bundle.settings.researchModelId !== null &&
-        bundle.settings.writingModelId !== null &&
-        bundle.settings.imageModelId !== null,
-      research: Object.freeze(slot('RESEARCH', bundle.settings.researchModelId)),
+      providerConfigured,
+      research,
       revision: bundle.settings.revision,
       setupAvailable: true,
-      writing: Object.freeze(slot('WRITING', bundle.settings.writingModelId)),
-      image: Object.freeze(slot('IMAGE', bundle.settings.imageModelId, 'imageGeneration')),
+      textReady: serviceState.textReady,
+      writing,
+      image,
     });
   }
 
