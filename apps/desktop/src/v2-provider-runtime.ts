@@ -58,6 +58,7 @@ function actionTaskKind(kind: V2ProviderActionKind): string {
   if (kind === 'CONTENT_PACKAGES') return 'V2_CONTENT_PACKAGES';
   if (kind === 'CONTENT_COPY_VERSION') return 'V2_CONTENT_COPY_VERSION';
   if (kind === 'CONTENT_COVER') return 'V2_CONTENT_COVER';
+  if (kind === 'PLAN_ITEM_REPLACEMENT') return 'V2_PLAN_ITEM_REPLACEMENT';
   return 'V2_REPLY_SUGGESTION';
 }
 
@@ -66,6 +67,7 @@ function actionKind(taskKind: string): V2ProviderActionKind {
   if (taskKind === 'V2_CONTENT_PACKAGES') return 'CONTENT_PACKAGES';
   if (taskKind === 'V2_CONTENT_COPY_VERSION') return 'CONTENT_COPY_VERSION';
   if (taskKind === 'V2_CONTENT_COVER') return 'CONTENT_COVER';
+  if (taskKind === 'V2_PLAN_ITEM_REPLACEMENT') return 'PLAN_ITEM_REPLACEMENT';
   if (taskKind === 'V2_REPLY_SUGGESTION') return 'REPLY_SUGGESTION';
   throw new Error('V2_PROVIDER_TASK_INVALID');
 }
@@ -202,7 +204,10 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     this.#execution = new ModelExecutionService({
       assertCapability: (request, capability) => {
         const entry = this.#capabilityEntry(request, capability);
-        assertCurrentCapabilitySupported(entry);
+        assertCurrentCapabilitySupported({
+          ...entry,
+          state: entry.state === 'TRANSIENT_FAILURE' ? 'UNKNOWN' : entry.state,
+        });
       },
       cache: new LocalModelExecutionCache(new ModelResultCacheStore(options.root)),
       maxConcurrentExternalRequests: 1,
@@ -361,11 +366,13 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
           );
     const capabilityState = capability.stale
       ? ('STALE' as const)
-      : capability.state === 'SUPPORTED'
-        ? ('SUPPORTED' as const)
-        : capability.state === 'UNSUPPORTED'
-          ? ('UNSUPPORTED' as const)
-          : ('UNKNOWN' as const);
+      : capability.state === 'TRANSIENT_FAILURE'
+        ? ('TRANSIENT_FAILURE' as const)
+        : capability.state === 'SUPPORTED'
+          ? ('SUPPORTED' as const)
+          : capability.state === 'UNSUPPORTED'
+            ? ('UNSUPPORTED' as const)
+            : ('UNKNOWN' as const);
     let feeEstimateMicroUsd: string | null = null;
     let budgetState: V2ProviderActionReadiness['budgetState'] = 'UNKNOWN';
     let rawConfigFingerprint: string | null = null;
@@ -434,15 +441,17 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         ? 'CREDENTIAL_NOT_CONFIGURED'
         : capabilityState === 'STALE'
           ? 'CAPABILITY_STALE'
-          : capabilityState === 'UNSUPPORTED'
-            ? 'CAPABILITY_UNSUPPORTED'
-            : capabilityState !== 'SUPPORTED'
-              ? 'CAPABILITY_UNKNOWN'
-              : budgetState === 'BLOCKED'
-                ? 'BUDGET_HARD_STOP'
-                : feeEstimateMicroUsd === null && !request.userApprovedUnknownCost
-                  ? 'UNKNOWN_FEE_CONSENT_REQUIRED'
-                  : 'READY';
+          : capabilityState === 'TRANSIENT_FAILURE'
+            ? 'CAPABILITY_TRANSIENT_FAILURE'
+            : capabilityState === 'UNSUPPORTED'
+              ? 'CAPABILITY_UNSUPPORTED'
+              : capabilityState !== 'SUPPORTED'
+                ? 'CAPABILITY_UNKNOWN'
+                : budgetState === 'BLOCKED'
+                  ? 'BUDGET_HARD_STOP'
+                  : feeEstimateMicroUsd === null && !request.userApprovedUnknownCost
+                    ? 'UNKNOWN_FEE_CONSENT_REQUIRED'
+                    : 'READY';
     const reasonMessage =
       reasonCode === 'READY'
         ? '可以确认并执行本次受控请求。'
@@ -452,13 +461,15 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
             ? '费用未知；请勾选后仅授权本次最多 1 个请求。'
             : reasonCode === 'CAPABILITY_STALE'
               ? '能力证据已过期，请重新验证。'
-              : reasonCode === 'CAPABILITY_UNSUPPORTED'
-                ? '当前模型不支持所需能力。'
-                : reasonCode === 'CAPABILITY_UNKNOWN'
-                  ? '所需能力尚未验证。'
-                  : reasonCode === 'CREDENTIAL_NOT_CONFIGURED'
-                    ? '凭据尚未配置或需要重新认证。'
-                    : 'Provider、Base URL 或模型槽尚未配置完整。';
+              : reasonCode === 'CAPABILITY_TRANSIENT_FAILURE'
+                ? '图片服务暂不可用（HTTP 503）；文字相关功能可继续。'
+                : reasonCode === 'CAPABILITY_UNSUPPORTED'
+                  ? '当前模型不支持所需能力。'
+                  : reasonCode === 'CAPABILITY_UNKNOWN'
+                    ? '所需能力尚未验证。'
+                    : reasonCode === 'CREDENTIAL_NOT_CONFIGURED'
+                      ? '凭据尚未配置或需要重新认证。'
+                      : 'Provider、Base URL 或模型槽尚未配置完整。';
     const configFingerprint = opaqueBinding(rawConfigFingerprint);
     const credentialBinding = opaqueBinding(
       credentialState === 'CONFIGURED' ? (credential.updatedAt ?? 'configured') : null,
@@ -483,10 +494,12 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
         ? []
         : [
             capabilityState === 'STALE'
-              ? 'structuredJson 能力证据已过期，请重新探测。'
-              : capabilityState === 'UNSUPPORTED'
-                ? '当前模型不支持 structuredJson。'
-                : 'structuredJson 能力尚未探测。',
+              ? `${request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson'} 能力证据已过期，请重新探测。`
+              : capabilityState === 'TRANSIENT_FAILURE'
+                ? '图片服务暂不可用（HTTP 503）；请在设置中手动重试图片能力。'
+                : capabilityState === 'UNSUPPORTED'
+                  ? `当前模型不支持 ${request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson'}。`
+                  : `${request.kind === 'CONTENT_COVER' ? 'imageGeneration' : 'structuredJson'} 能力尚未探测。`,
           ]),
       ...(feeEstimateMicroUsd === null && !request.userApprovedUnknownCost
         ? ['费用未知；如仍要继续，必须逐次明确授权。']
@@ -835,9 +848,13 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
     const state =
       supported !== undefined
         ? ('SUPPORTED' as const)
-        : currentEntries.every((candidate) => candidate.state === 'UNSUPPORTED')
-          ? ('UNSUPPORTED' as const)
-          : ('UNKNOWN' as const);
+        : currentEntries.some(
+              (candidate) => candidate.state === 'UNKNOWN' && candidate.safeDetails.status === 503,
+            )
+          ? ('TRANSIENT_FAILURE' as const)
+          : currentEntries.every((candidate) => candidate.state === 'UNSUPPORTED')
+            ? ('UNSUPPORTED' as const)
+            : ('UNKNOWN' as const);
     return {
       capability: 'imageGeneration' as const,
       protocolMode: supported === undefined ? null : ('IMAGES_GENERATIONS' as const),
@@ -872,9 +889,9 @@ export class V2ProviderRuntime implements V2ProviderExecutionPort {
       ...createUnknownCapabilities(),
       observedAt: new Date().toISOString(),
       source: 'PROBED',
-      structuredJson: structured.state,
-      imageGeneration: image.state,
-      usage: usage.state,
+      structuredJson: structured.state === 'TRANSIENT_FAILURE' ? 'UNKNOWN' : structured.state,
+      imageGeneration: image.state === 'TRANSIENT_FAILURE' ? 'UNKNOWN' : image.state,
+      usage: usage.state === 'TRANSIENT_FAILURE' ? 'UNKNOWN' : usage.state,
     });
   }
 

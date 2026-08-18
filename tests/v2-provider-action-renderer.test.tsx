@@ -29,6 +29,104 @@ function expose(methods: Partial<V2Bridge>): void {
 }
 
 describe('V2 R07 provider action renderer', () => {
+  it('keeps text workflows available when only the image slot has a transient 503', async () => {
+    const previewProviderCapabilityProbe = vi.fn();
+    const settings = {
+      accounting: {
+        hardLimitMicroUsd: '1000000',
+        hardStop: false,
+        priceReadyForContent: false,
+        priceReadyForReply: false,
+        priceReadyForWeeklyPlan: false,
+        warning: false,
+      },
+      capabilityProbe: {
+        activeRun: null,
+        diagnosticText: 'image responseStatus=503 receivedContentType=MISSING',
+        derivedState: 'PROBE_COMPLETE',
+        latestRun: null,
+        steps: [],
+        summaryState: 'PARTIAL',
+      },
+      credentialState: 'CONFIGURED',
+      image: {
+        diagnosticCode: 'PROVIDER_UNAVAILABLE',
+        httpStatus: 503,
+        modelId: 'image-model',
+        protocolMode: null,
+        state: 'TRANSIENT_FAILURE',
+      },
+      imageReady: false,
+      overallState: 'DEGRADED',
+      providerBaseUrl: 'https://provider.example/v1',
+      providerConfigured: true,
+      research: {
+        diagnosticCode: null,
+        httpStatus: 200,
+        modelId: 'text-model',
+        protocolMode: 'CHAT_COMPLETIONS',
+        state: 'SUPPORTED',
+      },
+      revision: 1,
+      setupAvailable: true,
+      textReady: true,
+      writing: {
+        diagnosticCode: null,
+        httpStatus: 200,
+        modelId: 'text-model',
+        protocolMode: 'CHAT_COMPLETIONS',
+        state: 'SUPPORTED',
+      },
+    } as unknown as V2ProviderSettingsView;
+    expose({
+      ...createMemoryV2Bridge(),
+      previewProviderCapabilityProbe,
+      readContentPackages: async (input) => ({
+        ok: true,
+        value: {
+          packages: [
+            {
+              candidateId: 'mon-1',
+              fields: {
+                body: '合成正文',
+                coverKey: 'morgue',
+                materialNotes: '合成素材说明',
+                suggestedTime: '2026-08-18T10:00',
+                tags: ['合成标签'],
+                title: '合成内容包',
+              },
+              id: 'package-transient-image',
+              revision: 0,
+              schemaVersion: 1,
+              status: 'APPROVED',
+              version: 1,
+              versionId: 'package-transient-image-v1',
+              weekKey: input.weekKey,
+            },
+          ],
+          schemaVersion: 1,
+          weekKey: input.weekKey,
+        },
+      }),
+      readProviderSettings: async () => ({ ok: true, value: settings }),
+    });
+    window.history.replaceState(null, '', '#/v2/settings');
+    const user = userEvent.setup();
+    render(<V2App />);
+    expect(await screen.findByText('本地工作区已连接 · AI 服务部分可用')).toBeVisible();
+    expect(screen.getByText('服务状态：部分可用')).toBeVisible();
+    expect(screen.getByText('文字能力：可用')).toBeVisible();
+    expect(screen.getByText('图片服务暂不可用（HTTP 503）')).toBeVisible();
+    expect(screen.getByRole('button', { name: '重试图片能力' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: '继续使用文字功能' }));
+    expect(window.location.hash).toBe('#/v2/content');
+    expect(previewProviderCapabilityProbe).not.toHaveBeenCalled();
+    expect(await screen.findByRole('button', { name: '生成或重新生成封面' })).toBeDisabled();
+    expect(
+      screen.getByText('图片服务暂不可用（HTTP 503）；可在设置中手动重试图片能力。'),
+    ).toBeVisible();
+  });
+
   it('previews and executes content copy through the dedicated bridge without image requests', async () => {
     const previewContentCopyGeneration = vi.fn(async (input) => ({
       ok: true as const,
@@ -229,9 +327,10 @@ describe('V2 R07 provider action renderer', () => {
     const user = userEvent.setup();
     render(
       <ProviderActionControl
-        intent={{ expectedRevision: 0, kind: 'WEEKLY_PLAN', weekKey: '2026-W31' }}
+        intent={{ briefRevision: 0, expectedRevision: 0, kind: 'WEEKLY_PLAN', weekKey: '2026-W31' }}
         label="预览生成下周计划"
         onSuccess={vi.fn()}
+        presentation="dialog"
       />,
     );
     expect(previewProviderAction).not.toHaveBeenCalled();
@@ -241,11 +340,13 @@ describe('V2 R07 provider action renderer', () => {
     expect(screen.getByText('关闭 / 关闭')).toBeVisible();
     expect(screen.getByText('research-model')).toBeVisible();
     expect(screen.getByText('费用未知；如仍要继续，必须逐次明确授权。')).toBeVisible();
+    const authorization = screen.getByRole('checkbox', {
+      name: '我了解费用未知，仍授权本次最多 1 个请求',
+    });
+    expect(authorization.closest('.v2-provider-preview-actions')).not.toBeNull();
     expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeDisabled();
     expect(confirmProviderAction).not.toHaveBeenCalled();
-    await user.click(
-      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 1 个请求' }),
-    );
+    await user.click(authorization);
     expect(previewProviderAction).toHaveBeenLastCalledWith(
       expect.objectContaining({ userApprovedUnknownCost: true }),
     );
@@ -318,6 +419,11 @@ describe('V2 R07 provider action renderer', () => {
     expect(dialog.parentElement?.parentElement).toBe(document.body);
     expect(screen.getByRole('button', { name: '取消' })).toBeVisible();
     expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '关闭调用前预览' })).toHaveFocus();
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(screen.getByRole('button', { name: '确认并执行一次' })).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(screen.getByRole('button', { name: '关闭调用前预览' })).toHaveFocus();
 
     window.dispatchEvent(new Event('resize'));
     expect(screen.getByRole('dialog', { name: '调用前预览' })).toBeVisible();
@@ -415,13 +521,34 @@ describe('V2 R07 provider action renderer', () => {
         summaryState: 'NOT_RUN',
       },
       credentialState: 'NOT_CONFIGURED',
+      imageReady: false,
+      overallState: 'BLOCKED',
       providerBaseUrl: 'https://provider.example/v1',
       providerConfigured: true,
-      research: { modelId: 'research-v1', protocolMode: null, state: 'STALE' },
+      research: {
+        diagnosticCode: null,
+        httpStatus: null,
+        modelId: 'research-v1',
+        protocolMode: null,
+        state: 'STALE',
+      },
       revision: 1,
       setupAvailable: true,
-      writing: { modelId: 'writing-v1', protocolMode: null, state: 'UNSUPPORTED' },
-      image: { modelId: 'image-v1', protocolMode: null, state: 'UNKNOWN' },
+      textReady: false,
+      writing: {
+        diagnosticCode: null,
+        httpStatus: null,
+        modelId: 'writing-v1',
+        protocolMode: null,
+        state: 'UNSUPPORTED',
+      },
+      image: {
+        diagnosticCode: null,
+        httpStatus: null,
+        modelId: 'image-v1',
+        protocolMode: null,
+        state: 'UNKNOWN',
+      },
     };
     const updateProviderSettings = vi.fn(async (input) => {
       settings = {
@@ -431,7 +558,12 @@ describe('V2 R07 provider action renderer', () => {
         revision: settings.revision + 1,
         writing: { ...settings.writing, modelId: input.writingModelId },
         image: {
-          ...(settings.image ?? { protocolMode: null, state: 'UNKNOWN' as const }),
+          ...(settings.image ?? {
+            diagnosticCode: null,
+            httpStatus: null,
+            protocolMode: null,
+            state: 'UNKNOWN' as const,
+          }),
           modelId: input.imageModelId,
         },
       };
@@ -639,13 +771,34 @@ describe('V2 R07 provider action renderer', () => {
         summaryState: 'PARTIAL',
       },
       credentialState: 'CONFIGURED',
-      image: { modelId: 'image-model', protocolMode: null, state: 'UNKNOWN' },
+      image: {
+        diagnosticCode: null,
+        httpStatus: 400,
+        modelId: 'image-model',
+        protocolMode: null,
+        state: 'UNKNOWN',
+      },
+      imageReady: false,
+      overallState: 'DEGRADED',
       providerBaseUrl: 'https://provider.example/v1',
       providerConfigured: true,
-      research: { modelId: 'shared-model', protocolMode: 'RESPONSES', state: 'SUPPORTED' },
+      research: {
+        diagnosticCode: null,
+        httpStatus: 200,
+        modelId: 'shared-model',
+        protocolMode: 'RESPONSES',
+        state: 'SUPPORTED',
+      },
       revision: 1,
       setupAvailable: true,
-      writing: { modelId: 'shared-model', protocolMode: 'RESPONSES', state: 'SUPPORTED' },
+      textReady: true,
+      writing: {
+        diagnosticCode: null,
+        httpStatus: 200,
+        modelId: 'shared-model',
+        protocolMode: 'RESPONSES',
+        state: 'SUPPORTED',
+      },
     };
     const user = userEvent.setup();
     const writeText = vi.fn().mockResolvedValue(undefined);
@@ -681,8 +834,10 @@ describe('V2 R07 provider action renderer', () => {
         steps: settings.capabilityProbe.steps.map((step) => ({ ...step, state: 'UNKNOWN' })),
         summaryState: 'NONE_CONFIRMED',
       },
-      research: { modelId: 'shared-model', protocolMode: null, state: 'UNKNOWN' },
-      writing: { modelId: 'shared-model', protocolMode: null, state: 'UNKNOWN' },
+      overallState: 'BLOCKED',
+      research: { ...settings.research, protocolMode: null, state: 'UNKNOWN' },
+      textReady: false,
+      writing: { ...settings.writing, protocolMode: null, state: 'UNKNOWN' },
     };
     render(<V2App />);
     await user.click(await screen.findByText('最近一次能力检查与脱敏诊断'));

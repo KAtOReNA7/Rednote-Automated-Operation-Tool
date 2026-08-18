@@ -6,6 +6,7 @@ import { isAbsolute, join, relative, resolve } from 'node:path';
 import electron from 'electron';
 
 import { createPortableTemp } from './portable-temp.mjs';
+import { startR07PackagedProviderFixture } from './r07-packaged-provider-fixture.mjs';
 
 const repositoryRoot = resolve(import.meta.dirname, '..');
 const ignoredRoot = resolve(repositoryRoot, '.rednote-temp');
@@ -246,9 +247,11 @@ async function resizeViewport(client, sessionId, desired) {
     width: geometry.inner.width + Math.max(0, geometry.available.width - geometry.outer.width),
   };
   const widthLimited =
-    geometry.inner.width !== desired.width && desired.width > attainable.width + 1;
+    geometry.inner.width !== desired.width &&
+    (desired.width > geometry.available.width + 1 || desired.width > attainable.width + 1);
   const heightLimited =
-    Math.abs(geometry.inner.height - desired.height) > 1 && desired.height > attainable.height + 1;
+    Math.abs(geometry.inner.height - desired.height) > 1 &&
+    (desired.height > geometry.available.height + 1 || desired.height > attainable.height + 1);
   const workAreaLimited =
     (geometry.inner.width === desired.width || widthLimited) &&
     (Math.abs(geometry.inner.height - desired.height) <= 1 || heightLimited) &&
@@ -561,6 +564,665 @@ async function captureViewport(client, sessionId, path) {
     sessionId,
   );
   await writeFile(path, Buffer.from(data, 'base64'));
+}
+
+async function captureAtWorkflowViewports(client, sessionId, name, scrollSelector = null) {
+  assert(evidenceDirectory !== null, 'Workflow evidence requires an evidence directory.');
+  for (const viewport of [
+    { height: 720, width: 1024 },
+    { height: 800, width: 1280 },
+    { height: 900, width: 1440 },
+  ]) {
+    await resizeViewport(client, sessionId, viewport);
+    if (scrollSelector !== null) {
+      await evaluate(
+        client,
+        sessionId,
+        `document.querySelector(${JSON.stringify(scrollSelector)})?.scrollIntoView({ block: 'start' })`,
+      );
+      await delay(150);
+    }
+    await captureViewport(
+      client,
+      sessionId,
+      join(
+        evidenceDirectory,
+        `${evidencePrefix}-${name}-${String(viewport.width)}x${String(viewport.height)}.png`,
+      ),
+    );
+  }
+}
+
+async function configureWorkflowProvider(client, sessionId, port) {
+  const result = await evaluate(
+    client,
+    sessionId,
+    `(async () => {
+      const bridge = window.rednoteV2;
+      const initial = await bridge.readProviderSettings();
+      if (!initial.ok) return initial;
+      const updated = await bridge.updateProviderSettings({
+        expectedRevision: initial.value.revision,
+        imageModelId: 'r07-loopback-image',
+        providerBaseUrl: ${JSON.stringify(`http://127.0.0.1:${String(port)}/v1`)},
+        researchModelId: 'r07-loopback-text',
+        writingModelId: 'r07-loopback-text'
+      });
+      if (!updated.ok) return updated;
+      const credential = await bridge.setProviderCredential({
+        plaintext: 'unusable-runtime-r08-workflow-evidence'
+      });
+      if (!credential.ok) return credential;
+      const preview = await bridge.previewProviderCapabilityProbe();
+      if (!preview.ok) return preview;
+      const started = await bridge.startProviderCapabilityProbe({
+        confirmation: 'START_PROVIDER_CAPABILITY_PROBE',
+        credentialBindingVersion: preview.value.credentialBindingVersion,
+        planHash: preview.value.planHash,
+        settingsRevision: preview.value.settingsRevision,
+        startToken: preview.value.startToken,
+        userApprovedUnknownCost: true
+      });
+      return started;
+    })()`,
+  );
+  assert(result.ok === true, `Could not configure workflow fixture: ${JSON.stringify(result)}`);
+  const progress = await waitFor(
+    async () => {
+      const value = await evaluate(
+        client,
+        sessionId,
+        `(async () => window.rednoteV2.readProviderCapabilityProbeProgress({ runId: ${JSON.stringify(result.value.runId)} }))()`,
+      );
+      return value.ok === true && value.value.status !== 'RUNNING' ? value : false;
+    },
+    'workflow fixture capability probe',
+    30_000,
+  );
+  const settings = await evaluate(
+    client,
+    sessionId,
+    `(async () => window.rednoteV2.readProviderSettings())()`,
+  );
+  assert(
+    settings.ok === true && settings.value.textReady === true,
+    `Workflow fixture did not confirm structured JSON: ${JSON.stringify({ progress, settings })}`,
+  );
+}
+
+async function setNativeControlValue(client, sessionId, selector, value) {
+  return evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const element = document.querySelector(${JSON.stringify(selector)});
+      if (!(element instanceof HTMLInputElement) && !(element instanceof HTMLTextAreaElement) && !(element instanceof HTMLSelectElement)) return false;
+      const prototype = element instanceof HTMLTextAreaElement
+        ? HTMLTextAreaElement.prototype
+        : element instanceof HTMLSelectElement
+          ? HTMLSelectElement.prototype
+          : HTMLInputElement.prototype;
+      Object.getOwnPropertyDescriptor(prototype, 'value')?.set?.call(element, ${JSON.stringify(value)});
+      element.dispatchEvent(new Event('input', { bubbles: true }));
+      element.dispatchEvent(new Event('change', { bubbles: true }));
+      return true;
+    })()`,
+  );
+}
+
+async function clickButtonByText(client, sessionId, pattern) {
+  return evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((element) => ${pattern}.test((element.textContent ?? '').trim()));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.click();
+      return true;
+    })()`,
+  );
+}
+
+const workflowPreviewViewports = [
+  { height: 720, width: 1024 },
+  { height: 800, width: 1280 },
+  { height: 900, width: 1440 },
+];
+
+async function measureWorkflowPreview(client, sessionId) {
+  return evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const dialog = document.querySelector('[data-provider-preview-dialog]');
+      const head = dialog?.querySelector('.v2-provider-preview-head');
+      const body = dialog?.querySelector('.v2-provider-preview-body');
+      const footer = dialog?.querySelector('.v2-provider-preview-actions');
+      const authorization = footer?.querySelector('input[type="checkbox"]');
+      const cancel = [...(footer?.querySelectorAll('button') ?? [])]
+        .find((element) => /取消/u.test(element.textContent ?? ''));
+      const confirm = [...(footer?.querySelectorAll('button') ?? [])]
+        .find((element) => /确认并执行一次/u.test(element.textContent ?? ''));
+      const rectOf = (element) => {
+        const rect = element?.getBoundingClientRect();
+        return rect === undefined
+          ? null
+          : { bottom: rect.bottom, height: rect.height, left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+      };
+      const visibleOrAbsent = (element) =>
+        element === null || element === undefined || getComputedStyle(element).visibility === 'hidden';
+      return {
+        activeInside: dialog?.contains(document.activeElement) === true,
+        authorizationChecked: authorization instanceof HTMLInputElement && authorization.checked,
+        authorizationPresent: authorization instanceof HTMLInputElement,
+        body: rectOf(body),
+        bodyClientWidth: body?.clientWidth ?? -1,
+        bodyScrollTop: body?.scrollTop ?? -1,
+        bodyScrollWidth: body?.scrollWidth ?? -1,
+        bodyScrollHeight: body?.scrollHeight ?? -1,
+        batchBarHidden: visibleOrAbsent(document.querySelector('.v2-batch-bar')),
+        cancel: rectOf(cancel),
+        confirm: rectOf(confirm),
+        confirmDisabled: confirm instanceof HTMLButtonElement && confirm.disabled,
+        dialog: rectOf(dialog),
+        documentClientWidth: document.documentElement.clientWidth,
+        documentScrollWidth: document.documentElement.scrollWidth,
+        footer: rectOf(footer),
+        head: rectOf(head),
+        innerHeight: window.innerHeight,
+        innerWidth: window.innerWidth,
+        toastHidden: visibleOrAbsent(document.querySelector('.v2-toast')),
+      };
+    })()`,
+  );
+}
+
+function assertWorkflowPreviewGeometry(measurement, label) {
+  const { body, cancel, confirm, dialog, footer, head } = measurement;
+  assert(
+    dialog !== null && head !== null && body !== null && footer !== null,
+    `${label} structure is incomplete.`,
+  );
+  assert(cancel !== null && confirm !== null, `${label} actions are incomplete.`);
+  assert(
+    dialog.left >= 0 &&
+      dialog.right <= measurement.innerWidth + 1 &&
+      dialog.top >= 0 &&
+      dialog.bottom <= measurement.innerHeight + 1,
+    `${label} left the viewport: ${JSON.stringify(measurement)}.`,
+  );
+  assert(
+    head.top >= dialog.top &&
+      head.bottom <= dialog.bottom &&
+      footer.top >= dialog.top &&
+      footer.bottom <= dialog.bottom,
+    `${label} sticky regions left the dialog: ${JSON.stringify(measurement)}.`,
+  );
+  assert(
+    cancel.top >= footer.top &&
+      cancel.bottom <= footer.bottom &&
+      confirm.top >= footer.top &&
+      confirm.bottom <= footer.bottom,
+    `${label} confirmation controls are not fully visible: ${JSON.stringify(measurement)}.`,
+  );
+  assert(
+    measurement.documentScrollWidth === measurement.documentClientWidth &&
+      measurement.bodyScrollWidth <= measurement.bodyClientWidth + 1,
+    `${label} introduced horizontal overflow: ${JSON.stringify(measurement)}.`,
+  );
+  assert(measurement.authorizationPresent, `${label} unknown-fee authorization is missing.`);
+  assert(!measurement.authorizationChecked, `${label} opened with unknown cost pre-authorized.`);
+  assert(measurement.confirmDisabled, `${label} did not fail closed before fee authorization.`);
+  assert(measurement.batchBarHidden, `${label} left the batch bar visible above the modal.`);
+  assert(measurement.toastHidden, `${label} left a Toast visible above the confirmation controls.`);
+}
+
+async function dispatchTab(client, sessionId, shift = false) {
+  const modifiers = shift ? 8 : 0;
+  await client.send(
+    'Input.dispatchKeyEvent',
+    { code: 'Tab', key: 'Tab', modifiers, type: 'keyDown' },
+    sessionId,
+  );
+  await client.send(
+    'Input.dispatchKeyEvent',
+    { code: 'Tab', key: 'Tab', modifiers, type: 'keyUp' },
+    sessionId,
+  );
+}
+
+async function assertWorkflowPreviewFocusTrap(client, sessionId, label) {
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]')?.contains(document.activeElement) === true`,
+      ),
+    `${label} initial focus`,
+  );
+  for (let index = 0; index < 8; index += 1) {
+    await dispatchTab(client, sessionId, index === 0);
+    assert(
+      await evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]')?.contains(document.activeElement) === true`,
+      ),
+      `${label} allowed keyboard focus to escape.`,
+    );
+  }
+}
+
+async function captureWorkflowPreview(client, sessionId, name, scrollToBottom) {
+  assert(evidenceDirectory !== null, 'Workflow preview evidence requires an evidence directory.');
+  const measurements = [];
+  for (const viewport of workflowPreviewViewports) {
+    await resizeViewport(client, sessionId, viewport);
+    await evaluate(
+      client,
+      sessionId,
+      `(() => {
+        const body = document.querySelector('.v2-provider-preview-body');
+        if (body instanceof HTMLElement) body.scrollTop = ${scrollToBottom ? 'body.scrollHeight' : '0'};
+      })()`,
+    );
+    await delay(150);
+    const measurement = await measureWorkflowPreview(client, sessionId);
+    assertWorkflowPreviewGeometry(
+      measurement,
+      `${name} ${String(viewport.width)}x${String(viewport.height)}`,
+    );
+    if (scrollToBottom && measurement.bodyScrollHeight > measurement.body.height + 1) {
+      assert(measurement.bodyScrollTop > 0, `${name} body did not scroll independently.`);
+    }
+    measurements.push({ measurement, viewport });
+    await captureViewport(
+      client,
+      sessionId,
+      join(
+        evidenceDirectory,
+        `${evidencePrefix}-${name}-${String(viewport.width)}x${String(viewport.height)}.png`,
+      ),
+    );
+  }
+  return measurements;
+}
+
+async function readWeeklyPreviewState(client, sessionId) {
+  return evaluate(
+    client,
+    sessionId,
+    `(() => ({
+      controls: [...document.querySelectorAll('.v2-weekly-page input, .v2-weekly-page select, .v2-weekly-page textarea')]
+        .map((element) => ({
+          checked: element instanceof HTMLInputElement ? element.checked : null,
+          type: element instanceof HTMLInputElement ? element.type : element.tagName,
+          value: element.value
+        })),
+      hash: window.location.hash,
+      scrollY: window.scrollY,
+      selected: [...document.querySelectorAll('.v2-select-post')]
+        .map((element) => ({ active: element.dataset.active ?? null, pressed: element.getAttribute('aria-pressed') }))
+    }))()`,
+  );
+}
+
+async function closeWorkflowPreviewWithEscape(client, sessionId, triggerPattern, label) {
+  await client.send(
+    'Input.dispatchKeyEvent',
+    { code: 'Escape', key: 'Escape', type: 'keyDown' },
+    sessionId,
+  );
+  await client.send(
+    'Input.dispatchKeyEvent',
+    { code: 'Escape', key: 'Escape', type: 'keyUp' },
+    sessionId,
+  );
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]') === null`,
+      ),
+    `${label} Escape close`,
+  );
+  const focusReturned = await evaluate(
+    client,
+    sessionId,
+    `document.activeElement instanceof HTMLButtonElement && ${triggerPattern}.test(document.activeElement.textContent ?? '')`,
+  );
+  assert(focusReturned, `${label} did not return focus to its trigger.`);
+}
+
+async function captureWorkflowClosureEvidence(client, sessionId, weekKey, providerPort) {
+  await configureWorkflowProvider(client, sessionId, providerPort);
+
+  const created = await evaluate(
+    client,
+    sessionId,
+    `(async () => window.rednoteV2.createInteraction({
+      expectedRevision: 0,
+      kind: 'COMMENT',
+      relatedContentPackageId: null,
+      userText: '这本书的密室线索为什么值得重读？'
+    }))()`,
+  );
+  assert(created.ok === true, `Could not seed workflow interaction: ${JSON.stringify(created)}`);
+  await reloadWorkspace(client, sessionId);
+  await navigate(client, sessionId, 'interaction', routeSelectors.interaction);
+  await evaluate(
+    client,
+    sessionId,
+    `document.querySelector('.v2-reply-editor')?.scrollIntoView({ block: 'start' })`,
+  );
+  await captureAtWorkflowViewports(client, sessionId, 'interaction-pending', '.v2-reply-editor');
+
+  const generated = await evaluate(
+    client,
+    sessionId,
+    `(async () => window.rednoteV2.generateReplySuggestion({
+      action: 'GENERATE_REPLY_SUGGESTION',
+      expectedRevision: ${String(created.value.item.revision)},
+      idempotencyKey: 'r08-workflow-evidence-reply',
+      itemId: ${JSON.stringify(created.value.item.itemId)}
+    }))()`,
+  );
+  assert(
+    generated.ok === true,
+    `Could not seed generated interaction: ${JSON.stringify(generated)}`,
+  );
+  await reloadWorkspace(client, sessionId);
+  await navigate(client, sessionId, 'interaction', routeSelectors.interaction);
+  await evaluate(
+    client,
+    sessionId,
+    `document.querySelector('.v2-reply-editor')?.scrollIntoView({ block: 'start' })`,
+  );
+  await captureAtWorkflowViewports(client, sessionId, 'interaction-generated', '.v2-reply-editor');
+
+  await navigate(client, sessionId, 'weekly-plan', routeSelectors['weekly-plan']);
+  assert(
+    await evaluate(
+      client,
+      sessionId,
+      `(() => {
+        const button = document.querySelector('.v2-select-post');
+        if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+        button.click();
+        return true;
+      })()`,
+    ),
+    'Could not select one plan item for workflow evidence.',
+  );
+  assert(
+    await clickButtonByText(client, sessionId, /调整发布时间/u),
+    'Unified scheduling action was not available.',
+  );
+  await waitFor(
+    async () =>
+      evaluate(client, sessionId, `document.querySelector('.v2-schedule-drawer') !== null`),
+    'unified schedule drawer',
+  );
+  const currentTime = await evaluate(
+    client,
+    sessionId,
+    `document.querySelector('.v2-schedule-drawer input[type="time"]')?.value ?? ''`,
+  );
+  const nextTime = currentTime === '19:30' ? '18:45' : '19:30';
+  assert(
+    await setNativeControlValue(
+      client,
+      sessionId,
+      '.v2-schedule-drawer input[type="time"]',
+      nextTime,
+    ),
+    'Schedule time input was not editable.',
+  );
+  assert(
+    await clickButtonByText(client, sessionId, /预览发布时间变更/u),
+    'Schedule preview action was not available.',
+  );
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `/确认原时间与新时间/u.test(document.querySelector('.v2-schedule-drawer')?.textContent ?? '')`,
+      ),
+    'schedule old/new preview',
+  );
+  await captureAtWorkflowViewports(client, sessionId, 'schedule-old-new-preview');
+  assert(
+    await clickButtonByText(client, sessionId, /取消调整/u),
+    'Schedule preview cancel action was not available.',
+  );
+
+  assert(
+    await setNativeControlValue(
+      client,
+      sessionId,
+      '.v2-weekly-brief textarea',
+      '下周重点：密室推理的公平线索；至少两篇女性侦探视角；避免重复作家生平。目标读者是第一次接触古典推理、但愿意核对文本细节的人。每个角度都要说明读者能验证的线索、可能的反方意见，以及为什么值得在本周讨论；不要剧透核心诡计，不要把资料分析写成第一人称阅读体验。优先覆盖封闭空间、叙述误导、女性侦探传统与科学证据四条线，连续两篇不得使用相同作品或相同开场方式。',
+    ),
+    'Weekly Brief input was not editable.',
+  );
+  assert(
+    await setNativeControlValue(
+      client,
+      sessionId,
+      '.v2-item-feedback textarea',
+      '与本周已有密室起源角度重复，请换成读者可验证的线索视角。补充要求：保留目标读者和剧透边界，但不要继续讨论作家生平，也不要复用“第一部”或“开创性”这类宽泛判断。新候选需要明确指出可核对的文本细节、一个合理反方和适合小红书卡片展开的三段结构；如果依据不足，应保持未知并等待人工补充，而不是自动搜索或猜测。',
+    ),
+    'Plan feedback input was not editable.',
+  );
+  for (const viewport of [
+    { height: 720, width: 1024 },
+    { height: 900, width: 1440 },
+    { height: 720, width: 1024 },
+  ]) {
+    await resizeViewport(client, sessionId, viewport);
+    const drafts = await evaluate(
+      client,
+      sessionId,
+      `({
+        brief: document.querySelector('.v2-weekly-brief textarea')?.value ?? '',
+        feedback: document.querySelector('.v2-item-feedback textarea')?.value ?? ''
+      })`,
+    );
+    assert(drafts.brief.includes('公平线索'), 'Weekly Brief draft changed during resize.');
+    assert(drafts.feedback.includes('读者可验证'), 'Plan feedback draft changed during resize.');
+  }
+  await evaluate(
+    client,
+    sessionId,
+    `document.querySelector('.v2-weekly-brief')?.scrollIntoView({ block: 'start' })`,
+  );
+  await captureAtWorkflowViewports(client, sessionId, 'weekly-brief-edit', '.v2-weekly-brief');
+  assert(
+    await clickButtonByText(client, sessionId, /保存目标周 Brief/u),
+    'Weekly Brief save action was not available.',
+  );
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('.v2-weekly-brief button')?.disabled === true`,
+      ),
+    'saved weekly Brief',
+  );
+  const briefStateBefore = await readWeeklyPreviewState(client, sessionId);
+  assert(
+    await clickButtonByText(client, sessionId, /预览生成下周计划/u),
+    'Weekly plan generation preview was not available.',
+  );
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]') !== null`,
+      ),
+    'weekly generation preview dialog',
+  );
+  await assertWorkflowPreviewFocusTrap(client, sessionId, 'Weekly Brief preview');
+  const briefAuthorization = await captureWorkflowPreview(
+    client,
+    sessionId,
+    'brief-preview-authorization',
+    false,
+  );
+  const briefConfirmArea = await captureWorkflowPreview(
+    client,
+    sessionId,
+    'brief-preview-confirm-area',
+    true,
+  );
+  await closeWorkflowPreviewWithEscape(
+    client,
+    sessionId,
+    /预览生成下周计划/u,
+    'Weekly Brief preview',
+  );
+  assert(
+    JSON.stringify(await readWeeklyPreviewState(client, sessionId)) ===
+      JSON.stringify(briefStateBefore),
+    'Weekly Brief, selection, filters, or page scroll changed after closing its preview.',
+  );
+  await captureAtWorkflowViewports(client, sessionId, 'brief-preview-closed-state');
+
+  await evaluate(
+    client,
+    sessionId,
+    `document.querySelector('.v2-item-feedback')?.scrollIntoView({ block: 'start' })`,
+  );
+  assert(
+    await clickButtonByText(client, sessionId, /记录原因/u),
+    'Plan feedback save action was not available.',
+  );
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `[...document.querySelectorAll('button')].some((button) => /预览重新生成当前项/u.test(button.textContent ?? ''))`,
+      ),
+    'recorded plan feedback',
+  );
+  const replacementStateBefore = await readWeeklyPreviewState(client, sessionId);
+  assert(
+    await clickButtonByText(client, sessionId, /预览重新生成当前项/u),
+    'One-item replacement preview was not available.',
+  );
+  await waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('[data-provider-preview-dialog]') !== null`,
+      ),
+    'one-item replacement preview dialog',
+  );
+  await assertWorkflowPreviewFocusTrap(client, sessionId, 'One-item replacement preview');
+  const replacementAuthorization = await captureWorkflowPreview(
+    client,
+    sessionId,
+    'item-preview-authorization',
+    false,
+  );
+  const replacementConfirmArea = await captureWorkflowPreview(
+    client,
+    sessionId,
+    'item-preview-confirm-area',
+    true,
+  );
+  await closeWorkflowPreviewWithEscape(
+    client,
+    sessionId,
+    /预览重新生成当前项/u,
+    'One-item replacement preview',
+  );
+  assert(
+    JSON.stringify(await readWeeklyPreviewState(client, sessionId)) ===
+      JSON.stringify(replacementStateBefore),
+    'Plan item, feedback, selection, filters, or page scroll changed after closing the replacement preview.',
+  );
+  await captureAtWorkflowViewports(client, sessionId, 'item-preview-closed-state');
+
+  const softened = await evaluate(
+    client,
+    sessionId,
+    `(async () => {
+      let plan = await window.rednoteV2.readWeeklyPlan({ weekKey: ${JSON.stringify(weekKey)} });
+      if (!plan.ok) return plan;
+      const skipIds = plan.value.candidates
+        .filter(({ status }) => status === 'CONFLICT')
+        .map(({ id }) => id);
+      const extra = plan.value.candidates.find(({ day, id, status }) => day === '周一' && status !== 'SKIPPED' && !skipIds.includes(id));
+      if (extra !== undefined) skipIds.push(extra.id);
+      if (skipIds.length > 0) {
+        plan = await window.rednoteV2.skipPlanCandidates({
+          candidateIds: skipIds,
+          expectedRevision: plan.value.revision,
+          weekKey: plan.value.weekKey
+        });
+        if (!plan.ok) return plan;
+      }
+      const pendingIds = plan.value.candidates
+        .filter(({ status }) => status === 'PENDING')
+        .map(({ id }) => id);
+      if (pendingIds.length > 0) {
+        plan = await window.rednoteV2.confirmPlanCandidates({
+          candidateIds: pendingIds,
+          expectedRevision: plan.value.revision,
+          weekKey: plan.value.weekKey
+        });
+      }
+      return plan;
+    })()`,
+  );
+  assert(
+    softened.ok === true,
+    `Could not prepare soft-target evidence: ${JSON.stringify(softened)}`,
+  );
+  await reloadWorkspace(client, sessionId);
+  await navigate(client, sessionId, 'weekly-plan', routeSelectors['weekly-plan']);
+  await evaluate(
+    client,
+    sessionId,
+    `document.querySelector('.v2-quick-actions')?.scrollIntoView({ block: 'start' })`,
+  );
+  const softState = await evaluate(
+    client,
+    sessionId,
+    `(() => ({
+      lockButtons: [...document.querySelectorAll('.v2-quick-actions button')]
+        .filter((button) => /锁定本周计划/u.test(button.textContent ?? ''))
+        .map((button) => ({ disabled: button.disabled, text: (button.textContent ?? '').trim() })),
+      warning: document.querySelector('.v2-soft-target')?.textContent ?? ''
+    }))()`,
+  );
+  assert(
+    softState.lockButtons.some(({ disabled }) => disabled === false),
+    `Soft daily target still disabled plan locking: ${JSON.stringify({ softState, softened })}`,
+  );
+  assert(/不是锁定门禁/u.test(softState.warning), 'Soft daily target explanation was not visible.');
+  await captureAtWorkflowViewports(
+    client,
+    sessionId,
+    'soft-daily-target-lock-enabled',
+    '.v2-quick-actions',
+  );
+  return {
+    briefAuthorization,
+    briefConfirmArea,
+    replacementAuthorization,
+    replacementConfirmArea,
+    softState,
+  };
 }
 
 async function reloadWorkspace(client, sessionId) {
@@ -952,6 +1614,8 @@ child.stderr.on('data', (chunk) => {
 });
 
 let client;
+let workflowProviderFixture;
+let workflowEvidence = null;
 try {
   const target = await waitForRendererTarget(port);
   client = await CdpClient.connect(await waitForBrowserEndpoint(port));
@@ -1238,6 +1902,16 @@ try {
     5_000,
   );
 
+  if (evidenceDirectory !== null && evidenceScenario === 'workflow-closure') {
+    workflowProviderFixture = await startR07PackagedProviderFixture();
+    workflowEvidence = await captureWorkflowClosureEvidence(
+      client,
+      sessionId,
+      evidenceWeekKey,
+      workflowProviderFixture.port,
+    );
+  }
+
   process.stdout.write(
     `${JSON.stringify({
       contentDynamic,
@@ -1254,6 +1928,13 @@ try {
       sequentialNavigation,
       statePreserved: true,
       viewportNegotiations: [...viewportNegotiations.values()],
+      workflowEvidence:
+        workflowProviderFixture === undefined
+          ? null
+          : {
+              ...workflowEvidence,
+              loopbackRequestCount: workflowProviderFixture.requests.length,
+            },
       zoom: { before: zoomBefore, reset: zoomReset, zoomed },
     })}\n`,
   );
@@ -1263,6 +1944,7 @@ try {
     { cause: error },
   );
 } finally {
+  await workflowProviderFixture?.close();
   client?.close();
   if (child.exitCode === null) child.kill();
   await new Promise((resolveExit) => {

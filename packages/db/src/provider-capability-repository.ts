@@ -10,6 +10,7 @@ import type {
   ProbeProtocolMode,
   ProbeReasonCode,
   ProbeRunStatus,
+  ProbeSafeDetails,
   ProbeSource,
   ProbeState,
 } from '@mystery-operations/providers';
@@ -27,7 +28,7 @@ export interface ProviderCapabilityEntryRecord {
   readonly rateLimitRequests: number | null;
   readonly rateLimitTokens: number | null;
   readonly reasonCode: ProbeReasonCode;
-  readonly safeDetails: Readonly<Record<string, number>>;
+  readonly safeDetails: ProbeSafeDetails;
   readonly source: ProbeSource;
   readonly stale: boolean;
   readonly state: ProbeState;
@@ -92,20 +93,63 @@ function entryId(
     .digest('hex')}`;
 }
 
-function safeDetails(value: string): Readonly<Record<string, number>> {
+const SAFE_DETAIL_NUMBER_KEYS = new Set([
+  'citationCount',
+  'endpointNotFound',
+  'eventCount',
+  'imageCount',
+  'inputTokens',
+  'modelIdMismatch',
+  'modelNotFound',
+  'outputTokens',
+  'status',
+  'totalTokens',
+]);
+const SAFE_DETAIL_STRING_KEYS = new Set([
+  'errorCode',
+  'errorParam',
+  'errorType',
+  'receivedContentType',
+  'requestId',
+  'transportVariant',
+]);
+const SAFE_TRANSPORT_VARIANTS = new Set([
+  'NONSTANDARD_MIME_JSON',
+  'REJECTED',
+  'SSE_NORMALIZED',
+  'STANDARD_JSON',
+]);
+
+function isSafeDetailString(key: string, value: unknown): value is string {
+  if (
+    !SAFE_DETAIL_STRING_KEYS.has(key) ||
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > 128 ||
+    [...value].some((character) => {
+      const code = character.charCodeAt(0);
+      return code <= 31 || code === 127;
+    })
+  ) {
+    return false;
+  }
+  return key !== 'transportVariant' || SAFE_TRANSPORT_VARIANTS.has(value);
+}
+
+function safeDetails(value: string): ProbeSafeDetails {
   try {
     const parsed = JSON.parse(value) as unknown;
     if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
       return {};
     }
-    return Object.freeze(
-      Object.fromEntries(
-        Object.entries(parsed).filter(
-          (entry): entry is [string, number] =>
-            typeof entry[1] === 'number' && Number.isSafeInteger(entry[1]) && entry[1] >= 0,
-        ),
+    const safe = Object.fromEntries(
+      Object.entries(parsed).filter(([key, item]) =>
+        SAFE_DETAIL_NUMBER_KEYS.has(key)
+          ? typeof item === 'number' && Number.isSafeInteger(item) && item >= 0
+          : isSafeDetailString(key, item),
       ),
     );
+    return Object.freeze(safe) as ProbeSafeDetails;
   } catch {
     return {};
   }

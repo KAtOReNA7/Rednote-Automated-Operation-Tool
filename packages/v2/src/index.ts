@@ -104,8 +104,35 @@ export interface PlanCandidate {
   readonly title: string;
 }
 
+export const PLAN_FEEDBACK_REASONS = Object.freeze([
+  'TOPIC_MISMATCH',
+  'REPEATED_ANGLE',
+  'NOT_WEEKLY_FOCUS',
+  'TIME_UNSUITABLE',
+  'OTHER',
+] as const);
+export type PlanFeedbackReason = (typeof PLAN_FEEDBACK_REASONS)[number];
+
+export interface PlanItemFeedback {
+  readonly candidate: PlanCandidate | null;
+  readonly candidateId: string;
+  readonly details: string;
+  readonly feedbackId: string;
+  readonly reason: PlanFeedbackReason;
+  readonly sourcePlanRevision: number;
+  readonly status: 'ADOPTED' | 'CANDIDATE_READY' | 'DISMISSED' | 'RECORDED';
+}
+
+export interface WeeklyPlanningBrief {
+  readonly revision: number;
+  readonly text: string;
+}
+
 export interface WeeklyPlan {
+  readonly brief: WeeklyPlanningBrief;
   readonly candidates: readonly PlanCandidate[];
+  readonly generationBriefRevision: number | null;
+  readonly itemFeedback: readonly PlanItemFeedback[];
   readonly revision: number;
   readonly schemaVersion: typeof V2_SCHEMA_VERSION;
   readonly status: 'CONFIRMED' | 'DRAFT';
@@ -187,6 +214,33 @@ export type V2MutationRequest =
       readonly expectedRevision: number;
       readonly weekKey: string;
     }
+  | {
+      readonly action: 'SAVE_WEEKLY_PLANNING_BRIEF';
+      readonly briefText: string;
+      readonly expectedRevision: number;
+      readonly weekKey: string;
+    }
+  | {
+      readonly action: 'RECORD_PLAN_ITEM_FEEDBACK';
+      readonly candidateId: string;
+      readonly details: string;
+      readonly expectedRevision: number;
+      readonly reason: PlanFeedbackReason;
+      readonly weekKey: string;
+    }
+  | {
+      readonly action: 'ADOPT_PLAN_ITEM_REPLACEMENT';
+      readonly candidate: PlanCandidate;
+      readonly expectedRevision: number;
+      readonly feedbackId: string;
+      readonly weekKey: string;
+    }
+  | {
+      readonly action: 'DISMISS_PLAN_ITEM_REPLACEMENT';
+      readonly expectedRevision: number;
+      readonly feedbackId: string;
+      readonly weekKey: string;
+    }
   | { readonly action: 'SAVE_METRIC_SNAPSHOTS'; readonly snapshots: readonly MetricSnapshot[] }
   | {
       readonly action: 'DECIDE_STRATEGY_RECOMMENDATION';
@@ -266,6 +320,12 @@ type InteractionItemCall<Action extends InteractionMutationRequest['action']> = 
 >;
 
 export interface V2Bridge {
+  readonly adoptPlanItemReplacement: (input: {
+    readonly candidate: PlanCandidate;
+    readonly expectedRevision: number;
+    readonly feedbackId: string;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
   readonly approveContentPackages: (
     input: ContentInput<'APPROVE_CONTENT_PACKAGES'>,
   ) => Promise<V2Result<ContentWorkspace>>;
@@ -349,9 +409,26 @@ export interface V2Bridge {
   }) => Promise<V2Result<V2CapabilityProbeProgress>>;
   readonly readProviderSettings?: () => Promise<V2Result<V2ProviderSettingsView>>;
   readonly readWeeklyPlan: (input: { readonly weekKey: string }) => Promise<V2Result<WeeklyPlan>>;
+  readonly recordPlanItemFeedback: (input: {
+    readonly candidateId: string;
+    readonly details: string;
+    readonly expectedRevision: number;
+    readonly reason: PlanFeedbackReason;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
   readonly reschedulePlanCandidates: (
     input: PlanRescheduleFields & { readonly allowConflicts: boolean },
   ) => Promise<V2Result<WeeklyPlan>>;
+  readonly dismissPlanItemReplacement: (input: {
+    readonly expectedRevision: number;
+    readonly feedbackId: string;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
+  readonly saveWeeklyPlanningBrief: (input: {
+    readonly briefText: string;
+    readonly expectedRevision: number;
+    readonly weekKey: string;
+  }) => Promise<V2Result<WeeklyPlan>>;
   readonly reopenInteraction: InteractionItemCall<'REOPEN_INTERACTION'>;
   readonly saveReplySuggestion: InteractionItemCall<'SAVE_REPLY_SUGGESTION'>;
   readonly saveContentPackage: (
@@ -553,19 +630,70 @@ function parseCandidate(value: unknown): PlanCandidate {
   };
 }
 
-export function parseWeeklyPlan(value: unknown): WeeklyPlan {
+function planningBrief(value: unknown): WeeklyPlanningBrief {
+  if (!isRecord(value) || !exactKeys(value, ['revision', 'text']))
+    throw new V2ContractError('INVALID_REQUEST', ['brief']);
+  if (typeof value.text !== 'string' || utf8Bytes(value.text) > 2_000 || value.text.includes('\0'))
+    throw new V2ContractError('INVALID_REQUEST', ['briefText']);
+  return { revision: revision(value.revision), text: value.text.normalize('NFC').trim() };
+}
+
+function itemFeedback(value: unknown): PlanItemFeedback {
   if (
     !isRecord(value) ||
-    !exactKeys(value, ['candidates', 'revision', 'schemaVersion', 'status', 'weekKey']) ||
+    !exactKeys(value, [
+      'candidate',
+      'candidateId',
+      'details',
+      'feedbackId',
+      'reason',
+      'sourcePlanRevision',
+      'status',
+    ]) ||
+    !PLAN_FEEDBACK_REASONS.includes(value.reason as PlanFeedbackReason) ||
+    !['ADOPTED', 'CANDIDATE_READY', 'DISMISSED', 'RECORDED'].includes(String(value.status)) ||
+    typeof value.details !== 'string' ||
+    utf8Bytes(value.details) > 1_000
+  )
+    throw new V2ContractError('INVALID_REQUEST', ['itemFeedback']);
+  return {
+    candidate: value.candidate === null ? null : parseCandidate(value.candidate),
+    candidateId: boundedText(value.candidateId, V2_LIMITS.candidateId, 'candidateId'),
+    details: value.details.normalize('NFC').trim(),
+    feedbackId: boundedText(value.feedbackId, 112, 'feedbackId'),
+    reason: value.reason as PlanFeedbackReason,
+    sourcePlanRevision: revision(value.sourcePlanRevision),
+    status: value.status as PlanItemFeedback['status'],
+  };
+}
+
+export function parseWeeklyPlan(value: unknown): WeeklyPlan {
+  const legacyKeys = ['candidates', 'revision', 'schemaVersion', 'status', 'weekKey'] as const;
+  const currentKeys = [
+    'brief',
+    'candidates',
+    'generationBriefRevision',
+    'itemFeedback',
+    'revision',
+    'schemaVersion',
+    'status',
+    'weekKey',
+  ] as const;
+  if (
+    !isRecord(value) ||
+    (!exactKeys(value, legacyKeys) && !exactKeys(value, currentKeys)) ||
     value.schemaVersion !== V2_SCHEMA_VERSION ||
     (value.status !== 'DRAFT' && value.status !== 'CONFIRMED') ||
     !Array.isArray(value.candidates) ||
     value.candidates.length === 0 ||
-    value.candidates.length > V2_LIMITS.candidateCount
+    value.candidates.length > V2_LIMITS.candidateCount ||
+    ('itemFeedback' in value &&
+      (!Array.isArray(value.itemFeedback) || value.itemFeedback.length > V2_LIMITS.candidateCount))
   ) {
     throw new V2ContractError('INVALID_REQUEST', ['weeklyPlan']);
   }
   const candidates = value.candidates.map(parseCandidate);
+  const feedback = (Array.isArray(value.itemFeedback) ? value.itemFeedback : []).map(itemFeedback);
   if (new Set(candidates.map(({ id }) => id)).size !== candidates.length) {
     throw new V2ContractError('INVALID_REQUEST', ['candidateIds']);
   }
@@ -580,7 +708,13 @@ export function parseWeeklyPlan(value: unknown): WeeklyPlan {
     throw new V2ContractError('INVALID_REQUEST', ['conflictWithIds']);
   }
   return {
+    brief: planningBrief(value.brief ?? { revision: 0, text: '' }),
     candidates,
+    generationBriefRevision:
+      value.generationBriefRevision === undefined || value.generationBriefRevision === null
+        ? null
+        : revision(value.generationBriefRevision),
+    itemFeedback: feedback,
     revision: revision(value.revision),
     schemaVersion: V2_SCHEMA_VERSION,
     status: value.status,
@@ -643,6 +777,15 @@ export function parseV2ProviderActionOutput(
   }
   if (kind === 'CONTENT_COVER')
     throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['cover']);
+  if (kind === 'PLAN_ITEM_REPLACEMENT') {
+    if (!exactKeys(value, ['candidate']))
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidate']);
+    try {
+      return Object.freeze({ candidate: parseCandidate(value.candidate) });
+    } catch {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidate']);
+    }
+  }
   if (!exactKeys(value, ['replyText']))
     throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['replyText']);
   try {
@@ -922,6 +1065,62 @@ export function parseV2MutationRequest(value: unknown): V2MutationRequest {
     };
   }
   if (
+    value.action === 'SAVE_WEEKLY_PLANNING_BRIEF' &&
+    exactKeys(value, ['action', 'briefText', 'expectedRevision', 'weekKey']) &&
+    typeof value.briefText === 'string' &&
+    utf8Bytes(value.briefText) <= 2_000 &&
+    !value.briefText.includes('\0')
+  )
+    return {
+      action: value.action,
+      briefText: value.briefText.normalize('NFC').trim(),
+      expectedRevision: revision(value.expectedRevision),
+      weekKey: weekKey(value.weekKey),
+    };
+  if (
+    value.action === 'RECORD_PLAN_ITEM_FEEDBACK' &&
+    exactKeys(value, [
+      'action',
+      'candidateId',
+      'details',
+      'expectedRevision',
+      'reason',
+      'weekKey',
+    ]) &&
+    PLAN_FEEDBACK_REASONS.includes(value.reason as PlanFeedbackReason) &&
+    typeof value.details === 'string' &&
+    utf8Bytes(value.details) <= 1_000
+  )
+    return {
+      action: value.action,
+      candidateId: boundedText(value.candidateId, V2_LIMITS.candidateId, 'candidateId'),
+      details: value.details.normalize('NFC').trim(),
+      expectedRevision: revision(value.expectedRevision),
+      reason: value.reason as PlanFeedbackReason,
+      weekKey: weekKey(value.weekKey),
+    };
+  if (
+    value.action === 'ADOPT_PLAN_ITEM_REPLACEMENT' &&
+    exactKeys(value, ['action', 'candidate', 'expectedRevision', 'feedbackId', 'weekKey'])
+  )
+    return {
+      action: value.action,
+      candidate: parseCandidate(value.candidate),
+      expectedRevision: revision(value.expectedRevision),
+      feedbackId: boundedText(value.feedbackId, 112, 'feedbackId'),
+      weekKey: weekKey(value.weekKey),
+    };
+  if (
+    value.action === 'DISMISS_PLAN_ITEM_REPLACEMENT' &&
+    exactKeys(value, ['action', 'expectedRevision', 'feedbackId', 'weekKey'])
+  )
+    return {
+      action: value.action,
+      expectedRevision: revision(value.expectedRevision),
+      feedbackId: boundedText(value.feedbackId, 112, 'feedbackId'),
+      weekKey: weekKey(value.weekKey),
+    };
+  if (
     (value.action === 'CONFIRM_PLAN_CANDIDATES' || value.action === 'SKIP_PLAN_CANDIDATES') &&
     exactKeys(value, ['action', 'candidateIds', 'expectedRevision', 'weekKey'])
   ) {
@@ -977,6 +1176,7 @@ export const DEFAULT_ACCOUNT_PERSONA: AccountPersona = Object.freeze({
   tone: '理性、短句、观点鲜明、少量冷幽默',
 });
 export const DEFAULT_WEEKLY_PLAN: WeeklyPlan = Object.freeze({
+  brief: Object.freeze({ revision: 0, text: '' }),
   candidates: Object.freeze(
     defaultPlanRows.map(([id, day, date, time, title, book, status]) =>
       Object.freeze({
@@ -991,6 +1191,8 @@ export const DEFAULT_WEEKLY_PLAN: WeeklyPlan = Object.freeze({
       }),
     ),
   ),
+  generationBriefRevision: null,
+  itemFeedback: Object.freeze([]),
   revision: 0,
   schemaVersion: V2_SCHEMA_VERSION,
   status: 'DRAFT',
@@ -1227,14 +1429,7 @@ export function summarizeV2Workspace(
 export function weeklyPlanLockReasons(planValue: WeeklyPlan): readonly string[] {
   const plan = parseWeeklyPlan(planValue);
   const active = plan.candidates.filter((candidate) => candidate.status !== 'SKIPPED');
-  const byDay = new Map<string, number>();
-  for (const candidate of active) byDay.set(candidate.day, (byDay.get(candidate.day) ?? 0) + 1);
   const reasons: string[] = [];
-  if (active.length !== 21) reasons.push(`还差${Math.max(0, 21 - active.length)}篇`);
-  for (const day of dayLabels) {
-    const count = byDay.get(day) ?? 0;
-    if (count !== 3) reasons.push(`${day}不是3篇`);
-  }
   const pending = active.filter((candidate) => candidate.status === 'PENDING').length;
   const conflicts = active.filter(
     (candidate) => candidate.status === 'CONFLICT' || candidate.conflictWithIds.length > 0,
@@ -1353,6 +1548,74 @@ export class V2ApplicationFacade {
       });
       return this.#repository.saveWeeklyPlan(
         parseWeeklyPlan({ ...current, candidates, status: 'DRAFT' }),
+        request.expectedRevision,
+      );
+    }
+    if (request.action === 'SAVE_WEEKLY_PLANNING_BRIEF') {
+      this.#assertDraft(current);
+      if (current.brief.text === request.briefText) return current;
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({
+          ...current,
+          brief: { revision: current.brief.revision + 1, text: request.briefText },
+        }),
+        request.expectedRevision,
+      );
+    }
+    if (request.action === 'RECORD_PLAN_ITEM_FEEDBACK') {
+      this.#assertDraft(current);
+      if (!current.candidates.some(({ id }) => id === request.candidateId))
+        throw new V2ContractError('INVALID_REQUEST', ['candidateId']);
+      const feedbackId = `${request.candidateId.slice(0, 72)}-feedback-${current.revision + 1}`;
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({
+          ...current,
+          itemFeedback: [
+            ...current.itemFeedback,
+            {
+              candidate: null,
+              candidateId: request.candidateId,
+              details: request.details,
+              feedbackId,
+              reason: request.reason,
+              sourcePlanRevision: current.revision,
+              status: 'RECORDED',
+            },
+          ],
+        }),
+        request.expectedRevision,
+      );
+    }
+    if (
+      request.action === 'ADOPT_PLAN_ITEM_REPLACEMENT' ||
+      request.action === 'DISMISS_PLAN_ITEM_REPLACEMENT'
+    ) {
+      this.#assertDraft(current);
+      const feedback = current.itemFeedback.find(
+        ({ feedbackId }) => feedbackId === request.feedbackId,
+      );
+      if (feedback?.status !== 'CANDIDATE_READY' || feedback.candidate === null)
+        throw new V2ContractError('INVALID_REQUEST', ['feedbackId']);
+      const candidate = request.action === 'ADOPT_PLAN_ITEM_REPLACEMENT' ? request.candidate : null;
+      if (candidate !== null && candidate.id !== feedback.candidateId)
+        throw new V2ContractError('INVALID_REQUEST', ['candidateId']);
+      return this.#repository.saveWeeklyPlan(
+        parseWeeklyPlan({
+          ...current,
+          candidates:
+            candidate === null
+              ? current.candidates
+              : current.candidates.map((item) => (item.id === candidate.id ? candidate : item)),
+          itemFeedback: current.itemFeedback.map((item) =>
+            item.feedbackId === feedback.feedbackId
+              ? {
+                  ...item,
+                  candidate: candidate ?? item.candidate,
+                  status: candidate === null ? 'DISMISSED' : 'ADOPTED',
+                }
+              : item,
+          ),
+        }),
         request.expectedRevision,
       );
     }
@@ -1478,7 +1741,45 @@ export class V2ApplicationFacade {
       throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidates']);
     }
     return this.#repository.saveWeeklyPlan(
-      parseWeeklyPlan({ ...current, candidates: generated, status: 'DRAFT' }),
+      parseWeeklyPlan({
+        ...current,
+        candidates: generated,
+        generationBriefRevision: current.brief.revision,
+        status: 'DRAFT',
+      }),
+      expectedRevision,
+    );
+  }
+
+  public stagePlanItemReplacement(
+    week: string,
+    expectedRevision: number,
+    feedbackId: string,
+    candidateValue: unknown,
+  ): WeeklyPlan {
+    const current = this.#readPlan(week);
+    this.#assertRevision(current, expectedRevision);
+    this.#assertDraft(current);
+    const feedback = current.itemFeedback.find((item) => item.feedbackId === feedbackId);
+    if (feedback?.status !== 'RECORDED')
+      throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['feedbackId']);
+    let candidate: PlanCandidate;
+    try {
+      candidate = parseCandidate(candidateValue);
+    } catch {
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidate']);
+    }
+    if (candidate.id !== feedback.candidateId || candidate.conflictWithIds.length > 0)
+      throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidate']);
+    return this.#repository.saveWeeklyPlan(
+      parseWeeklyPlan({
+        ...current,
+        itemFeedback: current.itemFeedback.map((item) =>
+          item.feedbackId === feedbackId
+            ? { ...item, candidate: { ...candidate, status: 'PENDING' }, status: 'CANDIDATE_READY' }
+            : item,
+        ),
+      }),
       expectedRevision,
     );
   }
@@ -1516,6 +1817,7 @@ export function toV2Exception(error: unknown): V2ExceptionSummary {
     const messages: Readonly<Record<V2ProviderActionErrorCode, string>> = Object.freeze({
       BUDGET_HARD_STOP: '本地预算硬上限已阻止本次调用。',
       CAPABILITY_STALE: '能力证据已过期，请重新验证后再预览。',
+      CAPABILITY_TRANSIENT_FAILURE: '图片服务暂不可用（HTTP 503）；文字相关功能可继续。',
       CAPABILITY_UNKNOWN: '所需能力尚未验证，请先在设置中验证。',
       CAPABILITY_UNSUPPORTED: '当前模型不支持所需能力，请前往设置。',
       CREDENTIAL_NOT_CONFIGURED: '凭据尚未配置或需要重新认证，请前往设置。',

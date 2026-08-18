@@ -192,7 +192,7 @@ export function AppFrame({
 }): React.JSX.Element {
   const { session } = useV2Controller();
   const [providerStatus, setProviderStatus] = useState<
-    'CONFIGURE' | 'READY' | 'UNAVAILABLE' | 'VERIFY'
+    'BLOCKED' | 'CONFIGURE' | 'DEGRADED' | 'READY' | 'UNAVAILABLE' | 'VERIFY'
   >(window.rednoteV2 === undefined ? 'UNAVAILABLE' : 'CONFIGURE');
   useEffect(() => {
     const bridge = window.rednoteV2;
@@ -202,15 +202,19 @@ export function AppFrame({
       if (!result.ok) return setProviderStatus('CONFIGURE');
       const settings = result.value;
       setProviderStatus(
-        settings.providerConfigured &&
-          settings.credentialState === 'CONFIGURED' &&
-          settings.research.state === 'SUPPORTED' &&
-          settings.writing.state === 'SUPPORTED' &&
-          settings.image?.state === 'SUPPORTED'
+        settings.overallState === 'READY'
           ? 'READY'
-          : settings.providerConfigured && settings.credentialState === 'CONFIGURED'
-            ? 'VERIFY'
-            : 'CONFIGURE',
+          : settings.overallState === 'DEGRADED'
+            ? 'DEGRADED'
+            : settings.providerConfigured && settings.credentialState === 'CONFIGURED'
+              ? settings.textReady ||
+                settings.imageReady ||
+                settings.capabilityProbe.steps.some(
+                  (step) => step.diagnosticCode === 'AUTHENTICATION_REJECTED',
+                )
+                ? 'BLOCKED'
+                : 'VERIFY'
+              : 'CONFIGURE',
       );
     });
   }, [activeRoute]);
@@ -258,11 +262,15 @@ export function AppFrame({
           <strong className="v2-mock-label">
             {providerStatus === 'READY'
               ? '本地工作区已连接 · AI 服务已就绪'
-              : providerStatus === 'VERIFY'
-                ? '本地工作区已连接 · AI 能力待验证'
-                : providerStatus === 'CONFIGURE'
-                  ? '本地工作区已连接 · AI 服务待配置'
-                  : '本地工作区未连接 · AI 服务不可用'}
+              : providerStatus === 'DEGRADED'
+                ? '本地工作区已连接 · AI 服务部分可用'
+                : providerStatus === 'BLOCKED'
+                  ? '本地工作区已连接 · AI 服务不可用'
+                  : providerStatus === 'VERIFY'
+                    ? '本地工作区已连接 · AI 能力待验证'
+                    : providerStatus === 'CONFIGURE'
+                      ? '本地工作区已连接 · AI 服务待配置'
+                      : '本地工作区未连接 · AI 服务不可用'}
           </strong>
         </header>
         <div className="v2-app-body">
@@ -340,7 +348,7 @@ export function useDialog(
     document.addEventListener('keydown', onKeyDown);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
-      returnFocus?.focus();
+      returnFocus?.focus({ preventScroll: true });
     };
   }, [onClose, open, returnFocus]);
   return ref;
@@ -420,12 +428,16 @@ export function DetailDrawer({
 
 export function DateModal({
   count,
+  initialDate,
+  initialTime,
   onClose,
   onApply,
   onPreview,
   returnFocus,
 }: {
   readonly count: number;
+  readonly initialDate: string;
+  readonly initialTime: string;
   readonly onClose: () => void;
   readonly onApply: (
     fields: Omit<RendererPlanRescheduleFields, 'candidateIds' | 'expectedRevision' | 'weekKey'>,
@@ -438,12 +450,12 @@ export function DateModal({
   readonly returnFocus: HTMLElement | null;
 }): React.JSX.Element {
   const ref = useDialog(true, onClose, returnFocus);
-  const [date, setDate] = useState('2026-08-05');
+  const [date, setDate] = useState(initialDate);
   const [mode, setMode] = useState<RendererPlanRescheduleMode>('DATE_TIME');
   const [preview, setPreview] = useState<RendererPlanReschedulePreview | null>(null);
   const [stagger, setStagger] = useState(count > 1);
   const [submitting, setSubmitting] = useState(false);
-  const [time, setTime] = useState('19:30');
+  const [time, setTime] = useState(initialTime);
   const fields = (): Omit<
     RendererPlanRescheduleFields,
     'candidateIds' | 'expectedRevision' | 'weekKey'
@@ -458,11 +470,7 @@ export function DateModal({
     try {
       const result = await onPreview(fields());
       if (result === null) return;
-      if (result.conflictCount > 0) {
-        setPreview(result);
-        return;
-      }
-      await onApply(fields(), false, result);
+      setPreview(result);
     } finally {
       setSubmitting(false);
     }
@@ -480,9 +488,9 @@ export function DateModal({
       >
         <div className="v2-overlay-head">
           <div>
-            <p className="v2-kicker">{preview === null ? '批量调整' : '冲突复核'}</p>
+            <p className="v2-kicker">{preview === null ? '发布时间' : '变更预览'}</p>
             <h2 id="v2-date-title">
-              {preview === null ? `调整 ${count} 篇内容的日期和时间` : '发现时间冲突'}
+              {preview === null ? `调整 ${count} 篇内容的发布时间` : '确认原时间与新时间'}
             </h2>
           </div>
           <button aria-label="关闭改期" className="v2-icon-button" onClick={onClose} type="button">
@@ -535,7 +543,7 @@ export function DateModal({
               )}
             </div>
             <p className="v2-help" id="v2-timezone-help">
-              时区：Asia/Shanghai (UTC+8)。日期可直接输入，也可使用日期选择器。
+              时区：Asia/Shanghai (UTC+8)。初始值来自所选计划项；未设置时会明确显示为空。
             </p>
             <label className="v2-stagger-toggle">
               <input
@@ -569,8 +577,8 @@ export function DateModal({
             <div className="v2-overlay-actions">
               <Button
                 onClick={() => {
-                  setDate('2026-08-05');
-                  setTime('19:30');
+                  setDate(initialDate);
+                  setTime(initialTime);
                 }}
                 tone="quiet"
               >
@@ -578,7 +586,7 @@ export function DateModal({
               </Button>
               <Button onClick={onClose}>取消</Button>
               <Button disabled={submitting} onClick={() => void inspect()} tone="primary">
-                检查冲突并应用
+                预览发布时间变更
               </Button>
             </div>
           </>
@@ -586,8 +594,30 @@ export function DateModal({
           <>
             <section className="v2-conflict-summary">
               <div>
-                <Icon name="warning-circle" />
-                <p>发现 {preview.conflictCount} 处冲突。系统不会自动顺延、交换、覆盖或删除内容。</p>
+                <Icon name={preview.conflictCount > 0 ? 'warning-circle' : 'check-circle'} />
+                <p>
+                  {preview.conflictCount > 0
+                    ? `发现 ${preview.conflictCount} 处冲突。系统不会自动顺延、交换、覆盖或删除内容。`
+                    : '未发现冲突；确认前仍不会修改计划。'}
+                </p>
+              </div>
+              <div className="v2-schedule-change-list">
+                {preview.items.map((item) => (
+                  <article key={item.candidateId}>
+                    <div>
+                      <span>原发布时间</span>
+                      <strong>
+                        {item.fromDate} · {item.fromTime}
+                      </strong>
+                    </div>
+                    <div>
+                      <span>新发布时间</span>
+                      <strong>
+                        {item.targetDate} · {item.targetTime}
+                      </strong>
+                    </div>
+                  </article>
+                ))}
               </div>
               {preview.conflicts.map((conflict) => (
                 <article key={`${conflict.existing.candidateId}-${conflict.incoming.candidateId}`}>
@@ -618,11 +648,13 @@ export function DateModal({
                 disabled={submitting}
                 onClick={() => {
                   setSubmitting(true);
-                  void onApply(fields(), true, preview).finally(() => setSubmitting(false));
+                  void onApply(fields(), preview.conflictCount > 0, preview).finally(() =>
+                    setSubmitting(false),
+                  );
                 }}
                 tone="primary"
               >
-                仍然应用
+                确认保存发布时间
               </Button>
             </div>
           </>

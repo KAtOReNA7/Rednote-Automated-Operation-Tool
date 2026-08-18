@@ -47,8 +47,8 @@ describe('V2 deterministic session workflows', () => {
     expect(
       document.querySelectorAll('.v2-post[data-danger="true"][data-selected="true"]'),
     ).toHaveLength(0);
-    await user.click(screen.getByRole('button', { name: '调整日期' }));
-    expect(screen.getByRole('dialog', { name: '调整 3 篇内容的日期和时间' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '调整发布时间' }));
+    expect(screen.getByRole('dialog', { name: '调整 3 篇内容的发布时间' })).toBeVisible();
     expect(screen.getAllByText('Asia/Shanghai (UTC+8)', { exact: false })).toHaveLength(2);
     const date = screen.getByLabelText('日期');
     await user.clear(date);
@@ -58,7 +58,8 @@ describe('V2 deterministic session workflows', () => {
     await user.type(date, '2026-08-06');
     await user.clear(screen.getByLabelText('时间（24 小时制）'));
     await user.type(screen.getByLabelText('时间（24 小时制）'), '18:30');
-    await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
+    await user.click(screen.getByRole('button', { name: '预览发布时间变更' }));
+    await user.click(await screen.findByRole('button', { name: '确认保存发布时间' }));
     expect(await screen.findByText('计划已更新')).toBeVisible();
     await user.click(screen.getByRole('link', { name: '总览' }));
     expect(screen.getByText(/18 篇计划保存在本机/u)).toBeVisible();
@@ -84,19 +85,19 @@ describe('V2 deterministic session workflows', () => {
     await user.click(screen.getByRole('button', { name: '取消选择' }));
 
     await user.click(screen.getByRole('button', { name: '选择 密室诞生之前' }));
-    await user.click(screen.getByRole('button', { name: '调整日期' }));
+    await user.click(screen.getByRole('button', { name: '调整发布时间' }));
     fireEvent.change(screen.getByLabelText('日期'), { target: { value: '2026-07-27' } });
     fireEvent.change(screen.getByLabelText('时间（24 小时制）'), {
       target: { value: '14:00' },
     });
-    await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
-    expect(await screen.findByRole('heading', { name: '发现时间冲突' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: '预览发布时间变更' }));
+    expect(await screen.findByRole('heading', { name: '确认原时间与新时间' })).toBeVisible();
     expect(screen.getByText('已有计划')).toBeVisible();
     expect(screen.getByText('本次调整')).toBeVisible();
     await user.click(screen.getByRole('button', { name: '返回修改时间' }));
     expect(screen.getByLabelText('时间（24 小时制）')).toHaveValue('14:00');
-    await user.click(screen.getByRole('button', { name: '检查冲突并应用' }));
-    await user.click(await screen.findByRole('button', { name: '仍然应用' }));
+    await user.click(screen.getByRole('button', { name: '预览发布时间变更' }));
+    await user.click(await screen.findByRole('button', { name: '确认保存发布时间' }));
     expect(await screen.findByText('计划已更新')).toBeVisible();
   });
 

@@ -5,6 +5,7 @@ import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
 const capabilityLabel = {
   STALE: '已过期',
   SUPPORTED: '支持',
+  TRANSIENT_FAILURE: '暂不可用',
   UNKNOWN: '未知',
   UNSUPPORTED: '不支持',
 } as const;
@@ -313,6 +314,7 @@ function ProviderSettings({
               <span>图片模型 ID</span>
               <input
                 aria-label="图片模型 ID"
+                id="v2-provider-image-model"
                 onChange={(event) => setImageModel(event.target.value)}
                 value={imageModel}
               />
@@ -357,6 +359,34 @@ function ProviderSettings({
           <hr />
           <section className="v2-provider-capability-section" id="v2-provider-capabilities">
             <h3>R07 所需能力</h3>
+            {view.overallState === 'DEGRADED' ? (
+              <div className="v2-provider-blockers" role="status">
+                <strong>服务状态：部分可用</strong>
+                <p>文字能力：{view.textReady ? '可用' : '不可用'}</p>
+                <p>
+                  {view.image?.state === 'TRANSIENT_FAILURE'
+                    ? '图片服务暂不可用（HTTP 503）'
+                    : `图片能力：${view.imageReady ? '可用' : '不可用'}`}
+                </p>
+                <p>图片失败不会阻止周计划、文案与回复建议；不会自动重试或切换模型。</p>
+                <div className="v2-inline-actions">
+                  <Button
+                    onClick={() => {
+                      window.location.hash = '/v2/content';
+                    }}
+                  >
+                    继续使用文字功能
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      document.getElementById('v2-provider-image-model')?.focus();
+                    }}
+                  >
+                    修改图片模型或服务
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             <p>
               研究槽：{capabilityLabel[view.research.state]}
               {view.research.protocolMode === null ? '' : ` · ${view.research.protocolMode}`} ·
@@ -368,7 +398,14 @@ function ProviderSettings({
             <p>
               能力检查只会在你预览并明确确认后启动。文本单次最长90秒、图片单次最长120秒、不会自动重试。
             </p>
-            <Button onClick={() => void previewProbe()}>验证 R07 所需能力</Button>
+            <Button
+              disabled={probeProgress?.status === 'RUNNING'}
+              onClick={() => void previewProbe()}
+            >
+              {view.image?.state === 'TRANSIENT_FAILURE' && view.textReady
+                ? '重试图片能力'
+                : '验证 R07 所需能力'}
+            </Button>
             {probeProgress === null ? null : (
               <p role="status">
                 能力检查：{probeStatusLabel[probeProgress.status]} · 已发送{' '}

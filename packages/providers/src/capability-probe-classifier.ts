@@ -60,7 +60,13 @@ function httpSafeDetails(response: CapabilityProbeResponse, parsed: unknown): Pr
     ...(errorParam === undefined ? {} : { errorParam }),
     ...(errorType === undefined ? {} : { errorType }),
     ...(requestId === undefined ? {} : { requestId }),
+    ...(response.receivedContentType === undefined
+      ? {}
+      : { receivedContentType: response.receivedContentType }),
     status: response.status,
+    ...(response.transportVariant === undefined
+      ? {}
+      : { transportVariant: response.transportVariant }),
   };
 }
 

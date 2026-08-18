@@ -11876,6 +11876,13 @@ ALTER TABLE v2_weekly_plan_snapshots
     CHECK (locked_history_json IS NULL OR json_valid(locked_history_json));
 `;
 
+const V2_WEEKLY_PLAN_WORKFLOW_CLOSURE = `
+ALTER TABLE v2_weekly_plan_snapshots
+  ADD COLUMN workflow_json TEXT NOT NULL
+    DEFAULT '{"brief":{"revision":0,"text":""},"generationBriefRevision":null,"itemFeedback":[]}'
+    CHECK (json_valid(workflow_json) AND length(workflow_json) <= 32768);
+`;
+
 export const MIGRATIONS: readonly Migration[] = Object.freeze([
   Object.freeze({
     name: 'initial_prd_schema',
@@ -12016,5 +12023,10 @@ export const MIGRATIONS: readonly Migration[] = Object.freeze([
     name: 'v2_weekly_plan_lock_history',
     sql: V2_WEEKLY_PLAN_LOCK_HISTORY,
     version: 26,
+  }),
+  Object.freeze({
+    name: 'v2_weekly_plan_workflow_closure',
+    sql: V2_WEEKLY_PLAN_WORKFLOW_CLOSURE,
+    version: 27,
   }),
 ]);

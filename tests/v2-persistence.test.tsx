@@ -78,6 +78,8 @@ function success<T>(value: T): V2Result<T> {
 
 function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
   return {
+    adoptPlanItemReplacement: async (input) =>
+      success(facade.mutate({ action: 'ADOPT_PLAN_ITEM_REPLACEMENT', ...input }) as WeeklyPlan),
     approveContentPackages: async () => ({
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
       ok: false,
@@ -134,8 +136,12 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
     readPersona: async () => success(facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: async (input) =>
       success(facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    recordPlanItemFeedback: async (input) =>
+      success(facade.mutate({ action: 'RECORD_PLAN_ITEM_FEEDBACK', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: async (input) =>
       success(facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    dismissPlanItemReplacement: async (input) =>
+      success(facade.mutate({ action: 'DISMISS_PLAN_ITEM_REPLACEMENT', ...input }) as WeeklyPlan),
     reopenInteraction: async () => ({
       error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
       ok: false,
@@ -148,6 +154,8 @@ function bridgeFor(facade: V2ApplicationFacade): V2Bridge {
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
       ok: false,
     }),
+    saveWeeklyPlanningBrief: async (input) =>
+      success(facade.mutate({ action: 'SAVE_WEEKLY_PLANNING_BRIEF', ...input }) as WeeklyPlan),
     skipPlanCandidates: async (input) =>
       success(facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     skipInteraction: async () => ({
@@ -251,15 +259,15 @@ describe('V2 pure contracts', () => {
 });
 
 describe('V2 migration and repository', () => {
-  it('appends the R07 provenance and locked-plan history migrations without a table or trigger', async () => {
+  it('appends the workflow closure after locked-plan history without a table or trigger', async () => {
     const previous = MIGRATIONS.at(-2);
     const current = MIGRATIONS.at(-1);
     expect(current).toMatchObject({
-      name: 'v2_weekly_plan_lock_history',
+      name: 'v2_weekly_plan_workflow_closure',
       version: (previous?.version ?? 0) + 1,
     });
-    expect(previous).toMatchObject({ name: 'v2_generated_cover_and_model_provenance' });
-    expect(current?.sql).toContain('locked_history_json');
+    expect(previous).toMatchObject({ name: 'v2_weekly_plan_lock_history' });
+    expect(current?.sql).toContain('workflow_json');
     expect(current?.sql).not.toMatch(/CREATE\s+(?:TABLE|TRIGGER)/iu);
     const databasePath = createTemporaryDatabasePath('v2 new database');
     const result = await initializeDatabase({ databasePath });
@@ -688,6 +696,7 @@ describe('V2 Electron boundary', () => {
     const [key, exposed] = electron.exposed.mock.calls[0] as [string, V2Bridge];
     expect(key).toBe('rednoteV2');
     expect(Object.keys(exposed).sort()).toEqual([
+      'adoptPlanItemReplacement',
       'approveContentPackages',
       'clearProviderCredential',
       'confirmPlanCandidates',
@@ -696,6 +705,7 @@ describe('V2 Electron boundary', () => {
       'createInteraction',
       'decideStrategyRecommendation',
       'deleteInteraction',
+      'dismissPlanItemReplacement',
       'executeContentCopyGeneration',
       'exportContentPackages',
       'generateContentPackages',
@@ -716,11 +726,13 @@ describe('V2 Electron boundary', () => {
       'readProviderCapabilityProbeProgress',
       'readProviderSettings',
       'readWeeklyPlan',
+      'recordPlanItemFeedback',
       'reopenInteraction',
       'reschedulePlanCandidates',
       'saveContentPackage',
       'saveMetricSnapshots',
       'saveReplySuggestion',
+      'saveWeeklyPlanningBrief',
       'setProviderCredential',
       'skipInteraction',
       'skipPlanCandidates',
@@ -751,6 +763,7 @@ describe('V2 Electron boundary', () => {
       throw new Error('R07 provider action bridge missing.');
     }
     await previewProviderAction({
+      briefRevision: 0,
       expectedRevision: 0,
       kind: 'WEEKLY_PLAN',
       weekKey: V2_DEFAULT_WEEK_KEY,
@@ -867,8 +880,9 @@ describe('V2 renderer persistence wiring', () => {
     const planView = render(<V2App />);
     await waitFor(() => expect(screen.getByText(/本机 revision 0/u)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: '选择待确认' }));
-    await user.click(screen.getByRole('button', { name: '调整日期' }));
-    fireEvent.click(screen.getByRole('button', { name: '检查冲突并应用' }));
+    await user.click(screen.getByRole('button', { name: '调整发布时间' }));
+    fireEvent.click(screen.getByRole('button', { name: '预览发布时间变更' }));
+    fireEvent.click(await screen.findByRole('button', { name: '确认保存发布时间' }));
     await waitFor(() => expect(screen.getByText(/本机 revision 1/u)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: '确认所选' }));
     await waitFor(() => expect(screen.getByText(/本机 revision 2/u)).toBeInTheDocument());

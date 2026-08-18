@@ -8,6 +8,8 @@ declare global {
     v2DataVersion: number;
   }>;
   type V2PlanCandidateContract = V2.PlanCandidateStatus;
+  type V2PlanCandidateShapeContract = V2.PlanCandidate;
+  type V2PlanFeedbackReasonContract = V2.PlanFeedbackReason;
   type V2PlanFieldsContract = V2.PlanRescheduleFields;
   type V2PlanModeContract = V2.PlanRescheduleMode;
   type V2PlanPreviewContract = V2.PlanReschedulePreview;

@@ -53,6 +53,7 @@ interface PlanRow {
   readonly revision: number;
   readonly schema_version: number;
   readonly week_key: string;
+  readonly workflow_json: string;
 }
 
 interface ContentRow {
@@ -115,12 +116,15 @@ function decodePersona(row: PersonaRow): AccountPersona {
 
 function decodePlan(row: PlanRow): WeeklyPlan {
   let candidates: unknown;
+  let workflow: unknown;
   try {
     candidates = JSON.parse(row.candidates_json) as unknown;
+    workflow = JSON.parse(row.workflow_json) as unknown;
   } catch {
     throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
   }
   return parseWeeklyPlan({
+    ...(typeof workflow === 'object' && workflow !== null ? workflow : {}),
     candidates,
     revision: row.revision,
     schemaVersion: row.schema_version,
@@ -143,6 +147,17 @@ function candidatesJson(plan: WeeklyPlan): string {
   if (Buffer.byteLength(encoded, 'utf8') > 32_768) {
     throw new V2ContractError('INVALID_REQUEST', ['candidates']);
   }
+  return encoded;
+}
+
+function workflowJson(plan: WeeklyPlan): string {
+  const encoded = JSON.stringify({
+    brief: plan.brief,
+    generationBriefRevision: plan.generationBriefRevision,
+    itemFeedback: plan.itemFeedback,
+  });
+  if (Buffer.byteLength(encoded, 'utf8') > 32_768)
+    throw new V2ContractError('INVALID_REQUEST', ['weeklyPlan']);
   return encoded;
 }
 
@@ -360,15 +375,16 @@ export class SqliteV2Repository
       this.#database
         .prepare(
           `INSERT INTO v2_weekly_plan_snapshots(
-             workspace_id, week_key, plan_status, candidates_json, schema_version,
+             workspace_id, week_key, plan_status, candidates_json, workflow_json, schema_version,
              revision, created_at, updated_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+           ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .run(
           this.#workspaceId,
           validated.weekKey,
           validated.status,
           candidatesJson(validated),
+          workflowJson(validated),
           V2_SCHEMA_VERSION,
           validated.revision,
           timestamp,
@@ -421,18 +437,24 @@ export class SqliteV2Repository
         throw new V2ContractError('REVISION_CONFLICT', ['weeklyPlan']);
       }
       const nextJson = candidatesJson(validated);
-      if (current.status === validated.status && candidatesJson(current) === nextJson)
+      const nextWorkflow = workflowJson(validated);
+      if (
+        current.status === validated.status &&
+        candidatesJson(current) === nextJson &&
+        workflowJson(current) === nextWorkflow
+      )
         return current;
       const next = parseWeeklyPlan({ ...validated, revision: current.revision + 1 });
       const result = this.#database
         .prepare(
           `UPDATE v2_weekly_plan_snapshots
-           SET plan_status = ?, candidates_json = ?, revision = ?, updated_at = ?
+           SET plan_status = ?, candidates_json = ?, workflow_json = ?, revision = ?, updated_at = ?
            WHERE workspace_id = ? AND week_key = ? AND revision = ?`,
         )
         .run(
           next.status,
           candidatesJson(next),
+          nextWorkflow,
           next.revision,
           this.#timestamp(),
           this.#workspaceId,
@@ -472,12 +494,13 @@ export class SqliteV2Repository
       const result = this.#database
         .prepare(
           `UPDATE v2_weekly_plan_snapshots
-           SET plan_status = ?, candidates_json = ?, locked_history_json = ?, revision = ?, updated_at = ?
+           SET plan_status = ?, candidates_json = ?, workflow_json = ?, locked_history_json = ?, revision = ?, updated_at = ?
            WHERE workspace_id = ? AND week_key = ? AND revision = ?`,
         )
         .run(
           next.status,
           candidatesJson(next),
+          workflowJson(next),
           nextHistory,
           next.revision,
           this.#timestamp(),
@@ -1026,7 +1049,7 @@ export class SqliteV2Repository
   #readPlan(requestedWeekKey: string): WeeklyPlan | null {
     const row = this.#database
       .prepare(
-        `SELECT week_key, plan_status, candidates_json, schema_version, revision
+        `SELECT week_key, plan_status, candidates_json, workflow_json, schema_version, revision
          FROM v2_weekly_plan_snapshots WHERE workspace_id = ? AND week_key = ?`,
       )
       .get(this.#workspaceId, requestedWeekKey) as PlanRow | undefined;

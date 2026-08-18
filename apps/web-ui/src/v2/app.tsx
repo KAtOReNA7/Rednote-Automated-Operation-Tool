@@ -377,6 +377,8 @@ export function V2App(): React.JSX.Element {
         {dateModalOpen ? (
           <DateModal
             count={ui.planSelectedIds.length}
+            initialDate={session.plan.find(({ id }) => ui.planSelectedIds.includes(id))?.date ?? ''}
+            initialTime={session.plan.find(({ id }) => ui.planSelectedIds.includes(id))?.time ?? ''}
             onClose={() => setDateModalOpen(false)}
             onApply={async (fields, allowConflicts, preview) => {
               const bridge = window.rednoteV2;

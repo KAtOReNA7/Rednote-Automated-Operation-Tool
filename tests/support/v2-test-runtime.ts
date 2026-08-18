@@ -63,7 +63,10 @@ export class MemoryV2Repository implements V2RepositoryPort {
       throw new V2ContractError('REVISION_CONFLICT', ['weeklyPlan']);
     if (
       current.status === parsed.status &&
-      JSON.stringify(current.candidates) === JSON.stringify(parsed.candidates)
+      JSON.stringify(current.candidates) === JSON.stringify(parsed.candidates) &&
+      JSON.stringify(current.brief) === JSON.stringify(parsed.brief) &&
+      JSON.stringify(current.itemFeedback) === JSON.stringify(parsed.itemFeedback) &&
+      current.generationBriefRevision === parsed.generationBriefRevision
     )
       return current;
     const saved = parseWeeklyPlan({ ...parsed, revision: expectedRevision + 1 });
@@ -86,6 +89,8 @@ export function createMemoryV2Bridge(): V2Bridge {
     }
   };
   return {
+    adoptPlanItemReplacement: (input) =>
+      run(() => facade.mutate({ action: 'ADOPT_PLAN_ITEM_REPLACEMENT', ...input }) as WeeklyPlan),
     approveContentPackages: async () => ({
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
       ok: false,
@@ -146,8 +151,12 @@ export function createMemoryV2Bridge(): V2Bridge {
     readPersona: () => run(() => facade.read({ view: 'ACCOUNT_PERSONA' }) as AccountPersona),
     readWeeklyPlan: (input) =>
       run(() => facade.read({ view: 'WEEKLY_PLAN', ...input }) as WeeklyPlan),
+    recordPlanItemFeedback: (input) =>
+      run(() => facade.mutate({ action: 'RECORD_PLAN_ITEM_FEEDBACK', ...input }) as WeeklyPlan),
     reschedulePlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'RESCHEDULE_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
+    dismissPlanItemReplacement: (input) =>
+      run(() => facade.mutate({ action: 'DISMISS_PLAN_ITEM_REPLACEMENT', ...input }) as WeeklyPlan),
     reopenInteraction: async () => ({
       error: toV2Exception(new V2InteractionError('INTERACTION_STATE_INVALID')),
       ok: false,
@@ -160,6 +169,8 @@ export function createMemoryV2Bridge(): V2Bridge {
       error: toV2Exception(new V2ContentError('CONTENT_NOT_READY')),
       ok: false,
     }),
+    saveWeeklyPlanningBrief: (input) =>
+      run(() => facade.mutate({ action: 'SAVE_WEEKLY_PLANNING_BRIEF', ...input }) as WeeklyPlan),
     skipPlanCandidates: (input) =>
       run(() => facade.mutate({ action: 'SKIP_PLAN_CANDIDATES', ...input }) as WeeklyPlan),
     skipInteraction: async () => ({

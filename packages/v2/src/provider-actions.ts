@@ -3,6 +3,7 @@ export const V2_PROVIDER_ACTION_KINDS = Object.freeze([
   'CONTENT_PACKAGES',
   'CONTENT_COPY_VERSION',
   'CONTENT_COVER',
+  'PLAN_ITEM_REPLACEMENT',
   'REPLY_SUGGESTION',
 ] as const);
 export type V2ProviderActionKind = (typeof V2_PROVIDER_ACTION_KINDS)[number];
@@ -19,6 +20,14 @@ export type V2ProviderActionIntent =
   | {
       readonly expectedRevision: number;
       readonly kind: 'WEEKLY_PLAN';
+      readonly briefRevision?: number;
+      readonly userApprovedUnknownCost?: boolean;
+      readonly weekKey: string;
+    }
+  | {
+      readonly expectedRevision: number;
+      readonly feedbackId: string;
+      readonly kind: 'PLAN_ITEM_REPLACEMENT';
       readonly userApprovedUnknownCost?: boolean;
       readonly weekKey: string;
     }
@@ -80,6 +89,7 @@ export interface V2ProviderActionPreview {
   readonly reasonCode:
     | 'BUDGET_HARD_STOP'
     | 'CAPABILITY_STALE'
+    | 'CAPABILITY_TRANSIENT_FAILURE'
     | 'CAPABILITY_UNKNOWN'
     | 'CAPABILITY_UNSUPPORTED'
     | 'CREDENTIAL_NOT_CONFIGURED'
@@ -94,6 +104,9 @@ export interface V2ProviderActionPreview {
   readonly targetEndDate?: string;
   readonly targetStartDate?: string;
   readonly targetWeekKey?: string;
+  readonly planningBrief?: string;
+  readonly itemFeedback?: string;
+  readonly itemScope?: string;
 }
 
 export type V2ProviderActionReadiness = Omit<
@@ -208,6 +221,7 @@ export interface V2ContentCopyGenerationExecutionRequest {
 export type V2ProviderActionErrorCode =
   | 'BUDGET_HARD_STOP'
   | 'CAPABILITY_STALE'
+  | 'CAPABILITY_TRANSIENT_FAILURE'
   | 'CAPABILITY_UNKNOWN'
   | 'CAPABILITY_UNSUPPORTED'
   | 'CREDENTIAL_NOT_CONFIGURED'
@@ -279,16 +293,42 @@ export function parseV2ProviderActionIntent(value: unknown): V2ProviderActionInt
   if (!record(value)) throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
   if (
     value.kind === 'WEEKLY_PLAN' &&
-    exactKeys(value, ['expectedRevision', 'kind', 'userApprovedUnknownCost', 'weekKey']) &&
+    (exactKeys(value, ['expectedRevision', 'kind', 'userApprovedUnknownCost', 'weekKey']) ||
+      exactKeys(value, [
+        'briefRevision',
+        'expectedRevision',
+        'kind',
+        'userApprovedUnknownCost',
+        'weekKey',
+      ])) &&
     typeof value.userApprovedUnknownCost === 'boolean'
   ) {
     return {
       expectedRevision: revision(value.expectedRevision, 'expectedRevision'),
+      briefRevision: revision(value.briefRevision ?? 0, 'briefRevision'),
       kind: value.kind,
       weekKey: weekKey(value.weekKey),
       userApprovedUnknownCost: value.userApprovedUnknownCost,
     };
   }
+  if (
+    value.kind === 'PLAN_ITEM_REPLACEMENT' &&
+    exactKeys(value, [
+      'expectedRevision',
+      'feedbackId',
+      'kind',
+      'userApprovedUnknownCost',
+      'weekKey',
+    ]) &&
+    typeof value.userApprovedUnknownCost === 'boolean'
+  )
+    return {
+      expectedRevision: revision(value.expectedRevision, 'expectedRevision'),
+      feedbackId: token(value.feedbackId, 'feedbackId'),
+      kind: value.kind,
+      userApprovedUnknownCost: value.userApprovedUnknownCost,
+      weekKey: weekKey(value.weekKey),
+    };
   if (
     value.kind === 'CONTENT_PACKAGES' &&
     exactKeys(value, [
@@ -504,6 +544,28 @@ export const V2_PROVIDER_OUTPUT_JSON_SCHEMAS = Object.freeze({
     required: ['packages'],
     type: 'object',
   },
+  PLAN_ITEM_REPLACEMENT: {
+    additionalProperties: false,
+    properties: {
+      candidate: {
+        additionalProperties: false,
+        properties: {
+          book: { maxLength: 200, minLength: 1, type: 'string' },
+          conflictWithIds: { items: { maxLength: 64, type: 'string' }, maxItems: 0, type: 'array' },
+          date: { maxLength: 10, minLength: 10, type: 'string' },
+          day: { enum: ['周一', '周二', '周三', '周四', '周五', '周六', '周日'], type: 'string' },
+          id: { maxLength: 64, minLength: 1, type: 'string' },
+          status: { enum: ['PENDING'], type: 'string' },
+          time: { maxLength: 5, minLength: 5, type: 'string' },
+          title: { maxLength: 200, minLength: 1, type: 'string' },
+        },
+        required: ['book', 'conflictWithIds', 'date', 'day', 'id', 'status', 'time', 'title'],
+        type: 'object',
+      },
+    },
+    required: ['candidate'],
+    type: 'object',
+  },
   REPLY_SUGGESTION: {
     additionalProperties: false,
     properties: { replyText: { maxLength: 4_000, minLength: 1, type: 'string' } },
@@ -549,6 +611,8 @@ export function providerActionSummary(kind: V2ProviderActionKind): string {
   if (kind === 'CONTENT_COPY_VERSION')
     return '使用 writing 模型槽为当前内容创建一个待复核文案版本。';
   if (kind === 'CONTENT_COVER') return '使用 image 模型槽生成当前内容的新封面版本。';
+  if (kind === 'PLAN_ITEM_REPLACEMENT')
+    return '仅为当前计划项生成一个替换候选；确认后仍不会自动覆盖。';
   return '使用 writing 模型槽生成一条可编辑回复建议；不会自动发送。';
 }
 
@@ -558,7 +622,8 @@ export function providerActionModelSlot(kind: V2ProviderActionKind): V2ProviderM
 }
 
 export type V2CredentialState = 'CONFIGURED' | 'NOT_CONFIGURED' | 'REAUTH_REQUIRED';
-export type V2StructuredJsonState = 'STALE' | 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+export type V2StructuredJsonState =
+  'STALE' | 'SUPPORTED' | 'TRANSIENT_FAILURE' | 'UNKNOWN' | 'UNSUPPORTED';
 export type V2BudgetState = 'ALLOWED' | 'BLOCKED' | 'UNKNOWN';
 
 export interface V2StructuredProtocolCandidate {
@@ -572,7 +637,7 @@ export function selectV2StructuredProtocol(
   candidates: readonly V2StructuredProtocolCandidate[],
 ): Readonly<{
   protocolMode: 'CHAT_COMPLETIONS' | 'RESPONSES' | null;
-  state: V2StructuredJsonState;
+  state: Exclude<V2StructuredJsonState, 'TRANSIENT_FAILURE'>;
 }> {
   const current = candidates.filter((candidate) => !candidate.stale);
   if (current.length === 0) {
@@ -601,6 +666,8 @@ export function selectV2StructuredProtocol(
 }
 
 export interface V2CapabilitySlotView {
+  readonly diagnosticCode: string | null;
+  readonly httpStatus: number | null;
   readonly modelId: string | null;
   readonly protocolMode: 'CHAT_COMPLETIONS' | 'IMAGES_GENERATIONS' | 'RESPONSES' | null;
   readonly state: V2StructuredJsonState;
@@ -638,7 +705,7 @@ export interface V2CapabilityProbeStepDiagnostic {
   readonly reason: string;
   readonly sent: boolean;
   readonly stale: boolean;
-  readonly state: 'SUPPORTED' | 'UNKNOWN' | 'UNSUPPORTED';
+  readonly state: Exclude<V2StructuredJsonState, 'STALE'>;
   readonly transportVariant?:
     'NONSTANDARD_MIME_JSON' | 'REJECTED' | 'SSE_NORMALIZED' | 'STANDARD_JSON' | null;
 }
@@ -686,13 +753,51 @@ export interface V2ProviderSettingsView {
     readonly summaryState: V2CapabilityProbeSummaryState;
   };
   readonly credentialState: V2CredentialState;
+  readonly imageReady: boolean;
+  readonly overallState: 'BLOCKED' | 'DEGRADED' | 'READY';
   readonly providerBaseUrl: string | null;
   readonly providerConfigured: boolean;
   readonly research: V2CapabilitySlotView;
   readonly revision: number;
   readonly setupAvailable: boolean;
+  readonly textReady: boolean;
   readonly writing: V2CapabilitySlotView;
   readonly image?: V2CapabilitySlotView;
+}
+
+export function deriveV2ProviderServiceState(input: {
+  readonly credentialState: V2CredentialState;
+  readonly globalBlockingFailure?: boolean;
+  readonly imageState: V2StructuredJsonState;
+  readonly providerConfigured: boolean;
+  readonly researchState: V2StructuredJsonState;
+  readonly writingState: V2StructuredJsonState;
+}): Readonly<{
+  imageReady: boolean;
+  overallState: 'BLOCKED' | 'DEGRADED' | 'READY';
+  textReady: boolean;
+}> {
+  const textReady = input.researchState === 'SUPPORTED' && input.writingState === 'SUPPORTED';
+  const imageReady = input.imageState === 'SUPPORTED';
+  const configured =
+    input.providerConfigured &&
+    input.credentialState === 'CONFIGURED' &&
+    input.globalBlockingFailure !== true;
+  const anyReady =
+    input.researchState === 'SUPPORTED' ||
+    input.writingState === 'SUPPORTED' ||
+    input.imageState === 'SUPPORTED';
+  return Object.freeze({
+    imageReady,
+    overallState: !configured
+      ? 'BLOCKED'
+      : textReady && imageReady
+        ? 'READY'
+        : anyReady
+          ? 'DEGRADED'
+          : 'BLOCKED',
+    textReady,
+  });
 }
 export interface V2ProviderSettingsDraft {
   readonly expectedRevision: number;

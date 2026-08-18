@@ -53,19 +53,44 @@ export function WeeklyPlanPage(): React.JSX.Element {
     return current ?? '周一';
   });
   const [targetPlan, setTargetPlan] = useState<{
+    readonly brief: V2WeeklyPlanContract['brief'];
     readonly revision: number;
     readonly weekKey: string;
   } | null>(null);
+  const [briefDraft, setBriefDraft] = useState('');
+  const [feedbackDetails, setFeedbackDetails] = useState('');
+  const [feedbackReason, setFeedbackReason] =
+    useState<V2PlanFeedbackReasonContract>('TOPIC_MISMATCH');
+  const [replacementDraft, setReplacementDraft] = useState<V2PlanCandidateShapeContract | null>(
+    null,
+  );
   useEffect(() => {
     const bridge = window.rednoteV2;
     if (bridge === undefined) return;
     setTargetPlan(null);
     void bridge.readWeeklyPlan({ weekKey: targetWeekKey }).then((result) => {
-      if (result.ok)
-        setTargetPlan({ revision: result.value.revision, weekKey: result.value.weekKey });
+      if (result.ok) {
+        setTargetPlan({
+          brief: result.value.brief,
+          revision: result.value.revision,
+          weekKey: result.value.weekKey,
+        });
+        setBriefDraft(result.value.brief.text);
+      }
     });
   }, [targetWeekKey]);
   const targetRevision = targetPlan?.weekKey === targetWeekKey ? targetPlan.revision : null;
+  const selectedCandidate =
+    selectedIds.length === 1 ? session.plan.find(({ id }) => id === selectedIds[0]) : undefined;
+  const latestFeedback = [...session.planItemFeedback]
+    .reverse()
+    .find(
+      ({ candidateId, status }) =>
+        candidateId === selectedCandidate?.id && ['RECORDED', 'CANDIDATE_READY'].includes(status),
+    );
+  useEffect(() => {
+    setReplacementDraft(latestFeedback?.candidate ?? null);
+  }, [latestFeedback?.feedbackId, latestFeedback?.status]);
   const pending = session.plan.filter(({ status }) => status === '待审批');
   const conflicts = session.plan.filter(({ status }) => status === '时间冲突');
   const skipped = session.plan.filter(({ status }) => status === '已跳过');
@@ -73,15 +98,12 @@ export function WeeklyPlanPage(): React.JSX.Element {
     (day) => session.plan.filter((item) => item.day === day && item.status !== '已跳过').length,
   );
   const lockReasons = [
-    ...(session.plan.filter(({ status }) => status !== '已跳过').length === 21
-      ? []
-      : [
-          `还差${Math.max(0, 21 - session.plan.filter(({ status }) => status !== '已跳过').length)}篇`,
-        ]),
-    ...(activeByDay.every((count) => count === 3) ? [] : ['每天必须各有3篇']),
     ...(pending.length === 0 ? [] : [`${pending.length}篇待确认`]),
     ...(conflicts.length === 0 ? [] : [`${conflicts.length}处冲突`]),
   ];
+  const softTargetWarnings = dayOrder.flatMap((day, index) =>
+    activeByDay[index] === 3 ? [] : [`${day}当前 ${activeByDay[index] ?? 0} 篇，建议目标 3 篇`],
+  );
   const clearSelection = (): void =>
     setUi((current) => ({
       ...current,
@@ -198,6 +220,57 @@ export function WeeklyPlanPage(): React.JSX.Element {
     }
     openDate(event.currentTarget);
   };
+  const saveBrief = async (): Promise<void> => {
+    if (targetPlan === null || window.rednoteV2 === undefined)
+      return notify('目标周尚未读取完成，未保存 Brief。');
+    const result = await window.rednoteV2.saveWeeklyPlanningBrief({
+      briefText: briefDraft,
+      expectedRevision: targetPlan.revision,
+      weekKey: targetWeekKey,
+    });
+    if (!result.ok) return notify(result.error.message);
+    setTargetPlan({
+      brief: result.value.brief,
+      revision: result.value.revision,
+      weekKey: result.value.weekKey,
+    });
+    notify('目标周 Brief 已保存到本机。');
+  };
+  const recordFeedback = async (): Promise<void> => {
+    if (selectedCandidate === undefined || window.rednoteV2 === undefined)
+      return notify('请只选择一个计划项。');
+    const result = await window.rednoteV2.recordPlanItemFeedback({
+      candidateId: selectedCandidate.id,
+      details: feedbackDetails,
+      expectedRevision: session.planRevision,
+      reason: feedbackReason,
+      weekKey: session.weekKey,
+    });
+    if (!result.ok) return notify(result.error.message);
+    setSession((current) => withPersistedWeeklyPlan(current, result.value));
+    notify('不满意原因已保存；当前计划项未被修改。');
+  };
+  const finishReplacement = async (adopt: boolean): Promise<void> => {
+    if (latestFeedback === undefined || window.rednoteV2 === undefined) return;
+    const result = adopt
+      ? replacementDraft === null
+        ? null
+        : await window.rednoteV2.adoptPlanItemReplacement({
+            candidate: replacementDraft,
+            expectedRevision: session.planRevision,
+            feedbackId: latestFeedback.feedbackId,
+            weekKey: session.weekKey,
+          })
+      : await window.rednoteV2.dismissPlanItemReplacement({
+          expectedRevision: session.planRevision,
+          feedbackId: latestFeedback.feedbackId,
+          weekKey: session.weekKey,
+        });
+    if (result === null) return notify('替换候选不完整，未采用。');
+    if (!result.ok) return notify(result.error.message);
+    setSession((current) => withPersistedWeeklyPlan(current, result.value));
+    notify(adopt ? '已采用当前替换候选，并保留反馈轨迹。' : '已取消替换，原计划项保持不变。');
+  };
 
   return (
     <div className="v2-page v2-weekly-page">
@@ -209,6 +282,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
             }
             disabledReason="正在读取目标周的真实 revision。"
             intent={{
+              briefRevision: targetPlan?.brief.revision ?? 0,
               expectedRevision: targetRevision ?? 0,
               kind: 'WEEKLY_PLAN',
               weekKey: targetWeekKey,
@@ -219,6 +293,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
               if (result?.ok === true)
                 setSession((current) => withPersistedWeeklyPlan(current, result.value));
             }}
+            presentation="dialog"
           />
         }
         description={`${currentWeek.startDate}—${currentWeek.endDate} · Asia/Shanghai · 本机 revision ${session.planRevision}`}
@@ -249,6 +324,27 @@ export function WeeklyPlanPage(): React.JSX.Element {
           Asia/Shanghai (UTC+8)。
         </p>
         <p className="v2-plan-boundary">本地计划不会自动发布到任何平台。</p>
+      </section>
+      <section className="v2-card v2-weekly-brief" aria-label="目标周内容重点">
+        <div>
+          <p className="v2-kicker">目标周 Brief · {targetWeekKey}</p>
+          <h2>先说明下周最想讲什么</h2>
+          <p>保存后会绑定目标周与 Brief revision，并随生成预览一起确认。</p>
+        </div>
+        <label className="v2-field">
+          <span>下周内容重点（可留空）</span>
+          <textarea
+            onChange={(event) => setBriefDraft(event.target.value)}
+            rows={3}
+            value={briefDraft}
+          />
+        </label>
+        <Button
+          disabled={targetPlan === null || briefDraft === targetPlan.brief.text}
+          onClick={() => void saveBrief()}
+        >
+          保存目标周 Brief
+        </Button>
       </section>
       {locked && planConsistent ? (
         <section className="v2-locked-banner" role="status">
@@ -443,7 +539,98 @@ export function WeeklyPlanPage(): React.JSX.Element {
             <Button disabled={locked || lockReasons.length > 0} onClick={lock} tone="primary">
               锁定本周计划
             </Button>
+            {softTargetWarnings.length === 0 ? null : (
+              <p className="v2-soft-target" role="status">
+                每天 3 篇是建议目标，不是锁定门禁。{softTargetWarnings.join('；')}。
+              </p>
+            )}
           </section>
+          {selectedCandidate === undefined || locked ? null : (
+            <section className="v2-card v2-side-card v2-item-feedback">
+              <p className="v2-kicker">仅当前计划项</p>
+              <h2>哪里不满意？</h2>
+              <select
+                onChange={(event) =>
+                  setFeedbackReason(event.target.value as V2PlanFeedbackReasonContract)
+                }
+                value={feedbackReason}
+              >
+                <option value="TOPIC_MISMATCH">选题不匹配</option>
+                <option value="REPEATED_ANGLE">角度重复</option>
+                <option value="NOT_WEEKLY_FOCUS">不符合本周重点</option>
+                <option value="TIME_UNSUITABLE">发布时间不合适</option>
+                <option value="OTHER">其他</option>
+              </select>
+              <textarea
+                aria-label="补充反馈"
+                onChange={(event) => setFeedbackDetails(event.target.value)}
+                placeholder="补充说明（可选）"
+                rows={3}
+                value={feedbackDetails}
+              />
+              {latestFeedback === undefined ? (
+                <Button onClick={() => void recordFeedback()}>记录原因</Button>
+              ) : latestFeedback.status === 'RECORDED' ? (
+                <ProviderActionControl
+                  intent={{
+                    expectedRevision: session.planRevision,
+                    feedbackId: latestFeedback.feedbackId,
+                    kind: 'PLAN_ITEM_REPLACEMENT',
+                    weekKey: session.weekKey,
+                  }}
+                  label="预览重新生成当前项"
+                  onSuccess={async () => {
+                    const result = await window.rednoteV2?.readWeeklyPlan({
+                      weekKey: session.weekKey,
+                    });
+                    if (result?.ok === true)
+                      setSession((current) => withPersistedWeeklyPlan(current, result.value));
+                  }}
+                  presentation="dialog"
+                />
+              ) : replacementDraft === null ? null : (
+                <div className="v2-replacement-candidate">
+                  <strong>替换候选（尚未覆盖）</strong>
+                  <input
+                    aria-label="替换候选标题"
+                    onChange={(event) =>
+                      setReplacementDraft({ ...replacementDraft, title: event.target.value })
+                    }
+                    value={replacementDraft.title}
+                  />
+                  <input
+                    aria-label="替换候选图书"
+                    onChange={(event) =>
+                      setReplacementDraft({ ...replacementDraft, book: event.target.value })
+                    }
+                    value={replacementDraft.book}
+                  />
+                  <div>
+                    <input
+                      aria-label="替换候选日期"
+                      onChange={(event) =>
+                        setReplacementDraft({ ...replacementDraft, date: event.target.value })
+                      }
+                      type="date"
+                      value={replacementDraft.date}
+                    />
+                    <input
+                      aria-label="替换候选时间"
+                      onChange={(event) =>
+                        setReplacementDraft({ ...replacementDraft, time: event.target.value })
+                      }
+                      type="time"
+                      value={replacementDraft.time}
+                    />
+                  </div>
+                  <Button onClick={() => void finishReplacement(false)}>取消替换</Button>
+                  <Button onClick={() => void finishReplacement(true)} tone="primary">
+                    采用候选
+                  </Button>
+                </div>
+              )}
+            </section>
+          )}
         </aside>
       </div>
       {selectedIds.length === 0 || locked ? null : (
@@ -456,12 +643,8 @@ export function WeeklyPlanPage(): React.JSX.Element {
             </span>
           </div>
           <Button icon="calendar-blank" onClick={openScheduler}>
-            调整日期
+            调整发布时间
           </Button>
-          <Button icon="clock" onClick={openScheduler}>
-            调整时间
-          </Button>
-          <Button onClick={openScheduler}>移动到其他周</Button>
           <Button onClick={() => mutateSelection('skip')}>跳过所选</Button>
           <Button onClick={() => mutateSelection('confirm')} tone="primary">
             确认所选
