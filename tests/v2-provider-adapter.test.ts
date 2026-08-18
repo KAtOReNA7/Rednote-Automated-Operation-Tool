@@ -122,7 +122,16 @@ class ScriptedProviderExecution {
                 };
               }),
             }
-          : { replyText: '谢谢你的留言。这是一条待你确认后手动发送的回复建议。' };
+          : request.kind === 'PLAN_ITEM_REPLACEMENT'
+            ? {
+                candidate: {
+                  ...(request.input.candidate as WeeklyPlan['candidates'][number]),
+                  conflictWithIds: [],
+                  status: 'PENDING',
+                  title: '根据单条反馈生成的替换候选',
+                },
+              }
+            : { replyText: '谢谢你的留言。这是一条待你确认后手动发送的回复建议。' };
     return {
       costAmountMicroUsd: null,
       costState: 'UNPRICED_USAGE',
@@ -137,6 +146,95 @@ class ScriptedProviderExecution {
 }
 
 describe('V2 R07 controlled provider adapter', () => {
+  it('binds target-week briefs and stages one-item feedback replacements before adoption', async () => {
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const root = mkdtempSync(join(tmpdir(), 'rednote-v2-r08-closure-'));
+    temporaryRoots.push(root);
+    const provider = new ScriptedProviderExecution();
+    const runtime = await V2DesktopRuntime.open(root, {
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      providerExecution: provider,
+    });
+    const caller = { senderId: 21, windowId: 34 };
+    try {
+      const initial = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: '2026-W35',
+      })) as WeeklyPlan;
+      const briefed = (await runtime.mutate({
+        action: 'SAVE_WEEKLY_PLANNING_BRIEF',
+        briefText: '聚焦密室诡计的公平性。',
+        expectedRevision: initial.revision,
+        weekKey: initial.weekKey,
+      })) as WeeklyPlan;
+      const weeklyPreview = (await runtime.read(
+        {
+          intent: {
+            briefRevision: briefed.brief.revision,
+            expectedRevision: briefed.revision,
+            kind: 'WEEKLY_PLAN',
+            weekKey: briefed.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      expect(weeklyPreview.planningBrief).toBe('聚焦密室诡计的公平性。');
+
+      const recorded = (await runtime.mutate({
+        action: 'RECORD_PLAN_ITEM_FEEDBACK',
+        candidateId: briefed.candidates[0]?.id,
+        details: '上一条已经讨论过这个角度',
+        expectedRevision: briefed.revision,
+        reason: 'REPEATED_ANGLE',
+        weekKey: briefed.weekKey,
+      })) as WeeklyPlan;
+      const feedback = recorded.itemFeedback[0];
+      const original = recorded.candidates[0];
+      if (feedback === undefined || original === undefined) throw new Error('R08 fixture missing');
+      const replacementPreview = (await runtime.read(
+        {
+          intent: {
+            expectedRevision: recorded.revision,
+            feedbackId: feedback.feedbackId,
+            kind: 'PLAN_ITEM_REPLACEMENT',
+            weekKey: recorded.weekKey,
+          },
+          view: 'PROVIDER_ACTION_PREVIEW',
+        },
+        caller,
+      )) as V2ProviderActionPreview;
+      expect(replacementPreview).toMatchObject({
+        itemScope: original.id,
+        modelSlot: 'writing',
+        requestCount: 1,
+      });
+      await runtime.mutate(
+        {
+          action: 'CONFIRM_PROVIDER_ACTION',
+          confirmation: 'RUN_PROVIDER_ACTION',
+          previewToken: replacementPreview.previewToken,
+        },
+        caller,
+      );
+      const staged = (await runtime.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: recorded.weekKey,
+      })) as WeeklyPlan;
+      expect(staged.candidates[0]?.title).toBe(original.title);
+      expect(staged.itemFeedback[0]).toMatchObject({ status: 'CANDIDATE_READY' });
+      const adopted = (await runtime.mutate({
+        action: 'ADOPT_PLAN_ITEM_REPLACEMENT',
+        candidate: staged.itemFeedback[0]?.candidate,
+        expectedRevision: staged.revision,
+        feedbackId: feedback.feedbackId,
+        weekKey: staged.weekKey,
+      })) as WeeklyPlan;
+      expect(adopted.candidates[0]?.title).toBe('根据单条反馈生成的替换候选');
+    } finally {
+      runtime.close();
+    }
+  });
   it('opens business persistence on the locator-selected ProjectDataRoot', async () => {
     const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
     const parent = mkdtempSync(join(tmpdir(), 'rednote-v2-selected-root-'));

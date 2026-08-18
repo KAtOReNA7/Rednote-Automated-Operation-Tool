@@ -161,6 +161,11 @@ Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferr
 修改前请完整阅读 [AGENTS.md](./AGENTS.md)。历史 ADR、已发布 migration 和验收证据属于审计记录，
 不因 README 精简而删除或改写。新功能必须在独立分支开发，通过对应测试与 Windows CI 后再合并。
 
+### 模型与推理强度
+
+后续任务默认使用 `gpt-5.6-terra + medium`；是否升档只由“风险 × 不确定性”决定，不按任务规模判断。
+`sol + high` 必须取得用户明确批准；完整规则与每条开发指令的固定标头见 [AGENTS.md 的模型治理章节](./AGENTS.md#13-模型与推理强度治理)。
+
 ---
 
 <p align="center">

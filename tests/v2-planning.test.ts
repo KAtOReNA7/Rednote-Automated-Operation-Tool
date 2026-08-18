@@ -232,4 +232,80 @@ describe('V2 R03 persona-driven planning', () => {
       before,
     );
   });
+
+  it('treats three-per-day as a soft target while keeping true lock blockers', () => {
+    const facade = new V2ApplicationFacade(new MemoryV2Repository());
+    const initial = facade.read({
+      view: 'WEEKLY_PLAN',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    }) as WeeklyPlan;
+    const skipped = facade.mutate({
+      action: 'SKIP_PLAN_CANDIDATES',
+      candidateIds: ['mon-3'],
+      expectedRevision: initial.revision,
+      weekKey: initial.weekKey,
+    }) as WeeklyPlan;
+    const confirmed = facade.mutate({
+      action: 'CONFIRM_PLAN_CANDIDATES',
+      candidateIds: skipped.candidates
+        .filter(({ status }) => status !== 'SKIPPED')
+        .map(({ id }) => id),
+      expectedRevision: skipped.revision,
+      weekKey: skipped.weekKey,
+    }) as WeeklyPlan;
+    const locked = facade.mutate({
+      action: 'LOCK_WEEKLY_PLAN',
+      expectedRevision: confirmed.revision,
+      weekKey: confirmed.weekKey,
+    }) as WeeklyPlan;
+    expect(locked.status).toBe('CONFIRMED');
+    expect(
+      locked.candidates.filter(({ day, status }) => day === '周一' && status !== 'SKIPPED'),
+    ).toHaveLength(2);
+  });
+
+  it('persists week-bound briefs and stages one-item replacements before adoption', () => {
+    const facade = new V2ApplicationFacade(new MemoryV2Repository());
+    const initial = facade.read({
+      view: 'WEEKLY_PLAN',
+      weekKey: V2_DEFAULT_WEEK_KEY,
+    }) as WeeklyPlan;
+    const briefed = facade.mutate({
+      action: 'SAVE_WEEKLY_PLANNING_BRIEF',
+      briefText: '本周重点：密室诡计与读者公平性。',
+      expectedRevision: initial.revision,
+      weekKey: initial.weekKey,
+    }) as WeeklyPlan;
+    expect(briefed.brief).toEqual({ revision: 1, text: '本周重点：密室诡计与读者公平性。' });
+    const recorded = facade.mutate({
+      action: 'RECORD_PLAN_ITEM_FEEDBACK',
+      candidateId: 'mon-1',
+      details: '与上一条角度重复',
+      expectedRevision: briefed.revision,
+      reason: 'REPEATED_ANGLE',
+      weekKey: briefed.weekKey,
+    }) as WeeklyPlan;
+    const feedback = recorded.itemFeedback[0];
+    expect(feedback).toMatchObject({ candidate: null, candidateId: 'mon-1', status: 'RECORDED' });
+    const original = recorded.candidates.find(({ id }) => id === 'mon-1');
+    if (feedback === undefined || original === undefined)
+      throw new Error('feedback fixture missing');
+    const staged = facade.stagePlanItemReplacement(
+      recorded.weekKey,
+      recorded.revision,
+      feedback.feedbackId,
+      { ...original, title: '新的密室观察角度' },
+    );
+    expect(staged.candidates.find(({ id }) => id === 'mon-1')?.title).not.toBe('新的密室观察角度');
+    expect(staged.itemFeedback[0]).toMatchObject({ status: 'CANDIDATE_READY' });
+    const adopted = facade.mutate({
+      action: 'ADOPT_PLAN_ITEM_REPLACEMENT',
+      candidate: staged.itemFeedback[0]?.candidate,
+      expectedRevision: staged.revision,
+      feedbackId: feedback.feedbackId,
+      weekKey: staged.weekKey,
+    }) as WeeklyPlan;
+    expect(adopted.candidates.find(({ id }) => id === 'mon-1')?.title).toBe('新的密室观察角度');
+    expect(adopted.itemFeedback[0]?.status).toBe('ADOPTED');
+  });
 });

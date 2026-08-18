@@ -96,6 +96,9 @@ function createFixture() {
     plan: planRows.map(([id, day, date, time, title, book, status]) => ({ id, day, date, time, title, book, status, conflictWithIds: [] as readonly string[] })),
     planRevision: 0,
     planStatus: 'DRAFT' as 'CONFIRMED' | 'DRAFT',
+    planBrief: { revision: 0, text: '' },
+    planGenerationBriefRevision: null as number | null,
+    planItemFeedback: [] as V2WeeklyPlanContract['itemFeedback'],
     recommendations: ([['locked-room', '增加密室主题', '密室相关内容收藏率比账号均值高 23%。', '下周增加 2 篇'], ['timing', '减少晚间重复排程', '周五 20:00 的两篇内容分散了互动。', '错开至少 90 分钟'], ['classics', '保留公版经典系列', '连续解读带来的关注转化更稳定。', '保持每周 3 篇']] as const).map(([id, title, reason, action]) => ({ id, title, reason, action, status: String('PENDING') })),
     weekKey: '2026-W31',
   };
@@ -126,6 +129,9 @@ export function withPersistedWeeklyPlan(session: V2Session, plan: PersistedWeekl
     })),
     planRevision: plan.revision,
     planStatus: plan.status,
+    planBrief: plan.brief,
+    planGenerationBriefRevision: plan.generationBriefRevision,
+    planItemFeedback: plan.itemFeedback,
     weekKey: plan.weekKey,
   };
 }

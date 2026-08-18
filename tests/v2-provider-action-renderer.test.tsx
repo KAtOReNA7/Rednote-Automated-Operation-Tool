@@ -327,9 +327,10 @@ describe('V2 R07 provider action renderer', () => {
     const user = userEvent.setup();
     render(
       <ProviderActionControl
-        intent={{ expectedRevision: 0, kind: 'WEEKLY_PLAN', weekKey: '2026-W31' }}
+        intent={{ briefRevision: 0, expectedRevision: 0, kind: 'WEEKLY_PLAN', weekKey: '2026-W31' }}
         label="预览生成下周计划"
         onSuccess={vi.fn()}
+        presentation="dialog"
       />,
     );
     expect(previewProviderAction).not.toHaveBeenCalled();
@@ -339,11 +340,13 @@ describe('V2 R07 provider action renderer', () => {
     expect(screen.getByText('关闭 / 关闭')).toBeVisible();
     expect(screen.getByText('research-model')).toBeVisible();
     expect(screen.getByText('费用未知；如仍要继续，必须逐次明确授权。')).toBeVisible();
+    const authorization = screen.getByRole('checkbox', {
+      name: '我了解费用未知，仍授权本次最多 1 个请求',
+    });
+    expect(authorization.closest('.v2-provider-preview-actions')).not.toBeNull();
     expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeDisabled();
     expect(confirmProviderAction).not.toHaveBeenCalled();
-    await user.click(
-      screen.getByRole('checkbox', { name: '我了解费用未知，仍授权本次最多 1 个请求' }),
-    );
+    await user.click(authorization);
     expect(previewProviderAction).toHaveBeenLastCalledWith(
       expect.objectContaining({ userApprovedUnknownCost: true }),
     );
@@ -416,6 +419,11 @@ describe('V2 R07 provider action renderer', () => {
     expect(dialog.parentElement?.parentElement).toBe(document.body);
     expect(screen.getByRole('button', { name: '取消' })).toBeVisible();
     expect(screen.getByRole('button', { name: '确认并执行一次' })).toBeVisible();
+    expect(screen.getByRole('button', { name: '关闭调用前预览' })).toHaveFocus();
+    await user.keyboard('{Shift>}{Tab}{/Shift}');
+    expect(screen.getByRole('button', { name: '确认并执行一次' })).toHaveFocus();
+    await user.keyboard('{Tab}');
+    expect(screen.getByRole('button', { name: '关闭调用前预览' })).toHaveFocus();
 
     window.dispatchEvent(new Event('resize'));
     expect(screen.getByRole('dialog', { name: '调用前预览' })).toBeVisible();

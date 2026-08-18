@@ -683,8 +683,19 @@ export class V2DesktopRuntime {
         readiness,
       });
     }
-    const targetWeekKey = intent.kind === 'WEEKLY_PLAN' ? intent.weekKey : null;
+    const targetWeekKey =
+      intent.kind === 'WEEKLY_PLAN' || intent.kind === 'PLAN_ITEM_REPLACEMENT'
+        ? intent.weekKey
+        : null;
     const targetWeek = targetWeekKey === null ? null : weekDateRange(targetWeekKey);
+    const planningBrief =
+      intent.kind === 'WEEKLY_PLAN' && 'plan' in input
+        ? (input.plan as WeeklyPlan).brief.text
+        : undefined;
+    const replacementFeedback =
+      intent.kind === 'PLAN_ITEM_REPLACEMENT' && 'feedback' in input
+        ? (input.feedback as WeeklyPlan['itemFeedback'][number])
+        : undefined;
     return Object.freeze({
       ...readiness,
       ...(businessBlock === null ? {} : { businessReasonCode: businessBlock.code }),
@@ -701,6 +712,15 @@ export class V2DesktopRuntime {
       reasonMessage: businessBlock?.message ?? readiness.reasonMessage,
       searchEnabled: false,
       summary: providerActionSummary(intent.kind),
+      ...(planningBrief === undefined ? {} : { planningBrief }),
+      ...(replacementFeedback === undefined
+        ? {}
+        : {
+            itemFeedback: `${replacementFeedback.reason}${
+              replacementFeedback.details === '' ? '' : ` · ${replacementFeedback.details}`
+            }`,
+            itemScope: replacementFeedback.candidateId,
+          }),
       ...(targetWeek === null
         ? {}
         : {
@@ -852,10 +872,33 @@ export class V2DesktopRuntime {
         view: 'WEEKLY_PLAN',
         weekKey: intent.weekKey,
       }) as WeeklyPlan;
-      if (plan.revision !== intent.expectedRevision || plan.status !== 'DRAFT') {
+      if (
+        plan.revision !== intent.expectedRevision ||
+        plan.brief.revision !== intent.briefRevision ||
+        plan.status !== 'DRAFT'
+      ) {
         throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['weeklyPlan']);
       }
       return Object.freeze({ persona, plan, weekKey: intent.weekKey });
+    }
+    if (intent.kind === 'PLAN_ITEM_REPLACEMENT') {
+      const plan = this.#facade.read({
+        view: 'WEEKLY_PLAN',
+        weekKey: intent.weekKey,
+      }) as WeeklyPlan;
+      const feedback = plan.itemFeedback.find((item) => item.feedbackId === intent.feedbackId);
+      const candidate =
+        feedback === undefined
+          ? undefined
+          : plan.candidates.find((item) => item.id === feedback.candidateId);
+      if (
+        plan.revision !== intent.expectedRevision ||
+        plan.status !== 'DRAFT' ||
+        feedback?.status !== 'RECORDED' ||
+        candidate === undefined
+      )
+        throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['feedbackId']);
+      return Object.freeze({ candidate, feedback, persona, weekKey: intent.weekKey });
     }
     if (intent.kind === 'CONTENT_PACKAGES') {
       const plan = this.#facade.read({
@@ -907,7 +950,11 @@ export class V2DesktopRuntime {
       throw new V2ProviderActionError('PROVIDER_ACTION_BLOCKED');
     const workspace = await this.#interaction.read();
     const item = workspace.items.find((candidate) => candidate.itemId === intent.itemId);
-    if (item === undefined || item.revision !== intent.expectedRevision || item.status !== 'NEW') {
+    if (
+      item === undefined ||
+      item.revision !== intent.expectedRevision ||
+      !['CONFIRMED', 'NEW', 'SUGGESTED'].includes(item.status)
+    ) {
       throw new V2ProviderActionError('PROVIDER_ACTION_STALE', ['interaction']);
     }
     return Object.freeze({ interaction: item, persona });
@@ -929,6 +976,17 @@ export class V2DesktopRuntime {
         intent.weekKey,
         intent.expectedRevision,
         value.candidates,
+      );
+      return;
+    }
+    if (intent.kind === 'PLAN_ITEM_REPLACEMENT') {
+      if (Object.keys(value).length !== 1 || !('candidate' in value))
+        throw new V2ProviderActionError('PROVIDER_OUTPUT_INVALID', ['candidate']);
+      this.#facade.stagePlanItemReplacement(
+        intent.weekKey,
+        intent.expectedRevision,
+        intent.feedbackId,
+        value.candidate,
       );
       return;
     }

@@ -30,6 +30,8 @@ function invoke<T>(channel: keyof typeof V2_IPC_CHANNELS, request: object): Prom
 }
 
 const bridge: V2Bridge = Object.freeze({
+  adoptPlanItemReplacement: (input: Parameters<V2Bridge['adoptPlanItemReplacement']>[0]) =>
+    invoke<WeeklyPlan>('mutate', { action: 'ADOPT_PLAN_ITEM_REPLACEMENT', ...input }),
   approveContentPackages: (input: Parameters<V2Bridge['approveContentPackages']>[0]) =>
     invoke<ContentWorkspace>('mutate', { action: 'APPROVE_CONTENT_PACKAGES', ...input }),
   confirmPlanCandidates: (input: Parameters<V2Bridge['confirmPlanCandidates']>[0]) =>
@@ -110,11 +112,15 @@ const bridge: V2Bridge = Object.freeze({
   readProviderSettings: () => invoke<V2ProviderSettingsView>('read', { view: 'PROVIDER_SETTINGS' }),
   readWeeklyPlan: (input: Parameters<V2Bridge['readWeeklyPlan']>[0]) =>
     invoke<WeeklyPlan>('read', { view: 'WEEKLY_PLAN', ...input }),
+  recordPlanItemFeedback: (input: Parameters<V2Bridge['recordPlanItemFeedback']>[0]) =>
+    invoke<WeeklyPlan>('mutate', { action: 'RECORD_PLAN_ITEM_FEEDBACK', ...input }),
   reschedulePlanCandidates: (input: Parameters<V2Bridge['reschedulePlanCandidates']>[0]) =>
     invoke<WeeklyPlan>('mutate', {
       action: 'RESCHEDULE_PLAN_CANDIDATES',
       ...input,
     }),
+  dismissPlanItemReplacement: (input: Parameters<V2Bridge['dismissPlanItemReplacement']>[0]) =>
+    invoke<WeeklyPlan>('mutate', { action: 'DISMISS_PLAN_ITEM_REPLACEMENT', ...input }),
   reopenInteraction: (input: Parameters<V2Bridge['reopenInteraction']>[0]) =>
     invoke<InteractionItem>('mutate', { action: 'REOPEN_INTERACTION', ...input }),
   saveReplySuggestion: (input: Parameters<V2Bridge['saveReplySuggestion']>[0]) =>
@@ -124,6 +130,8 @@ const bridge: V2Bridge = Object.freeze({
   saveMetricSnapshots: (input: {
     readonly snapshots: readonly Omit<MetricSnapshot, 'revision'>[];
   }) => invoke<MetricsReview>('mutate', { action: 'SAVE_METRIC_SNAPSHOTS', ...input }),
+  saveWeeklyPlanningBrief: (input: Parameters<V2Bridge['saveWeeklyPlanningBrief']>[0]) =>
+    invoke<WeeklyPlan>('mutate', { action: 'SAVE_WEEKLY_PLANNING_BRIEF', ...input }),
   skipPlanCandidates: (input: Parameters<V2Bridge['skipPlanCandidates']>[0]) =>
     invoke<WeeklyPlan>('mutate', { action: 'SKIP_PLAN_CANDIDATES', ...input }),
   skipInteraction: (input: Parameters<V2Bridge['skipInteraction']>[0]) =>

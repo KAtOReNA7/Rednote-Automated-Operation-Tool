@@ -300,6 +300,20 @@ describe('V2-R05 interaction contracts and local persistence', () => {
         DEFAULT_ACCOUNT_PERSONA,
       ),
     ).rejects.toMatchObject({ code: 'INTERACTION_STATE_INVALID' });
+    const regenerated = await app.generateFromReply(
+      {
+        action: 'GENERATE_REPLY_SUGGESTION',
+        expectedRevision: invalidated.revision,
+        idempotencyKey: `reply-${invalidated.itemId}-${invalidated.revision}`,
+        itemId: invalidated.itemId,
+      },
+      '这是重新生成但尚未确认的新建议。',
+    );
+    expect(regenerated).toMatchObject({
+      currentSuggestion: '这是重新生成但尚未确认的新建议。',
+      currentSuggestionVersion: 4,
+      status: 'SUGGESTED',
+    });
   });
 
   it('enforces skip/reopen and manual-sent correction without external actions', async () => {
@@ -537,7 +551,7 @@ describe('V2-R05 interaction renderer and managed files', () => {
     await user.type(screen.getByLabelText('粘贴一条评论或私信'), '键盘录入评论');
     await user.click(screen.getByRole('button', { name: '保存本地互动' }));
     expect((await screen.findAllByText('键盘录入评论')).length).toBeGreaterThan(0);
-    await user.click(screen.getByRole('button', { name: '预览生成回复建议' }));
+    await user.click(screen.getByRole('button', { name: '生成回复建议' }));
     expect(await screen.findByText(/受控模型桥接不可用/u)).toBeVisible();
     expect(screen.getByLabelText('回复建议')).toHaveValue('');
     expect(screen.queryByRole('button', { name: /自动发送|发送消息/u })).not.toBeInTheDocument();

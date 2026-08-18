@@ -10,11 +10,11 @@ type ItemAction = 'MANUAL_SENT' | 'REOPEN' | 'SAVE' | 'SKIP' | 'UNDO_SENT';
 type DetailAction = ItemAction | 'CONFIRM' | 'GENERATE';
 // prettier-ignore
 const detailActionsByStatus: Readonly<Record<V2InteractionStatusContract, readonly (readonly [DetailAction, string])[]>> = Object.freeze({
-  CONFIRMED: [['SAVE', '保存建议']],
+  CONFIRMED: [['GENERATE', '重新生成'], ['SAVE', '保存修改']],
   MANUAL_SENT: [['UNDO_SENT', '撤销手动发送记录']],
   NEW: [['GENERATE', '生成建议'], ['SKIP', '跳过']],
   SKIPPED: [['REOPEN', '重新打开']],
-  SUGGESTED: [['SAVE', '保存建议'], ['CONFIRM', '确认建议'], ['SKIP', '跳过']],
+  SUGGESTED: [['SAVE', '保存修改'], ['CONFIRM', '确认并保存建议'], ['GENERATE', '重新生成'], ['SKIP', '跳过']],
 });
 
 function refs(items: V2Session['interactions'], ids: readonly string[]) {
@@ -130,18 +130,39 @@ export function InteractionPage(): React.JSX.Element {
   const confirmOne = (): void => {
     if (active === undefined || window.rednoteV2 === undefined) return fail('本机互动桥接不可用。');
     run(async () => {
+      let current = active;
+      if (draft.trim() === '') return fail('回复建议不能为空，请先填写后再确认。');
+      if (draft !== active.suggestion) {
+        const saved = await window.rednoteV2?.saveReplySuggestion({
+          expectedRevision: active.revision,
+          expectedVersionId: active.versionId,
+          itemId: active.id,
+          replyText: draft,
+        });
+        if (saved === undefined || !saved.ok)
+          return fail(saved?.error.message ?? '本地互动桥接不可用。');
+        current = {
+          ...active,
+          revision: saved.value.revision,
+          suggestion: saved.value.currentSuggestion ?? '',
+          version: saved.value.currentSuggestionVersion ?? 0,
+          versionId: saved.value.currentSuggestionVersionId ?? '',
+        };
+      }
       const result = await window.rednoteV2?.confirmReplySuggestions({
-        items: refs(session.interactions, [active.id]),
+        items: refs([current], [current.id]),
       });
       if (result === undefined || !result.ok)
         return fail(result?.error.message ?? '本地互动桥接不可用。');
       apply(result.value, active.id);
-      notify('建议已确认，尚未发送。');
+      notify('建议已确认并保存到本机，尚未发送。');
     });
   };
   const itemAction = (action: ItemAction): void => {
     const bridge = window.rednoteV2;
     if (bridge === undefined || active === undefined) return fail('本机互动桥接不可用，未保存。');
+    if (action === 'SAVE' && draft.trim() === '')
+      return fail('回复建议不能为空，请填写内容后再保存。');
     const item = active;
     const messages = {
       MANUAL_SENT: '仅记录你已在官方端手动发送；系统没有发送消息。',
@@ -418,12 +439,12 @@ export function InteractionPage(): React.JSX.Element {
                     disabled={busy}
                     intent={{
                       expectedRevision: active.revision,
-                      idempotencyKey: `reply-${active.id}`,
+                      idempotencyKey: `reply-${active.id}-${active.revision}`,
                       itemId: active.id,
                       kind: 'REPLY_SUGGESTION',
                     }}
                     key={action}
-                    label="预览生成回复建议"
+                    label={active.status === 'NEW' ? '生成回复建议' : '重新生成'}
                     onSuccess={async () => {
                       await refresh(active.id);
                     }}
@@ -439,6 +460,7 @@ export function InteractionPage(): React.JSX.Element {
                 ),
               )}
             </div>
+            <p className="v2-manual-note">建议仅保存到本机；不会自动发送到小红书或任何平台。</p>
             {active.status === 'CONFIRMED' ? (
               <label>
                 <input

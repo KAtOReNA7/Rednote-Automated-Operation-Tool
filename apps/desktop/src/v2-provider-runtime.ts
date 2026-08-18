@@ -58,6 +58,7 @@ function actionTaskKind(kind: V2ProviderActionKind): string {
   if (kind === 'CONTENT_PACKAGES') return 'V2_CONTENT_PACKAGES';
   if (kind === 'CONTENT_COPY_VERSION') return 'V2_CONTENT_COPY_VERSION';
   if (kind === 'CONTENT_COVER') return 'V2_CONTENT_COVER';
+  if (kind === 'PLAN_ITEM_REPLACEMENT') return 'V2_PLAN_ITEM_REPLACEMENT';
   return 'V2_REPLY_SUGGESTION';
 }
 
@@ -66,6 +67,7 @@ function actionKind(taskKind: string): V2ProviderActionKind {
   if (taskKind === 'V2_CONTENT_PACKAGES') return 'CONTENT_PACKAGES';
   if (taskKind === 'V2_CONTENT_COPY_VERSION') return 'CONTENT_COPY_VERSION';
   if (taskKind === 'V2_CONTENT_COVER') return 'CONTENT_COVER';
+  if (taskKind === 'V2_PLAN_ITEM_REPLACEMENT') return 'PLAN_ITEM_REPLACEMENT';
   if (taskKind === 'V2_REPLY_SUGGESTION') return 'REPLY_SUGGESTION';
   throw new Error('V2_PROVIDER_TASK_INVALID');
 }

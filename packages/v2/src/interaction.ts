@@ -351,11 +351,9 @@ export class V2InteractionApplication {
     modelRunId: string | null = null,
   ): Promise<InteractionItem> {
     const current = this.repository.getInteraction(request.itemId);
-    if (current.status === 'SUGGESTED' && current.currentSuggestion !== null)
-      return this.#hydrate(current);
     if (current.revision !== request.expectedRevision)
       throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
-    if (current.status !== 'NEW')
+    if (!['CONFIRMED', 'NEW', 'SUGGESTED'].includes(current.status))
       throw new V2InteractionError('INTERACTION_STATE_INVALID', ['status']);
     const reply = normalizeInteractionText(
       replyValue,
@@ -463,7 +461,7 @@ export class V2InteractionApplication {
       return this.#hydrate(current);
     if (current.revision !== request.expectedRevision)
       throw new V2InteractionError('REVISION_CONFLICT', ['interaction']);
-    if (current.status !== 'NEW')
+    if (!['CONFIRMED', 'NEW', 'SUGGESTED'].includes(current.status))
       throw new V2InteractionError('INTERACTION_STATE_INVALID', ['status']);
     const userText = await this.files.readText(current.userText);
     const reply = this.provider.generate({

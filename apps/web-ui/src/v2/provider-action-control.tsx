@@ -159,6 +159,28 @@ export function ProviderActionControl({
                 </dd>
               </div>
             )}
+            {preview.planningBrief === undefined ? null : (
+              <div>
+                <dt>本周重点</dt>
+                <dd>
+                  {preview.planningBrief === ''
+                    ? '未填写（将按默认账号人设）'
+                    : preview.planningBrief}
+                </dd>
+              </div>
+            )}
+            {preview.itemFeedback === undefined ? null : (
+              <>
+                <div>
+                  <dt>调整范围</dt>
+                  <dd>仅当前计划项 · {preview.itemScope}</dd>
+                </div>
+                <div>
+                  <dt>不满意原因</dt>
+                  <dd>{preview.itemFeedback}</dd>
+                </div>
+              </>
+            )}
             <div>
               <dt>Provider</dt>
               <dd>{preview.providerConfigured ? '已配置' : '未配置'}</dd>
@@ -231,6 +253,8 @@ export function ProviderActionControl({
               </button>
             </div>
           )}
+        </div>
+        <div className="v2-provider-preview-actions">
           {preview.feeEstimateMicroUsd === null ? (
             <label className="v2-provider-unknown-cost">
               <input
@@ -244,19 +268,21 @@ export function ProviderActionControl({
               />
               <span>我了解费用未知，仍授权本次最多 {preview.requestCount} 个请求</span>
             </label>
-          ) : null}
-        </div>
-        <div className="v2-provider-preview-actions">
-          <Button disabled={busy} onClick={closePreview}>
-            取消
-          </Button>
-          <Button
-            disabled={busy || !preview.canConfirm || preview.previewToken === null}
-            onClick={() => void confirm()}
-            tone="primary"
-          >
-            {busy ? '正在执行…' : '确认并执行一次'}
-          </Button>
+          ) : (
+            <span aria-hidden="true" />
+          )}
+          <div className="v2-provider-preview-buttons">
+            <Button disabled={busy} onClick={closePreview}>
+              取消
+            </Button>
+            <Button
+              disabled={busy || !preview.canConfirm || preview.previewToken === null}
+              onClick={() => void confirm()}
+              tone="primary"
+            >
+              {busy ? '正在执行…' : '确认并执行一次'}
+            </Button>
+          </div>
         </div>
       </>
     );
