@@ -474,12 +474,21 @@ async function measureRoute(client, sessionId, route, selector) {
   const primarySelector = {
     content: '.v2-content-workbench',
     interaction: '.v2-interaction-grid',
-    library: '.v2-library-feature',
+    library: '.v2-library-feature, .v2-library-empty',
     overview: '.v2-overview-lead',
     review: '.v2-review-dashboard, .v2-review-empty-state',
     settings: '.v2-settings-board',
     'weekly-plan': '.v2-weekly-stage',
   }[route];
+  await waitFor(
+    () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector(${JSON.stringify(selector)})?.querySelector(${JSON.stringify(primarySelector)}) !== null`,
+      ),
+    `${route} primary layout`,
+  );
   const metrics = await evaluate(
     client,
     sessionId,
