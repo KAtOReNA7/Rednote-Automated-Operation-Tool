@@ -9,11 +9,29 @@ import {
   isPlanWeekConsistent,
   nextWeekIdentity,
   useV2Controller,
+  weekIdentity,
+  weekKeyForDate,
 } from '../components.js';
 import { withPersistedWeeklyPlan } from '../mock-provider.js';
 import { ProviderActionControl } from '../provider-action-control.js';
 
 const dayOrder = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'] as const;
+
+interface TargetPlanValue {
+  readonly brief: V2WeeklyPlanContract['brief'];
+  readonly revision: number;
+  readonly weekKey: string;
+}
+
+type TargetPlanState =
+  | { readonly status: 'loading'; readonly weekKey: string }
+  | { readonly message: string; readonly status: 'error'; readonly weekKey: string }
+  | {
+      readonly plan: TargetPlanValue;
+      readonly source: 'read' | 'saved';
+      readonly status: 'ready';
+      readonly weekKey: string;
+    };
 
 function shortDate(value: string): string {
   if (!value.includes('-')) return value;
@@ -40,6 +58,10 @@ export function WeeklyPlanPage(): React.JSX.Element {
   const currentWeek = currentShanghaiWeekIdentity();
   const nextWeek = nextWeekIdentity(currentWeek);
   const locked = session.planStatus === 'CONFIRMED';
+  const expectedPlanWeek = weekIdentity(session.weekKey);
+  const mismatchedCandidates = session.plan.filter(
+    (candidate) => !isPlanWeekConsistent({ candidates: [candidate], weekKey: session.weekKey }),
+  );
   const planConsistent = isPlanWeekConsistent({
     candidates: session.plan,
     weekKey: session.weekKey,
@@ -52,11 +74,11 @@ export function WeeklyPlanPage(): React.JSX.Element {
     );
     return current ?? '周一';
   });
-  const [targetPlan, setTargetPlan] = useState<{
-    readonly brief: V2WeeklyPlanContract['brief'];
-    readonly revision: number;
-    readonly weekKey: string;
-  } | null>(null);
+  const [targetReadAttempt, setTargetReadAttempt] = useState(0);
+  const [targetPlanState, setTargetPlanState] = useState<TargetPlanState>({
+    status: 'loading',
+    weekKey: targetWeekKey,
+  });
   const [briefDraft, setBriefDraft] = useState('');
   const [feedbackDetails, setFeedbackDetails] = useState('');
   const [feedbackReason, setFeedbackReason] =
@@ -66,20 +88,60 @@ export function WeeklyPlanPage(): React.JSX.Element {
   );
   useEffect(() => {
     const bridge = window.rednoteV2;
-    if (bridge === undefined) return;
-    setTargetPlan(null);
-    void bridge.readWeeklyPlan({ weekKey: targetWeekKey }).then((result) => {
-      if (result.ok) {
-        setTargetPlan({
+    let current = true;
+    setTargetPlanState({ status: 'loading', weekKey: targetWeekKey });
+    if (bridge === undefined) {
+      setTargetPlanState({
+        message: '本机周计划桥接不可用。',
+        status: 'error',
+        weekKey: targetWeekKey,
+      });
+      return () => {
+        current = false;
+      };
+    }
+    void bridge
+      .readWeeklyPlan({ weekKey: targetWeekKey })
+      .then((result) => {
+        if (!current) return;
+        if (!result.ok) {
+          setTargetPlanState({
+            message: result.error.message,
+            status: 'error',
+            weekKey: targetWeekKey,
+          });
+          return;
+        }
+        if (result.value.weekKey !== targetWeekKey) {
+          setTargetPlanState({
+            message: `返回的目标周为 ${result.value.weekKey}，与 ${targetWeekKey} 不一致。`,
+            status: 'error',
+            weekKey: targetWeekKey,
+          });
+          return;
+        }
+        const plan = {
           brief: result.value.brief,
           revision: result.value.revision,
           weekKey: result.value.weekKey,
-        });
+        };
+        setTargetPlanState({ plan, source: 'read', status: 'ready', weekKey: targetWeekKey });
         setBriefDraft(result.value.brief.text);
-      }
-    });
-  }, [targetWeekKey]);
-  const targetRevision = targetPlan?.weekKey === targetWeekKey ? targetPlan.revision : null;
+      })
+      .catch(() => {
+        if (!current) return;
+        setTargetPlanState({
+          message: '目标周读取异常，请重试。',
+          status: 'error',
+          weekKey: targetWeekKey,
+        });
+      });
+    return () => {
+      current = false;
+    };
+  }, [targetReadAttempt, targetWeekKey]);
+  const targetPlan = targetPlanState.status === 'ready' ? targetPlanState.plan : null;
+  const targetRevision = targetPlan?.revision ?? null;
   const selectedCandidate =
     selectedIds.length === 1 ? session.plan.find(({ id }) => id === selectedIds[0]) : undefined;
   const latestFeedback = [...session.planItemFeedback]
@@ -202,16 +264,23 @@ export function WeeklyPlanPage(): React.JSX.Element {
         clearSelection();
       });
   };
-  const unlock = (): void => {
+  const unlock = async (): Promise<boolean> => {
     const bridge = window.rednoteV2;
-    if (bridge === undefined) return notify('本机周计划桥接不可用，未解锁计划。');
-    void bridge
-      .unlockWeeklyPlan({ expectedRevision: session.planRevision, weekKey: session.weekKey })
-      .then((result) => {
-        if (!result.ok) return notify(result.error.message);
-        setSession((current) => withPersistedWeeklyPlan(current, result.value));
-        notify('已派生可调整草稿；原锁定版本保留为历史引用。');
-      });
+    if (bridge === undefined) {
+      notify('本机周计划桥接不可用，未解锁计划。');
+      return false;
+    }
+    const result = await bridge.unlockWeeklyPlan({
+      expectedRevision: session.planRevision,
+      weekKey: session.weekKey,
+    });
+    if (!result.ok) {
+      notify(result.error.message);
+      return false;
+    }
+    setSession((current) => withPersistedWeeklyPlan(current, result.value));
+    notify('已派生可调整草稿；原锁定版本保留为历史引用。');
+    return true;
   };
   const openScheduler = (event: React.MouseEvent<HTMLButtonElement>): void => {
     if (selectedIds.length === 0) {
@@ -219,6 +288,20 @@ export function WeeklyPlanPage(): React.JSX.Element {
       return;
     }
     openDate(event.currentTarget);
+  };
+  const repairCandidateDate = async (
+    event: React.MouseEvent<HTMLButtonElement>,
+    candidate: (typeof session.plan)[number],
+  ): Promise<void> => {
+    const trigger = event.currentTarget;
+    if (locked && !(await unlock())) return;
+    setFocusedDay(candidate.day as (typeof dayOrder)[number]);
+    setUi((current) => ({
+      ...current,
+      planSelectedIds: [candidate.id],
+      planSelectionAnchorId: candidate.id,
+    }));
+    openDate(trigger, [candidate.id]);
   };
   const saveBrief = async (): Promise<void> => {
     if (targetPlan === null || window.rednoteV2 === undefined)
@@ -229,11 +312,12 @@ export function WeeklyPlanPage(): React.JSX.Element {
       weekKey: targetWeekKey,
     });
     if (!result.ok) return notify(result.error.message);
-    setTargetPlan({
+    const plan = {
       brief: result.value.brief,
       revision: result.value.revision,
       weekKey: result.value.weekKey,
-    });
+    };
+    setTargetPlanState({ plan, source: 'saved', status: 'ready', weekKey: targetWeekKey });
     notify('目标周 Brief 已保存到本机。');
   };
   const recordFeedback = async (): Promise<void> => {
@@ -272,15 +356,26 @@ export function WeeklyPlanPage(): React.JSX.Element {
     notify(adopt ? '已采用当前替换候选，并保留反馈轨迹。' : '已取消替换，原计划项保持不变。');
   };
 
+  const targetDisabledReason = !planConsistent
+    ? '当前计划日期与周标识不一致，请先修正。'
+    : targetPlanState.status === 'loading'
+      ? `正在读取目标周 ${targetWeekKey}…`
+      : targetPlanState.status === 'error'
+        ? '目标周读取失败，请重试'
+        : undefined;
+
   return (
-    <div className="v2-page v2-weekly-page">
+    <div
+      className="v2-page v2-weekly-page"
+      data-selection-active={selectedIds.length > 0 && !locked}
+    >
       <PageHeader
         actions={
           <ProviderActionControl
             disabled={
               window.rednoteV2 !== undefined && (targetRevision === null || !planConsistent)
             }
-            disabledReason="正在读取目标周的真实 revision。"
+            disabledReason={targetDisabledReason}
             intent={{
               briefRevision: targetPlan?.brief.revision ?? 0,
               expectedRevision: targetRevision ?? 0,
@@ -301,21 +396,45 @@ export function WeeklyPlanPage(): React.JSX.Element {
         title="本周计划"
       />
       {!planConsistent ? (
-        <section className="v2-locked-banner" role="alert">
-          <Icon name="warning-circle" />
-          <div>
-            <strong>本地计划日期与周标识不一致</strong>
-            <p>请使用现有日期编辑并保存后再生成；系统不会猜测或覆盖你的计划。</p>
+        <section
+          aria-labelledby="v2-plan-mismatch-title"
+          className="v2-card v2-plan-mismatch"
+          role="alert"
+        >
+          <header>
+            <Icon name="warning-circle" />
+            <div>
+              <strong id="v2-plan-mismatch-title">本地计划日期与周标识不一致</strong>
+              <p>请逐项使用现有日期编辑完成修正；系统不会猜测或覆盖你的计划。</p>
+            </div>
+          </header>
+          <ul>
+            {mismatchedCandidates.map((candidate) => {
+              const actualWeek = /^\d{4}-\d{2}-\d{2}$/u.test(candidate.date)
+                ? weekKeyForDate(candidate.date)
+                : '日期格式无效';
+              return (
+                <li key={candidate.id}>
+                  <div>
+                    <strong>{candidate.title}</strong>
+                    <p>
+                      当前 {candidate.date} · 实际 {actualWeek}
+                    </p>
+                    <small>
+                      期望 {session.weekKey} · {expectedPlanWeek.startDate} 至{' '}
+                      {expectedPlanWeek.endDate}
+                    </small>
+                  </div>
+                  <Button onClick={(event) => void repairCandidateDate(event, candidate)}>
+                    修正此项日期
+                  </Button>
+                </li>
+              );
+            })}
+          </ul>
+          <div className="v2-plan-mismatch-summary" role="status">
+            {mismatchedCandidates.length} 项待修正；全部完成后才能预览下周计划。
           </div>
-          <Button
-            onClick={() => {
-              if (locked) unlock();
-              else notify('请在下方选择内容，再使用“自由选择日期时间”完成修正。');
-            }}
-            tone="quiet"
-          >
-            {locked ? '解锁并调整' : '查看调整方式'}
-          </Button>
         </section>
       ) : null}
       <section className="v2-weekly-context v2-weekly-meta" aria-label="计划边界说明">
@@ -345,6 +464,32 @@ export function WeeklyPlanPage(): React.JSX.Element {
         >
           保存目标周 Brief
         </Button>
+        <div
+          className="v2-target-plan-state"
+          data-status={targetPlanState.status}
+          role={targetPlanState.status === 'error' ? 'alert' : 'status'}
+        >
+          {targetPlanState.status === 'loading' ? (
+            <span>正在读取目标周 {targetWeekKey}…</span>
+          ) : targetPlanState.status === 'error' ? (
+            <>
+              <span>目标周读取失败：{targetPlanState.message}</span>
+              <Button onClick={() => setTargetReadAttempt((attempt) => attempt + 1)} tone="quiet">
+                重试读取
+              </Button>
+            </>
+          ) : targetPlanState.source === 'saved' ? (
+            <span>
+              已保存到 {targetWeekKey} · revision {targetPlanState.plan.revision} · Brief revision{' '}
+              {targetPlanState.plan.brief.revision}
+            </span>
+          ) : (
+            <span>
+              已读取 {targetWeekKey} · 计划 revision {targetPlanState.plan.revision} · Brief
+              revision {targetPlanState.plan.brief.revision}
+            </span>
+          )}
+        </div>
       </section>
       {locked && planConsistent ? (
         <section className="v2-locked-banner" role="status">
@@ -353,7 +498,7 @@ export function WeeklyPlanPage(): React.JSX.Element {
             <strong>本周计划已锁定</strong>
             <p>当前为真实只读状态；可解锁调整并重新处理确认、冲突和锁定。</p>
           </div>
-          <Button onClick={unlock} tone="quiet">
+          <Button onClick={() => void unlock()} tone="quiet">
             解锁调整
           </Button>
         </section>
@@ -569,25 +714,31 @@ export function WeeklyPlanPage(): React.JSX.Element {
                 value={feedbackDetails}
               />
               {latestFeedback === undefined ? (
-                <Button onClick={() => void recordFeedback()}>记录原因</Button>
+                <Button onClick={() => void recordFeedback()}>保存反馈</Button>
               ) : latestFeedback.status === 'RECORDED' ? (
-                <ProviderActionControl
-                  intent={{
-                    expectedRevision: session.planRevision,
-                    feedbackId: latestFeedback.feedbackId,
-                    kind: 'PLAN_ITEM_REPLACEMENT',
-                    weekKey: session.weekKey,
-                  }}
-                  label="预览重新生成当前项"
-                  onSuccess={async () => {
-                    const result = await window.rednoteV2?.readWeeklyPlan({
+                <>
+                  <div className="v2-feedback-saved" role="status">
+                    <strong>反馈已保存，当前计划未修改</strong>
+                    <p>下一步可以预览重新生成当前项；只有确认执行时才可能调用模型。</p>
+                  </div>
+                  <ProviderActionControl
+                    intent={{
+                      expectedRevision: session.planRevision,
+                      feedbackId: latestFeedback.feedbackId,
+                      kind: 'PLAN_ITEM_REPLACEMENT',
                       weekKey: session.weekKey,
-                    });
-                    if (result?.ok === true)
-                      setSession((current) => withPersistedWeeklyPlan(current, result.value));
-                  }}
-                  presentation="dialog"
-                />
+                    }}
+                    label="预览重新生成当前项"
+                    onSuccess={async () => {
+                      const result = await window.rednoteV2?.readWeeklyPlan({
+                        weekKey: session.weekKey,
+                      });
+                      if (result?.ok === true)
+                        setSession((current) => withPersistedWeeklyPlan(current, result.value));
+                    }}
+                    presentation="dialog"
+                  />
+                </>
               ) : replacementDraft === null ? null : (
                 <div className="v2-replacement-candidate">
                   <strong>替换候选（尚未覆盖）</strong>

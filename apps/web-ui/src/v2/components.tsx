@@ -106,7 +106,7 @@ export interface V2UiState {
 export interface V2Controller {
   readonly navigate: (route: V2RouteId) => void;
   readonly notify: (message: string) => void;
-  readonly openDate: (trigger: HTMLElement) => void;
+  readonly openDate: (trigger: HTMLElement, candidateIds?: readonly string[]) => void;
   readonly openDrawer: (item: ReviewItem, trigger: HTMLElement) => void;
   readonly session: V2Session;
   readonly setSession: Dispatch<SetStateAction<V2Session>>;

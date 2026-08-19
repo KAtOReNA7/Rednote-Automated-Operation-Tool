@@ -581,6 +581,7 @@ async function captureAtWorkflowViewports(client, sessionId, name, scrollSelecto
     { height: 720, width: 1024 },
     { height: 800, width: 1280 },
     { height: 900, width: 1440 },
+    { height: 1080, width: 1920 },
   ]) {
     await resizeViewport(client, sessionId, viewport);
     if (scrollSelector !== null) {
@@ -598,6 +599,55 @@ async function captureAtWorkflowViewports(client, sessionId, name, scrollSelecto
         evidenceDirectory,
         `${evidencePrefix}-${name}-${String(viewport.width)}x${String(viewport.height)}.png`,
       ),
+    );
+  }
+}
+
+async function assertWeeklyFeedbackReachable(client, sessionId, buttonPattern, description) {
+  for (const viewport of [
+    { height: 720, width: 1024 },
+    { height: 800, width: 1280 },
+    { height: 900, width: 1440 },
+    { height: 1080, width: 1920 },
+  ]) {
+    await resizeViewport(client, sessionId, viewport);
+    const metrics = await evaluate(
+      client,
+      sessionId,
+      `(() => {
+        const button = [...document.querySelectorAll('.v2-item-feedback button')]
+          .find((element) => ${buttonPattern}.test(element.textContent ?? ''));
+        const batch = document.querySelector('.v2-batch-bar');
+        if (!(button instanceof HTMLButtonElement) || !(batch instanceof HTMLElement)) return null;
+        button.scrollIntoView({ block: 'end' });
+        button.focus({ preventScroll: true });
+        const buttonRect = button.getBoundingClientRect();
+        const batchRect = batch.getBoundingClientRect();
+        return {
+          active: document.activeElement === button,
+          batchTop: Math.round(batchRect.top),
+          bottom: Math.round(buttonRect.bottom),
+          left: Math.round(buttonRect.left),
+          right: Math.round(buttonRect.right),
+          top: Math.round(buttonRect.top),
+          viewportHeight: window.innerHeight,
+          viewportWidth: window.innerWidth
+        };
+      })()`,
+    );
+    assert(metrics !== null, `${description} control or batch bar was missing.`);
+    assert(metrics.active, `${description} did not receive keyboard focus.`);
+    assert(
+      metrics.top >= 0 && metrics.bottom <= metrics.viewportHeight,
+      `${description} was clipped vertically.`,
+    );
+    assert(
+      metrics.left >= 0 && metrics.right <= metrics.viewportWidth,
+      `${description} was clipped horizontally.`,
+    );
+    assert(
+      metrics.bottom + 8 <= metrics.batchTop,
+      `${description} overlapped the fixed batch bar: ${JSON.stringify(metrics)}.`,
     );
   }
 }
@@ -1073,9 +1123,10 @@ async function captureWorkflowClosureEvidence(client, sessionId, weekKey, provid
     'Plan feedback input was not editable.',
   );
   for (const viewport of [
-    { height: 720, width: 1024 },
     { height: 900, width: 1440 },
     { height: 720, width: 1024 },
+    { height: 1080, width: 1920 },
+    { height: 900, width: 1440 },
   ]) {
     await resizeViewport(client, sessionId, viewport);
     const drafts = await evaluate(
@@ -1153,8 +1204,10 @@ async function captureWorkflowClosureEvidence(client, sessionId, weekKey, provid
     sessionId,
     `document.querySelector('.v2-item-feedback')?.scrollIntoView({ block: 'start' })`,
   );
+  await assertWeeklyFeedbackReachable(client, sessionId, /保存反馈/u, 'Plan feedback save');
+  await captureAtWorkflowViewports(client, sessionId, 'feedback-before-save', '.v2-item-feedback');
   assert(
-    await clickButtonByText(client, sessionId, /记录原因/u),
+    await clickButtonByText(client, sessionId, /保存反馈/u),
     'Plan feedback save action was not available.',
   );
   await waitFor(
@@ -1165,6 +1218,26 @@ async function captureWorkflowClosureEvidence(client, sessionId, weekKey, provid
         `[...document.querySelectorAll('button')].some((button) => /预览重新生成当前项/u.test(button.textContent ?? ''))`,
       ),
     'recorded plan feedback',
+  );
+  assert(
+    await evaluate(
+      client,
+      sessionId,
+      `/反馈已保存，当前计划未修改/u.test(document.querySelector('.v2-feedback-saved')?.textContent ?? '')`,
+    ),
+    'Persistent feedback saved state was not visible.',
+  );
+  await assertWeeklyFeedbackReachable(
+    client,
+    sessionId,
+    /预览重新生成当前项/u,
+    'Plan replacement preview',
+  );
+  await captureAtWorkflowViewports(
+    client,
+    sessionId,
+    'feedback-saved-next-step',
+    '.v2-item-feedback',
   );
   const replacementStateBefore = await readWeeklyPreviewState(client, sessionId);
   assert(
