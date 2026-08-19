@@ -122,6 +122,25 @@ describe('V2 deterministic session workflows', () => {
 
   it('keeps the Figma workspace structures reachable without changing local workflows', async () => {
     const user = userEvent.setup();
+    Object.defineProperty(window, 'rednoteV2', {
+      configurable: true,
+      value: {
+        ...createMemoryV2Bridge(),
+        readCatalogWork: async () => ({ ok: true as const, value: null }),
+        readCatalogWorks: async ({
+          limit,
+          offset,
+          query,
+        }: {
+          readonly limit: number;
+          readonly offset: number;
+          readonly query: string;
+        }) => ({
+          ok: true as const,
+          value: { hasMore: false, limit, offset, query, totalWorks: 0, works: [] },
+        }),
+      },
+    });
     render(<V2App />);
 
     await user.click(screen.getByRole('link', { name: '内容' }));
@@ -138,8 +157,9 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByLabelText('粘贴一条评论或私信')).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '书库' }));
-    expect(document.querySelector('.v2-library-feature')).toBeInTheDocument();
-    expect(document.querySelector('.v2-library-shelf')).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: '本机 Catalog 尚无作品' })).toBeVisible();
+    expect(document.querySelector('.v2-library-empty')).toBeInTheDocument();
+    expect(screen.getByText('本地 Catalog · 只读')).toBeVisible();
 
     await user.click(screen.getByRole('link', { name: '数据复盘' }));
     expect(document.querySelector('.v2-review-empty-state')).toBeInTheDocument();
@@ -152,12 +172,32 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByRole('button', { name: '高级诊断' })).toBeVisible();
   });
 
-  it('searches books, exposes the local review intake, and saves four persona fields in-session', async () => {
+  it('searches the read-only Catalog, exposes local review, and saves persona fields', async () => {
     const user = userEvent.setup();
+    Object.defineProperty(window, 'rednoteV2', {
+      configurable: true,
+      value: {
+        ...createMemoryV2Bridge(),
+        readCatalogWork: async () => ({ ok: true as const, value: null }),
+        readCatalogWorks: async ({
+          limit,
+          offset,
+          query,
+        }: {
+          readonly limit: number;
+          readonly offset: number;
+          readonly query: string;
+        }) => ({
+          ok: true as const,
+          value: { hasMore: false, limit, offset, query, totalWorks: 0, works: [] },
+        }),
+      },
+    });
     render(<V2App />);
     await user.click(screen.getByRole('link', { name: '书库' }));
-    await user.type(screen.getByLabelText('搜索作品'), '月亮宝石');
-    expect(screen.getByRole('heading', { name: '《月亮宝石》' })).toBeVisible();
+    await user.type(screen.getByLabelText('搜索本机作品'), '月亮宝石');
+    await user.click(screen.getByRole('button', { name: '搜索' }));
+    expect(await screen.findByRole('heading', { name: '没有匹配的作品' })).toBeVisible();
     expect(screen.queryByRole('heading', { name: '《莫格街凶杀案》' })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('link', { name: '数据复盘' }));
@@ -173,6 +213,6 @@ describe('V2 deterministic session workflows', () => {
     expect(screen.getByText(/账号名称未填写/u)).toBeVisible();
     await user.type(name, '雾灯书页·本机');
     await user.click(screen.getByRole('button', { name: '保存更改' }));
-    expect(await screen.findByText(/本机设置桥接不可用/u)).toBeVisible();
+    expect(await screen.findByText(/账号人设已保存到本机 · revision 1/u)).toBeVisible();
   });
 });

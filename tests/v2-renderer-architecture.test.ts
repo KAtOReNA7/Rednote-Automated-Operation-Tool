@@ -63,4 +63,10 @@ describe('V2 renderer architecture', () => {
     expect(sources).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|WebSocket|EventSource|sendBeacon/u);
     expect(sources).not.toMatch(/https?:\/\//u);
   });
+
+  it('keeps production library rendering off the deterministic book fixture', () => {
+    const library = read('apps/web-ui/src/v2/pages/library-page.tsx');
+    expect(library).not.toMatch(/session\.books|bookRows|posts|saves/u);
+    expect(library).not.toMatch(/rednoteDesktop|readCatalog.*(?:merge|split|undo|create|import)/iu);
+  });
 });

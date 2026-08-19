@@ -719,6 +719,8 @@ describe('V2 Electron boundary', () => {
       'previewPlanReschedule',
       'previewProviderAction',
       'previewProviderCapabilityProbe',
+      'readCatalogWork',
+      'readCatalogWorks',
       'readContentPackages',
       'readInteractions',
       'readMetricsReview',
@@ -746,6 +748,13 @@ describe('V2 Electron boundary', () => {
     expect('rednoteDesktop' in exposed).toBe(false);
     await exposed.readPersona();
     await exposed.readInteractions();
+    const readCatalogWork = exposed.readCatalogWork;
+    const readCatalogWorks = exposed.readCatalogWorks;
+    if (readCatalogWork === undefined || readCatalogWorks === undefined) {
+      throw new Error('R09 read-only Catalog bridge missing.');
+    }
+    await readCatalogWorks({ limit: 8, offset: 0, query: '合成谜案' });
+    await readCatalogWork({ workId: 'work-fixture-a' });
     await exposed.previewInteractionDelete({ itemId: 'interaction-1' });
     await exposed.readWeeklyPlan({ weekKey: V2_DEFAULT_WEEK_KEY });
     await exposed.previewPlanReschedule({
@@ -844,6 +853,16 @@ describe('V2 Electron boundary', () => {
     expect(new Set(electron.invoke.mock.calls.map(([channel]) => channel))).toEqual(
       new Set(Object.values(V2_IPC_CHANNELS)),
     );
+    expect(electron.invoke).toHaveBeenCalledWith(V2_IPC_CHANNELS.read, {
+      limit: 8,
+      offset: 0,
+      query: '合成谜案',
+      view: 'CATALOG_WORKS',
+    });
+    expect(electron.invoke).toHaveBeenCalledWith(V2_IPC_CHANNELS.read, {
+      view: 'CATALOG_WORK',
+      workId: 'work-fixture-a',
+    });
   });
 });
 

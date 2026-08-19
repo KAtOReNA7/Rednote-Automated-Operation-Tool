@@ -70,6 +70,7 @@ export function V2App(): React.JSX.Element {
   const [toast, setToast] = useState('');
   const [drawerItem, setDrawerItem] = useState<ReviewItem | null>(null);
   const [dateModalOpen, setDateModalOpen] = useState(false);
+  const [dateSelectionIds, setDateSelectionIds] = useState<readonly string[]>([]);
   const [scheduleSuccess, setScheduleSuccess] = useState('');
   const returnFocus = useRef<HTMLElement | null>(null);
   const smokeStarted = useRef(false);
@@ -90,8 +91,9 @@ export function V2App(): React.JSX.Element {
     returnFocus.current = trigger;
     setDrawerItem(item);
   };
-  const openDate = (trigger: HTMLElement): void => {
+  const openDate = (trigger: HTMLElement, candidateIds = ui.planSelectedIds): void => {
     returnFocus.current = trigger;
+    setDateSelectionIds(candidateIds);
     setDateModalOpen(true);
   };
 
@@ -376,10 +378,13 @@ export function V2App(): React.JSX.Element {
         />
         {dateModalOpen ? (
           <DateModal
-            count={ui.planSelectedIds.length}
-            initialDate={session.plan.find(({ id }) => ui.planSelectedIds.includes(id))?.date ?? ''}
-            initialTime={session.plan.find(({ id }) => ui.planSelectedIds.includes(id))?.time ?? ''}
-            onClose={() => setDateModalOpen(false)}
+            count={dateSelectionIds.length}
+            initialDate={session.plan.find(({ id }) => dateSelectionIds.includes(id))?.date ?? ''}
+            initialTime={session.plan.find(({ id }) => dateSelectionIds.includes(id))?.time ?? ''}
+            onClose={() => {
+              setDateModalOpen(false);
+              setDateSelectionIds([]);
+            }}
             onApply={async (fields, allowConflicts, preview) => {
               const bridge = window.rednoteV2;
               if (bridge === undefined) {
@@ -388,7 +393,7 @@ export function V2App(): React.JSX.Element {
               }
               const result = await bridge.reschedulePlanCandidates({
                 allowConflicts,
-                candidateIds: ui.planSelectedIds,
+                candidateIds: dateSelectionIds,
                 expectedRevision: session.planRevision,
                 ...fields,
                 weekKey: session.weekKey,
@@ -399,6 +404,7 @@ export function V2App(): React.JSX.Element {
               }
               setSession((current) => withPersistedWeeklyPlan(current, result.value));
               setDateModalOpen(false);
+              setDateSelectionIds([]);
               const first = preview.items[0];
               setScheduleSuccess(
                 `${preview.affectedCount} 篇 · ${first?.targetDate ?? ''} · ${
@@ -409,7 +415,7 @@ export function V2App(): React.JSX.Element {
             }}
             onPreview={async (fields) => {
               const input: RendererPlanRescheduleFields = {
-                candidateIds: ui.planSelectedIds,
+                candidateIds: dateSelectionIds,
                 expectedRevision: session.planRevision,
                 ...fields,
                 weekKey: session.weekKey,

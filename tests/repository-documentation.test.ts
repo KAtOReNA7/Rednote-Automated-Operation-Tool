@@ -53,9 +53,10 @@ describe('repository-facing documentation', () => {
   it('keeps the README focused on the current V2 path and links legacy details instead', () => {
     expect(readme).toContain('V2-R01—R07 已获用户验收');
     expect(readme).toMatch(/V2-D-FINAL 与 R08 N1—N7 视觉已通过用户验收/u);
-    expect(readme).toMatch(/R08.+待精确构建体验验收/su);
-    expect(readme).toMatch(/PR #17 保持 Draft/u);
-    expect(readme).toMatch(/R09 尚未开始/u);
+    expect(readme).toMatch(/R08.+PR #17、#18 已合并到 `main`/su);
+    expect(readme).toMatch(/仓库记录[^。]+不足以证明用户已完成[^。]+人工体验/u);
+    expect(readme).toMatch(/R09.+既有本地 Catalog.+只读/su);
+    expect(readme).toMatch(/R09.+等待真实 Electron 视觉验收/su);
     expect(readme).toContain('npm run desktop:dev -- --legacy-shell');
     expect(readme).toMatch(/npm run desktop:dev\r?\n```/u);
     expect(readme).not.toMatch(/R07.+兼容修复与.+复验中/u);
