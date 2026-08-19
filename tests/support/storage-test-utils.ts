@@ -31,6 +31,16 @@ export async function createStorageTestContext(): Promise<{
   };
 }
 
+export async function createBackupStorageTestContext(): Promise<{
+  readonly backupRoot: string;
+  readonly repository: LocalFileRepository;
+  readonly root: ProjectDataRoot;
+  readonly rootPath: string;
+}> {
+  const storage = await createStorageTestContext();
+  return { ...storage, backupRoot: await createTemporaryStoragePath('backup destination') };
+}
+
 export async function cleanTemporaryStorageDirectories(): Promise<void> {
   const paths = [...temporaryStorageDirectories];
   temporaryStorageDirectories.clear();

@@ -45,8 +45,22 @@ export { SqliteSearchRepository } from './search-repository.js';
 export { SqliteTopicRepository } from './topic-repository.js';
 export { SqliteV2Repository } from './v2-repository.js';
 export { runInCoordinatedTransaction, runInTransaction } from './transaction.js';
+export {
+  SqliteSnapshotError,
+  createSqliteSnapshot,
+  estimateSqliteSnapshotBytes,
+  inspectSqliteSnapshot,
+} from './sqlite-snapshot.js';
+export {
+  MANAGED_BACKUP_INVENTORY_MAX_FILES,
+  MANAGED_BACKUP_INVENTORY_MAX_REFERENCES,
+  ManagedFileInventoryError,
+  enumerateManagedFileInventory,
+} from './managed-file-inventory.js';
 
 export type { InitializeDatabaseOptions, MigrationResult } from './migration-runner.js';
+export type { SqliteSnapshotErrorCode, SqliteSnapshotIdentity } from './sqlite-snapshot.js';
+export type { ManagedFileInventoryEntry } from './managed-file-inventory.js';
 export type {
   AssertionActionPreview,
   AssertionRevokeActionPreview,
