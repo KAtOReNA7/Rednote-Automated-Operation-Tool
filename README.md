@@ -3,8 +3,8 @@
     <img alt="Windows CI" src="https://github.com/KAtOReNA7/Rednote-Automated-Operation-Tool/actions/workflows/ci.yml/badge.svg" />
   </a>
   <img alt="V2 R01 to R07 accepted" src="https://img.shields.io/badge/V2--R01%E2%80%94R07-用户已验收-2ea44f" />
-  <img alt="V2 R08 merged" src="https://img.shields.io/badge/V2--R08-已合并_main-2ea44f" />
-  <img alt="V2 R09 read-only library in progress" src="https://img.shields.io/badge/V2--R09-只读书库验收中-2563eb" />
+  <img alt="V2 R08 accepted and merged" src="https://img.shields.io/badge/V2--R08-已验收并合并-2ea44f" />
+  <img alt="V2 R09 accepted and merged" src="https://img.shields.io/badge/V2--R09-已验收并合并-2ea44f" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Development preview" src="https://img.shields.io/badge/状态-开发预览版-c69026" />
 </p>
@@ -15,10 +15,9 @@
 一个桌面应用里，数据保存在本机，所有对外发布与发送动作仍由用户亲自在官方平台完成。
 
 > [!IMPORTANT]
-> 当前版本是**开发预览版**，不是可以直接投入日常运营的正式产品。V2-R01—R07 已获用户验收；
-> V2-D-FINAL 与 R08 N1—N7 视觉已通过用户验收。R08 的 PR #17、#18 已合并到 `main`；仓库记录
-> 不足以证明用户已完成合并后精确 Windows 包的人工体验。R09 正在把既有本地 Catalog 以只读方式
-> 接入 V2 书库，当前等待真实 Electron 视觉验收。
+> 当前版本是**开发预览版**，不是正式生产版本。V2-R01—R07 已获用户验收；V2-D-FINAL、R08 N1—N7
+> 和 R09 均已完成用户验收并合并到 `main`。R09 已将既有本地 Catalog 以只读方式接入 V2 书库；
+> 发布准备的范围已冻结，但备份恢复、诊断、安装升级和候选验证功能尚未开始实施。
 
 ## 现在能做什么
 
@@ -29,7 +28,7 @@
 - **数据复盘**：为已批准内容包手工录入 24H、72H、7D 指标，查看单篇明细、本地汇总和确定性建议。
 - **只读书库**：从既有本地 Catalog 查看 Work、Expression、Edition、来源与关系，不修改目录事实。
 - **受控 Provider**：配置研究、写作和图片模型槽；周计划、文案、封面和回复都先预览，再由用户逐次确认。
-- **本地恢复**：计划、内容包、互动、指标和状态保存在本机 SQLite 与受控文件目录中。
+- **本地数据**：计划、内容包、互动、指标和状态保存在本机 SQLite 与受控文件目录中；完整备份与恢复尚未实施。
 
 内容包固定包含 6 项：封面、标题、正文、标签、建议发布时间、素材说明。**不包含置顶评论。**
 受控 Provider 默认不会发起请求；费用未知时必须由用户明确确认。软件不会读取平台收件箱，也
@@ -41,20 +40,21 @@
 - 受控模型和图片 Provider 已接线，但仓库测试不证明真实供应商的质量、稳定性或费用表现。
 - 搜索、页面抓取、OCR、平台指标导入和小红书业务 API 仍未接入 V2。
 - 书库当前只开放既有 Catalog 的只读浏览；导入、发现、编辑、合并与拆分均未进入 R09。
-- R08 已合并到 `main`，但仓库证据不代表用户已完成合并后精确 Windows 包的人工体验。
-- 目前没有正式安装器、自动更新或面向生产环境的发布版本。
+- R08、R09 已获用户验收并合并到 `main`；这不等于正式生产发布。
+- 目前没有正式安装器、自动更新或正式 GitHub Release；内部 Windows 目录式体验包不是正式安装包。
+- Windows 10/11 的干净环境发布候选验证尚未完成。
 
 ## 当前页面
 
-| 页面     | 当前状态                                                               |
-| -------- | ---------------------------------------------------------------------- |
-| 总览     | 展示真实的本地计划、待处理内容和互动摘要，不再展示模拟表现             |
-| 本周计划 | 已接通人设、批量选择、确认、锁定、自由日期时间和受控研究模型候选       |
-| 内容     | 已接通三包生成、编辑、版本、批准、导出，以及受控文案与封面新版本       |
-| 互动     | 已接通评论/私信粘贴、内容关联、Scripted/受控建议和手动发送事实记录     |
-| 书库     | 正在接通既有 Catalog 的 Work / Expression / Edition 只读浏览与来源边界 |
-| 数据复盘 | 已接通手工指标录入、单篇明细、确定性汇总和策略决策                     |
-| 设置     | 已接通 workspace、人设、Provider 配置、凭据引用、能力探测和费用边界    |
+| 页面     | 当前状态                                                             |
+| -------- | -------------------------------------------------------------------- |
+| 总览     | 展示真实的本地计划、待处理内容和互动摘要，不再展示模拟表现           |
+| 本周计划 | 已接通人设、批量选择、确认、锁定、自由日期时间和受控研究模型候选     |
+| 内容     | 已接通三包生成、编辑、版本、批准、导出，以及受控文案与封面新版本     |
+| 互动     | 已接通评论/私信粘贴、内容关联、Scripted/受控建议和手动发送事实记录   |
+| 书库     | 已接通既有 Catalog 的 Work / Expression / Edition 只读浏览与来源边界 |
+| 数据复盘 | 已接通手工指标录入、单篇明细、确定性汇总和策略决策                   |
+| 设置     | 已接通 workspace、人设、Provider 配置、凭据引用、能力探测和费用边界  |
 
 ## V2 开发进度
 
@@ -62,13 +62,13 @@
 | ---------- | ----------------------------------------------------- | -------------------------- |
 | V2-R01—R07 | 产品壳、持久化、内容运营闭环、本地复盘与受控 Provider | 用户已验收                 |
 | V2-D-FINAL | 在 Figma 中统一七页视觉、关键状态、响应式与交互细节   | 用户已验收                 |
-| **V2-R08** | **落地 N1—N7、默认 V2 入口与显式旧版回退**            | **PR #17、#18 已合并**     |
-| **V2-R09** | **迁移既有 Catalog 的只读书库核心**                   | **等待 Electron 视觉验收** |
-| 发布准备   | 安装、升级、备份恢复、诊断和 Windows 端到端验收       | 范围尚未冻结               |
+| **V2-R08** | **落地 N1—N7、默认 V2 入口与显式旧版回退**            | **用户验收通过，已合并**   |
+| **V2-R09** | **迁移既有 Catalog 的只读书库核心**                   | **用户验收通过，已合并**   |
+| **R10**    | **安装、升级、备份恢复、诊断和 Windows 端到端验收**   | **范围已冻结，功能未开始** |
 
 N1—N7 已按[最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)完成并获用户验收。
-R08 集成提交已经进入 `main`；合并与托管验证不等同于用户对精确 Windows 包的人工体验。R09 当前
-只迁移既有 Catalog 的只读浏览，视觉验收通过前不能宣称完成，更不代表产品已正式发布。
+R08、R09 已合并；R09 的只读 Catalog 已可用。R10 是发布准备而非新业务功能扩张，具体边界见
+[R10 发布准备范围合同](./docs/product/v2-r10-release-readiness-scope.md)。
 
 ## 快速开始
 
@@ -156,6 +156,7 @@ Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferr
 - [V2-R05 互动合同](./docs/product/v2-r05-interaction-contract.md)
 - [V2-R06 增量指令](./docs/instructions/v2/V2-R06-local-metrics-and-deterministic-review-Codex-instruction.txt)
 - [V2 最终视觉统一政策](./docs/product/v2-final-visual-convergence-policy.md)
+- [R10 发布准备范围合同](./docs/product/v2-r10-release-readiness-scope.md)
 - [历史任务指令索引](./docs/instructions/README.md)
 - [贡献与代理规则](./AGENTS.md)
 
@@ -174,5 +175,5 @@ Minimal Issue 030** 的缩减范围收口。原 Issue 029 的 029B 保持 deferr
 <p align="center">
   <strong>开发中 · 非生产可用 · 非官方项目</strong>
   <br />
-  V2-R01—R07 与 N1—N7 视觉已验收，R08 已合并，R09 只读书库待视觉验收；最终发布和互动发送始终由用户手动完成。
+  V2-R01—R09 已验收并合并；R10 发布准备范围已冻结，功能尚未开始；最终发布和互动发送始终由用户手动完成。
 </p>

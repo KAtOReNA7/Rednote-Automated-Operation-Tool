@@ -1,4 +1,4 @@
-# 历史 Issue 执行指令
+# 历史 Issue 执行指令与当前 R10A 归档
 
 这些文件是已完成工作的原始授权与审计证据，不是待办任务。除非用户明确要求修正文档事实，
 不得重写其内容，也不得因为文件中提及后续 Issue 而自动开始开发。
@@ -36,8 +36,13 @@ M2（Issue 012—021）已完成。
 - [Issue 025：版本化文案生成与局部重写](./m3/M3-Issue025-versioned-copy-generation-Codex-instruction.txt)
 - [Issue 026：正文事实声明映射、证据回溯与事实质量检查](./m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt)
 
-M3 Issue 022—026 已完成；Issue 026 指令只归档于本目录。下一项仅规划 Issue 027，未收到明确
-授权时不得自动开始。
+M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的表述不是当前实施状态，且不得自动
+开始。当前活跃工作为 R10A 文档与发布事实收口；R10 功能尚未开始，范围见
+[`../product/v2-r10-release-readiness-scope.md`](../product/v2-r10-release-readiness-scope.md)。
+
+## V2
+
+- [R10A：发布准备范围合同](./v2/V2-R10A-release-scope-contract-Codex-instruction.txt)
 
 ## Governance
 

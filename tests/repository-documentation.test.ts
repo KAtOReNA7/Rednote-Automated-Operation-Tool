@@ -10,6 +10,13 @@ const roadmap = readFileSync(
   resolve(projectRoot, 'docs/product/xiaohongshu-development-roadmap-v1.md'),
   'utf8',
 );
+const r10Scope = readFileSync(
+  resolve(projectRoot, 'docs/product/v2-r10-release-readiness-scope.md'),
+  'utf8',
+);
+const docsIndex = readFileSync(resolve(projectRoot, 'docs/README.md'), 'utf8');
+const productIndex = readFileSync(resolve(projectRoot, 'docs/product/README.md'), 'utf8');
+const instructionsIndex = readFileSync(resolve(projectRoot, 'docs/instructions/README.md'), 'utf8');
 
 interface ProjectProgress {
   readonly completedThrough: number;
@@ -52,11 +59,21 @@ function projectProgress(content: string): ProjectProgress | null {
 describe('repository-facing documentation', () => {
   it('keeps the README focused on the current V2 path and links legacy details instead', () => {
     expect(readme).toContain('V2-R01—R07 已获用户验收');
-    expect(readme).toMatch(/V2-D-FINAL 与 R08 N1—N7 视觉已通过用户验收/u);
-    expect(readme).toMatch(/R08.+PR #17、#18 已合并到 `main`/su);
-    expect(readme).toMatch(/仓库记录[^。]+不足以证明用户已完成[^。]+人工体验/u);
+    expect(readme).toMatch(
+      /V2-D-FINAL、R08 N1—N7[\s\S]{0,80}R09[\s\S]{0,80}均已完成用户验收并合并/u,
+    );
+    expect(readme).toMatch(/R08、R09 已获用户验收并合并到 `main`/u);
     expect(readme).toMatch(/R09.+既有本地 Catalog.+只读/su);
-    expect(readme).toMatch(/R09.+等待真实 Electron 视觉验收/su);
+    expect(readme).not.toMatch(/R09.+等待(?:真实 )?(?:Electron )?视觉验收/su);
+    expect(readme).toMatch(/R10.+范围已冻结.+功能未开始/su);
+    expect(readme).toContain('./docs/product/v2-r10-release-readiness-scope.md');
+    expect(docsIndex).toContain('./product/v2-r10-release-readiness-scope.md');
+    expect(productIndex).toContain('./v2-r10-release-readiness-scope.md');
+    expect(instructionsIndex).toContain(
+      './v2/V2-R10A-release-scope-contract-Codex-instruction.txt',
+    );
+    expect(docsIndex).not.toContain('下一项仅规划\nIssue 027');
+    expect(instructionsIndex).not.toContain('下一项仅规划 Issue 027');
     expect(readme).toContain('npm run desktop:dev -- --legacy-shell');
     expect(readme).toMatch(/npm run desktop:dev\r?\n```/u);
     expect(readme).not.toMatch(/R07.+兼容修复与.+复验中/u);
@@ -113,6 +130,23 @@ describe('repository-facing documentation', () => {
     }
   });
 
+  it('keeps the R10 release-readiness scope explicit and non-operational', () => {
+    expect(r10Scope).toMatch(/首版采用\s+\*{0,2}Windows 每用户离线安装/u);
+    expect(r10Scope).toMatch(/手动升级/u);
+    expect(r10Scope).toMatch(/(?:内部 beta.{0,30}未签名|未签名.{0,30}内部 beta)/su);
+    expect(r10Scope).toMatch(/本地磁盘\s+\*{0,2}受控目录快照/u);
+    expect(r10Scope).toMatch(/\*{0,2}同版本或明确声明兼容/u);
+    expect(r10Scope).toMatch(/拒绝降级和未知版本/u);
+    expect(r10Scope).toMatch(/Windows 10 与 Windows 11.+人工候选验证/su);
+    expect(r10Scope).toMatch(/Draft GitHub Release/u);
+    expect(r10Scope).toMatch(/R10A[\s\S]*R10B[\s\S]*R10C[\s\S]*R10D[\s\S]*R10E/u);
+    expect(r10Scope).toMatch(/R10B.+Figma.+用户确认/su);
+    expect(r10Scope).toMatch(/R10C.+Figma.+用户确认/su);
+    expect(r10Scope).toMatch(/不实现自动更新/u);
+    expect(r10Scope).toMatch(/禁止后台上传/u);
+    expect(r10Scope).toMatch(/(?:不引入|不新增)云端运行依赖/u);
+  });
+
   it('keeps product baselines, governance records, and historical instructions out of root', () => {
     for (const path of [
       'docs/README.md',
@@ -121,6 +155,7 @@ describe('repository-facing documentation', () => {
       'docs/instructions/README.md',
       'docs/product/xiaohongshu-mystery-account-prd-v1.md',
       'docs/product/xiaohongshu-development-roadmap-v1.md',
+      'docs/product/v2-r10-release-readiness-scope.md',
       'docs/governance/codex-master-development-instruction-v1.md',
       'docs/instructions/m1/M1-Issue008-local-file-repository-Codex-instruction.txt',
       'docs/instructions/m2/M2-Issue017-Chrome-Edge-browser-clipper-Codex-instruction.txt',
@@ -135,6 +170,7 @@ describe('repository-facing documentation', () => {
       'docs/instructions/m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue029A-deterministic-copy-integrity-Codex-instruction.txt',
       'docs/instructions/m3/M3-Issue030-minimal-quality-aggregator-Codex-instruction.txt',
+      'docs/instructions/v2/V2-R10A-release-scope-contract-Codex-instruction.txt',
       'docs/adr/0025-copy-integrity-deterministic-subset.md',
       'docs/adr/0026-quality-readiness-aggregator.md',
       'docs/instructions/governance/Project-health-audit-after-Issue026-Codex-instruction.txt',

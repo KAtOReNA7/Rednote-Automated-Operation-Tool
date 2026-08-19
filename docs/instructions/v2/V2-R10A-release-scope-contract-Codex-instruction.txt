@@ -1,0 +1,75 @@
+模型：gpt-5.6-terra
+推理强度：medium
+选择依据：本任务是边界清晰、可逆的文档与治理收口，不涉及数据库、安装器、Provider 或产品运行时。
+升级条件：无。若动态基线、仓库规则或发布治理存在冲突，立即停止并报告，不自行扩大范围。
+
+任务名称：R10A_RELEASE_READINESS_SCOPE_CONTRACT
+
+## 授权目标
+
+在已合并并由用户验收通过的 R09 基础上实施 R10A：同步 R08/R09 的真实完成状态；把用户批准的 R10 产品决定写为唯一可审计合同；冻结 R10A—R10E 的顺序、门禁、停止规则与安全边界；更新文档索引及治理测试；在独立分支完成文档型提交、推送并创建 Draft PR，等待精确 HEAD 的 push/PR Windows required checks。不得合并、不得开始 R10B、不得生成安装包或体验包。
+
+## 已确认事实
+
+1. R09 PR #19 已合并，精确开发提交为 `e0e106b0ce4ccb71baab94fb877e6dff74df3ce2`，merge commit 为 `326c8ddf246f374354789209755a867d9b8f7273`。
+2. 用户于 2026-08-19 完成 R09 新体验包测试并反馈没有问题；R09 用户验收和两条精确 HEAD Windows required checks 已通过。
+3. R10 发布准备审计已完成，但 R10 功能实施尚未开始。
+4. README 存在 R09 等待验收的过期表述；`docs/README.md` 与 `docs/instructions/README.md` 的活跃进度仍停在旧 Issue。
+5. 以上事实不得改写为正式发布完成或生产就绪。
+
+## 冻结的产品决定
+
+1. 首版采用 Windows 每用户离线安装，不要求管理员权限。
+2. 首版采用手动升级，不实现自动更新。
+3. 先发布未签名的内部 beta；公开分发前另行决定和实施代码签名。
+4. 备份采用用户选择的本地磁盘受控目录快照。
+5. 恢复只允许同版本或明确声明兼容的版本；降级及未知版本必须拒绝。
+6. Release Candidate 必须在 Windows 10 与 Windows 11 上分别进行人工候选验证。
+7. Release Candidate 通过 Draft GitHub Release 交付；两平台验收均通过后才可另行申请正式 GitHub Release。
+8. 诊断信息必须先在本地供用户预览，再由用户手动导出；绝不自动上传，保留和删除由用户管理。
+9. R10 不实现自动更新、云端运行依赖或隐藏更新接口。
+10. R10B 备份/恢复 UX 与 R10C 诊断导出 UX 必须先完成 Figma 设计和用户确认，才能实现。
+
+## 冻结阶段顺序
+
+- R10A：同步 R08/R09 状态、固化本指令决定、建立 R10A—R10E 规则、更新文档治理测试；仅完成 Draft PR。
+- R10B：先通过 Figma 和用户确认；受控目录快照、恢复预检、兼容性和完整性校验；禁止未知版本、降级和自动覆盖。
+- R10C：先通过 Figma 和用户确认；版本化、可预览/审阅/校验的默认脱敏诊断；仅用户手动导出，禁止后台上传和自动留存。
+- R10D：每用户离线安装、手动升级、卸载和失败回退；内部 beta 可以未签名，不得宣称公开发行级可信安装；不得购买或配置签名证书。
+- R10E：候选制品、checksum manifest、来源证明、Draft GitHub Release、Win10/Win11 干净环境人工安装/升级/卸载/备份/恢复验证，以及最终用户/离线交接/回滚指南。两平台用户验收后才可另行申请正式 Release。
+
+任何阶段不得自行合并、进入下一阶段或发布正式 Release。
+
+## 本轮允许文件与实施规则
+
+最大且唯一允许文件集合：
+
+1. `README.md`
+2. `docs/README.md`
+3. `docs/product/README.md`
+4. `docs/product/v2-r10-release-readiness-scope.md`
+5. `docs/instructions/README.md`
+6. `docs/instructions/v2/V2-R10A-release-scope-contract-Codex-instruction.txt`
+7. `tests/repository-documentation.test.ts`
+
+不得修改 package、lockfile、Schema、migration、数据库、IPC、Provider、费用合同、产品代码、历史 PRD、路线图、旧任务指令或已完成 Issue 原始内容。需要第八个文件时必须停止请求授权。归档本指令时保持授权内容一致，不私自增加权限。
+
+README 必须将 R08/R09 标为完成、用户验收并合并；R10 标为范围已冻结但功能未开始；保持开发预览、没有正式安装器/自动更新/正式 GitHub Release、内部目录体验包不是正式安装包、Win10/11 干净环境验证未完成、只读 Catalog 已可用等真实表述，并链接新的范围合同。
+
+范围合同至少包含：文档状态、批准日期、R08/R09 事实、R10 目标、十项决定、R10A—E 的用户结果/进入与完成门禁/停止条件、备份和兼容策略、诊断预览/脱敏/导出/保留、安装/升级/卸载/签名/自动更新边界、Win10/11 与 Draft GitHub Release、R10B/R10C Figma 前置门禁、安全边界、排除项、未来决定和冲突优先级。
+
+文档索引必须链接范围合同与本归档；旧 Issue 027、旧 M6 指令仅标历史记录，不能表示当前实施状态。
+
+治理测试必须以语义验证 R08/R09 状态、R10 未实施、合同可从活跃索引访问、十项决定、R10A—E 严格顺序、R10B/R10C Figma、无自动更新/后台上传/云端依赖、兼容恢复拒绝降级/未知版本以及 Win10/Win11 双环境验证；不得绑定完整快照、固定 SHA/行号或堆砌关键词。
+
+## 动态基线、验证与交付
+
+先读取全部 AGENTS，记录 Git 状态；只允许一次 `git fetch origin main`，确认 `origin/main` 含 R09 merge commit。工作树/暂存/未跟踪不干净、同名分支状态不明、规则冲突或需要越界文件时停止。自当前 `origin/main` 创建 `codex/v2-r10a-release-readiness-scope-contract`；禁止 reset、force push、rebase 或删分支。
+
+本地仅运行变更文件 formatter、聚焦 repository-documentation 测试、相邻文档/治理测试、变更测试 lint（必要时 typecheck）、`git diff --check`、文件集合/diff stat 与敏感内容/越界语义检查。不得 Electron 打包、体验包、安装器、Figma、迁移、真实 Provider/API 调用。
+
+验证通过后创建唯一提交：`docs(v2): freeze R10 release readiness scope`；普通 push 分支并建立以 `main` 为 base 的 Draft PR，标题相同。PR 说明必须列 R08/R09 状态、十项决定、顺序、治理测试、docs-only 范围、无产品代码/Schema/IPC/Provider/安装器/依赖变更、真实凭据/API/费用为 0、未开始 R10B。保持 Draft，不转 Ready、不合并。
+
+等待精确 HEAD 的 push 与 PR Windows required checks，并确认两者 SHA 一致。若失败，只读诊断；仅明确属本文档/测试范围的失败允许一次最小修复，不能越界或弱化测试。基础设施、权限、未知失败、需第八文件或任何会转 Ready/合并/Release/R10B 的情况均停止。
+
+最终状态：`R10A_RELEASE_SCOPE_CONTRACT_DRAFT_PR_READY_FOR_USER_REVIEW`。最终报告按 START_DYNAMIC_BASELINE、APPROVED_PRODUCT_DECISIONS、EXACT_CHANGED_FILES_AND_DIFF_STAT、R08_R09_TRUTH_SYNC、R10_CONTRACT_AND_SEQUENCE、DOCUMENTATION_GOVERNANCE_TESTS、LOCAL_VALIDATION_RESULTS、COMMIT_PUSH_DRAFT_PR、EXACT_HEAD_WINDOWS_CI、FINAL_GIT_STATE、CREDENTIAL_API_COST_ZERO_USE_PROOF、STOP_NO_MERGE_NO_R10B 给出证据。
