@@ -4,7 +4,12 @@ import type { DatabaseSync } from 'node:sqlite';
 
 import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'electron';
 
-import { connectDatabase, initializeDatabase, SqliteV2Repository } from '@mystery-operations/db';
+import {
+  connectDatabase,
+  initializeDatabase,
+  SqliteCatalogRepository,
+  SqliteV2Repository,
+} from '@mystery-operations/db';
 import { initializeProjectDataRoot, type ProjectDataRoot } from '@mystery-operations/storage';
 import {
   V2ApplicationFacade,
@@ -33,6 +38,8 @@ import {
   type V2ProviderActionResult,
   type V2CapabilityProbePreview,
   type V2CapabilityProbeProgress,
+  type V2CatalogWorkDetail,
+  type V2CatalogWorkListView,
   type V2ProviderSettingsDraft,
   type V2ProviderSettingsView,
   type V2ContentCopyGenerationPreview,
@@ -205,6 +212,7 @@ const unavailableSettingsControl: V2SettingsControlPort = {
 };
 
 export class V2DesktopRuntime {
+  readonly #catalog: SqliteCatalogRepository;
   readonly #database: DatabaseSync;
   readonly #content: V2ContentApplication;
   readonly #facade: V2ApplicationFacade;
@@ -225,6 +233,7 @@ export class V2DesktopRuntime {
     settingsControl: V2SettingsControlPort,
   ) {
     this.#database = database;
+    this.#catalog = new SqliteCatalogRepository(database);
     this.#repository = new SqliteV2Repository(database);
     this.#facade = new V2ApplicationFacade(this.#repository);
     this.#content = new V2ContentApplication(this.#repository, contentFiles);
@@ -279,6 +288,43 @@ export class V2DesktopRuntime {
   public async read(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2ReadRequest(input);
+    if (request.view === 'CATALOG_WORKS') {
+      const summary = this.#catalog.getSummary(request.limit + 1, request.offset, request.query);
+      return {
+        hasMore: summary.works.length > request.limit,
+        limit: request.limit,
+        offset: request.offset,
+        query: request.query,
+        totalWorks: summary.counts.works,
+        works: summary.works.slice(0, request.limit).map((work) => ({ ...work })),
+      } satisfies V2CatalogWorkListView;
+    }
+    if (request.view === 'CATALOG_WORK') {
+      const detail = this.#catalog.getWorkDetail(request.workId);
+      if (detail === null) return null;
+      return {
+        aliases: detail.aliases.map((alias) => ({ ...alias })),
+        canonicalTitle: detail.canonicalTitle,
+        editionCount: detail.editionCount,
+        expressionCount: detail.expressionCount,
+        expressions: detail.expressions.map((expression) => ({
+          ...expression,
+          editions: expression.editions.map((edition) => ({
+            ...edition,
+            identifiers: edition.identifiers.map((identifier) => ({ ...identifier })),
+          })),
+        })),
+        observations: detail.observations.map((observation) => ({ ...observation })),
+        publicationRelationships: detail.publicationRelationships.map((relation) => ({
+          ...relation,
+        })),
+        relations: detail.relations.map((relation) => ({ ...relation })),
+        revision: detail.revision,
+        sourceBoundary: detail.observations.length === 0 ? 'MISSING' : 'UNVERIFIED_OBSERVATIONS',
+        state: detail.state,
+        workId: detail.workId,
+      } satisfies V2CatalogWorkDetail;
+    }
     if (request.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#previewContentCopyGeneration(request, caller);

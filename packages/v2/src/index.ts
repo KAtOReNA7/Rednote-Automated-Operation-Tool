@@ -69,6 +69,10 @@ export const V2_IPC_CHANNELS = Object.freeze({
   read: 'v2:workspace:read',
 } as const);
 export const V2_LIMITS = Object.freeze({
+  catalogLimit: 24,
+  catalogOffset: 10_000,
+  catalogQuery: 256,
+  catalogWorkId: 128,
   candidateCount: 40,
   candidateId: 64,
   candidateText: 200,
@@ -77,6 +81,74 @@ export const V2_LIMITS = Object.freeze({
   personaText: 500,
   requestBytes: 32_768,
 } as const);
+
+export interface V2CatalogWorkSummary {
+  readonly canonicalTitle: string;
+  readonly editionCount: number;
+  readonly expressionCount: number;
+  readonly revision: number;
+  readonly state: string;
+  readonly workId: string;
+}
+
+export interface V2CatalogWorkListView {
+  readonly hasMore: boolean;
+  readonly limit: number;
+  readonly offset: number;
+  readonly query: string;
+  readonly totalWorks: number;
+  readonly works: readonly V2CatalogWorkSummary[];
+}
+
+export interface V2CatalogWorkDetail extends V2CatalogWorkSummary {
+  readonly aliases: readonly {
+    readonly kind: string;
+    readonly normalized: string;
+    readonly raw: string;
+  }[];
+  readonly expressions: readonly {
+    readonly editions: readonly {
+      readonly editionId: string;
+      readonly identifiers: readonly {
+        readonly namespace: string;
+        readonly value: string;
+      }[];
+      readonly label: string | null;
+      readonly publisher: string | null;
+      readonly state: string;
+    }[];
+    readonly expressionId: string;
+    readonly kind: string;
+    readonly language: string | null;
+    readonly state: string;
+    readonly title: string | null;
+  }[];
+  readonly observations: readonly {
+    readonly factStatus: 'NOT_A_FACT';
+    readonly fieldProvenanceCount: number;
+    readonly observationId: string;
+    readonly originKind: string;
+    readonly truthStatus: 'UNVERIFIED';
+  }[];
+  readonly publicationRelationships: readonly {
+    readonly language: string | null;
+    readonly objectAgentName: string | null;
+    readonly role: string;
+    readonly scopeId: string | null;
+    readonly scopeType: string | null;
+    readonly subjectAgentName: string;
+    readonly territory: string | null;
+    readonly verificationState: string;
+  }[];
+  readonly relations: readonly {
+    readonly agentName: string;
+    readonly role: string;
+    readonly scopeId: string;
+    readonly scopeType: string;
+    readonly verificationState: string;
+  }[];
+  readonly sourceBoundary: 'MISSING' | 'UNVERIFIED_OBSERVATIONS';
+}
 
 export interface AccountPersonaFields {
   readonly audience: string;
@@ -192,6 +264,13 @@ export interface PlanReschedulePreview {
 
 export type V2ReadRequest =
   | { readonly view: 'ACCOUNT_PERSONA' }
+  | {
+      readonly limit: number;
+      readonly offset: number;
+      readonly query: string;
+      readonly view: 'CATALOG_WORKS';
+    }
+  | { readonly view: 'CATALOG_WORK'; readonly workId: string }
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
@@ -391,6 +470,14 @@ export interface V2Bridge {
   readonly readContentPackages: (input: {
     readonly weekKey: string;
   }) => Promise<V2Result<ContentWorkspace>>;
+  readonly readCatalogWork?: (input: {
+    readonly workId: string;
+  }) => Promise<V2Result<V2CatalogWorkDetail | null>>;
+  readonly readCatalogWorks?: (input: {
+    readonly limit: number;
+    readonly offset: number;
+    readonly query: string;
+  }) => Promise<V2Result<V2CatalogWorkListView>>;
   readonly readInteractions: () => Promise<V2Result<InteractionWorkspace>>;
   readonly readMetricsReview?: (input: {
     readonly snapshotWindow: MetricWindow;
@@ -514,6 +601,43 @@ function weekKey(value: unknown): string {
     throw new V2ContractError('INVALID_REQUEST', ['weekKey']);
   }
   return value;
+}
+
+function catalogReadRequest(value: Readonly<Record<string, unknown>>): V2ReadRequest | null {
+  if (value.view === 'CATALOG_WORKS' && exactKeys(value, ['limit', 'offset', 'query', 'view'])) {
+    if (
+      typeof value.limit !== 'number' ||
+      !Number.isSafeInteger(value.limit) ||
+      value.limit < 1 ||
+      value.limit > V2_LIMITS.catalogLimit ||
+      typeof value.offset !== 'number' ||
+      !Number.isSafeInteger(value.offset) ||
+      value.offset < 0 ||
+      value.offset > V2_LIMITS.catalogOffset ||
+      typeof value.query !== 'string' ||
+      utf8Bytes(value.query) > V2_LIMITS.catalogQuery ||
+      /[\0\r\n]/u.test(value.query)
+    ) {
+      throw new V2ContractError('INVALID_REQUEST', ['catalog']);
+    }
+    return {
+      limit: value.limit,
+      offset: value.offset,
+      query: value.query.normalize('NFC').trim(),
+      view: value.view,
+    };
+  }
+  if (value.view === 'CATALOG_WORK' && exactKeys(value, ['view', 'workId'])) {
+    if (
+      typeof value.workId !== 'string' ||
+      utf8Bytes(value.workId) > V2_LIMITS.catalogWorkId ||
+      !/^[a-z0-9][a-z0-9._:-]*$/iu.test(value.workId)
+    ) {
+      throw new V2ContractError('INVALID_REQUEST', ['workId']);
+    }
+    return { view: value.view, workId: value.workId };
+  }
+  return null;
 }
 
 export function parseAccountPersonaFields(value: unknown): AccountPersonaFields {
@@ -924,6 +1048,8 @@ export function parseContentMutationRequest(value: unknown): ContentMutationRequ
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  const catalogRequest = catalogReadRequest(value);
+  if (catalogRequest !== null) return catalogRequest;
   if (value.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
     const request = parseV2ContentCopyGenerationPreviewRequest(value);
     return { ...request, view: value.view };
@@ -1489,6 +1615,8 @@ export class V2ApplicationFacade {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
     if (
+      request.view === 'CATALOG_WORKS' ||
+      request.view === 'CATALOG_WORK' ||
       request.view === 'METRICS_REVIEW' ||
       request.view === 'CONTENT_COPY_GENERATION_PREVIEW' ||
       request.view === 'PROVIDER_ACTION_PREVIEW' ||

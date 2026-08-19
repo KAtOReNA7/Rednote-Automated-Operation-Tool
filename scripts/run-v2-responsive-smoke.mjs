@@ -684,6 +684,51 @@ async function clickButtonByText(client, sessionId, pattern) {
   );
 }
 
+async function clickVisibleButtonByText(client, sessionId, pattern) {
+  const found = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((element) => ${pattern}.test((element.textContent ?? '').trim()));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return false;
+      button.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      return true;
+    })()`,
+  );
+  if (!found) return false;
+  await delay(100);
+  const target = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const button = [...document.querySelectorAll('button')]
+        .find((element) => ${pattern}.test((element.textContent ?? '').trim()));
+      if (!(button instanceof HTMLButtonElement) || button.disabled) return null;
+      const rect = button.getBoundingClientRect();
+      const x = rect.left + rect.width / 2;
+      const y = rect.top + rect.height / 2;
+      const hit = document.elementFromPoint(x, y);
+      if (hit !== button && !button.contains(hit)) return null;
+      globalThis.__r09ClickObserved = false;
+      button.addEventListener('click', () => { globalThis.__r09ClickObserved = true; }, { once: true });
+      return { x, y };
+    })()`,
+  );
+  if (target === null) return false;
+  await client.send(
+    'Input.dispatchMouseEvent',
+    { button: 'left', clickCount: 1, type: 'mousePressed', ...target },
+    sessionId,
+  );
+  await client.send(
+    'Input.dispatchMouseEvent',
+    { button: 'left', clickCount: 1, type: 'mouseReleased', ...target },
+    sessionId,
+  );
+  return evaluate(client, sessionId, `globalThis.__r09ClickObserved === true`);
+}
+
 const workflowPreviewViewports = [
   { height: 720, width: 1024 },
   { height: 800, width: 1280 },
@@ -1579,6 +1624,342 @@ async function clearZoomEquivalent(client, sessionId) {
   await delay(250);
 }
 
+function r09SyntheticObservation(suffix, title, author, publisher, isbn) {
+  const normalizedTitle = title.normalize('NFKC').toLocaleLowerCase('und');
+  return {
+    contractVersion: 'bibliographic-observation-v1',
+    contributorHints: [
+      { name: { normalized: author.toLocaleLowerCase('und'), raw: author }, roles: ['AUTHOR'] },
+    ],
+    displayTitle: { normalized: normalizedTitle, raw: title },
+    factStatus: 'NOT_A_FACT',
+    fieldProvenance: [
+      {
+        algorithmVersion: 'bibliography-normalization-v1',
+        field: 'displayTitle',
+        inputObservationIds: [],
+        originKind: 'SYNTHETIC_FIXTURE',
+        originRecordId: `r09-evidence-${suffix}`,
+      },
+    ],
+    formatHint: 'PAPER',
+    identifierHints: [
+      {
+        errorCode: null,
+        namespace: 'ISBN_13',
+        normalizedValue: isbn,
+        rawValue: isbn,
+        valid: true,
+      },
+    ],
+    languageHints: ['zh-CN'],
+    normalizationVersion: 'bibliography-normalization-v1',
+    observationId: `observation-r09-evidence-${suffix}`,
+    observedAt: '2026-08-19T00:00:00.000Z',
+    organizationHints: [
+      {
+        name: { normalized: publisher.toLocaleLowerCase('und'), raw: publisher },
+        roles: ['PUBLISHER'],
+      },
+    ],
+    originKind: 'SYNTHETIC_FIXTURE',
+    originRecordId: `r09-evidence-${suffix}`,
+    originRevision: 1,
+    originalTitleHint: null,
+    publicationDateHint: null,
+    publicationYearHint: null,
+    scriptHints: ['HANI'],
+    seriesHint: null,
+    sourceIdentity: { candidateId: null, clipId: null, documentId: null },
+    strata: ['synthetic-r09-evidence'],
+    truthStatus: 'UNVERIFIED',
+    warnings: ['SYNTHETIC_GOLD_FIXTURE'],
+    workTypeHint: 'MYSTERY',
+  };
+}
+
+async function seedR09CatalogEvidence(databasePath) {
+  const { connectDatabase } = await import('../packages/db/dist/connection.js');
+  const { SqliteCatalogRepository } = await import('../packages/db/dist/catalog-repository.js');
+  const database = connectDatabase(databasePath);
+  try {
+    const catalog = new SqliteCatalogRepository(database);
+    catalog.insertSyntheticObservation(
+      r09SyntheticObservation(
+        'alpha',
+        '合成谜案：雾港来信',
+        '合成作者甲',
+        '合成出版社甲',
+        '9780306406157',
+      ),
+      null,
+      '2026-08-19T00:00:00.000Z',
+    );
+    catalog.insertSyntheticObservation(
+      r09SyntheticObservation(
+        'beta',
+        '合成谜案：钟楼回声',
+        '合成作者乙',
+        '合成出版社乙',
+        '9783161484100',
+      ),
+      null,
+      '2026-08-19T00:00:01.000Z',
+    );
+  } finally {
+    database.close();
+  }
+}
+
+async function waitForLibraryText(client, sessionId, text) {
+  return waitFor(
+    async () =>
+      evaluate(
+        client,
+        sessionId,
+        `document.querySelector('.v2-library-page')?.textContent?.includes(${JSON.stringify(text)}) === true`,
+      ),
+    `R09 library text ${text}`,
+  );
+}
+
+async function prepareR09CatalogEvidence(client, sessionId, userDataPath) {
+  assert(evidenceDirectory !== null, 'R09 visual evidence requires an evidence directory.');
+  await resizeViewport(client, sessionId, { height: 900, width: 1440 });
+  await navigate(client, sessionId, 'library', routeSelectors.library);
+  await waitForLibraryText(client, sessionId, '本机 Catalog 尚无作品');
+  const emptySearch = await measureR09SearchControls(client, sessionId);
+  await clearNavigationEvidenceState(client, sessionId);
+  await captureViewport(
+    client,
+    sessionId,
+    join(evidenceDirectory, `${evidencePrefix}-library-empty-1440x900.png`),
+  );
+  await seedR09CatalogEvidence(join(userDataPath, 'v2-project-data', 'database', 'rednote.sqlite'));
+  await reloadWorkspace(client, sessionId);
+  await navigate(client, sessionId, 'library', routeSelectors.library);
+  await waitForLibraryText(client, sessionId, '合成谜案：雾港来信');
+  return emptySearch;
+}
+
+async function readR09LibraryState(client, sessionId) {
+  return evaluate(
+    client,
+    sessionId,
+    `(() => ({
+      details: [...document.querySelectorAll('.v2-library-detail details')].map(({ open }) => open),
+      hash: window.location.hash,
+      input: document.querySelector('.v2-library-search-form input')?.value ?? '',
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      selected: document.querySelector('.v2-book[data-selected="true"] .v2-book-cover strong')?.textContent?.trim() ?? ''
+    }))()`,
+  );
+}
+
+async function measureR09SearchControls(client, sessionId) {
+  const measurement = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const form = document.querySelector('.v2-library-search-form');
+      const input = form?.querySelector('input');
+      const button = form?.querySelector('button');
+      const badge = document.querySelector('.v2-library-readonly');
+      if (!(form instanceof HTMLFormElement) || !(input instanceof HTMLInputElement) ||
+          !(button instanceof HTMLButtonElement) || !(badge instanceof HTMLElement)) return null;
+      const rectOf = (element) => {
+        const rect = element.getBoundingClientRect();
+        return { bottom: rect.bottom, height: rect.height, left: rect.left, right: rect.right, top: rect.top, width: rect.width };
+      };
+      const overlaps = (left, right) =>
+        left.left < right.right && left.right > right.left && left.top < right.bottom && left.bottom > right.top;
+      const formRect = rectOf(form);
+      const inputRect = rectOf(input);
+      const buttonRect = rectOf(button);
+      const badgeRect = rectOf(badge);
+      const range = document.createRange();
+      range.selectNodeContents(button);
+      const textRects = [...range.getClientRects()].filter(({ height, width }) => height > 0 && width > 0);
+      const centerX = buttonRect.left + buttonRect.width / 2;
+      const centerY = buttonRect.top + buttonRect.height / 2;
+      const hit = document.elementFromPoint(centerX, centerY);
+      const style = getComputedStyle(button);
+      return {
+        badge: badgeRect,
+        button: buttonRect,
+        buttonClientHeight: button.clientHeight,
+        buttonClientWidth: button.clientWidth,
+        buttonScrollHeight: button.scrollHeight,
+        buttonScrollWidth: button.scrollWidth,
+        buttonText: (button.textContent ?? '').trim(),
+        covered: hit !== button && !button.contains(hit),
+        form: formRect,
+        input: inputRect,
+        overlaps: {
+          badgeButton: overlaps(badgeRect, buttonRect),
+          badgeInput: overlaps(badgeRect, inputRect),
+          buttonInput: overlaps(buttonRect, inputRect),
+        },
+        pageOverflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        textLineCount: new Set(textRects.map(({ top }) => Math.round(top))).size,
+        whiteSpace: style.whiteSpace,
+      };
+    })()`,
+  );
+  assert(measurement !== null, 'R09 search control group was not measurable.');
+  assert(measurement.pageOverflow === 0, 'R09 library introduced page-level horizontal overflow.');
+  assert(measurement.buttonText === '搜索', 'R09 search button label changed unexpectedly.');
+  assert(measurement.whiteSpace === 'nowrap', 'R09 search button allows text wrapping.');
+  assert(measurement.textLineCount === 1, 'R09 search button text rendered on multiple lines.');
+  assert(measurement.button.width >= 72, 'R09 search button collapsed below its usable width.');
+  assert(measurement.input.width >= 180, 'R09 search input collapsed below its usable width.');
+  assert(
+    measurement.buttonScrollWidth <= measurement.buttonClientWidth &&
+      measurement.buttonScrollHeight <= measurement.buttonClientHeight,
+    'R09 search button content was clipped.',
+  );
+  assert(!measurement.covered, 'R09 search button was covered by another element.');
+  assert(
+    Object.values(measurement.overlaps).every((value) => value === false),
+    'R09 search controls overlapped.',
+  );
+  return measurement;
+}
+
+async function captureR09CatalogEvidence(client, sessionId, userDataPath) {
+  assert(evidenceDirectory !== null, 'R09 visual evidence requires an evidence directory.');
+  await resizeViewport(client, sessionId, { height: 900, width: 1440 });
+  await navigate(client, sessionId, 'library', routeSelectors.library);
+  await waitForLibraryText(client, sessionId, '合成谜案：雾港来信');
+  const main = [];
+  for (const viewport of matrix) {
+    await resizeViewport(client, sessionId, viewport);
+    main.push({ search: await measureR09SearchControls(client, sessionId), viewport });
+  }
+  await resizeViewport(client, sessionId, { height: 900, width: 1440 });
+  assert(
+    await setNativeControlValue(client, sessionId, '.v2-library-search-form input', '合成'),
+    'R09 library search input was not editable.',
+  );
+  const initialSelected = (await readR09LibraryState(client, sessionId)).selected;
+  assert(
+    await evaluate(
+      client,
+      sessionId,
+      `(() => {
+        const buttons = [...document.querySelectorAll('.v2-library-shelf article button')];
+        const target = buttons.at(-1);
+        if (!(target instanceof HTMLButtonElement)) return false;
+        target.click();
+        return true;
+      })()`,
+    ),
+    'R09 second Work was not selectable.',
+  );
+  await waitFor(async () => {
+    const state = await readR09LibraryState(client, sessionId);
+    if (state.selected === '' || state.selected === initialSelected) return false;
+    return evaluate(
+      client,
+      sessionId,
+      `document.querySelector('.v2-library-detail h2')?.textContent?.trim() === ${JSON.stringify(state.selected)}`,
+    );
+  }, 'R09 selected Work detail');
+  await evaluate(
+    client,
+    sessionId,
+    `[...document.querySelectorAll('.v2-library-detail details')].forEach((element) => { element.open = true; })`,
+  );
+  const preserved = await readR09LibraryState(client, sessionId);
+  const dynamic = [];
+  for (const viewport of [
+    { height: 900, width: 1440 },
+    { height: 720, width: 1024 },
+    { height: 1113, width: 2048 },
+    { height: 900, width: 1440 },
+  ]) {
+    await resizeViewport(client, sessionId, viewport);
+    const state = await readR09LibraryState(client, sessionId);
+    assert(state.overflow === 0, `R09 library overflowed at ${String(viewport.width)}px.`);
+    dynamic.push({ search: await measureR09SearchControls(client, sessionId), state, viewport });
+  }
+  assert(
+    JSON.stringify(dynamic.at(-1)?.state) === JSON.stringify(preserved),
+    'R09 selection, search draft, detail disclosure, or route changed during resize.',
+  );
+  for (const viewport of [
+    { height: 720, width: 1024 },
+    { height: 900, width: 1440 },
+    { height: 1113, width: 2048 },
+  ]) {
+    await resizeViewport(client, sessionId, viewport);
+    await evaluate(
+      client,
+      sessionId,
+      `document.querySelector('.v2-library-detail')?.scrollIntoView({ block: 'start' })`,
+    );
+    await delay(150);
+    await captureViewport(
+      client,
+      sessionId,
+      join(
+        evidenceDirectory,
+        `${evidencePrefix}-library-detail-expanded-${String(viewport.width)}x${String(viewport.height)}.png`,
+      ),
+    );
+  }
+
+  await resizeViewport(client, sessionId, { height: 900, width: 1440 });
+  await evaluate(client, sessionId, `window.scrollTo({ top: 0 })`);
+
+  assert(
+    await setNativeControlValue(client, sessionId, '.v2-library-search-form input', '不存在的作品'),
+    'R09 no-result query was not editable.',
+  );
+  assert(
+    await clickVisibleButtonByText(client, sessionId, /^搜索$/u),
+    'R09 search action was covered or did not receive a real pointer click.',
+  );
+  await waitForLibraryText(client, sessionId, '没有匹配的作品');
+  const noResultSearch = await measureR09SearchControls(client, sessionId);
+  await captureViewport(
+    client,
+    sessionId,
+    join(evidenceDirectory, `${evidencePrefix}-library-no-result-1440x900.png`),
+  );
+
+  const { connectDatabase } = await import('../packages/db/dist/connection.js');
+  const database = connectDatabase(
+    join(userDataPath, 'v2-project-data', 'database', 'rednote.sqlite'),
+  );
+  try {
+    database.exec('ALTER TABLE books RENAME TO books_r09_visual_error');
+  } finally {
+    database.close();
+  }
+  assert(
+    await setNativeControlValue(client, sessionId, '.v2-library-search-form input', ''),
+    'R09 error-state query was not editable.',
+  );
+  assert(
+    await clickVisibleButtonByText(client, sessionId, /^搜索$/u),
+    'R09 error-state search action was covered or did not receive a real pointer click.',
+  );
+  await waitForLibraryText(client, sessionId, '书库暂时无法读取');
+  const errorSearch = await measureR09SearchControls(client, sessionId);
+  await captureViewport(
+    client,
+    sessionId,
+    join(evidenceDirectory, `${evidencePrefix}-library-error-1440x900.png`),
+  );
+  assert(
+    await clickVisibleButtonByText(client, sessionId, /^重新读取$/u),
+    'R09 retry action was covered or did not receive a real pointer click.',
+  );
+  await waitForLibraryText(client, sessionId, '书库暂时无法读取');
+  return { dynamic, errorSearch, main, noResultSearch, preserved, retryClick: true };
+}
+
 const temporary = await createPortableTemp(repositoryRoot, 'v2-responsive-smoke');
 if (evidenceDirectory !== null) {
   assert(isWithin(ignoredRoot, evidenceDirectory), 'Evidence must remain under .rednote-temp.');
@@ -1616,6 +1997,8 @@ child.stderr.on('data', (chunk) => {
 let client;
 let workflowProviderFixture;
 let workflowEvidence = null;
+let r09EmptyEvidence = null;
+let r09LibraryEvidence = null;
 try {
   const target = await waitForRendererTarget(port);
   client = await CdpClient.connect(await waitForBrowserEndpoint(port));
@@ -1627,6 +2010,10 @@ try {
     async () => evaluate(client, sessionId, `document.querySelector('.v2-workspace') !== null`),
     'V2 Electron workspace',
   );
+
+  if (evidenceDirectory !== null && evidenceScenario === 'r09-library') {
+    r09EmptyEvidence = await prepareR09CatalogEvidence(client, sessionId, userData);
+  }
 
   const evidenceWeekKey = currentShanghaiWeekKey();
   if (evidenceDirectory !== null && evidenceScenario === 'unlocked') {
@@ -1730,7 +2117,7 @@ try {
         ...(await measureRoute(client, sessionId, route, selector)),
       };
       measurements.push(routeMeasurement);
-      if (evidenceDirectory !== null && [1024, 1280, 1440, 2048].includes(viewport.width)) {
+      if (evidenceDirectory !== null && [1024, 1280, 1440, 1920, 2048].includes(viewport.width)) {
         await clearNavigationEvidenceState(client, sessionId);
         const evidenceNavigation = await waitForNavigationStable(client, sessionId, route);
         assertNavigationState(evidenceNavigation, route);
@@ -1774,6 +2161,13 @@ try {
       sessionId,
       join(evidenceDirectory, `${evidencePrefix}-review-data-1440x900.png`),
     );
+  }
+
+  if (evidenceDirectory !== null && evidenceScenario === 'r09-library') {
+    r09LibraryEvidence = {
+      emptySearch: r09EmptyEvidence,
+      ...(await captureR09CatalogEvidence(client, sessionId, userData)),
+    };
   }
 
   if (evidenceScenario === 'base') {
@@ -1926,6 +2320,7 @@ try {
         stable: summarizeNavigationState(transitionStable),
       },
       sequentialNavigation,
+      r09LibraryEvidence,
       statePreserved: true,
       viewportNegotiations: [...viewportNegotiations.values()],
       workflowEvidence:

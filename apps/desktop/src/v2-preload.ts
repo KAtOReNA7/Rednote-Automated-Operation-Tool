@@ -19,6 +19,8 @@ import {
   type V2ProviderActionResult,
   type V2CapabilityProbePreview,
   type V2CapabilityProbeProgress,
+  type V2CatalogWorkDetail,
+  type V2CatalogWorkListView,
   type V2ProviderSettingsView,
   type V2Bridge,
   type V2Result,
@@ -96,6 +98,10 @@ const bridge: V2Bridge = Object.freeze({
     invoke<InteractionItem>('mutate', { action: 'MARK_INTERACTION_MANUAL_SENT', ...input }),
   previewInteractionDelete: (input: Parameters<V2Bridge['previewInteractionDelete']>[0]) =>
     invoke<InteractionDeletePreview>('read', { view: 'INTERACTION_DELETE_PREVIEW', ...input }),
+  readCatalogWork: (input: Parameters<NonNullable<V2Bridge['readCatalogWork']>>[0]) =>
+    invoke<V2CatalogWorkDetail | null>('read', { view: 'CATALOG_WORK', ...input }),
+  readCatalogWorks: (input: Parameters<NonNullable<V2Bridge['readCatalogWorks']>>[0]) =>
+    invoke<V2CatalogWorkListView>('read', { view: 'CATALOG_WORKS', ...input }),
   readContentPackages: (input: Parameters<V2Bridge['readContentPackages']>[0]) =>
     invoke<ContentWorkspace>('read', { view: 'CONTENT_PACKAGES', ...input }),
   readInteractions: () => invoke<InteractionWorkspace>('read', { view: 'INTERACTIONS' }),
