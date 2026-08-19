@@ -2,7 +2,7 @@
 
 仓库根目录只保留贡献入口和构建工具必须从根目录发现的配置。项目文档按用途分层：
 
-- [`product/`](./product/README.md)：产品 PRD 与开发路线图；
+- [`product/`](./product/README.md)：产品 PRD、开发路线图与当前发布准备范围合同；
 - [`governance/`](./governance/README.md)：总开发指令与仓库治理记录；
 - [`instructions/`](./instructions/README.md)：已完成 Issue 的原始执行指令；
 - [`adr/`](./adr/)：已接受的架构决策；
@@ -20,5 +20,6 @@ Issue 024 的结构化 Content Brief、字段锁定与受控生成、Issue 025 �
 [`evidence/m3-issue023-local-evidence.md`](./evidence/m3-issue023-local-evidence.md)、
 [`evidence/m3-issue024-local-evidence.md`](./evidence/m3-issue024-local-evidence.md)、
 [`evidence/m3-issue025-local-evidence.md`](./evidence/m3-issue025-local-evidence.md) 和
-[`evidence/m3-issue026-local-evidence.md`](./evidence/m3-issue026-local-evidence.md)。下一项仅规划
-Issue 027（真实性与评分检查），未收到明确任务时不自动开始。
+[`evidence/m3-issue026-local-evidence.md`](./evidence/m3-issue026-local-evidence.md)。上述 M3/Issue 027
+材料为历史审计记录，不是当前实施状态。当前活跃工作为 R10 发布准备范围合同；R10 功能尚未开始，见
+[`product/v2-r10-release-readiness-scope.md`](./product/v2-r10-release-readiness-scope.md)。
