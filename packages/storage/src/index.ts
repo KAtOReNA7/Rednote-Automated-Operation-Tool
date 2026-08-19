@@ -27,6 +27,27 @@ export {
 export { LocalDiagnosticReportStore } from './diagnostic-report-store.js';
 export { relativePathFromManagedAbsolutePath, resolveManagedPath } from './managed-path.js';
 export { StructuredLogSink } from './structured-log.js';
+export {
+  BACKUP_COMPLETE_FORMAT,
+  BACKUP_FORMAT,
+  BACKUP_FORMAT_VERSION,
+  BACKUP_MAX_FILE_BYTES,
+  BACKUP_MAX_FILES,
+  BACKUP_MAX_MANIFEST_BYTES,
+  BACKUP_MAX_PATH_BYTES,
+  BACKUP_MAX_PATH_COMPONENT_BYTES,
+  BACKUP_MAX_PATH_SEGMENTS,
+  BACKUP_MAX_TOTAL_BYTES,
+  ControlledBackupError,
+  backupCategoryForPayloadPath,
+  backupWindowsPathKey,
+  manifestSha256,
+  parseBackupCompleteMarkerV1,
+  parseBackupManifestV1,
+  parseBackupPayloadPath,
+  serializeBackupCompleteMarkerV1,
+  serializeBackupManifestV1,
+} from './backup-contracts.js';
 
 export type { DataRootMarker, ProjectDataRootOptions } from './project-data-root.js';
 export type { LocalProjectLocatorOptions } from './project-locator.js';
@@ -45,3 +66,11 @@ export type {
   ReadModelResultCacheOptions,
 } from './model-result-cache-store.js';
 export type { LogLevel, StructuredLogEvent, StructuredLogSinkOptions } from './structured-log.js';
+export type {
+  BackupCompleteMarkerV1,
+  BackupFileCategory,
+  BackupManifestFileV1,
+  BackupManifestV1,
+  BackupPayloadPath,
+  ControlledBackupErrorCode,
+} from './backup-contracts.js';
