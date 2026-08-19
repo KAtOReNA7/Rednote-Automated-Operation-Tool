@@ -6,8 +6,10 @@ import { assertLocalRegularSqlitePath } from './sqlite-snapshot.js';
 export const MANAGED_BACKUP_INVENTORY_MAX_FILES = 99_999;
 export const MANAGED_BACKUP_INVENTORY_MAX_REFERENCES = 200_000;
 
+type ManagedBackupFileCategory = Exclude<FileCategory, 'BACKUP' | 'LOG' | 'MODEL_RESULT_CACHE'>;
+
 export interface ManagedFileInventoryEntry {
-  readonly category: FileCategory;
+  readonly category: ManagedBackupFileCategory;
   readonly expectedSha256: string | null;
   readonly expectedSizeBytes: number | null;
   readonly managedPath: string;
@@ -57,7 +59,7 @@ const DIRECT_FIELDS = [
   string,
   string | null,
   string | null,
-  FileCategory,
+  ManagedBackupFileCategory,
 ])[];
 
 const SHA256 = /^[a-f0-9]{64}$/u;
@@ -95,7 +97,7 @@ export function enumerateManagedFileInventory(
   let referenceCount = 0;
   const add = (
     rawPath: unknown,
-    category: FileCategory,
+    category: ManagedBackupFileCategory,
     rawSha256: unknown = null,
     rawSizeBytes: unknown = null,
   ): void => {
