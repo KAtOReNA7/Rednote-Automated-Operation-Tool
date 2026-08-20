@@ -39,6 +39,7 @@ export type ControlledBackupErrorCode =
   | 'PATH_LINK_NOT_ALLOWED'
   | 'PUBLISHED_DURABILITY_UNKNOWN'
   | 'PUBLISH_FAILED'
+  | 'SNAPSHOT_FAILED'
   | 'STAGING_OWNERSHIP_INVALID';
 export class ControlledBackupError extends Error {
   public constructor(public readonly code: ControlledBackupErrorCode) {

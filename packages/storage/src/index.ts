@@ -83,7 +83,9 @@ export type {
   BackupDatabaseIdentity,
   BackupManagedFileReference,
   ControlledBackupDatabaseAdapter,
+  ControlledBackupDatabaseVerifier,
   ControlledBackupResult,
+  ControlledBackupVerification,
   CreateControlledBackupOptions,
   VerifyControlledBackupOptions,
 } from './backup-snapshot.js';
