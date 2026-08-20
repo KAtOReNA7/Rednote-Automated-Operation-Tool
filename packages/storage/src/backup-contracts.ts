@@ -63,6 +63,9 @@ export interface BackupCompleteMarkerV1 {
 }
 const SHA256 = /^[a-f0-9]{64}$/u;
 const COMMIT = /^[a-f0-9]{40}$/u;
+const WORKSPACE_ID = /^[a-f0-9]{8}-[a-f0-9]{4}-[1-8][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/iu;
+const APP_VERSION =
+  /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:(?:0|[1-9]\d*|[\dA-Za-z-]*[A-Za-z-][\dA-Za-z-]*)(?:\.(?:0|[1-9]\d*|[\dA-Za-z-]*[A-Za-z-][\dA-Za-z-]*))*))?(?:\+[\dA-Za-z-]+(?:\.[\dA-Za-z-]+)*)?$/u;
 const WINDOWS_RESERVED =
   /^(?:con|prn|aux|nul|clock\$|conin\$|conout\$|com[1-9\u00b9\u00b2\u00b3]|lpt[1-9\u00b9\u00b2\u00b3])[ .]*(?:\..*)?$/iu;
 const METADATA_NAMES = new Set(['manifest.json', 'complete.json', '.rednote-backup-owner.json']);
@@ -225,8 +228,10 @@ function normalizeManifest(value: unknown): BackupManifestV1 {
     throw new ControlledBackupError('INVALID_MANIFEST');
   const source = value.source;
   if (
-    !safeText(source.workspaceId, 128) ||
+    typeof source.workspaceId !== 'string' ||
+    !WORKSPACE_ID.test(source.workspaceId) ||
     !safeText(source.appVersion, 64) ||
+    !APP_VERSION.test(source.appVersion) ||
     typeof source.buildCommit !== 'string' ||
     !COMMIT.test(source.buildCommit) ||
     source.dataRootFormat !== 'rednote-project-data' ||

@@ -68,6 +68,19 @@ function expectContractError(action: () => unknown, code = 'INVALID_MANIFEST'): 
   expect(action).toThrowError(expect.objectContaining({ code, message: code }));
 }
 
+function expectPrivateManifestError(action: () => unknown, canary: string): void {
+  let failure: unknown;
+  try {
+    action();
+  } catch (error) {
+    failure = error;
+  }
+  expect(failure).toBeInstanceOf(ControlledBackupError);
+  expect(failure).toMatchObject({ code: 'INVALID_MANIFEST', message: 'INVALID_MANIFEST' });
+  expect((failure as Error).stack).toBeUndefined();
+  expect(JSON.stringify(failure)).not.toContain(canary);
+}
+
 describe('R10B1A canonical manifest and completion contracts', () => {
   it('canonicalizes caller key order, round trips immutably, and hashes stable bytes', () => {
     const value = manifest();
@@ -98,6 +111,62 @@ describe('R10B1A canonical manifest and completion contracts', () => {
     expect(parsed).toEqual(value);
     for (const nested of [parsed, parsed.source, parsed.files, parsed.files[0], parsed.totals])
       expect(Object.isFrozen(nested)).toBe(true);
+  });
+
+  it.each([
+    ['workspaceId', '00000000-0000-4000-8000-000000000008'],
+    ['appVersion', '0.0.0'],
+    ['appVersion', '1.2.3-rc.1+build.5'],
+  ] as const)('accepts controlled source identity %s=%s', (field, value) => {
+    const base = manifest();
+    const candidate = { ...base, source: { ...base.source, [field]: value } };
+    expect(parseBackupManifestV1(serializeBackupManifestV1(candidate)).source[field]).toBe(value);
+  });
+
+  it.each([
+    [
+      'workspaceId',
+      [
+        'not-a-uuid',
+        'C:\\outside',
+        '\\\\server\\share',
+        '\\\\?\\C:\\device',
+        'C:relative',
+        'file:///outside',
+        '\u0000uuid',
+        'e\u0301',
+      ],
+    ],
+    [
+      'appVersion',
+      [
+        'version one',
+        '/absolute',
+        'C:\\outside',
+        '\\\\server\\share',
+        '\\\\?\\C:\\device',
+        'C:relative',
+        'file:///outside',
+        '1/2/3',
+        '1\\2\\3',
+        '1:2:3',
+        '1.2.3 beta',
+        '1.2.3\n',
+      ],
+    ],
+  ] as const)('rejects unsafe %s values through creator and parser', (field, values) => {
+    const canonical = serializeBackupManifestV1(manifest());
+    const original = manifest().source[field];
+    for (const value of values) {
+      const base = manifest();
+      const candidate = { ...base, source: { ...base.source, [field]: value } };
+      expectPrivateManifestError(() => serializeBackupManifestV1(candidate), value);
+      expectPrivateManifestError(
+        () =>
+          parseBackupManifestV1(canonical.replace(JSON.stringify(original), JSON.stringify(value))),
+        value,
+      );
+    }
   });
 
   it.each([
