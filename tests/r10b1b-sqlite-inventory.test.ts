@@ -350,6 +350,7 @@ describe('R10B1B snapshot-driven managed-file inventory', () => {
     const { destination } = await inventorySnapshot();
     const writable = remember(new DatabaseSync(destination));
     const reference = contentReferences()[0];
+    if (reference === undefined) throw new Error('synthetic reference fixture is incomplete');
     const malformed = [
       'not-json',
       JSON.stringify(contentReferences().slice(0, 5)),
