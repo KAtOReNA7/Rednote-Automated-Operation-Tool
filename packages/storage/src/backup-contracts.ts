@@ -9,6 +9,7 @@ export const BACKUP_MAX_TOTAL_BYTES = 100 * 1024 * 1024 * 1024;
 export const BACKUP_MAX_PATH_BYTES = 1_024;
 export const BACKUP_MAX_PATH_COMPONENT_BYTES = 255;
 export const BACKUP_MAX_PATH_SEGMENTS = 64;
+export const BACKUP_MAX_DIRECTORIES = 10_000;
 const BACKUP_FILE_CATEGORIES = [
   'DATABASE',
   'SOURCE_SNAPSHOT',
@@ -22,7 +23,23 @@ const BACKUP_FILE_CATEGORIES = [
 export type BackupFileCategory = (typeof BACKUP_FILE_CATEGORIES)[number];
 declare const backupPayloadPathBrand: unique symbol;
 export type BackupPayloadPath = string & { readonly [backupPayloadPathBrand]: true };
-export type ControlledBackupErrorCode = 'INVALID_MANIFEST' | 'INVALID_PATH' | 'LIMIT_EXCEEDED';
+export type ControlledBackupErrorCode =
+  | 'ABORTED'
+  | 'ALREADY_EXISTS'
+  | 'COPY_FAILED'
+  | 'DATABASE_FAILED'
+  | 'FILE_CHANGED'
+  | 'INSUFFICIENT_SPACE'
+  | 'INTEGRITY_FAILED'
+  | 'INVALID_MANIFEST'
+  | 'INVALID_PATH'
+  | 'LIMIT_EXCEEDED'
+  | 'MAINTENANCE_REQUIRED'
+  | 'PATH_CONFLICT'
+  | 'PATH_LINK_NOT_ALLOWED'
+  | 'PUBLISHED_DURABILITY_UNKNOWN'
+  | 'PUBLISH_FAILED'
+  | 'STAGING_OWNERSHIP_INVALID';
 export class ControlledBackupError extends Error {
   public constructor(public readonly code: ControlledBackupErrorCode) {
     super(code);
