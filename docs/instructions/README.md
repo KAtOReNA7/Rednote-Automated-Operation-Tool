@@ -37,7 +37,8 @@ M2（Issue 012—021）已完成。
 - [Issue 026：正文事实声明映射、证据回溯与事实质量检查](./m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt)
 
 M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的表述不是当前实施状态，且不得自动
-开始。当前活跃工作为 R10A 文档与发布事实收口；R10 功能尚未开始，范围见
+开始。R10A 与 R10B1A—R10B1C 已完成并进入 `main`；受控备份核心已实现，但完整端到端恢复、R10C 脱敏诊断、
+R10D Windows 安装/升级/卸载和 R10E Release Candidate 尚未开始，后续均等待独立决策与授权。范围见
 [`../product/v2-r10-release-readiness-scope.md`](../product/v2-r10-release-readiness-scope.md)。
 
 ## V2
