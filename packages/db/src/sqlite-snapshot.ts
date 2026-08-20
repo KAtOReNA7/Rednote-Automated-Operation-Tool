@@ -315,8 +315,13 @@ export async function createSqliteSnapshot(
   signal?: AbortSignal,
 ): Promise<SqliteSnapshotIdentity> {
   checkAborted(signal);
-  estimateSqliteSnapshotBytes(sourceDatabase);
-  assertMaintenanceSafe(sourceDatabase);
+  try {
+    estimateSqliteSnapshotBytes(sourceDatabase);
+    assertMaintenanceSafe(sourceDatabase);
+  } catch (error) {
+    if (error instanceof SqliteSnapshotError) throw error;
+    throw new SqliteSnapshotError('SNAPSHOT_FAILED');
+  }
   const binding = await reserveDestination(destinationPath);
   try {
     await backup(sourceDatabase, destinationPath, {

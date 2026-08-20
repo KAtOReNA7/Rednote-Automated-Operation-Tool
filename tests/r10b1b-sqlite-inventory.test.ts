@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { existsSync, linkSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 
@@ -215,6 +215,24 @@ describe('R10B1B isolated SQLite snapshot', () => {
     expect(existsSync(other)).toBe(false);
   });
 
+  it('maps a closed source to a path-free stable failure without creating its target', async () => {
+    const { destination, source } = await currentSource();
+    const target = join(destination, '..', 'source-canary.sqlite');
+    source.close();
+    openDatabases.delete(source);
+    let failure: unknown;
+    try {
+      await createSqliteSnapshot(source, target);
+    } catch (error) {
+      failure = error;
+    }
+    expect(failure).toMatchObject({ code: 'SNAPSHOT_FAILED', message: 'SNAPSHOT_FAILED' });
+    expect((failure as Error).stack).toBeUndefined();
+    expect(String(failure)).not.toContain('source-canary');
+    expect(String(failure)).not.toContain('PRAGMA');
+    expect(existsSync(target)).toBe(false);
+  });
+
   it('removes only local authorization/cache state from the isolated target', async () => {
     const { destination, source } = await inventorySnapshot();
     const digest = Buffer.from(Array.from({ length: 32 }, (_, index) => index + 1));
@@ -260,7 +278,7 @@ describe('R10B1B isolated SQLite snapshot', () => {
     expect(existsSync(blockedTarget)).toBe(false);
   });
 
-  it('rejects invalid snapshot paths, corrupt snapshots, and unsafe estimates without leaking input', async () => {
+  it('rejects invalid snapshot paths and actual over-limit estimates without leaking input', async () => {
     const { destination, source } = await currentSource();
     await expect(createSqliteSnapshot(source, 'file:///synthetic.sqlite')).rejects.toMatchObject({
       code: 'INVALID_PATH',
@@ -275,6 +293,25 @@ describe('R10B1B isolated SQLite snapshot', () => {
       expect.objectContaining({ code: 'LIMIT_EXCEEDED' }),
     );
   });
+
+  it('rejects tampered migration identity and a hardlinked snapshot', async () => {
+    const { destination, source } = await currentSource();
+    await createSqliteSnapshot(source, destination);
+    const tamper = remember(new DatabaseSync(destination));
+    tamper.prepare('UPDATE schema_migrations SET checksum=? WHERE version=1').run(sha(99));
+    tamper.close();
+    openDatabases.delete(tamper);
+    expect(() => inspectSqliteSnapshot(destination)).toThrowError(
+      expect.objectContaining({ code: 'INTEGRITY_FAILED', message: 'INTEGRITY_FAILED' }),
+    );
+    const { destination: validDestination, source: validSource } = await currentSource();
+    await createSqliteSnapshot(validSource, validDestination);
+    const hardlink = join(validDestination, '..', 'snapshot-hardlink.sqlite');
+    linkSync(validDestination, hardlink);
+    expect(() => inspectSqliteSnapshot(hardlink)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_PATH', message: 'INVALID_PATH' }),
+    );
+  }, 20_000);
 });
 
 describe('R10B1B snapshot-driven managed-file inventory', () => {
@@ -291,7 +328,7 @@ describe('R10B1B snapshot-driven managed-file inventory', () => {
     expect(JSON.stringify(inventory)).not.toMatch(/backups|logs|cache\/model-results|exports\/v2/u);
   }, 15_000);
 
-  it('rejects missing metadata, malformed V2 entries, conflicts, limits, and aborts', async () => {
+  it('rejects missing metadata and cancellation', async () => {
     const { destination } = await inventorySnapshot();
     const writable = remember(new DatabaseSync(destination));
     writable.exec(
@@ -307,8 +344,43 @@ describe('R10B1B snapshot-driven managed-file inventory', () => {
     expect(() => enumerateManagedFileInventory(destination, controller.signal)).toThrowError(
       expect.objectContaining({ code: 'ABORTED' }),
     );
-    expect(MANAGED_FILE_INVENTORY_MAX_REFERENCES).toBe(200_000);
   });
+
+  it('rejects every malformed V2 reference shape and conflicting normalized paths', async () => {
+    const { destination } = await inventorySnapshot();
+    const writable = remember(new DatabaseSync(destination));
+    const reference = contentReferences()[0];
+    const malformed = [
+      'not-json',
+      JSON.stringify(contentReferences().slice(0, 5)),
+      JSON.stringify([{ managedPath: reference.managedPath, sha256: reference.sha256 }]),
+      JSON.stringify([{ ...reference, extra: true }, ...contentReferences().slice(1)]),
+      JSON.stringify([{ ...reference, sha256: 'x'.repeat(64) }, ...contentReferences().slice(1)]),
+      JSON.stringify([{ ...reference, sizeBytes: -1 }, ...contentReferences().slice(1)]),
+      JSON.stringify([
+        { ...reference, managedPath: `exports/aa/${reference.sha256}` },
+        ...contentReferences().slice(1),
+      ]),
+    ];
+    for (const filesJson of malformed) {
+      writable
+        .prepare('INSERT INTO v2_content_package_versions(files_json) VALUES(?)')
+        .run(filesJson);
+      expect(() => enumerateManagedFileInventory(destination)).toThrowError(
+        expect.objectContaining({ code: 'INVALID_REFERENCE', message: 'INVALID_REFERENCE' }),
+      );
+      writable.exec('DELETE FROM v2_content_package_versions');
+    }
+    writable
+      .prepare(
+        "INSERT INTO clips(screenshot_path,screenshot_hash,screenshot_bytes) VALUES('sources/screenshots/aa/X',?,1),('sources/screenshots/aa/x',?,1)",
+      )
+      .run(sha(41), sha(42));
+    expect(() => enumerateManagedFileInventory(destination)).toThrowError(
+      expect.objectContaining({ code: 'INVALID_REFERENCE', message: 'INVALID_REFERENCE' }),
+    );
+    expect(MANAGED_FILE_INVENTORY_MAX_REFERENCES).toBe(200_000);
+  }, 30_000);
 
   it('uses only a validated snapshot and keeps source data outside the result surface', async () => {
     const { destination, source } = await inventorySnapshot();
