@@ -33,6 +33,7 @@ export {
   BACKUP_FORMAT_VERSION,
   BACKUP_MAX_FILE_BYTES,
   BACKUP_MAX_FILES,
+  BACKUP_MAX_DIRECTORIES,
   BACKUP_MAX_MANIFEST_BYTES,
   BACKUP_MAX_PATH_BYTES,
   BACKUP_MAX_PATH_COMPONENT_BYTES,
@@ -48,6 +49,10 @@ export {
   serializeBackupCompleteMarkerV1,
   serializeBackupManifestV1,
 } from './backup-contracts.js';
+export {
+  createControlledBackupSnapshot,
+  verifyControlledBackupSnapshot,
+} from './backup-snapshot.js';
 
 export type { DataRootMarker, ProjectDataRootOptions } from './project-data-root.js';
 export type { LocalProjectLocatorOptions } from './project-locator.js';
@@ -74,3 +79,13 @@ export type {
   BackupPayloadPath,
   ControlledBackupErrorCode,
 } from './backup-contracts.js';
+export type {
+  BackupDatabaseIdentity,
+  BackupManagedFileReference,
+  ControlledBackupDatabaseAdapter,
+  ControlledBackupDatabaseVerifier,
+  ControlledBackupResult,
+  ControlledBackupVerification,
+  CreateControlledBackupOptions,
+  VerifyControlledBackupOptions,
+} from './backup-snapshot.js';

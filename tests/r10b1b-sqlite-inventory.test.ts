@@ -269,9 +269,10 @@ describe('R10B1B isolated SQLite snapshot', () => {
       "INSERT INTO model_cache_entries(status,owner_token_hash,lease_expires_at,payload) VALUES('IN_FLIGHT','a','2026-08-20T04:04:05.678Z','x')",
     ],
   ])('requires maintenance when %s has an active lease', async (_name, statement) => {
-    const { destination, source } = await inventorySnapshot();
+    const sourcePath = createTemporaryDatabasePath('active lease source');
+    const source = createInventorySource(sourcePath);
     source.exec(statement);
-    const blockedTarget = join(destination, '..', `blocked-${_name}.sqlite`);
+    const blockedTarget = join(sourcePath, '..', `blocked-${_name}.sqlite`);
     await expect(createSqliteSnapshot(source, blockedTarget)).rejects.toMatchObject({
       code: 'MAINTENANCE_REQUIRED',
     });
