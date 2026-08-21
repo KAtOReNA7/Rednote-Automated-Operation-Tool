@@ -65,6 +65,9 @@ describe('R10D Windows distribution contracts', () => {
       await readFile(join(root, 'scripts', 'run-installer-lifecycle-smoke.mjs'), 'utf8'),
     ).toContain("'xiaohongshu-mystery-operations'");
     const installerInclude = await readFile(join(root, 'build', 'installer.nsh'), 'utf8');
+    expect(installerInclude).toContain('!include "WordFunc.nsh"');
+    expect(installerInclude).toContain('!insertmacro VersionCompare');
+    expect(installerInclude).toContain('!insertmacro un.VersionCompare');
     expect(installerInclude).toContain('!macro customCheckAppRunning');
     expect(installerInclude).toContain('${VersionCompare}');
   });

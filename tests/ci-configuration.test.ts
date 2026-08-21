@@ -73,6 +73,29 @@ describe('Windows CI configuration', () => {
     expect(workflowSource).toContain('--cleanup-ci-temp');
   });
 
+  it('fails closed between each native R10D installer build phase', () => {
+    const semanticBuild = runCommands.find((command) =>
+      command.includes('scripts/compare-r10d-installer-samples.mjs'),
+    );
+    expect(semanticBuild).toContain("$ErrorActionPreference = 'Stop'");
+    expect(semanticBuild).toContain('R10D_FIRST_INSTALLER_BUILD_FAILED:$LASTEXITCODE');
+    expect(semanticBuild).toContain('R10D_SECOND_INSTALLER_BUILD_FAILED:$LASTEXITCODE');
+    expect(semanticBuild).toContain('R10D_SEMANTIC_INSTALLER_COMPARE_FAILED:$LASTEXITCODE');
+  });
+
+  it('cleans only the verified CI temporary directory with bounded convergence', () => {
+    const lifecycle = readFileSync(
+      resolve(repositoryRoot, 'scripts', 'run-installer-lifecycle-smoke.mjs'),
+      'utf8',
+    );
+    expect(lifecycle).toContain(
+      "join(dirname(resolve(workspace)), '.rednote-temp', `ci-${runId}-${attempt}`)",
+    );
+    expect(lifecycle).toContain("await removeOwned(temporaryDirectory, 'ci-temp-cleanup')");
+    expect(lifecycle).toContain('CLEANUP_TIMEOUT_MILLISECONDS');
+    expect(lifecycle).not.toContain("'ci-temp-helper-release'");
+  });
+
   it('does not schedule overlapping specialized Vitest selectors before the full suite', () => {
     const vitestScripts = new Set(
       Object.entries(packageJson.scripts)

@@ -1,3 +1,7 @@
+!include "WordFunc.nsh"
+!insertmacro VersionCompare
+!insertmacro un.VersionCompare
+
 !macro customCheckAppRunning
   !insertmacro IS_POWERSHELL_AVAILABLE
   !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0

@@ -80,11 +80,15 @@ jobs:
           REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           npm run package:installer
+          if ($LASTEXITCODE -ne 0) { throw "R10D_FIRST_INSTALLER_BUILD_FAILED:$LASTEXITCODE" }
           Copy-Item -LiteralPath out\installer -Destination out\installer-repro-a -Recurse
           node scripts/package-installer.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R10D_SECOND_INSTALLER_BUILD_FAILED:$LASTEXITCODE" }
           Copy-Item -LiteralPath out\installer -Destination out\installer-repro-b -Recurse
           node scripts/compare-r10d-installer-samples.mjs out\installer-repro-a out\installer-repro-b
+          if ($LASTEXITCODE -ne 0) { throw "R10D_SEMANTIC_INSTALLER_COMPARE_FAILED:$LASTEXITCODE" }
 
       - name: Build isolated R10D beta.0 lifecycle fixture
         env:

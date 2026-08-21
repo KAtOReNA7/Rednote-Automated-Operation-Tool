@@ -305,7 +305,7 @@ async function assertData(record) {
     throw new Error('INSTALLER_LIFECYCLE_DATA_NOT_PRESERVED');
 }
 
-async function removeOwned(directory) {
+async function removeOwned(directory, stage = 'owned-cleanup') {
   const startedAt = performance.now();
   let attempts = 0;
   while (existsSync(directory)) {
@@ -315,12 +315,14 @@ async function removeOwned(directory) {
       // NSIS self-copy cleanup is observed by bounded convergence, never by force-killing.
     }
     if (!existsSync(directory)) break;
-    if (performance.now() - startedAt >= CLEANUP_TIMEOUT_MILLISECONDS)
+    if (performance.now() - startedAt >= CLEANUP_TIMEOUT_MILLISECONDS) {
+      log(stage, startedAt, { attempts, removed: false }, 'failed');
       throw new Error(`INSTALLER_LIFECYCLE_CLEANUP_TIMEOUT:${attempts}`);
+    }
     attempts += 1;
     await delay(POLL_MILLISECONDS);
   }
-  log('owned-cleanup', startedAt, { attempts });
+  log(stage, startedAt, { attempts, removed: true });
 }
 
 async function main() {
@@ -489,15 +491,7 @@ async function cleanup() {
   const temporaryDirectory = ciTemp();
   if (process.env.REDNOTE_R10D_CI_CLEANUP !== '1')
     throw new Error('INSTALLER_LIFECYCLE_CLEANUP_FLAG_REQUIRED');
-  const target = targetPath();
-  await converge(
-    'ci-temp-helper-release',
-    () => observe(target, temporaryDirectory),
-    (state) =>
-      state.nsisHelperDirectories === 0 && state.processes.every((process) => !process.nsisHelper),
-    CLEANUP_TIMEOUT_MILLISECONDS,
-  );
-  await removeOwned(temporaryDirectory);
+  await removeOwned(temporaryDirectory, 'ci-temp-cleanup');
 }
 
 if (process.argv.includes('--cleanup-ci-temp')) await cleanup();
