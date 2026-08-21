@@ -21,6 +21,8 @@ import {
   type V2CapabilityProbeProgress,
   type V2CatalogWorkDetail,
   type V2CatalogWorkListView,
+  type V2MaintenancePreview,
+  type V2MaintenanceView,
   type V2ProviderSettingsView,
   type V2Bridge,
   type V2Result,
@@ -53,6 +55,14 @@ const bridge: V2Bridge = Object.freeze({
   clearProviderCredential: (
     input: Parameters<NonNullable<V2Bridge['clearProviderCredential']>>[0],
   ) => invoke<V2ProviderSettingsView>('mutate', { action: 'CLEAR_PROVIDER_CREDENTIAL', ...input }),
+  confirmControlledBackup: (input: {
+    readonly confirmation: 'CREATE_CONTROLLED_BACKUP';
+    readonly confirmationToken: string;
+  }) => invoke<V2MaintenanceView>('mutate', { action: 'CONFIRM_CONTROLLED_BACKUP', ...input }),
+  confirmControlledRestore: (input: {
+    readonly confirmation: 'RESTORE_CONTROLLED_BACKUP';
+    readonly confirmationToken: string;
+  }) => invoke<V2MaintenanceView>('mutate', { action: 'CONFIRM_CONTROLLED_RESTORE', ...input }),
   confirmReplySuggestions: (input: Parameters<V2Bridge['confirmReplySuggestions']>[0]) =>
     invoke<InteractionWorkspace>('mutate', { action: 'CONFIRM_REPLY_SUGGESTIONS', ...input }),
   createInteraction: (input: Parameters<V2Bridge['createInteraction']>[0]) =>
@@ -81,6 +91,10 @@ const bridge: V2Bridge = Object.freeze({
     }),
   previewProviderAction: (input: Parameters<NonNullable<V2Bridge['previewProviderAction']>>[0]) =>
     invoke<V2ProviderActionPreview>('read', { intent: input, view: 'PROVIDER_ACTION_PREVIEW' }),
+  previewControlledBackup: (input: { readonly directoryToken: string }) =>
+    invoke<V2MaintenancePreview>('mutate', { action: 'PREVIEW_CONTROLLED_BACKUP', ...input }),
+  previewControlledRestore: (input: { readonly directoryToken: string }) =>
+    invoke<V2MaintenancePreview>('mutate', { action: 'PREVIEW_CONTROLLED_RESTORE', ...input }),
   previewContentCopyGeneration: (
     input: Parameters<NonNullable<V2Bridge['previewContentCopyGeneration']>>[0],
   ) =>
@@ -102,6 +116,7 @@ const bridge: V2Bridge = Object.freeze({
     invoke<V2CatalogWorkDetail | null>('read', { view: 'CATALOG_WORK', ...input }),
   readCatalogWorks: (input: Parameters<NonNullable<V2Bridge['readCatalogWorks']>>[0]) =>
     invoke<V2CatalogWorkListView>('read', { view: 'CATALOG_WORKS', ...input }),
+  readMaintenance: () => invoke<V2MaintenanceView>('read', { view: 'MAINTENANCE' }),
   readContentPackages: (input: Parameters<V2Bridge['readContentPackages']>[0]) =>
     invoke<ContentWorkspace>('read', { view: 'CONTENT_PACKAGES', ...input }),
   readInteractions: () => invoke<InteractionWorkspace>('read', { view: 'INTERACTIONS' }),
@@ -151,6 +166,10 @@ const bridge: V2Bridge = Object.freeze({
       action: 'START_PROVIDER_CAPABILITY_PROBE',
       ...input,
     }),
+  selectBackupDirectory: () =>
+    invoke<V2MaintenanceView>('mutate', { action: 'SELECT_BACKUP_DIRECTORY' }),
+  selectRestoreDirectory: () =>
+    invoke<V2MaintenanceView>('mutate', { action: 'SELECT_RESTORE_DIRECTORY' }),
   undoInteractionManualSent: (input: Parameters<V2Bridge['undoInteractionManualSent']>[0]) =>
     invoke<InteractionItem>('mutate', { action: 'UNDO_INTERACTION_MANUAL_SENT', ...input }),
   updatePersona: (input: Parameters<V2Bridge['updatePersona']>[0]) =>

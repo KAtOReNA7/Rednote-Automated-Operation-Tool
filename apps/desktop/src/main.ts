@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os';
 import { app, BrowserWindow, dialog, protocol, safeStorage, screen, session } from 'electron';
 
 import { SettingsError } from '@mystery-operations/settings';
+import { inspectControlledRestoreRecovery } from '@mystery-operations/storage';
 
 import { runFoundationHealthCheck } from './foundation-health.js';
 import { registerDesktopIpc } from './ipc.js';
@@ -233,6 +234,17 @@ async function startV2Application(
   expectedRendererUrl: string,
   sessionSecurityAudit: ReturnType<typeof installSessionSecurity>,
 ): Promise<void> {
+  const v2ProjectPath = join(app.getPath('userData'), 'v2-project-data');
+  if (existsSync(v2ProjectPath)) {
+    const recovery = await inspectControlledRestoreRecovery(v2ProjectPath);
+    if (recovery === 'SAFETY_UNPROVEN') {
+      dialog.showErrorBox(
+        '本地数据安全状态未证明',
+        '检测到未完成的本地恢复操作。为避免继续使用无法证明安全的数据，本次不会打开项目数据。',
+      );
+      throw new Error('V2_RESTORE_SAFETY_UNPROVEN');
+    }
+  }
   const settingsRuntime = new DesktopSettingsRuntime(app.getPath('userData'), safeStorage, dialog, {
     appVersion: app.getVersion(),
     chromiumVersion: process.versions.chrome ?? 'unknown',
@@ -240,10 +252,29 @@ async function startV2Application(
     nodeVersion: process.versions.node,
   });
   await settingsRuntime.initialize();
-  const projectRoot = await settingsRuntime.ensureV2Project(
-    join(app.getPath('userData'), 'v2-project-data'),
-  );
+  const projectRoot = await settingsRuntime.ensureV2Project(v2ProjectPath);
+  let mainWindow: BrowserWindow | null = null;
   const runtime = await V2DesktopRuntime.openProject(projectRoot, {
+    appVersion: app.getVersion(),
+    maintenancePicker: {
+      select: async (caller, operation) => {
+        if (mainWindow === null || mainWindow.id !== caller.windowId) return null;
+        const selection = await dialog.showOpenDialog(mainWindow, {
+          properties: ['dontAddToRecent', 'openDirectory'],
+          title: operation === 'BACKUP' ? '选择备份保存文件夹' : '选择要恢复的备份文件夹',
+        });
+        if (
+          selection.canceled ||
+          selection.filePaths.length !== 1 ||
+          selection.filePaths[0] === undefined
+        )
+          return null;
+        return {
+          displayLabel: operation === 'BACKUP' ? '已选择备份保存文件夹' : '已选择恢复备份文件夹',
+          path: selection.filePaths[0],
+        };
+      },
+    },
     providerExecution: {
       execute: (request) => settingsRuntime.executeV2ProviderAction(request),
       inspect: (request) => settingsRuntime.inspectV2ProviderAction(request),
@@ -272,7 +303,7 @@ async function startV2Application(
     void settingsRuntime.close();
     runtimeClosed = true;
   };
-  let mainWindow: BrowserWindow | null = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     backgroundColor: '#fbfaf7',
     height: 820,
     minHeight: 640,

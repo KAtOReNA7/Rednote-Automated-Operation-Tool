@@ -1,4 +1,5 @@
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import { lstat } from 'node:fs/promises';
 import { join } from 'node:path';
 import type { DatabaseSync } from 'node:sqlite';
 
@@ -7,10 +8,22 @@ import { app, BrowserWindow, ipcMain, shell, type IpcMainInvokeEvent } from 'ele
 import {
   connectDatabase,
   initializeDatabase,
+  createSqliteSnapshot,
+  estimateSqliteSnapshotBytes,
+  enumerateManagedFileInventory,
+  inspectSqliteSnapshot,
   SqliteCatalogRepository,
   SqliteV2Repository,
 } from '@mystery-operations/db';
-import { initializeProjectDataRoot, type ProjectDataRoot } from '@mystery-operations/storage';
+import {
+  createControlledBackupSnapshot,
+  executeControlledRestore,
+  initializeProjectDataRoot,
+  prepareControlledRestore,
+  type ControlledBackupDatabaseAdapter,
+  type ControlledRestorePreflight,
+  type ProjectDataRoot,
+} from '@mystery-operations/storage';
 import {
   V2ApplicationFacade,
   V2ContentApplication,
@@ -40,6 +53,9 @@ import {
   type V2CapabilityProbeProgress,
   type V2CatalogWorkDetail,
   type V2CatalogWorkListView,
+  type V2MaintenanceDirectorySelection,
+  type V2MaintenancePreview,
+  type V2MaintenanceView,
   type V2ProviderSettingsDraft,
   type V2ProviderSettingsView,
   type V2ContentCopyGenerationPreview,
@@ -91,6 +107,27 @@ export interface V2SettingsControlPort {
     caller: V2ActionCaller,
   ): Promise<V2CapabilityProbeProgress>;
   updateSettings(input: V2ProviderSettingsDraft): Promise<V2ProviderSettingsView>;
+}
+
+export interface V2MaintenanceDirectoryPicker {
+  select(
+    caller: V2ActionCaller,
+    operation: 'BACKUP' | 'RESTORE',
+  ): Promise<{ readonly displayLabel: string; readonly path: string } | null>;
+}
+
+interface MaintenanceSelectionLease {
+  readonly caller: V2ActionCaller;
+  readonly displayLabel: string;
+  readonly expiresAtMs: number;
+  readonly identity: { readonly dev: number; readonly ino: number };
+  readonly operation: 'BACKUP' | 'RESTORE';
+  readonly path: string;
+}
+
+interface MaintenanceConfirmationLease extends MaintenanceSelectionLease {
+  readonly backupPreflight?: ControlledRestorePreflight;
+  readonly token: string;
 }
 
 interface ProviderPreviewLease {
@@ -212,12 +249,22 @@ const unavailableSettingsControl: V2SettingsControlPort = {
 };
 
 export class V2DesktopRuntime {
-  readonly #catalog: SqliteCatalogRepository;
-  readonly #database: DatabaseSync;
-  readonly #content: V2ContentApplication;
-  readonly #facade: V2ApplicationFacade;
-  readonly #interaction: V2InteractionApplication;
-  readonly #repository: SqliteV2Repository;
+  #catalog: SqliteCatalogRepository;
+  #content: V2ContentApplication;
+  #database: DatabaseSync;
+  #facade: V2ApplicationFacade;
+  #interaction: V2InteractionApplication;
+  readonly #maintenanceConfirmations = new Map<string, MaintenanceConfirmationLease>();
+  readonly #maintenancePicker: V2MaintenanceDirectoryPicker | null;
+  readonly #maintenanceSelections = new Map<string, MaintenanceSelectionLease>();
+  readonly #openDirectory: (path: string) => Promise<string>;
+  readonly #assetsDirectory: string;
+  readonly #root: ProjectDataRoot;
+  readonly #runtimeIdentity: {
+    readonly appVersion: string;
+    readonly buildCommit: string;
+  };
+  #repository: SqliteV2Repository;
   readonly #providerExecution: V2ProviderExecutionPort;
   readonly #settingsControl: V2SettingsControlPort;
   readonly #providerPreviews = new Map<string, ProviderPreviewLease>();
@@ -231,6 +278,14 @@ export class V2DesktopRuntime {
     interactionFiles: V2LocalInteractionFiles,
     providerExecution: V2ProviderExecutionPort,
     settingsControl: V2SettingsControlPort,
+    root: ProjectDataRoot,
+    options: {
+      readonly appVersion: string;
+      readonly assetsDirectory: string;
+      readonly buildCommit: string;
+      readonly maintenancePicker?: V2MaintenanceDirectoryPicker;
+      readonly openDirectory: (path: string) => Promise<string>;
+    },
   ) {
     this.#database = database;
     this.#catalog = new SqliteCatalogRepository(database);
@@ -240,6 +295,14 @@ export class V2DesktopRuntime {
     this.#interaction = new V2InteractionApplication(this.#repository, interactionFiles);
     this.#providerExecution = providerExecution;
     this.#settingsControl = settingsControl;
+    this.#root = root;
+    this.#assetsDirectory = options.assetsDirectory;
+    this.#openDirectory = options.openDirectory;
+    this.#maintenancePicker = options.maintenancePicker ?? null;
+    this.#runtimeIdentity = {
+      appVersion: options.appVersion,
+      buildCommit: options.buildCommit,
+    };
   }
 
   public static async open(
@@ -247,6 +310,9 @@ export class V2DesktopRuntime {
     options: {
       readonly assetsDirectory?: string;
       readonly openDirectory?: (path: string) => Promise<string>;
+      readonly appVersion?: string;
+      readonly buildCommit?: string;
+      readonly maintenancePicker?: V2MaintenanceDirectoryPicker;
       readonly providerExecution?: V2ProviderExecutionPort;
       readonly settingsControl?: V2SettingsControlPort;
     } = {},
@@ -260,6 +326,9 @@ export class V2DesktopRuntime {
     options: {
       readonly assetsDirectory?: string;
       readonly openDirectory?: (path: string) => Promise<string>;
+      readonly appVersion?: string;
+      readonly buildCommit?: string;
+      readonly maintenancePicker?: V2MaintenanceDirectoryPicker;
       readonly providerExecution?: V2ProviderExecutionPort;
       readonly settingsControl?: V2SettingsControlPort;
     } = {},
@@ -282,12 +351,26 @@ export class V2DesktopRuntime {
       new V2LocalInteractionFiles(root),
       options.providerExecution ?? unavailableProviderExecution,
       options.settingsControl ?? unavailableSettingsControl,
+      root,
+      {
+        appVersion: options.appVersion ?? 'local',
+        assetsDirectory,
+        buildCommit: options.buildCommit ?? 'local',
+        ...(options.maintenancePicker === undefined
+          ? {}
+          : { maintenancePicker: options.maintenancePicker }),
+        openDirectory: options.openDirectory ?? ((path) => shell.openPath(path)),
+      },
     );
   }
 
   public async read(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2ReadRequest(input);
+    if (request.view === 'MAINTENANCE') {
+      if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
+      return this.#maintenanceView(caller);
+    }
     if (request.view === 'CATALOG_WORKS') {
       const summary = this.#catalog.getSummary(request.limit + 1, request.offset, request.query);
       return {
@@ -356,6 +439,17 @@ export class V2DesktopRuntime {
   public async mutate(input: unknown, caller?: V2ActionCaller) {
     this.#assertOpen();
     const request = parseV2MutationRequest(input);
+    if (
+      request.action === 'SELECT_BACKUP_DIRECTORY' ||
+      request.action === 'SELECT_RESTORE_DIRECTORY' ||
+      request.action === 'PREVIEW_CONTROLLED_BACKUP' ||
+      request.action === 'PREVIEW_CONTROLLED_RESTORE' ||
+      request.action === 'CONFIRM_CONTROLLED_BACKUP' ||
+      request.action === 'CONFIRM_CONTROLLED_RESTORE'
+    ) {
+      if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
+      return this.#mutateMaintenance(request, caller);
+    }
     if (request.action === 'EXECUTE_CONTENT_COPY_GENERATION') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#executeContentCopyGeneration(request.previewToken, caller);
@@ -451,7 +545,279 @@ export class V2DesktopRuntime {
     this.#providerPreviews.clear();
     this.#contentCopyPreviews.clear();
     this.#usedProviderPreviews.clear();
+    this.#maintenanceSelections.clear();
+    this.#maintenanceConfirmations.clear();
     this.#closed = true;
+  }
+
+  #maintenanceView(caller: V2ActionCaller): V2MaintenanceView {
+    const selectionFor = (
+      operation: 'BACKUP' | 'RESTORE',
+    ): V2MaintenanceDirectorySelection | null => {
+      this.#purgeMaintenanceLeases();
+      const selection = [...this.#maintenanceSelections.entries()].find(
+        ([, value]) =>
+          value.operation === operation &&
+          value.caller.senderId === caller.senderId &&
+          value.caller.windowId === caller.windowId,
+      );
+      return selection === undefined
+        ? null
+        : { displayLabel: selection[1].displayLabel, token: selection[0] };
+    };
+    return Object.freeze({
+      backupDirectory: selectionFor('BACKUP'),
+      backupOutcome: 'IDLE',
+      backupStage: 'IDLE',
+      restoreDirectory: selectionFor('RESTORE'),
+      restoreOutcome: 'IDLE',
+      restoreStage: 'IDLE',
+    });
+  }
+
+  async #mutateMaintenance(
+    request: Extract<
+      ReturnType<typeof parseV2MutationRequest>,
+      {
+        readonly action:
+          | 'SELECT_BACKUP_DIRECTORY'
+          | 'SELECT_RESTORE_DIRECTORY'
+          | 'PREVIEW_CONTROLLED_BACKUP'
+          | 'PREVIEW_CONTROLLED_RESTORE'
+          | 'CONFIRM_CONTROLLED_BACKUP'
+          | 'CONFIRM_CONTROLLED_RESTORE';
+      }
+    >,
+    caller: V2ActionCaller,
+  ): Promise<V2MaintenanceView | V2MaintenancePreview> {
+    if (
+      request.action === 'SELECT_BACKUP_DIRECTORY' ||
+      request.action === 'SELECT_RESTORE_DIRECTORY'
+    ) {
+      return this.#selectMaintenanceDirectory(
+        caller,
+        request.action === 'SELECT_BACKUP_DIRECTORY' ? 'BACKUP' : 'RESTORE',
+      );
+    }
+    if (
+      request.action === 'PREVIEW_CONTROLLED_BACKUP' ||
+      request.action === 'PREVIEW_CONTROLLED_RESTORE'
+    ) {
+      return this.#previewMaintenance(
+        caller,
+        request.directoryToken,
+        request.action === 'PREVIEW_CONTROLLED_BACKUP' ? 'BACKUP' : 'RESTORE',
+      );
+    }
+    return this.#confirmMaintenance(
+      caller,
+      request.confirmationToken,
+      request.action === 'CONFIRM_CONTROLLED_BACKUP' ? 'BACKUP' : 'RESTORE',
+    );
+  }
+
+  async #selectMaintenanceDirectory(
+    caller: V2ActionCaller,
+    operation: 'BACKUP' | 'RESTORE',
+  ): Promise<V2MaintenanceView> {
+    if (this.#maintenancePicker === null) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    const picked = await this.#maintenancePicker.select(caller, operation);
+    if (picked === null) return this.#maintenanceView(caller);
+    const identity = await this.#directoryIdentity(picked.path);
+    const token = randomUUID().replaceAll('-', '');
+    this.#purgeMaintenanceLeases();
+    this.#maintenanceSelections.set(token, {
+      caller,
+      displayLabel: picked.displayLabel,
+      expiresAtMs: Date.now() + 120_000,
+      identity,
+      operation,
+      path: picked.path,
+    });
+    return this.#maintenanceView(caller);
+  }
+
+  async #previewMaintenance(
+    caller: V2ActionCaller,
+    token: string,
+    operation: 'BACKUP' | 'RESTORE',
+  ): Promise<V2MaintenancePreview> {
+    const selection = await this.#consumeMaintenanceSelection(token, caller, operation);
+    const confirmationToken = randomUUID().replaceAll('-', '');
+    const confirmation: MaintenanceConfirmationLease = {
+      ...selection,
+      token: confirmationToken,
+      ...(operation === 'RESTORE'
+        ? { backupPreflight: await this.#prepareRestore(selection.path) }
+        : {}),
+    };
+    this.#maintenanceConfirmations.set(confirmationToken, confirmation);
+    const restore = confirmation.backupPreflight;
+    return Object.freeze({
+      canConfirm: true,
+      confirmationToken,
+      fileCount: restore?.backupFileCount ?? null,
+      operation,
+      stage: 'PREFLIGHT',
+      summary:
+        operation === 'BACKUP'
+          ? '本机将创建受控备份；确认前未写入备份目录。'
+          : `已核对 ${restore?.backupFileCount ?? 0} 个备份文件；恢复将替换当前本地数据。`,
+    });
+  }
+
+  async #confirmMaintenance(
+    caller: V2ActionCaller,
+    token: string,
+    operation: 'BACKUP' | 'RESTORE',
+  ): Promise<V2MaintenanceView> {
+    this.#purgeMaintenanceLeases();
+    const lease = this.#maintenanceConfirmations.get(token);
+    this.#maintenanceConfirmations.delete(token);
+    if (
+      lease === undefined ||
+      lease.operation !== operation ||
+      lease.caller.senderId !== caller.senderId ||
+      lease.caller.windowId !== caller.windowId ||
+      lease.expiresAtMs < Date.now()
+    )
+      throw new V2ContractError('INVALID_REQUEST');
+    const current = await this.#directoryIdentity(lease.path);
+    if (current.dev !== lease.identity.dev || current.ino !== lease.identity.ino)
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    if (operation === 'BACKUP') {
+      await createControlledBackupSnapshot({
+        appVersion: this.#runtimeIdentity.appVersion,
+        buildCommit: this.#runtimeIdentity.buildCommit,
+        database: this.#backupAdapter(),
+        databasePath: join(this.#root.databaseDirectory, PROJECT_DATABASE_FILE),
+        root: this.#root,
+        selectedBackupRoot: lease.path,
+        v2DataVersion: 1,
+      }).catch(() => {
+        throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      });
+      return Object.freeze({
+        ...this.#maintenanceView(caller),
+        backupOutcome: 'SUCCESS',
+        backupStage: 'SUCCESS',
+      });
+    }
+    const preflight = lease.backupPreflight;
+    if (preflight === undefined) throw new V2ContractError('INVALID_REQUEST');
+    // The database is deliberately closed before the root-level switch. It is only reopened
+    // after the switched root passes the storage verifier.
+    this.#database.close();
+    try {
+      const result = await executeControlledRestore({
+        backupPath: lease.path,
+        database: this.#backupAdapter(),
+        preflight,
+        root: this.#root,
+        runtime: this.#restoreRuntimeIdentity(),
+      });
+      if (result.outcome === 'SUCCESS') await this.#reopenAfterRestore();
+      return Object.freeze({
+        ...this.#maintenanceView(caller),
+        restoreOutcome: result.outcome,
+        restoreStage: result.stage,
+      });
+    } catch {
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    }
+  }
+
+  async #reopenAfterRestore(): Promise<void> {
+    const databasePath = join(this.#root.databaseDirectory, PROJECT_DATABASE_FILE);
+    const assets = await discoverApprovedV2Covers(this.#assetsDirectory);
+    this.#database = connectDatabase(databasePath);
+    this.#catalog = new SqliteCatalogRepository(this.#database);
+    this.#repository = new SqliteV2Repository(this.#database);
+    this.#facade = new V2ApplicationFacade(this.#repository);
+    this.#content = new V2ContentApplication(
+      this.#repository,
+      new V2LocalContentFiles(this.#root, assets, { openDirectory: this.#openDirectory }),
+    );
+    this.#interaction = new V2InteractionApplication(
+      this.#repository,
+      new V2LocalInteractionFiles(this.#root),
+    );
+  }
+
+  #backupAdapter(): ControlledBackupDatabaseAdapter {
+    return {
+      createSnapshot: (destinationPath, signal) =>
+        createSqliteSnapshot(this.#database, destinationPath, signal),
+      enumerateManagedFiles: (snapshotPath, signal) =>
+        enumerateManagedFileInventory(snapshotPath, signal),
+      estimateSnapshotBytes: () => estimateSqliteSnapshotBytes(this.#database),
+      inspectSnapshot: (snapshotPath) => inspectSqliteSnapshot(snapshotPath),
+    };
+  }
+
+  #restoreRuntimeIdentity() {
+    const identity = inspectSqliteSnapshot(
+      join(this.#root.databaseDirectory, PROJECT_DATABASE_FILE),
+    );
+    return {
+      appVersion: this.#runtimeIdentity.appVersion,
+      migrationFingerprint: identity.migrationFingerprint,
+      schemaVersion: identity.schemaVersion,
+      v2DataVersion: 1,
+    };
+  }
+
+  async #prepareRestore(backupPath: string): Promise<ControlledRestorePreflight> {
+    return prepareControlledRestore({
+      backupPath,
+      database: this.#backupAdapter(),
+      root: this.#root,
+      runtime: this.#restoreRuntimeIdentity(),
+    }).catch(() => {
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    });
+  }
+
+  async #consumeMaintenanceSelection(
+    token: string,
+    caller: V2ActionCaller,
+    operation: 'BACKUP' | 'RESTORE',
+  ): Promise<MaintenanceSelectionLease> {
+    this.#purgeMaintenanceLeases();
+    const selection = this.#maintenanceSelections.get(token);
+    this.#maintenanceSelections.delete(token);
+    if (
+      selection === undefined ||
+      selection.operation !== operation ||
+      selection.caller.senderId !== caller.senderId ||
+      selection.caller.windowId !== caller.windowId ||
+      selection.expiresAtMs < Date.now()
+    )
+      throw new V2ContractError('INVALID_REQUEST');
+    const current = await this.#directoryIdentity(selection.path);
+    if (current.dev !== selection.identity.dev || current.ino !== selection.identity.ino)
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    return selection;
+  }
+
+  async #directoryIdentity(path: string): Promise<{ readonly dev: number; readonly ino: number }> {
+    try {
+      const status = await lstat(path);
+      if (!status.isDirectory() || status.isSymbolicLink()) throw new Error('invalid');
+      return { dev: status.dev, ino: status.ino };
+    } catch {
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    }
+  }
+
+  #purgeMaintenanceLeases(): void {
+    const now = Date.now();
+    for (const [token, lease] of this.#maintenanceSelections) {
+      if (lease.expiresAtMs < now) this.#maintenanceSelections.delete(token);
+    }
+    for (const [token, lease] of this.#maintenanceConfirmations) {
+      if (lease.expiresAtMs < now) this.#maintenanceConfirmations.delete(token);
+    }
   }
 
   #assertOpen(): void {

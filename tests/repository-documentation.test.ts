@@ -67,7 +67,7 @@ describe('repository-facing documentation', () => {
     expect(readme).not.toMatch(/R09.+等待(?:真实 )?(?:Electron )?视觉验收/su);
     expect(readme).toMatch(/R10A.+R10B1A—R10B1C.+已进入.+main/su);
     expect(readme).toMatch(/受控备份核心已经实现/u);
-    expect(readme).toMatch(/完整端到端恢复.+尚未开始/su);
+    expect(readme).toMatch(/R10B.+Draft PR.+等待审阅/su);
     expect(readme).toMatch(/R10C.+R10D.+R10E.+尚未开始.+独立决策与授权/su);
     expect(readme).toContain('./docs/product/v2-r10-release-readiness-scope.md');
     expect(docsIndex).toContain('./product/v2-r10-release-readiness-scope.md');

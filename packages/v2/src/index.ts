@@ -150,6 +150,40 @@ export interface V2CatalogWorkDetail extends V2CatalogWorkSummary {
   readonly sourceBoundary: 'MISSING' | 'UNVERIFIED_OBSERVATIONS';
 }
 
+export type V2MaintenanceOutcome = 'IDLE' | 'ROLLBACK' | 'SAFETY_UNPROVEN' | 'SUCCESS';
+export type V2MaintenanceStage =
+  | 'IDLE'
+  | 'PREFLIGHT'
+  | 'BUILDING_STAGING'
+  | 'SWITCHING'
+  | 'VERIFYING'
+  | 'SUCCESS'
+  | 'ROLLBACK'
+  | 'SAFETY_UNPROVEN';
+
+export interface V2MaintenanceDirectorySelection {
+  readonly displayLabel: string;
+  readonly token: string;
+}
+
+export interface V2MaintenancePreview {
+  readonly canConfirm: boolean;
+  readonly confirmationToken: string | null;
+  readonly fileCount: number | null;
+  readonly operation: 'BACKUP' | 'RESTORE';
+  readonly stage: 'PREFLIGHT';
+  readonly summary: string;
+}
+
+export interface V2MaintenanceView {
+  readonly backupDirectory: V2MaintenanceDirectorySelection | null;
+  readonly backupOutcome: V2MaintenanceOutcome;
+  readonly backupStage: V2MaintenanceStage;
+  readonly restoreDirectory: V2MaintenanceDirectorySelection | null;
+  readonly restoreOutcome: V2MaintenanceOutcome;
+  readonly restoreStage: V2MaintenanceStage;
+}
+
 export interface AccountPersonaFields {
   readonly audience: string;
   readonly boundary: string;
@@ -271,6 +305,7 @@ export type V2ReadRequest =
       readonly view: 'CATALOG_WORKS';
     }
   | { readonly view: 'CATALOG_WORK'; readonly workId: string }
+  | { readonly view: 'MAINTENANCE' }
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
@@ -283,6 +318,20 @@ export type V2ReadRequest =
   | InteractionReadRequest;
 
 export type V2MutationRequest =
+  | { readonly action: 'SELECT_BACKUP_DIRECTORY' }
+  | { readonly action: 'SELECT_RESTORE_DIRECTORY' }
+  | { readonly action: 'PREVIEW_CONTROLLED_BACKUP'; readonly directoryToken: string }
+  | { readonly action: 'PREVIEW_CONTROLLED_RESTORE'; readonly directoryToken: string }
+  | {
+      readonly action: 'CONFIRM_CONTROLLED_BACKUP';
+      readonly confirmation: 'CREATE_CONTROLLED_BACKUP';
+      readonly confirmationToken: string;
+    }
+  | {
+      readonly action: 'CONFIRM_CONTROLLED_RESTORE';
+      readonly confirmation: 'RESTORE_CONTROLLED_BACKUP';
+      readonly confirmationToken: string;
+    }
   | {
       readonly action: 'UPDATE_PERSONA';
       readonly expectedRevision: number;
@@ -423,6 +472,23 @@ export interface V2Bridge {
   readonly clearProviderCredential?: (input: {
     readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
   }) => Promise<V2Result<V2ProviderSettingsView>>;
+  readonly readMaintenance?: () => Promise<V2Result<V2MaintenanceView>>;
+  readonly selectBackupDirectory?: () => Promise<V2Result<V2MaintenanceView>>;
+  readonly selectRestoreDirectory?: () => Promise<V2Result<V2MaintenanceView>>;
+  readonly previewControlledBackup?: (input: {
+    readonly directoryToken: string;
+  }) => Promise<V2Result<V2MaintenancePreview>>;
+  readonly previewControlledRestore?: (input: {
+    readonly directoryToken: string;
+  }) => Promise<V2Result<V2MaintenancePreview>>;
+  readonly confirmControlledBackup?: (input: {
+    readonly confirmation: 'CREATE_CONTROLLED_BACKUP';
+    readonly confirmationToken: string;
+  }) => Promise<V2Result<V2MaintenanceView>>;
+  readonly confirmControlledRestore?: (input: {
+    readonly confirmation: 'RESTORE_CONTROLLED_BACKUP';
+    readonly confirmationToken: string;
+  }) => Promise<V2Result<V2MaintenanceView>>;
   readonly confirmReplySuggestions: InteractionCall<
     'CONFIRM_REPLY_SUGGESTIONS',
     InteractionWorkspace
@@ -1048,6 +1114,7 @@ export function parseContentMutationRequest(value: unknown): ContentMutationRequ
 export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.view === 'MAINTENANCE' && exactKeys(value, ['view'])) return { view: 'MAINTENANCE' };
   const catalogRequest = catalogReadRequest(value);
   if (catalogRequest !== null) return catalogRequest;
   if (value.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
@@ -1108,6 +1175,43 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (
+    (value.action === 'SELECT_BACKUP_DIRECTORY' || value.action === 'SELECT_RESTORE_DIRECTORY') &&
+    exactKeys(value, ['action'])
+  )
+    return { action: value.action };
+  if (
+    (value.action === 'PREVIEW_CONTROLLED_BACKUP' ||
+      value.action === 'PREVIEW_CONTROLLED_RESTORE') &&
+    exactKeys(value, ['action', 'directoryToken']) &&
+    typeof value.directoryToken === 'string' &&
+    /^[a-z0-9_-]{24,128}$/iu.test(value.directoryToken)
+  )
+    return { action: value.action, directoryToken: value.directoryToken };
+  if (
+    value.action === 'CONFIRM_CONTROLLED_BACKUP' &&
+    exactKeys(value, ['action', 'confirmation', 'confirmationToken']) &&
+    value.confirmation === 'CREATE_CONTROLLED_BACKUP' &&
+    typeof value.confirmationToken === 'string' &&
+    /^[a-z0-9_-]{24,128}$/iu.test(value.confirmationToken)
+  )
+    return {
+      action: value.action,
+      confirmation: value.confirmation,
+      confirmationToken: value.confirmationToken,
+    };
+  if (
+    value.action === 'CONFIRM_CONTROLLED_RESTORE' &&
+    exactKeys(value, ['action', 'confirmation', 'confirmationToken']) &&
+    value.confirmation === 'RESTORE_CONTROLLED_BACKUP' &&
+    typeof value.confirmationToken === 'string' &&
+    /^[a-z0-9_-]{24,128}$/iu.test(value.confirmationToken)
+  )
+    return {
+      action: value.action,
+      confirmation: value.confirmation,
+      confirmationToken: value.confirmationToken,
+    };
   if (value.action === 'EXECUTE_CONTENT_COPY_GENERATION') {
     return parseV2ContentCopyGenerationExecutionRequest(value);
   }
@@ -1614,6 +1718,7 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
+    if (request.view === 'MAINTENANCE') throw new V2ContractError('INVALID_REQUEST');
     if (
       request.view === 'CATALOG_WORKS' ||
       request.view === 'CATALOG_WORK' ||
@@ -1641,6 +1746,15 @@ export class V2ApplicationFacade {
       this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
       return this.#repository.savePersona(request.persona, request.expectedRevision);
     }
+    if (
+      request.action === 'SELECT_BACKUP_DIRECTORY' ||
+      request.action === 'SELECT_RESTORE_DIRECTORY' ||
+      request.action === 'PREVIEW_CONTROLLED_BACKUP' ||
+      request.action === 'PREVIEW_CONTROLLED_RESTORE' ||
+      request.action === 'CONFIRM_CONTROLLED_BACKUP' ||
+      request.action === 'CONFIRM_CONTROLLED_RESTORE'
+    )
+      throw new V2ContractError('INVALID_REQUEST');
     if (
       request.action === 'SAVE_METRIC_SNAPSHOTS' ||
       request.action === 'DECIDE_STRATEGY_RECOMMENDATION' ||

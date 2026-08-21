@@ -189,6 +189,14 @@ describe('V2 pure contracts', () => {
         },
       }),
     ).toMatchObject({ action: 'UPDATE_PERSONA', expectedRevision: 0 });
+    expect(parseV2ReadRequest({ view: 'MAINTENANCE' })).toEqual({ view: 'MAINTENANCE' });
+    expect(
+      parseV2MutationRequest({
+        action: 'CONFIRM_CONTROLLED_RESTORE',
+        confirmation: 'RESTORE_CONTROLLED_BACKUP',
+        confirmationToken: 'a'.repeat(24),
+      }),
+    ).toMatchObject({ action: 'CONFIRM_CONTROLLED_RESTORE' });
 
     for (const invalid of [
       {
@@ -218,6 +226,15 @@ describe('V2 pure contracts', () => {
         staggerMinutes: 0,
         time: '14:00',
         weekKey: V2_DEFAULT_WEEK_KEY,
+      },
+      {
+        action: 'PREVIEW_CONTROLLED_BACKUP',
+        directoryToken: 'C:\\synthetic',
+      },
+      {
+        action: 'CONFIRM_CONTROLLED_RESTORE',
+        confirmation: 'RESTORE_CONTROLLED_BACKUP',
+        confirmationToken: 'a'.repeat(23),
       },
     ]) {
       expect(() => parseV2MutationRequest(invalid)).toThrow(V2ContractError);
@@ -699,6 +716,8 @@ describe('V2 Electron boundary', () => {
       'adoptPlanItemReplacement',
       'approveContentPackages',
       'clearProviderCredential',
+      'confirmControlledBackup',
+      'confirmControlledRestore',
       'confirmPlanCandidates',
       'confirmProviderAction',
       'confirmReplySuggestions',
@@ -715,6 +734,8 @@ describe('V2 Electron boundary', () => {
       'markInteractionManualSent',
       'openContentExport',
       'previewContentCopyGeneration',
+      'previewControlledBackup',
+      'previewControlledRestore',
       'previewInteractionDelete',
       'previewPlanReschedule',
       'previewProviderAction',
@@ -723,6 +744,7 @@ describe('V2 Electron boundary', () => {
       'readCatalogWorks',
       'readContentPackages',
       'readInteractions',
+      'readMaintenance',
       'readMetricsReview',
       'readPersona',
       'readProviderCapabilityProbeProgress',
@@ -735,6 +757,8 @@ describe('V2 Electron boundary', () => {
       'saveMetricSnapshots',
       'saveReplySuggestion',
       'saveWeeklyPlanningBrief',
+      'selectBackupDirectory',
+      'selectRestoreDirectory',
       'setProviderCredential',
       'skipInteraction',
       'skipPlanCandidates',
@@ -748,6 +772,19 @@ describe('V2 Electron boundary', () => {
     expect('rednoteDesktop' in exposed).toBe(false);
     await exposed.readPersona();
     await exposed.readInteractions();
+    await exposed.readMaintenance?.();
+    await exposed.selectBackupDirectory?.();
+    await exposed.selectRestoreDirectory?.();
+    await exposed.previewControlledBackup?.({ directoryToken: 'a'.repeat(24) });
+    await exposed.previewControlledRestore?.({ directoryToken: 'b'.repeat(24) });
+    await exposed.confirmControlledBackup?.({
+      confirmation: 'CREATE_CONTROLLED_BACKUP',
+      confirmationToken: 'c'.repeat(24),
+    });
+    await exposed.confirmControlledRestore?.({
+      confirmation: 'RESTORE_CONTROLLED_BACKUP',
+      confirmationToken: 'd'.repeat(24),
+    });
     const readCatalogWork = exposed.readCatalogWork;
     const readCatalogWorks = exposed.readCatalogWorks;
     if (readCatalogWork === undefined || readCatalogWorks === undefined) {

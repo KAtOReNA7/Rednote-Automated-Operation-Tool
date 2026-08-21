@@ -2,6 +2,18 @@ import { useEffect, useRef, useState } from 'react';
 
 import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
 
+type MaintenanceBridge = NonNullable<typeof window.rednoteV2>;
+type ReadMaintenance = NonNullable<MaintenanceBridge['readMaintenance']>;
+type PreviewMaintenance = NonNullable<MaintenanceBridge['previewControlledBackup']>;
+type V2MaintenanceView = Extract<
+  Awaited<ReturnType<ReadMaintenance>>,
+  { readonly ok: true }
+>['value'];
+type V2MaintenancePreview = Extract<
+  Awaited<ReturnType<PreviewMaintenance>>,
+  { readonly ok: true }
+>['value'];
+
 const capabilityLabel = {
   STALE: '已过期',
   SUPPORTED: '支持',
@@ -38,7 +50,167 @@ const settingsSections = [
   ['capabilities', 'v2-provider-capabilities', '能力与确认'],
   ['budget', 'v2-provider-budget', '费用与预算'],
   ['advanced', 'v2-provider-diagnostics', '高级诊断'],
+  ['maintenance', 'v2-maintenance', '本地备份与恢复'],
 ] as const;
+
+function MaintenanceSettings(): React.JSX.Element {
+  const { notify } = useV2Controller();
+  const [view, setView] = useState<V2MaintenanceView | null>(null);
+  const [backupPreview, setBackupPreview] = useState<V2MaintenancePreview | null>(null);
+  const [restorePreview, setRestorePreview] = useState<V2MaintenancePreview | null>(null);
+  const [restoreChecked, setRestoreChecked] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const load = async (): Promise<void> => {
+    const result = await window.rednoteV2?.readMaintenance?.();
+    if (result === undefined) return notify('本地维护桥接不可用。');
+    if (!result.ok) return notify(result.error.message);
+    setView(result.value);
+  };
+  useEffect(() => {
+    void load();
+  }, []);
+  const select = async (operation: 'BACKUP' | 'RESTORE'): Promise<void> => {
+    setBusy(true);
+    try {
+      const result =
+        operation === 'BACKUP'
+          ? await window.rednoteV2?.selectBackupDirectory?.()
+          : await window.rednoteV2?.selectRestoreDirectory?.();
+      if (result === undefined) return notify('本地目录选择不可用。');
+      if (!result.ok) return notify(result.error.message);
+      setView(result.value);
+      if (operation === 'BACKUP') setBackupPreview(null);
+      else {
+        setRestorePreview(null);
+        setRestoreChecked(false);
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+  const preview = async (operation: 'BACKUP' | 'RESTORE'): Promise<void> => {
+    const token =
+      operation === 'BACKUP' ? view?.backupDirectory?.token : view?.restoreDirectory?.token;
+    if (token === undefined) return notify('请先选择文件夹。');
+    setBusy(true);
+    try {
+      const result =
+        operation === 'BACKUP'
+          ? await window.rednoteV2?.previewControlledBackup?.({ directoryToken: token })
+          : await window.rednoteV2?.previewControlledRestore?.({ directoryToken: token });
+      if (result === undefined) return notify('本地预检不可用。');
+      if (!result.ok) return notify(result.error.message);
+      if (operation === 'BACKUP') setBackupPreview(result.value);
+      else setRestorePreview(result.value);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirm = async (operation: 'BACKUP' | 'RESTORE'): Promise<void> => {
+    const previewValue = operation === 'BACKUP' ? backupPreview : restorePreview;
+    if (previewValue?.confirmationToken === null || previewValue === null) return;
+    setBusy(true);
+    try {
+      const result =
+        operation === 'BACKUP'
+          ? await window.rednoteV2?.confirmControlledBackup?.({
+              confirmation: 'CREATE_CONTROLLED_BACKUP',
+              confirmationToken: previewValue.confirmationToken,
+            })
+          : await window.rednoteV2?.confirmControlledRestore?.({
+              confirmation: 'RESTORE_CONTROLLED_BACKUP',
+              confirmationToken: previewValue.confirmationToken,
+            });
+      if (result === undefined) return notify('本地确认不可用。');
+      if (!result.ok) return notify(result.error.message);
+      setView(result.value);
+      if (operation === 'BACKUP') setBackupPreview(null);
+      else {
+        setRestorePreview(null);
+        setRestoreChecked(false);
+      }
+      notify(operation === 'BACKUP' ? '受控备份已完成。' : '恢复已结束；请确认显示的本地结果。');
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className="v2-card v2-settings v2-maintenance-settings" id="v2-maintenance">
+      <div className="v2-settings-title">
+        <Icon name="file-text" size={24} />
+        <div>
+          <h2>本地备份与恢复</h2>
+          <p>目录由本机选择器保存为短期授权；页面不会显示或传递实际路径。</p>
+        </div>
+      </div>
+      <section aria-label="创建备份" className="v2-provider-section">
+        <h3>创建受控备份</h3>
+        <p>{view?.backupDirectory?.displayLabel ?? '尚未选择保存文件夹'}</p>
+        <div className="v2-inline-actions">
+          <Button disabled={busy} onClick={() => void select('BACKUP')}>
+            选择文件夹
+          </Button>
+          <Button
+            disabled={busy || view?.backupDirectory === null || view === null}
+            onClick={() => void preview('BACKUP')}
+          >
+            运行预检
+          </Button>
+          <Button
+            disabled={busy || backupPreview?.canConfirm !== true}
+            onClick={() => void confirm('BACKUP')}
+            tone="primary"
+          >
+            确认创建备份
+          </Button>
+        </div>
+        {backupPreview === null ? null : <p role="status">{backupPreview.summary}</p>}
+      </section>
+      <section aria-label="恢复本地备份" className="v2-provider-section">
+        <h3>恢复本地备份</h3>
+        <p>{view?.restoreDirectory?.displayLabel ?? '尚未选择备份文件夹'}</p>
+        <div className="v2-inline-actions">
+          <Button disabled={busy} onClick={() => void select('RESTORE')}>
+            选择备份文件夹
+          </Button>
+          <Button
+            disabled={busy || view?.restoreDirectory === null || view === null}
+            onClick={() => void preview('RESTORE')}
+          >
+            运行恢复预检
+          </Button>
+        </div>
+        {restorePreview === null ? null : (
+          <>
+            <p role="status">{restorePreview.summary}</p>
+            <label className="v2-checkbox-row">
+              <input
+                checked={restoreChecked}
+                onChange={(event) => setRestoreChecked(event.target.checked)}
+                type="checkbox"
+              />
+              我理解恢复会替换当前本地数据，且只能在预检通过后继续。
+            </label>
+            <Button
+              disabled={busy || !restoreChecked || !restorePreview.canConfirm}
+              onClick={() => void confirm('RESTORE')}
+              tone="primary"
+            >
+              确认恢复本地备份
+            </Button>
+          </>
+        )}
+      </section>
+      {view?.restoreOutcome === 'SAFETY_UNPROVEN' ? (
+        <p role="alert">恢复安全状态无法证明，项目数据保持关闭。</p>
+      ) : null}
+      {view?.restoreOutcome === 'ROLLBACK' ? <p role="alert">恢复未完成，旧数据已回滚。</p> : null}
+      {view?.restoreOutcome === 'SUCCESS' ? (
+        <p role="status">恢复成功，旧根目录保护副本仍被保留。</p>
+      ) : null}
+    </section>
+  );
+}
 
 function ProviderSettings({
   activeSection,
@@ -618,7 +790,7 @@ export function SettingsPage(): React.JSX.Element {
           ))}
         </nav>
         <div className="v2-stack v2-settings-main">
-          {activeSection === 'persona' ? null : (
+          {activeSection === 'persona' || activeSection === 'maintenance' ? null : (
             <ProviderSettings activeSection={activeSection} onViewChange={setProviderView} />
           )}
           {activeSection === 'persona' ? (
@@ -663,6 +835,7 @@ export function SettingsPage(): React.JSX.Element {
               </label>
             </section>
           ) : null}
+          {activeSection === 'maintenance' ? <MaintenanceSettings /> : null}
         </div>
         <aside className="v2-settings-aside v2-settings-rail">
           <section className="v2-card v2-settings-rail-card" aria-label="AI 服务状态">

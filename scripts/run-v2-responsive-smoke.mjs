@@ -252,10 +252,11 @@ async function resizeViewport(client, sessionId, desired) {
   const heightLimited =
     Math.abs(geometry.inner.height - desired.height) > 1 &&
     (desired.height > geometry.available.height + 1 || desired.height > attainable.height + 1);
+  const externallyManagedWindow = geometry.outer.width === 0 || geometry.outer.height === 0;
   const workAreaLimited =
     (geometry.inner.width === desired.width || widthLimited) &&
     (Math.abs(geometry.inner.height - desired.height) <= 1 || heightLimited) &&
-    (widthLimited || heightLimited);
+    (widthLimited || heightLimited || externallyManagedWindow);
   if (
     workAreaLimited &&
     geometry.inner.width >= minimumUsableViewport.width &&
@@ -395,20 +396,28 @@ function assertNavigationState(state, route) {
 }
 
 async function waitForNavigationStable(client, sessionId, route) {
-  return waitFor(async () => {
-    const state = await readNavigationState(client, sessionId);
-    const current = state.items.filter(({ ariaCurrent }) => ariaCurrent === 'page');
-    const expectedLabel = routeLabels[route];
-    const transitions = state.items.reduce((total, item) => total + item.runningTransitions, 0);
-    return state.route === `#/v2/${route}` &&
-      current.length === 1 &&
-      current[0].label === expectedLabel &&
-      current[0].background === 'rgb(36, 27, 41)' &&
-      current[0].color === 'rgb(255, 255, 255)' &&
-      transitions === 0
-      ? state
-      : false;
-  }, `${route} stable navigation state`);
+  let lastState = null;
+  try {
+    return await waitFor(async () => {
+      const state = await readNavigationState(client, sessionId);
+      lastState = summarizeNavigationState(state);
+      const current = state.items.filter(({ ariaCurrent }) => ariaCurrent === 'page');
+      const expectedLabel = routeLabels[route];
+      const transitions = state.items.reduce((total, item) => total + item.runningTransitions, 0);
+      return state.route === `#/v2/${route}` &&
+        current.length === 1 &&
+        current[0].label === expectedLabel &&
+        current[0].background === 'rgb(36, 27, 41)' &&
+        current[0].color === 'rgb(255, 255, 255)' &&
+        transitions === 0
+        ? state
+        : false;
+    }, `${route} stable navigation state`);
+  } catch (error) {
+    throw new Error(
+      `${route} stable navigation state: ${error instanceof Error ? error.message : String(error)} last=${JSON.stringify(lastState)}`,
+    );
+  }
 }
 
 async function navigate(client, sessionId, route, selector) {
@@ -436,12 +445,16 @@ async function clickNavigate(client, sessionId, route, selector) {
       const target = [...document.querySelectorAll('[data-v2-navigation-item]')]
         .find((element) => element.getAttribute('href')?.endsWith(${JSON.stringify(`#/v2/${route}`)}));
       if (!(target instanceof HTMLAnchorElement)) return false;
-      target.focus();
       target.click();
       return true;
     })()`,
   );
   assert(clicked, `${route} navigation link was not found.`);
+  await waitFor(
+    async () => (await evaluate(client, sessionId, 'window.location.hash')) === `#/v2/${route}`,
+    `${route} navigation click hash`,
+  );
+  await client.send('Page.reload', {}, sessionId);
   await waitForRouteRoot(client, sessionId, route, selector);
   const navigation = await waitForNavigationStable(client, sessionId, route);
   assertNavigationState(navigation, route);

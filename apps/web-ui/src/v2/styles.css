@@ -527,6 +527,10 @@
   .v2-settings-rail-card h2 { margin-top: 2px; font-size: 18px; }
   .v2-settings-rail-card p:last-child { margin-top: 8px; color: var(--v2-muted); font-size: 12px; line-height: 1.6; }
   .v2-settings-page .v2-provider-settings { gap: 18px; background: #fff; }
+  .v2-maintenance-settings { gap: 20px; background: #fff; }
+  .v2-maintenance-settings .v2-provider-section { display: grid; gap: 12px; border-top: 1px solid var(--v2-line); padding-top: 18px; }
+  .v2-maintenance-settings .v2-inline-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+  .v2-maintenance-settings .v2-checkbox-row { display: flex; align-items: start; gap: 8px; color: var(--v2-muted); font-size: 13px; line-height: 1.5; }
   .v2-settings-page .v2-provider-settings > hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--v2-line); }
   @media (max-width: 1120px) {
     .v2-library-shelf, .v2-review-dashboard, .v2-settings-board { grid-template-columns: repeat(2, minmax(0, 1fr)) !important; }

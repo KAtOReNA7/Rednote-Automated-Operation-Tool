@@ -53,6 +53,12 @@ export {
   createControlledBackupSnapshot,
   verifyControlledBackupSnapshot,
 } from './backup-snapshot.js';
+export {
+  ControlledRestoreError,
+  executeControlledRestore,
+  inspectControlledRestoreRecovery,
+  prepareControlledRestore,
+} from './controlled-restore.js';
 
 export type { DataRootMarker, ProjectDataRootOptions } from './project-data-root.js';
 export type { LocalProjectLocatorOptions } from './project-locator.js';
@@ -89,3 +95,13 @@ export type {
   CreateControlledBackupOptions,
   VerifyControlledBackupOptions,
 } from './backup-snapshot.js';
+export type {
+  ControlledRestoreCompatibilityPolicy,
+  ControlledRestoreErrorCode,
+  ControlledRestorePreflight,
+  ControlledRestoreResult,
+  ControlledRestoreRuntimeIdentity,
+  ControlledRestoreStage,
+  ExecuteControlledRestoreOptions,
+  PrepareControlledRestoreOptions,
+} from './controlled-restore.js';
