@@ -716,7 +716,20 @@ export class V2DesktopRuntime {
         root: this.#root,
         runtime: this.#restoreRuntimeIdentity(),
       });
-      if (result.outcome === 'SUCCESS') await this.#reopenAfterRestore();
+      if (result.outcome !== 'SAFETY_UNPROVEN') {
+        try {
+          await this.#reopenAfterRestore();
+        } catch {
+          this.#closed = true;
+          return Object.freeze({
+            ...this.#maintenanceView(caller),
+            restoreOutcome: 'SAFETY_UNPROVEN',
+            restoreStage: 'SAFETY_UNPROVEN',
+          });
+        }
+      } else {
+        this.#closed = true;
+      }
       return Object.freeze({
         ...this.#maintenanceView(caller),
         restoreOutcome: result.outcome,

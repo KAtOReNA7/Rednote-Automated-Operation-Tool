@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
-import { lstat, mkdir, open, readdir, readFile, rename } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rename, rm } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import {
@@ -531,6 +531,14 @@ export async function executeControlledRestore(
         stage: 'SAFETY_UNPROVEN',
       });
     }
+    // A staging-only failure cannot be allowed to become a startup lock. Both names are generated
+    // for this operation and remain strict siblings of the live root until the destructive rename.
+    await rm(stagingPath, { force: true, maxRetries: 3, recursive: true }).catch(() => {
+      throw fail('SAFETY_UNPROVEN');
+    });
+    await rm(journalPath, { force: true, maxRetries: 3 }).catch(() => {
+      throw fail('SAFETY_UNPROVEN');
+    });
     throw stable(error, 'RESTORE_FAILED');
   }
 }

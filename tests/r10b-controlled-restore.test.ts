@@ -213,6 +213,36 @@ describe('R10B controlled restore', () => {
     );
   });
 
+  it('removes its staging journal when final verification fails before the switch', async () => {
+    const value = await context();
+    const created = await backup(value);
+    const backupPath = join(value.backupRoot, created.backupName);
+    const preflight = await prepareControlledRestore({
+      backupPath,
+      database: adapter(value),
+      randomId: () => OPERATION_ID,
+      root: value.root,
+      runtime: restoreIdentity(value),
+    });
+    writeFileSync(join(backupPath, 'COMPLETE'), 'tampered');
+    await expect(
+      executeControlledRestore({
+        backupPath,
+        database: adapter(value),
+        preflight,
+        root: value.root,
+        runtime: restoreIdentity(value),
+      }),
+    ).rejects.toMatchObject({ code: 'INTEGRITY_FAILED' });
+    expect(
+      existsSync(join(value.root.rootPath, '..', `.rednote-restore-staging-${OPERATION_ID}`)),
+    ).toBe(false);
+    expect(
+      existsSync(join(value.root.rootPath, '..', `.rednote-restore-journal-${OPERATION_ID}.json`)),
+    ).toBe(false);
+    expect(await inspectControlledRestoreRecovery(value.root.rootPath)).toBe('CLEAR');
+  });
+
   it('fails closed at startup when an incomplete journal is present', async () => {
     const value = await context();
     const journal = join(
