@@ -5,19 +5,21 @@ import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 
 import {
+  assertInstallerArtifactVersion,
   buildIdentity,
-  readApplicationVersion,
   readReleaseManifest,
+  resolveInstallerBuildContract,
   WINDOWS_MANIFEST_NAME,
 } from './windows-distribution-contract.mjs';
 
 const run = promisify(execFile);
 const root = resolve(import.meta.dirname, '..');
-const outputVariant = process.env.REDNOTE_PACKAGE_OUTPUT_VARIANT;
-if (outputVariant !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(outputVariant))
-  throw new Error('Package output variant must be a finite safe directory name.');
-const output = outputVariant === undefined ? join(root, 'out') : join(root, 'out', outputVariant);
-const installers = join(output, 'installer');
+const {
+  applicationVersion,
+  builderConfigArguments,
+  installersDirectory: installers,
+  outputDirectory: output,
+} = resolveInstallerBuildContract(root);
 const bundle = join(output, 'installer-bundle');
 
 function builderEnvironment() {
@@ -52,7 +54,6 @@ function builderEnvironment() {
 const packageDirectory = (await readdir(output)).filter((name) => name.endsWith('-win32-x64'));
 if (packageDirectory.length !== 1)
   throw new Error('Installer requires exactly one verified prepackaged Windows directory.');
-const applicationVersion = readApplicationVersion(root);
 const { commit, sourceDateEpoch } = buildIdentity(root);
 const prepackaged = join(output, packageDirectory[0]);
 const manifest = await readReleaseManifest(prepackaged, [applicationVersion]);
@@ -67,6 +68,7 @@ await run(
     join(root, 'node_modules', 'electron-builder', 'cli.js'),
     '--config',
     'electron-builder.yml',
+    ...builderConfigArguments,
     '--prepackaged',
     prepackaged,
     '--win',
@@ -86,6 +88,7 @@ const installersFound = (await readdir(installers)).filter((name) => name.endsWi
 if (installersFound.length !== 1)
   throw new Error('NSIS build did not produce exactly one installer.');
 const installer = installersFound[0];
+assertInstallerArtifactVersion(installer, applicationVersion);
 const installerPath = join(installers, installer);
 const installerSize = (await stat(installerPath)).size;
 const installerHash = createHash('sha256')

@@ -1,7 +1,9 @@
-import { mkdtemp, mkdir, readFile, writeFile } from 'node:fs/promises';
+import { execFile } from 'node:child_process';
+import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { pathToFileURL } from 'node:url';
+import { promisify } from 'node:util';
 
 import { describe, expect, it } from 'vitest';
 
@@ -18,6 +20,18 @@ interface DistributionContract {
     environment: Record<string, string>,
     platform: string,
   ) => string;
+  readonly assertInstallerArtifactVersion: (installerName: string, version: string) => void;
+  readonly installerArtifactName: (version: string) => string;
+  readonly resolveInstallerBuildContract: (
+    root: string,
+    environment: Record<string, string>,
+    platform: string,
+  ) => {
+    readonly applicationVersion: string;
+    readonly outputDirectory: string;
+    readonly installersDirectory: string;
+    readonly builderConfigArguments: readonly string[];
+  };
   readonly readReleaseManifest: (
     directory: string,
     versions?: readonly string[],
@@ -28,6 +42,8 @@ interface DistributionContract {
     version?: string,
   ) => Promise<{ readonly files: readonly { readonly path: string }[] }>;
 }
+
+const run = promisify(execFile);
 
 async function loadContract(): Promise<DistributionContract> {
   return (await import(
@@ -86,6 +102,50 @@ describe('R10D Windows distribution contracts', () => {
     );
   });
 
+  it('derives locked electron-builder version and output overrides for canonical and fixture builds', async () => {
+    const contract = await loadContract();
+    const canonical = contract.resolveInstallerBuildContract(process.cwd(), {}, 'win32');
+    const fixture = contract.resolveInstallerBuildContract(
+      process.cwd(),
+      {
+        GITHUB_ACTIONS: 'true',
+        REDNOTE_PACKAGE_OUTPUT_VARIANT: 'r10d-beta0-fixture',
+        REDNOTE_R10D_CI_FIXTURE: '1',
+        REDNOTE_R10D_CI_FIXTURE_VERSION: '0.1.0-beta.0',
+      },
+      'win32',
+    );
+    expect(canonical.applicationVersion).toBe('0.1.0-beta.1');
+    expect(canonical.builderConfigArguments).toEqual([
+      '--config.extraMetadata.version=0.1.0-beta.1',
+      '--config.directories.output=out/installer',
+    ]);
+    expect(fixture.applicationVersion).toBe('0.1.0-beta.0');
+    expect(fixture.builderConfigArguments).toEqual([
+      '--config.extraMetadata.version=0.1.0-beta.0',
+      '--config.directories.output=out/r10d-beta0-fixture/installer',
+    ]);
+    expect(contract.installerArtifactName(canonical.applicationVersion)).toBe(
+      'RednoteStudio-0.1.0-beta.1-win-x64-setup.exe',
+    );
+    expect(contract.installerArtifactName(fixture.applicationVersion)).toBe(
+      'RednoteStudio-0.1.0-beta.0-win-x64-setup.exe',
+    );
+    expect(() =>
+      contract.assertInstallerArtifactVersion(
+        'RednoteStudio-0.1.0-beta.1-win-x64-setup.exe',
+        fixture.applicationVersion,
+      ),
+    ).toThrow('NSIS installer artifact version does not match the verified manifest version.');
+    expect(() =>
+      contract.resolveInstallerBuildContract(
+        process.cwd(),
+        { REDNOTE_PACKAGE_OUTPUT_VARIANT: '../../escape' },
+        'win32',
+      ),
+    ).toThrow('Package output variant must be a finite safe directory name.');
+  });
+
   it('writes and validates a closed sorted manifest without absolute paths', async () => {
     const contract = await loadContract();
     const root = resolve(process.cwd());
@@ -130,5 +190,36 @@ describe('R10D Windows distribution contracts', () => {
     await expect(
       contract.readReleaseManifest(directory, [contract.WINDOWS_CI_FIXTURE_VERSION]),
     ).resolves.toMatchObject({ applicationVersion: contract.WINDOWS_CI_FIXTURE_VERSION });
+  });
+
+  it('rejects a prepackaged manifest whose exact head does not match the installer build', async () => {
+    const contract = await loadContract();
+    const variant = 'r10d-manifest-mismatch';
+    const output = join(process.cwd(), 'out', variant);
+    const packageDirectory = join(output, 'synthetic-win32-x64');
+    await mkdir(packageDirectory, { recursive: true });
+    await writeFile(join(packageDirectory, 'RednoteMysteryOperations.exe'), 'synthetic executable');
+    await contract.writeReleaseManifest(process.cwd(), packageDirectory);
+    const manifestPath = join(packageDirectory, contract.WINDOWS_MANIFEST_NAME);
+    const manifest = JSON.parse(await readFile(manifestPath, 'utf8')) as { buildCommit: string };
+    manifest.buildCommit = 'a'.repeat(40);
+    await writeFile(manifestPath, JSON.stringify(manifest));
+    const environment: NodeJS.ProcessEnv = {
+      ...process.env,
+      REDNOTE_PACKAGE_OUTPUT_VARIANT: variant,
+    };
+    delete environment.REDNOTE_R10D_CI_FIXTURE;
+    delete environment.REDNOTE_R10D_CI_FIXTURE_VERSION;
+    try {
+      await expect(
+        run(process.execPath, ['scripts/package-installer.mjs'], {
+          cwd: process.cwd(),
+          env: environment,
+          windowsHide: true,
+        }),
+      ).rejects.toMatchObject({ stderr: expect.stringContaining('Prepackaged manifest') });
+    } finally {
+      await rm(output, { force: true, recursive: true });
+    }
   });
 });

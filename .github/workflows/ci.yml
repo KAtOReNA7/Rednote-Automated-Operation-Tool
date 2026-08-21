@@ -103,28 +103,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "R10D_BETA0_DESKTOP_BUILD_FAILED:$LASTEXITCODE" }
           $output = Join-Path (Get-Location) 'out'
           $fixture = Join-Path $output 'r10d-beta0-fixture'
-          $staging = Join-Path $env:TEMP 'r10d-beta0-staging'
           $canonicalPackage = @(Get-ChildItem -LiteralPath $output -Directory | Where-Object { $_.Name -like '*-win32-x64' })
           $fixturePackage = @(Get-ChildItem -LiteralPath $fixture -Directory | Where-Object { $_.Name -like '*-win32-x64' })
           if ($canonicalPackage.Count -ne 1 -or $fixturePackage.Count -ne 1) { throw 'R10D_BETA0_PACKAGE_LAYOUT_INVALID' }
-          New-Item -ItemType Directory -Path $staging -Force | Out-Null
-          Move-Item -LiteralPath $canonicalPackage[0].FullName -Destination $staging
-          Move-Item -LiteralPath (Join-Path $output 'installer') -Destination $staging
-          Move-Item -LiteralPath (Join-Path $output 'installer-bundle') -Destination $staging
-          Move-Item -LiteralPath $fixturePackage[0].FullName -Destination $output
-          try {
-            $env:REDNOTE_PACKAGE_OUTPUT_VARIANT = $null
-            node scripts/package-installer.mjs
-            if ($LASTEXITCODE -ne 0) { throw "R10D_BETA0_INSTALLER_BUILD_FAILED:$LASTEXITCODE" }
-            Move-Item -LiteralPath (Join-Path $output 'installer') -Destination $fixture
-            Move-Item -LiteralPath (Join-Path $output 'installer-bundle') -Destination $fixture
-            Move-Item -LiteralPath (Join-Path $output $fixturePackage[0].Name) -Destination $fixture
-          } finally {
-            Move-Item -LiteralPath (Join-Path $output $fixturePackage[0].Name) -Destination $fixture -ErrorAction SilentlyContinue
-            Move-Item -LiteralPath (Join-Path $staging $canonicalPackage[0].Name) -Destination $output -ErrorAction SilentlyContinue
-            Move-Item -LiteralPath (Join-Path $staging 'installer') -Destination $output -ErrorAction SilentlyContinue
-            Move-Item -LiteralPath (Join-Path $staging 'installer-bundle') -Destination $output -ErrorAction SilentlyContinue
+          $canonicalManifest = Join-Path $canonicalPackage[0].FullName 'release-manifest.json'
+          $canonicalBundle = Join-Path $output 'installer-bundle'
+          $fixtureBundle = Join-Path $fixture 'installer-bundle'
+          function Get-R10DIdentity([string]$path) {
+            $records = @(Get-ChildItem -LiteralPath $path -File -Recurse | Sort-Object FullName | ForEach-Object {
+              $relative = $_.FullName.Substring($path.Length).TrimStart('\\', '/')
+              "$relative|$($_.Length)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
+            })
+            if ($records.Count -eq 0) { throw "R10D_EMPTY_IDENTITY:$path" }
+            return [Convert]::ToHexString([Security.Cryptography.SHA256]::HashData([Text.Encoding]::UTF8.GetBytes(($records -join "`n")))).ToLowerInvariant()
           }
+          if ((Get-Content -LiteralPath $canonicalManifest -Raw | ConvertFrom-Json).applicationVersion -ne '0.1.0-beta.1') { throw 'R10D_CANONICAL_MANIFEST_VERSION_INVALID' }
+          if (@(Get-ChildItem -LiteralPath $canonicalBundle -File -Recurse).Count -ne 4) { throw 'R10D_CANONICAL_BUNDLE_LAYOUT_INVALID' }
+          $canonicalPackageIdentityBefore = Get-R10DIdentity $canonicalPackage[0].FullName
+          $canonicalBundleIdentityBefore = Get-R10DIdentity $canonicalBundle
+          node scripts/package-installer.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R10D_BETA0_INSTALLER_BUILD_FAILED:$LASTEXITCODE" }
+          if ((Get-R10DIdentity $canonicalPackage[0].FullName) -ne $canonicalPackageIdentityBefore -or (Get-R10DIdentity $canonicalBundle) -ne $canonicalBundleIdentityBefore) { throw 'R10D_CANONICAL_FIXTURE_MUTATED' }
+          $fixtureManifest = Get-Content -LiteralPath (Join-Path $fixturePackage[0].FullName 'release-manifest.json') -Raw | ConvertFrom-Json
+          $fixtureInstallers = @(Get-ChildItem -LiteralPath $fixtureBundle -File -Filter '*.exe')
+          if ($fixtureManifest.applicationVersion -ne '0.1.0-beta.0' -or $fixtureInstallers.Count -ne 1 -or $fixtureInstallers[0].Name -ne 'RednoteStudio-0.1.0-beta.0-win-x64-setup.exe' -or @(Get-ChildItem -LiteralPath $fixtureBundle -File -Recurse).Count -ne 4) { throw 'R10D_BETA0_INSTALLER_VERSION_OR_LAYOUT_INVALID' }
 
       - name: Run isolated R10D installer lifecycle
         env:

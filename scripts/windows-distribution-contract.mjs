@@ -11,6 +11,7 @@ export const WINDOWS_MANIFEST_NAME = 'release-manifest.json';
 export const WINDOWS_MANIFEST_FORMAT = 'rednote-windows-internal-beta';
 export const WINDOWS_CANONICAL_VERSION = '0.1.0-beta.1';
 export const WINDOWS_CI_FIXTURE_VERSION = '0.1.0-beta.0';
+const SAFE_PACKAGE_OUTPUT_VARIANT = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 
 export function isCiFixtureVersionEnvironment(
   environment = process.env,
@@ -44,6 +45,54 @@ export function readApplicationVersion(
   return isCiFixtureVersionEnvironment(environment, platform)
     ? WINDOWS_CI_FIXTURE_VERSION
     : version;
+}
+
+export function installerArtifactName(applicationVersion) {
+  if (
+    applicationVersion !== WINDOWS_CANONICAL_VERSION &&
+    applicationVersion !== WINDOWS_CI_FIXTURE_VERSION
+  )
+    throw new Error('R10D installer version is not permitted.');
+  return `RednoteStudio-${applicationVersion}-win-x64-setup.exe`;
+}
+
+export function assertInstallerArtifactVersion(installerName, applicationVersion) {
+  if (installerName !== installerArtifactName(applicationVersion))
+    throw new Error(
+      'NSIS installer artifact version does not match the verified manifest version.',
+    );
+}
+
+export function resolveInstallerBuildContract(
+  projectRoot,
+  environment = process.env,
+  platform = process.platform,
+) {
+  const applicationVersion = readApplicationVersion(projectRoot, environment, platform);
+  const outputVariant = environment.REDNOTE_PACKAGE_OUTPUT_VARIANT;
+  if (outputVariant !== undefined && !SAFE_PACKAGE_OUTPUT_VARIANT.test(outputVariant))
+    throw new Error('Package output variant must be a finite safe directory name.');
+
+  const root = resolve(projectRoot);
+  const outputDirectory = resolve(
+    root,
+    'out',
+    ...(outputVariant === undefined ? [] : [outputVariant]),
+  );
+  const installersDirectory = join(outputDirectory, 'installer');
+  const configuredOutput = relative(root, installersDirectory).split(sep).join('/');
+  if (!/^out(?:\/[a-z0-9][a-z0-9-]{0,63})?\/installer$/u.test(configuredOutput))
+    throw new Error('Installer output directory escapes the controlled output root.');
+
+  return Object.freeze({
+    applicationVersion,
+    installersDirectory,
+    outputDirectory,
+    builderConfigArguments: Object.freeze([
+      `--config.extraMetadata.version=${applicationVersion}`,
+      `--config.directories.output=${configuredOutput}`,
+    ]),
+  });
 }
 
 export function buildIdentity(projectRoot) {

@@ -70,8 +70,10 @@ describe('Windows CI configuration', () => {
     expect(workflowSource).toContain('retention-days: 14');
     expect(workflowSource).toContain("REDNOTE_R10D_CI_FIXTURE: '1'");
     expect(workflowSource).toContain("REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'");
-    expect(workflowSource).toContain("Join-Path $env:TEMP 'r10d-beta0-staging'");
-    expect(workflowSource).toContain('$env:REDNOTE_PACKAGE_OUTPUT_VARIANT = $null');
+    expect(workflowSource).toContain('R10D_CANONICAL_FIXTURE_MUTATED');
+    expect(workflowSource).toContain('R10D_BETA0_INSTALLER_VERSION_OR_LAYOUT_INVALID');
+    expect(workflowSource).not.toContain('r10d-beta0-staging');
+    expect(workflowSource).not.toContain('Move-Item');
     expect(workflowSource).toContain('--cleanup-ci-temp');
   });
 
@@ -122,9 +124,6 @@ describe('Windows CI configuration', () => {
     expect(workflow.env).toBeUndefined();
     expect(windowsJob?.env).toBeUndefined();
     expect(workflowSource).not.toMatch(/secrets\./iu);
-    expect([...workflowSource.matchAll(/\$env:([A-Z0-9_]+)/gu)].map((match) => match[1])).toEqual([
-      'TEMP',
-      'REDNOTE_PACKAGE_OUTPUT_VARIANT',
-    ]);
+    expect([...workflowSource.matchAll(/\$env:([A-Z0-9_]+)/gu)]).toHaveLength(0);
   });
 });
