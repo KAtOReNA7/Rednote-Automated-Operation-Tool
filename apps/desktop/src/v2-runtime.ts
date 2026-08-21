@@ -256,6 +256,7 @@ export class V2DesktopRuntime {
   #interaction: V2InteractionApplication;
   readonly #maintenanceConfirmations = new Map<string, MaintenanceConfirmationLease>();
   readonly #maintenancePicker: V2MaintenanceDirectoryPicker | null;
+  #maintenanceRunning = false;
   readonly #maintenanceSelections = new Map<string, MaintenanceSelectionLease>();
   readonly #openDirectory: (path: string) => Promise<string>;
   readonly #assetsDirectory: string;
@@ -365,12 +366,12 @@ export class V2DesktopRuntime {
   }
 
   public async read(input: unknown, caller?: V2ActionCaller) {
-    this.#assertOpen();
     const request = parseV2ReadRequest(input);
     if (request.view === 'MAINTENANCE') {
       if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
       return this.#maintenanceView(caller);
     }
+    this.#assertDataAvailable();
     if (request.view === 'CATALOG_WORKS') {
       const summary = this.#catalog.getSummary(request.limit + 1, request.offset, request.query);
       return {
@@ -437,7 +438,6 @@ export class V2DesktopRuntime {
   }
 
   public async mutate(input: unknown, caller?: V2ActionCaller) {
-    this.#assertOpen();
     const request = parseV2MutationRequest(input);
     if (
       request.action === 'SELECT_BACKUP_DIRECTORY' ||
@@ -450,6 +450,7 @@ export class V2DesktopRuntime {
       if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
       return this.#mutateMaintenance(request, caller);
     }
+    this.#assertDataAvailable();
     if (request.action === 'EXECUTE_CONTENT_COPY_GENERATION') {
       if (caller === undefined) throw new V2ProviderActionError('PROVIDER_ACTION_TOKEN_INVALID');
       return this.#executeContentCopyGeneration(request.previewToken, caller);
@@ -530,12 +531,12 @@ export class V2DesktopRuntime {
   }
 
   public smokeSummary() {
-    this.#assertOpen();
+    this.#assertDataAvailable();
     return this.#repository.summary();
   }
 
   public readGeneratedCover(packageId: string, version: number): Promise<Uint8Array | null> {
-    this.#assertOpen();
+    this.#assertDataAvailable();
     return this.#content.readGeneratedCover(packageId, version);
   }
 
@@ -609,10 +610,12 @@ export class V2DesktopRuntime {
         request.action === 'PREVIEW_CONTROLLED_BACKUP' ? 'BACKUP' : 'RESTORE',
       );
     }
-    return this.#confirmMaintenance(
-      caller,
-      request.confirmationToken,
-      request.action === 'CONFIRM_CONTROLLED_BACKUP' ? 'BACKUP' : 'RESTORE',
+    return this.#withMaintenanceMutex(() =>
+      this.#confirmMaintenance(
+        caller,
+        request.confirmationToken,
+        request.action === 'CONFIRM_CONTROLLED_BACKUP' ? 'BACKUP' : 'RESTORE',
+      ),
     );
   }
 
@@ -736,6 +739,11 @@ export class V2DesktopRuntime {
         restoreStage: result.stage,
       });
     } catch {
+      try {
+        await this.#reopenAfterRestore();
+      } catch {
+        this.#closed = true;
+      }
       throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
     }
   }
@@ -835,6 +843,21 @@ export class V2DesktopRuntime {
 
   #assertOpen(): void {
     if (this.#closed) throw new Error('V2_RUNTIME_CLOSED');
+  }
+
+  #assertDataAvailable(): void {
+    this.#assertOpen();
+    if (this.#maintenanceRunning) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+  }
+
+  async #withMaintenanceMutex<T>(operation: () => Promise<T>): Promise<T> {
+    if (this.#maintenanceRunning) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    this.#maintenanceRunning = true;
+    try {
+      return await operation();
+    } finally {
+      this.#maintenanceRunning = false;
+    }
   }
 
   async #metricsReview(snapshotWindow: MetricWindow): Promise<MetricsReview> {

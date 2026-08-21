@@ -1,16 +1,20 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { constants } from 'node:fs';
 import type { Stats } from 'node:fs';
-import { lstat, mkdir, open, readdir, readFile, rename, rm } from 'node:fs/promises';
+import { lstat, mkdir, open, readdir, readFile, rename, rm, statfs } from 'node:fs/promises';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 
 import {
+  DATA_ROOT_FORMAT,
+  DATA_ROOT_FORMAT_VERSION,
   DATA_ROOT_MARKER_FILE,
   openProjectDataRoot,
+  REQUIRED_DATA_DIRECTORIES,
   type ProjectDataRoot,
 } from './project-data-root.js';
 import {
   ControlledBackupError,
+  BACKUP_MAX_TOTAL_BYTES,
   type BackupManifestFileV1,
   type BackupManifestV1,
 } from './backup-contracts.js';
@@ -20,6 +24,7 @@ import {
 } from './backup-snapshot.js';
 
 const COPY_BUFFER_BYTES = 64 * 1024;
+const RESTORE_SPACE_MARGIN_BYTES = 1024 * 1024;
 const JOURNAL_FORMAT = 'rednote-controlled-restore-journal' as const;
 const JOURNAL_VERSION = 1 as const;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
@@ -71,10 +76,14 @@ export interface ControlledRestorePreflight {
   readonly backupSizeBytes: number;
   readonly compatibility: 'EXACT';
   readonly manifestSha256: string;
+  readonly liveRootIdentity: Readonly<{ readonly dev: number; readonly ino: number }>;
+  readonly liveRootParentIdentity: Readonly<{ readonly dev: number; readonly ino: number }>;
   readonly operationId: string;
 }
 
 export interface PrepareControlledRestoreOptions {
+  /** Test seam; production also constrains this value to the observed local filesystem capacity. */
+  readonly availableBytes?: () => number;
   readonly backupPath: string;
   readonly database: ControlledBackupDatabaseVerifier;
   readonly policy?: ControlledRestoreCompatibilityPolicy;
@@ -104,11 +113,25 @@ interface NodeIdentity {
 interface RestoreJournalV1 {
   readonly format: typeof JOURNAL_FORMAT;
   readonly operationId: string;
+  readonly manifestSha256: string;
   readonly phase: 'BUILDING_STAGING' | 'PROTECTED' | 'SWITCHED' | 'ROLLED_BACK' | 'SUCCESS';
   readonly protectionName: string;
   readonly rootName: string;
+  readonly liveRootIdentity: NodeIdentity;
+  readonly liveRootParentIdentity: NodeIdentity;
   readonly stagingName: string;
   readonly version: typeof JOURNAL_VERSION;
+}
+
+interface CheckedDirectory {
+  readonly identity: NodeIdentity;
+  readonly path: string;
+}
+
+interface RestoreOperationPaths {
+  readonly journalPath: string;
+  readonly protectionPath: string;
+  readonly stagingPath: string;
 }
 
 function fail(code: ControlledRestoreErrorCode): ControlledRestoreError {
@@ -137,9 +160,7 @@ function validSiblingName(value: string): boolean {
   );
 }
 
-async function checkedDirectory(
-  path: string,
-): Promise<{ readonly identity: NodeIdentity; readonly path: string }> {
+async function checkedDirectory(path: string): Promise<CheckedDirectory> {
   if (!isAbsolute(path) || path.includes('\0')) throw fail('INVALID_PATH');
   try {
     const status = await lstat(path);
@@ -148,6 +169,167 @@ async function checkedDirectory(
   } catch (error) {
     throw stable(error, 'INVALID_PATH');
   }
+}
+
+function operationNames(operationId: string): {
+  readonly journalName: string;
+  readonly protectionName: string;
+  readonly stagingName: string;
+} {
+  return {
+    journalName: `.rednote-restore-journal-${operationId}.json`,
+    protectionName: `.rednote-restore-protection-${operationId}`,
+    stagingName: `.rednote-restore-staging-${operationId}`,
+  };
+}
+
+function operationPath(parent: CheckedDirectory, name: string): string {
+  if (!validSiblingName(name)) throw fail('INVALID_PATH');
+  const path = resolve(parent.path, name);
+  if (dirname(path) !== parent.path || basename(path) !== name) throw fail('INVALID_PATH');
+  return path;
+}
+
+function operationPaths(parent: CheckedDirectory, operationId: string): RestoreOperationPaths {
+  const names = operationNames(operationId);
+  return {
+    journalPath: operationPath(parent, names.journalName),
+    protectionPath: operationPath(parent, names.protectionName),
+    stagingPath: operationPath(parent, names.stagingName),
+  };
+}
+
+async function existingOperationDirectory(path: string): Promise<CheckedDirectory | null> {
+  try {
+    const status = await lstat(path);
+    if (!status.isDirectory() || status.isSymbolicLink()) throw fail('STAGING_OWNERSHIP_INVALID');
+    return { identity: nodeIdentity(status), path: resolve(path) };
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')
+      return null;
+    throw stable(error, 'STAGING_OWNERSHIP_INVALID');
+  }
+}
+
+async function existingOperationJournal(path: string): Promise<Stats | null> {
+  try {
+    const status = await lstat(path);
+    if (!status.isFile() || status.isSymbolicLink() || status.nlink !== 1)
+      throw fail('STAGING_OWNERSHIP_INVALID');
+    return status;
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT')
+      return null;
+    throw stable(error, 'STAGING_OWNERSHIP_INVALID');
+  }
+}
+
+async function assertSameParent(parent: CheckedDirectory): Promise<void> {
+  if (!sameNode(parent.identity, (await checkedDirectory(parent.path)).identity))
+    throw fail('SAFETY_UNPROVEN');
+}
+
+async function removeOwnedOperationDirectory(
+  parent: CheckedDirectory,
+  path: string,
+): Promise<void> {
+  await assertSameParent(parent);
+  if (await existingOperationDirectory(path)) {
+    await assertSameParent(parent);
+    await rm(path, { force: true, maxRetries: 3, recursive: true });
+    if (await existingOperationDirectory(path)) throw fail('SAFETY_UNPROVEN');
+  }
+}
+
+async function removeOwnedOperationJournal(parent: CheckedDirectory, path: string): Promise<void> {
+  await assertSameParent(parent);
+  const journal = await existingOperationJournal(path);
+  if (journal !== null) {
+    if (journal.size > 1024) throw fail('STAGING_OWNERSHIP_INVALID');
+    await assertSameParent(parent);
+    await rm(path, { force: true, maxRetries: 3 });
+    if (await existingOperationJournal(path)) throw fail('SAFETY_UNPROVEN');
+  }
+}
+
+function validNodeIdentity(value: unknown): value is NodeIdentity {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.keys(value).sort().join(',') === 'dev,ino' &&
+    Number.isFinite((value as NodeIdentity).dev) &&
+    Number.isFinite((value as NodeIdentity).ino) &&
+    Number.isInteger((value as NodeIdentity).dev) &&
+    Number.isInteger((value as NodeIdentity).ino) &&
+    (value as NodeIdentity).dev >= 0 &&
+    (value as NodeIdentity).ino >= 0
+  );
+}
+
+function validRootMarker(value: unknown): boolean {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
+  const marker = value as Record<string, unknown>;
+  if (
+    Object.keys(marker).sort().join(',') !== 'createdAt,format,instanceId,version' ||
+    marker.format !== DATA_ROOT_FORMAT ||
+    marker.version !== DATA_ROOT_FORMAT_VERSION ||
+    typeof marker.instanceId !== 'string' ||
+    !UUID.test(marker.instanceId) ||
+    typeof marker.createdAt !== 'string'
+  )
+    return false;
+  try {
+    return new Date(marker.createdAt).toISOString() === marker.createdAt;
+  } catch {
+    return false;
+  }
+}
+
+/** This intentionally validates without creating missing layout entries. */
+async function isExistingProjectDataRoot(path: string): Promise<boolean> {
+  try {
+    await checkedDirectory(path);
+    const markerPath = join(path, DATA_ROOT_MARKER_FILE);
+    const marker = await checkedRegularFile(markerPath);
+    if (marker.size > 1024 || !validRootMarker(JSON.parse(await readFile(markerPath, 'utf8'))))
+      return false;
+    for (const relativeDirectory of REQUIRED_DATA_DIRECTORIES)
+      await checkedDirectory(join(path, ...relativeDirectory.split('/')));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function parseRestoreJournal(value: unknown, rootName: string): RestoreJournalV1 | null {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
+  const journal = value as Partial<RestoreJournalV1>;
+  if (
+    Object.keys(journal).sort().join(',') !==
+      'format,liveRootIdentity,liveRootParentIdentity,manifestSha256,operationId,phase,protectionName,rootName,stagingName,version' ||
+    journal.format !== JOURNAL_FORMAT ||
+    journal.version !== JOURNAL_VERSION ||
+    journal.rootName !== rootName ||
+    typeof journal.operationId !== 'string' ||
+    !UUID.test(journal.operationId) ||
+    journal.operationId !== journal.operationId.toLowerCase() ||
+    typeof journal.manifestSha256 !== 'string' ||
+    !/^[0-9a-f]{64}$/u.test(journal.manifestSha256) ||
+    !validNodeIdentity(journal.liveRootIdentity) ||
+    !validNodeIdentity(journal.liveRootParentIdentity) ||
+    !['BUILDING_STAGING', 'PROTECTED', 'SWITCHED', 'ROLLED_BACK', 'SUCCESS'].includes(
+      journal.phase ?? '',
+    )
+  )
+    return null;
+  const expected = operationNames(journal.operationId);
+  if (
+    journal.stagingName !== expected.stagingName ||
+    journal.protectionName !== expected.protectionName
+  )
+    return null;
+  return journal as RestoreJournalV1;
 }
 
 async function checkedRegularFile(path: string): Promise<Stats> {
@@ -237,6 +419,34 @@ function candidateRelativePath(file: BackupManifestFileV1): string {
   return file.relativePath.slice('payload/'.length);
 }
 
+function restoreStagingBytes(sizeBytes: number): number {
+  const required = sizeBytes + RESTORE_SPACE_MARGIN_BYTES;
+  if (
+    !Number.isSafeInteger(sizeBytes) ||
+    sizeBytes < 0 ||
+    !Number.isSafeInteger(required) ||
+    required > BACKUP_MAX_TOTAL_BYTES
+  )
+    throw fail('INSUFFICIENT_SPACE');
+  return required;
+}
+
+async function assertRestoreCapacity(
+  parentPath: string,
+  required: number,
+  availableBytes: (() => number) | undefined,
+): Promise<void> {
+  try {
+    const filesystem = await statfs(parentPath);
+    const observed = Number(BigInt(filesystem.bavail) * BigInt(filesystem.bsize));
+    const available =
+      availableBytes === undefined ? observed : Math.min(observed, availableBytes());
+    if (!Number.isSafeInteger(available) || available < required) throw fail('INSUFFICIENT_SPACE');
+  } catch (error) {
+    throw stable(error, 'INSUFFICIENT_SPACE');
+  }
+}
+
 function assertExactCompatibility(
   manifest: BackupManifestV1,
   root: ProjectDataRoot,
@@ -247,7 +457,6 @@ function assertExactCompatibility(
   const explicitlyAllowed = policy?.allowedSourceAppVersions?.includes(source.appVersion) === true;
   if (
     manifest.compatibilityPolicyVersion !== 1 ||
-    source.workspaceId !== root.marker.instanceId ||
     source.dataRootFormat !== 'rednote-project-data' ||
     source.dataRootVersion !== root.marker.version ||
     source.v2DataVersion !== runtime.v2DataVersion ||
@@ -401,13 +610,21 @@ export async function prepareControlledRestore(
       : stable(error, 'INTEGRITY_FAILED');
   });
   assertExactCompatibility(verified.manifest, options.root, options.runtime, options.policy);
-  await checkedDirectory(options.root.rootPath);
+  const liveRoot = await checkedDirectory(options.root.rootPath);
+  const liveRootParent = await checkedDirectory(dirname(liveRoot.path));
+  await assertRestoreCapacity(
+    liveRootParent.path,
+    restoreStagingBytes(verified.manifest.totals.sizeBytes),
+    options.availableBytes,
+  );
   return Object.freeze({
     backupCreatedAt: verified.manifest.createdAt,
     backupFileCount: verified.manifest.totals.fileCount,
     backupSizeBytes: verified.manifest.totals.sizeBytes,
     compatibility: 'EXACT',
     manifestSha256: verified.manifestSha256,
+    liveRootIdentity: liveRoot.identity,
+    liveRootParentIdentity: liveRootParent.identity,
     operationId,
   });
 }
@@ -423,27 +640,31 @@ export async function executeControlledRestore(
   });
   if (
     preflight.operationId !== options.preflight.operationId ||
-    preflight.manifestSha256 !== options.preflight.manifestSha256
+    preflight.manifestSha256 !== options.preflight.manifestSha256 ||
+    !sameNode(preflight.liveRootIdentity, options.preflight.liveRootIdentity) ||
+    !sameNode(preflight.liveRootParentIdentity, options.preflight.liveRootParentIdentity)
   )
     throw fail('PREVIEW_INVALID');
   checkAborted(options.signal);
   const root = await checkedDirectory(options.root.rootPath);
   const parent = await checkedDirectory(dirname(root.path));
+  if (
+    !sameNode(root.identity, options.preflight.liveRootIdentity) ||
+    !sameNode(parent.identity, options.preflight.liveRootParentIdentity)
+  )
+    throw fail('PREVIEW_INVALID');
   const rootName = basename(root.path);
   const id = preflight.operationId;
-  const stagingName = `.rednote-restore-staging-${id}`;
-  const protectionName = `.rednote-restore-protection-${id}`;
-  const journalName = `.rednote-restore-journal-${id}.json`;
-  if (![stagingName, protectionName, journalName].every(validSiblingName))
-    throw fail('INVALID_PATH');
-  const stagingPath = join(parent.path, stagingName);
-  const protectionPath = join(parent.path, protectionName);
-  const journalPath = join(parent.path, journalName);
+  const { journalPath, protectionPath, stagingPath } = operationPaths(parent, id);
+  const { protectionName, stagingName } = operationNames(id);
   const journalBase: Omit<RestoreJournalV1, 'phase'> = {
     format: JOURNAL_FORMAT,
+    manifestSha256: preflight.manifestSha256,
     operationId: id,
     protectionName,
     rootName,
+    liveRootIdentity: root.identity,
+    liveRootParentIdentity: parent.identity,
     stagingName,
     version: JOURNAL_VERSION,
   };
@@ -462,6 +683,11 @@ export async function executeControlledRestore(
     await copyManifestPayload(options.backupPath, candidate, verified.manifest, options.signal);
     await verifyCandidateRoot(candidate, verified.manifest, options.database);
     checkAborted(options.signal);
+    await assertRestoreCapacity(
+      parent.path,
+      restoreStagingBytes(verified.manifest.totals.sizeBytes),
+      options.availableBytes,
+    );
     currentStage = 'SWITCHING';
     stage(currentStage);
     const beforeSwitch = await checkedDirectory(root.path);
@@ -531,63 +757,124 @@ export async function executeControlledRestore(
         stage: 'SAFETY_UNPROVEN',
       });
     }
-    // A staging-only failure cannot be allowed to become a startup lock. Both names are generated
-    // for this operation and remain strict siblings of the live root until the destructive rename.
-    await rm(stagingPath, { force: true, maxRetries: 3, recursive: true }).catch(() => {
+    // A staging-only failure cannot become a startup lock. Recheck the untouched live root and
+    // its parent before deleting only the exact sibling names derived from this operation id.
+    try {
+      const unchangedRoot = await checkedDirectory(root.path);
+      if (!sameNode(unchangedRoot.identity, root.identity)) throw fail('SAFETY_UNPROVEN');
+      if (await existingOperationDirectory(protectionPath)) throw fail('SAFETY_UNPROVEN');
+      await removeOwnedOperationDirectory(parent, stagingPath);
+      await removeOwnedOperationJournal(parent, journalPath);
+      if (!sameNode(root.identity, (await checkedDirectory(root.path)).identity))
+        throw fail('SAFETY_UNPROVEN');
+    } catch {
       throw fail('SAFETY_UNPROVEN');
-    });
-    await rm(journalPath, { force: true, maxRetries: 3 }).catch(() => {
-      throw fail('SAFETY_UNPROVEN');
-    });
+    }
     throw stable(error, 'RESTORE_FAILED');
   }
 }
 
 /**
- * Startup recovery is intentionally conservative. A journal is an incomplete-operation signal;
- * only a fully intact current root is accepted. All ambiguous switch states keep data closed.
+ * Recovery only changes names derived from the journal operation id after their parent, type and
+ * expected old-root identity agree. Physical power-loss durability remains UNKNOWN.
  */
 export async function inspectControlledRestoreRecovery(
   rootPath: string,
 ): Promise<'CLEAR' | 'SAFETY_UNPROVEN'> {
-  const root = resolve(rootPath);
-  const parent = await checkedDirectory(dirname(root));
-  const rootName = basename(root);
-  const entries = await readdir(parent.path, { withFileTypes: true }).catch(() => {
-    throw fail('SAFETY_UNPROVEN');
-  });
-  const journals = entries.filter((entry) =>
-    /^\.rednote-restore-journal-[0-9a-f-]{36}\.json$/iu.test(entry.name),
-  );
-  if (journals.length === 0) return 'CLEAR';
-  for (const journal of journals) {
-    const path = join(parent.path, journal.name);
-    const status = await checkedRegularFile(path).catch(() => {
-      throw fail('SAFETY_UNPROVEN');
-    });
+  try {
+    const root = resolve(rootPath);
+    const parent = await checkedDirectory(dirname(root));
+    const rootName = basename(root);
+    if (join(parent.path, rootName) !== root) return 'SAFETY_UNPROVEN';
+    const entries = await readdir(parent.path, { withFileTypes: true });
+    const journals = entries.filter((entry) =>
+      /^\.rednote-restore-journal-[0-9a-f-]{36}\.json$/iu.test(entry.name),
+    );
+    // A single data root can have at most one owned switch in progress. Multiple journals do not
+    // establish ordering, even if each individual journal looks well-formed.
+    if (journals.length === 0) return 'CLEAR';
+    if (journals.length !== 1) return 'SAFETY_UNPROVEN';
+    const journalEntry = journals[0];
+    if (journalEntry === undefined) return 'SAFETY_UNPROVEN';
+
+    const journalPath = join(parent.path, journalEntry.name);
+    const status = await checkedRegularFile(journalPath);
     if (status.size > 1024) return 'SAFETY_UNPROVEN';
-    let value: unknown;
-    try {
-      value = JSON.parse(await readFile(path, 'utf8'));
-    } catch {
+    const journal = parseRestoreJournal(JSON.parse(await readFile(journalPath, 'utf8')), rootName);
+    if (journal === null || journalEntry.name !== operationNames(journal.operationId).journalName)
       return 'SAFETY_UNPROVEN';
+    if (!sameNode(parent.identity, journal.liveRootParentIdentity)) return 'SAFETY_UNPROVEN';
+
+    const paths = operationPaths(parent, journal.operationId);
+    if (paths.journalPath !== journalPath) return 'SAFETY_UNPROVEN';
+    const live = await existingOperationDirectory(root);
+    const protectedRoot = await existingOperationDirectory(paths.protectionPath);
+    const staging = await existingOperationDirectory(paths.stagingPath);
+    const isOldLive = (candidate: CheckedDirectory | null): candidate is CheckedDirectory =>
+      candidate !== null && sameNode(candidate.identity, journal.liveRootIdentity);
+    const restoreProtectedRoot = async (): Promise<'CLEAR' | 'SAFETY_UNPROVEN'> => {
+      if (
+        live === null ||
+        protectedRoot === null ||
+        !isOldLive(protectedRoot) ||
+        !sameNode(parent.identity, (await checkedDirectory(parent.path)).identity)
+      )
+        return 'SAFETY_UNPROVEN';
+      await rename(live.path, paths.stagingPath);
+      await rename(paths.protectionPath, root);
+      const restored = await checkedDirectory(root);
+      if (
+        !sameNode(restored.identity, journal.liveRootIdentity) ||
+        !(await isExistingProjectDataRoot(root))
+      )
+        return 'SAFETY_UNPROVEN';
+      await removeOwnedOperationDirectory(parent, paths.stagingPath);
+      await removeOwnedOperationJournal(parent, paths.journalPath);
+      return 'CLEAR';
+    };
+
+    if (journal.phase === 'BUILDING_STAGING') {
+      if (!isOldLive(live) || protectedRoot !== null || !(await isExistingProjectDataRoot(root)))
+        return 'SAFETY_UNPROVEN';
+      void staging;
+      await removeOwnedOperationDirectory(parent, paths.stagingPath);
+      await removeOwnedOperationJournal(parent, paths.journalPath);
+      return 'CLEAR';
     }
-    if (
-      typeof value !== 'object' ||
-      value === null ||
-      Array.isArray(value) ||
-      (value as Partial<RestoreJournalV1>).format !== JOURNAL_FORMAT ||
-      (value as Partial<RestoreJournalV1>).version !== JOURNAL_VERSION ||
-      (value as Partial<RestoreJournalV1>).rootName !== rootName ||
-      typeof (value as Partial<RestoreJournalV1>).operationId !== 'string' ||
-      !UUID.test((value as Partial<RestoreJournalV1>).operationId ?? '')
-    )
+    if (journal.phase === 'PROTECTED') {
+      if (live === null && isOldLive(protectedRoot) && staging !== null) {
+        await rename(paths.protectionPath, root);
+        const restored = await checkedDirectory(root);
+        if (
+          !sameNode(restored.identity, journal.liveRootIdentity) ||
+          !(await isExistingProjectDataRoot(root))
+        )
+          return 'SAFETY_UNPROVEN';
+        await removeOwnedOperationDirectory(parent, paths.stagingPath);
+        await removeOwnedOperationJournal(parent, paths.journalPath);
+        return 'CLEAR';
+      }
+      // A crash after the second rename but before its journal update is rolled back rather than
+      // treating an unverified candidate as a completed restore.
+      return restoreProtectedRoot();
+    }
+    if (journal.phase === 'SWITCHED') return restoreProtectedRoot();
+    if (journal.phase === 'ROLLED_BACK') {
+      if (!isOldLive(live) || protectedRoot !== null || !(await isExistingProjectDataRoot(root)))
+        return 'SAFETY_UNPROVEN';
+      void staging;
+      await removeOwnedOperationDirectory(parent, paths.stagingPath);
+      await removeOwnedOperationJournal(parent, paths.journalPath);
+      return 'CLEAR';
+    }
+    // SUCCESS is only written after the candidate has passed the database and manifest verifier.
+    if (!(await isExistingProjectDataRoot(root)) || !isOldLive(protectedRoot))
       return 'SAFETY_UNPROVEN';
-    if (
-      (value as Partial<RestoreJournalV1>).phase !== 'SUCCESS' &&
-      (value as Partial<RestoreJournalV1>).phase !== 'ROLLED_BACK'
-    )
-      return 'SAFETY_UNPROVEN';
+    if (staging !== null) return 'SAFETY_UNPROVEN';
+    await removeOwnedOperationDirectory(parent, paths.protectionPath);
+    await removeOwnedOperationJournal(parent, paths.journalPath);
+    return 'CLEAR';
+  } catch {
+    return 'SAFETY_UNPROVEN';
   }
-  return 'CLEAR';
 }
