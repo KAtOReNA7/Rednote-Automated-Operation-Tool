@@ -18,9 +18,12 @@ import {
 } from '@mystery-operations/db';
 import {
   createControlledBackupSnapshot,
+  createLocalDiagnosticPreview,
   executeControlledRestore,
   initializeProjectDataRoot,
   prepareControlledRestore,
+  summarizeLocalDiagnosticCategories,
+  writeLocalDiagnosticPackage,
   type ControlledBackupDatabaseAdapter,
   type ControlledRestorePreflight,
   type ProjectDataRoot,
@@ -58,6 +61,8 @@ import {
   type V2MaintenanceBackupPreconditions,
   type V2MaintenancePreview,
   type V2MaintenanceView,
+  type V2DiagnosticPreview,
+  type V2DiagnosticView,
   type V2ProviderSettingsDraft,
   type V2ProviderSettingsView,
   type V2ContentCopyGenerationPreview,
@@ -115,7 +120,7 @@ export interface V2SettingsControlPort {
 export interface V2MaintenanceDirectoryPicker {
   select(
     caller: V2ActionCaller,
-    operation: 'BACKUP' | 'RESTORE',
+    operation: 'BACKUP' | 'DIAGNOSTICS' | 'RESTORE',
   ): Promise<{ readonly displayLabel: string; readonly path: string } | null>;
 }
 
@@ -124,7 +129,7 @@ interface MaintenanceSelectionLease {
   readonly displayLabel: string;
   readonly expiresAtMs: number;
   readonly identity: { readonly dev: number; readonly ino: number };
-  readonly operation: 'BACKUP' | 'RESTORE';
+  readonly operation: 'BACKUP' | 'DIAGNOSTICS' | 'RESTORE';
   readonly path: string;
 }
 
@@ -142,6 +147,48 @@ interface MaintenanceOperationState {
   outcome: V2MaintenanceView['backupOutcome'];
   running: boolean;
   stage: V2MaintenanceView['backupStage'];
+}
+
+interface DiagnosticPreviewLease {
+  readonly caller: V2ActionCaller;
+  readonly expiresAtMs: number;
+  readonly payload: {
+    readonly application: { readonly build: string | null; readonly version: string | null };
+    readonly collectedAt: string;
+    readonly fileCategories: readonly {
+      readonly category:
+        'generated-images' | 'imports' | 'photos' | 'source-snapshots' | 'source-screenshots';
+      readonly itemCount: number;
+      readonly totalBytes: number;
+    }[];
+    readonly format: 'rednote-local-diagnostics';
+    readonly health: {
+      readonly database: 'healthy' | 'unavailable';
+      readonly storage: 'healthy' | 'unavailable';
+    };
+    readonly runtime: { readonly node: string | null; readonly platform: string | null };
+    readonly version: 1;
+  };
+  readonly previewHash: string;
+}
+
+interface DiagnosticConfirmationLease extends DiagnosticPreviewLease {
+  readonly directory: MaintenanceSelectionLease;
+  readonly token: string;
+}
+
+interface DiagnosticResultLease {
+  readonly caller: V2ActionCaller;
+  readonly expiresAtMs: number;
+  readonly fileName: string;
+  readonly path: string;
+}
+
+interface DiagnosticOperationState {
+  readonly caller: V2ActionCaller;
+  outcome: V2DiagnosticView['outcome'];
+  result: V2DiagnosticView['result'];
+  stage: V2DiagnosticView['stage'];
 }
 
 const uncheckedBackupPreconditions = (): V2MaintenanceBackupPreconditions =>
@@ -292,6 +339,12 @@ export class V2DesktopRuntime {
   #maintenancePromise: Promise<void> | null = null;
   #maintenanceRunning = false;
   readonly #maintenanceSelections = new Map<string, MaintenanceSelectionLease>();
+  readonly #diagnosticConfirmations = new Map<string, DiagnosticConfirmationLease>();
+  readonly #diagnosticPreviews = new Map<string, DiagnosticPreviewLease>();
+  readonly #diagnosticResults = new Map<string, DiagnosticResultLease>();
+  readonly #diagnosticSelections = new Map<string, MaintenanceSelectionLease>();
+  readonly #diagnosticStates = new Map<string, DiagnosticOperationState>();
+  #diagnosticRunning = false;
   readonly #openDirectory: (path: string) => Promise<string>;
   readonly #assetsDirectory: string;
   readonly #root: ProjectDataRoot;
@@ -405,6 +458,10 @@ export class V2DesktopRuntime {
       if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
       return this.#maintenanceView(caller);
     }
+    if (request.view === 'LOCAL_DIAGNOSTICS') {
+      if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
+      return this.#diagnosticView(caller);
+    }
     this.#assertDataAvailable();
     if (request.view === 'CATALOG_WORKS') {
       const summary = this.#catalog.getSummary(request.limit + 1, request.offset, request.query);
@@ -473,6 +530,16 @@ export class V2DesktopRuntime {
 
   public async mutate(input: unknown, caller?: V2ActionCaller) {
     const request = parseV2MutationRequest(input);
+    if (
+      request.action === 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW' ||
+      request.action === 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY' ||
+      request.action === 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT' ||
+      request.action === 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT' ||
+      request.action === 'OPEN_LOCAL_DIAGNOSTIC_RESULT'
+    ) {
+      if (caller === undefined) throw new V2ContractError('INVALID_REQUEST');
+      return this.#mutateDiagnostics(request, caller);
+    }
     if (
       request.action === 'SELECT_BACKUP_DIRECTORY' ||
       request.action === 'SELECT_RESTORE_DIRECTORY' ||
@@ -598,7 +665,250 @@ export class V2DesktopRuntime {
     this.#maintenanceSelections.clear();
     this.#maintenanceConfirmations.clear();
     this.#maintenancePreconditions.clear();
+    this.#diagnosticConfirmations.clear();
+    this.#diagnosticPreviews.clear();
+    this.#diagnosticResults.clear();
+    this.#diagnosticSelections.clear();
+    this.#diagnosticStates.clear();
     this.#closed = true;
+  }
+
+  #diagnosticView(caller: V2ActionCaller): V2DiagnosticView {
+    this.#purgeDiagnosticLeases();
+    const state = this.#diagnosticStates.get(maintenanceCallerKey(caller));
+    const selection = [...this.#diagnosticSelections.entries()].find(([, value]) =>
+      sameMaintenanceCaller(value.caller, caller),
+    );
+    return Object.freeze({
+      directory:
+        selection === undefined
+          ? null
+          : Object.freeze({ displayLabel: selection[1].displayLabel, token: selection[0] }),
+      outcome: state?.outcome ?? 'IDLE',
+      result: state?.result ?? null,
+      stage: state?.stage ?? 'IDLE',
+    });
+  }
+
+  async #buildDiagnosticPayload(collectedAt: string): Promise<DiagnosticPreviewLease['payload']> {
+    const categories = await summarizeLocalDiagnosticCategories(this.#root);
+    return Object.freeze({
+      application: Object.freeze({
+        build: /^[a-f0-9]{40}$/u.test(this.#runtimeIdentity.buildCommit)
+          ? this.#runtimeIdentity.buildCommit
+          : null,
+        version:
+          this.#runtimeIdentity.appVersion === 'local' ? null : this.#runtimeIdentity.appVersion,
+      }),
+      collectedAt,
+      fileCategories: categories,
+      format: 'rednote-local-diagnostics' as const,
+      health: Object.freeze({ database: 'healthy' as const, storage: 'healthy' as const }),
+      runtime: Object.freeze({
+        node: process.versions.node ?? null,
+        platform: process.platform ?? null,
+      }),
+      version: 1 as const,
+    });
+  }
+
+  #diagnosticPreview(
+    lease: DiagnosticPreviewLease,
+    confirmationToken: string | null,
+  ): V2DiagnosticPreview {
+    const preview = createLocalDiagnosticPreview(lease.payload);
+    return Object.freeze({
+      categories: preview.categories.map((category) =>
+        Object.freeze({
+          category: category.category,
+          estimatedBytes: category.totalBytes,
+          itemCount: category.itemCount,
+        }),
+      ),
+      confirmationToken,
+      estimatedBytes: preview.estimatedBytes,
+      excluded: preview.excluded,
+      state: 'PREVIEW',
+    });
+  }
+
+  async #mutateDiagnostics(
+    request: Extract<
+      ReturnType<typeof parseV2MutationRequest>,
+      {
+        readonly action:
+          | 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW'
+          | 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY'
+          | 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT'
+          | 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT'
+          | 'OPEN_LOCAL_DIAGNOSTIC_RESULT';
+      }
+    >,
+    caller: V2ActionCaller,
+  ): Promise<V2DiagnosticPreview | V2DiagnosticView | { readonly opened: true }> {
+    this.#purgeDiagnosticLeases();
+    if (request.action === 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW') {
+      if (this.#maintenanceRunning || this.#diagnosticRunning)
+        throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      const payload = await this.#buildDiagnosticPayload(new Date().toISOString());
+      const previewHash = createLocalDiagnosticPreview(payload).previewHash;
+      const lease: DiagnosticPreviewLease = Object.freeze({
+        caller,
+        expiresAtMs: Date.now() + 120_000,
+        payload,
+        previewHash,
+      });
+      this.#diagnosticPreviews.set(maintenanceCallerKey(caller), lease);
+      for (const [token, selection] of this.#diagnosticSelections) {
+        if (sameMaintenanceCaller(selection.caller, caller))
+          this.#diagnosticSelections.delete(token);
+      }
+      for (const [token, confirmation] of this.#diagnosticConfirmations) {
+        if (sameMaintenanceCaller(confirmation.caller, caller))
+          this.#diagnosticConfirmations.delete(token);
+      }
+      this.#diagnosticStates.delete(maintenanceCallerKey(caller));
+      return this.#diagnosticPreview(lease, null);
+    }
+    if (request.action === 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY') {
+      if (this.#maintenanceRunning || this.#diagnosticRunning || this.#maintenancePicker === null)
+        throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      const preview = this.#diagnosticPreviews.get(maintenanceCallerKey(caller));
+      if (preview === undefined || preview.expiresAtMs < Date.now())
+        throw new V2ContractError('INVALID_REQUEST');
+      const picked = await this.#maintenancePicker.select(caller, 'DIAGNOSTICS');
+      if (picked === null) return this.#diagnosticView(caller);
+      const identity = await this.#directoryIdentity(picked.path);
+      const token = randomUUID().replaceAll('-', '');
+      this.#diagnosticSelections.set(
+        token,
+        Object.freeze({
+          caller,
+          displayLabel: picked.displayLabel,
+          expiresAtMs: Date.now() + 120_000,
+          identity,
+          operation: 'DIAGNOSTICS',
+          path: picked.path,
+        }),
+      );
+      return this.#diagnosticView(caller);
+    }
+    if (request.action === 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT') {
+      if (this.#maintenanceRunning || this.#diagnosticRunning)
+        throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      const selection = this.#diagnosticSelections.get(request.directoryToken);
+      const preview = this.#diagnosticPreviews.get(maintenanceCallerKey(caller));
+      if (
+        selection === undefined ||
+        preview === undefined ||
+        !sameMaintenanceCaller(selection.caller, caller) ||
+        selection.expiresAtMs < Date.now() ||
+        preview.expiresAtMs < Date.now()
+      )
+        throw new V2ContractError('INVALID_REQUEST');
+      const identity = await this.#directoryIdentity(selection.path);
+      if (identity.dev !== selection.identity.dev || identity.ino !== selection.identity.ino)
+        throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      this.#diagnosticSelections.delete(request.directoryToken);
+      const token = randomUUID().replaceAll('-', '');
+      const confirmation: DiagnosticConfirmationLease = Object.freeze({
+        ...preview,
+        directory: selection,
+        token,
+      });
+      this.#diagnosticConfirmations.set(token, confirmation);
+      return this.#diagnosticPreview(preview, token);
+    }
+    if (request.action === 'OPEN_LOCAL_DIAGNOSTIC_RESULT') {
+      const result = this.#diagnosticResults.get(request.resultToken);
+      if (
+        result === undefined ||
+        !sameMaintenanceCaller(result.caller, caller) ||
+        result.expiresAtMs < Date.now()
+      )
+        throw new V2ContractError('INVALID_REQUEST');
+      this.#diagnosticResults.delete(request.resultToken);
+      const opened = await this.#openDirectory(result.path);
+      if (opened !== '') throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+      return Object.freeze({ opened: true });
+    }
+    if (this.#maintenanceRunning || this.#diagnosticRunning)
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    const confirmation = this.#diagnosticConfirmations.get(request.confirmationToken);
+    if (
+      confirmation === undefined ||
+      !sameMaintenanceCaller(confirmation.caller, caller) ||
+      confirmation.expiresAtMs < Date.now()
+    )
+      throw new V2ContractError('INVALID_REQUEST');
+    this.#diagnosticConfirmations.delete(request.confirmationToken);
+    const currentDirectory = await this.#directoryIdentity(confirmation.directory.path);
+    if (
+      currentDirectory.dev !== confirmation.directory.identity.dev ||
+      currentDirectory.ino !== confirmation.directory.identity.ino
+    )
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    const state: DiagnosticOperationState = {
+      caller,
+      outcome: 'IDLE',
+      result: null,
+      stage: 'PREFLIGHT',
+    };
+    this.#diagnosticStates.set(maintenanceCallerKey(caller), state);
+    this.#diagnosticRunning = true;
+    void (async () => {
+      try {
+        state.stage = 'WRITING';
+        const currentPayload = await this.#buildDiagnosticPayload(confirmation.payload.collectedAt);
+        const result = await writeLocalDiagnosticPackage({
+          directory: confirmation.directory.path,
+          payload: currentPayload,
+          previewHash: confirmation.previewHash,
+        });
+        if (result.outcome !== 'SUCCESS') {
+          state.outcome = result.outcome;
+          state.stage = 'IDLE';
+          return;
+        }
+        state.stage = 'VERIFYING';
+        const resultToken = randomUUID().replaceAll('-', '');
+        this.#diagnosticResults.set(
+          resultToken,
+          Object.freeze({
+            caller,
+            expiresAtMs: Date.now() + 120_000,
+            fileName: result.fileName,
+            path: confirmation.directory.path,
+          }),
+        );
+        state.outcome = 'SUCCESS';
+        state.result = Object.freeze({
+          fileName: result.fileName,
+          resultToken,
+          sizeBytes: result.sizeBytes,
+          summaryHash: `${result.sha256.slice(0, 4)}…${result.sha256.slice(-4)}`,
+        });
+        state.stage = 'PUBLISHING';
+      } catch {
+        state.outcome = 'FAILED_CLEAN';
+        state.stage = 'IDLE';
+      } finally {
+        this.#diagnosticRunning = false;
+      }
+    })();
+    return this.#diagnosticView(caller);
+  }
+
+  #purgeDiagnosticLeases(): void {
+    const now = Date.now();
+    for (const [key, value] of this.#diagnosticPreviews)
+      if (value.expiresAtMs < now) this.#diagnosticPreviews.delete(key);
+    for (const [key, value] of this.#diagnosticSelections)
+      if (value.expiresAtMs < now) this.#diagnosticSelections.delete(key);
+    for (const [key, value] of this.#diagnosticConfirmations)
+      if (value.expiresAtMs < now) this.#diagnosticConfirmations.delete(key);
+    for (const [key, value] of this.#diagnosticResults)
+      if (value.expiresAtMs < now) this.#diagnosticResults.delete(key);
   }
 
   #maintenanceView(caller: V2ActionCaller): V2MaintenanceView {
@@ -631,7 +941,8 @@ export class V2DesktopRuntime {
       backupStage: callerState?.operation === 'BACKUP' ? callerState.stage : 'IDLE',
       cancelRequested: callerState?.cancelRequested === true,
       canCancel: callerState !== null && this.#isMaintenanceCancellable(callerState),
-      maintenanceLocked: this.#maintenanceRunning && callerState === null,
+      maintenanceLocked:
+        (this.#maintenanceRunning || this.#diagnosticRunning) && callerState === null,
       operation: callerState?.operation ?? null,
       restoreDirectory: selectionFor('RESTORE'),
       restoreOutcome: callerState?.operation === 'RESTORE' ? callerState.outcome : 'IDLE',
@@ -656,7 +967,8 @@ export class V2DesktopRuntime {
     caller: V2ActionCaller,
   ): Promise<V2MaintenanceView | V2MaintenancePreview> {
     if (request.action === 'CANCEL_CONTROLLED_MAINTENANCE') return this.#cancelMaintenance(caller);
-    if (this.#maintenanceRunning) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    if (this.#maintenanceRunning || this.#diagnosticRunning)
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
     if (
       request.action === 'SELECT_BACKUP_DIRECTORY' ||
       request.action === 'SELECT_RESTORE_DIRECTORY'
@@ -987,7 +1299,8 @@ export class V2DesktopRuntime {
       preconditions.directory = 'FAILED';
     }
     if (preconditions.directory !== 'PASSED') return Object.freeze(preconditions);
-    preconditions.maintenanceLock = this.#maintenanceRunning ? 'FAILED' : 'PASSED';
+    preconditions.maintenanceLock =
+      this.#maintenanceRunning || this.#diagnosticRunning ? 'FAILED' : 'PASSED';
     try {
       const estimate = estimateSqliteSnapshotBytes(this.#database);
       const required = estimate + BACKUP_SPACE_MARGIN_BYTES;
@@ -1086,7 +1399,8 @@ export class V2DesktopRuntime {
 
   #assertDataAvailable(): void {
     this.#assertOpen();
-    if (this.#maintenanceRunning) throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
+    if (this.#maintenanceRunning || this.#diagnosticRunning)
+      throw new V2ContractError('PERSISTENCE_UNAVAILABLE');
   }
 
   async #metricsReview(snapshotWindow: MetricWindow): Promise<MetricsReview> {

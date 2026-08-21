@@ -34,6 +34,8 @@ import {
   type AccountPersonaFields,
   type PlanReschedulePreview,
   type V2Bridge,
+  type V2DiagnosticPreview,
+  type V2DiagnosticView,
   type V2MaintenancePreview,
   type V2MaintenanceView,
   type V2Result,
@@ -717,10 +719,12 @@ describe('V2 Electron boundary', () => {
     expect(Object.keys(exposed).sort()).toEqual([
       'adoptPlanItemReplacement',
       'approveContentPackages',
+      'buildLocalDiagnosticPreview',
       'cancelControlledMaintenance',
       'clearProviderCredential',
       'confirmControlledBackup',
       'confirmControlledRestore',
+      'confirmLocalDiagnosticExport',
       'confirmPlanCandidates',
       'confirmProviderAction',
       'confirmReplySuggestions',
@@ -736,10 +740,12 @@ describe('V2 Electron boundary', () => {
       'lockWeeklyPlan',
       'markInteractionManualSent',
       'openContentExport',
+      'openLocalDiagnosticResult',
       'previewContentCopyGeneration',
       'previewControlledBackup',
       'previewControlledRestore',
       'previewInteractionDelete',
+      'previewLocalDiagnosticExport',
       'previewPlanReschedule',
       'previewProviderAction',
       'previewProviderCapabilityProbe',
@@ -747,6 +753,7 @@ describe('V2 Electron boundary', () => {
       'readCatalogWorks',
       'readContentPackages',
       'readInteractions',
+      'readLocalDiagnostics',
       'readMaintenance',
       'readMetricsReview',
       'readPersona',
@@ -761,6 +768,7 @@ describe('V2 Electron boundary', () => {
       'saveReplySuggestion',
       'saveWeeklyPlanningBrief',
       'selectBackupDirectory',
+      'selectLocalDiagnosticDirectory',
       'selectRestoreDirectory',
       'setProviderCredential',
       'skipInteraction',
@@ -776,6 +784,15 @@ describe('V2 Electron boundary', () => {
     await exposed.readPersona();
     await exposed.readInteractions();
     await exposed.readMaintenance?.();
+    await exposed.readLocalDiagnostics?.();
+    await exposed.buildLocalDiagnosticPreview?.();
+    await exposed.selectLocalDiagnosticDirectory?.();
+    await exposed.previewLocalDiagnosticExport?.({ directoryToken: 'e'.repeat(24) });
+    await exposed.confirmLocalDiagnosticExport?.({
+      confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY',
+      confirmationToken: 'f'.repeat(24),
+    });
+    await exposed.openLocalDiagnosticResult?.({ resultToken: 'g'.repeat(24) });
     await exposed.selectBackupDirectory?.();
     await exposed.selectRestoreDirectory?.();
     await exposed.previewControlledBackup?.({ directoryToken: 'a'.repeat(24) });
@@ -908,6 +925,86 @@ describe('V2 Electron boundary', () => {
 });
 
 describe('V2 renderer persistence wiring', () => {
+  it('keeps local diagnostics preview-only until the caller explicitly confirms a selected directory', async () => {
+    const databasePath = createTemporaryDatabasePath('r10c diagnostic renderer');
+    await initializeDatabase({ databasePath });
+    const database = connectDatabase(databasePath);
+    const facade = new V2ApplicationFacade(new SqliteV2Repository(database));
+    let view: V2DiagnosticView = {
+      directory: null,
+      outcome: 'IDLE',
+      result: null,
+      stage: 'IDLE',
+    };
+    const firstPreview: V2DiagnosticPreview = {
+      categories: [{ category: 'photos', estimatedBytes: 64, itemCount: 1 }],
+      confirmationToken: null,
+      estimatedBytes: 64,
+      excluded: ['凭据、业务正文、本机路径、网络配置'],
+      state: 'PREVIEW',
+    };
+    const confirmationPreview: V2DiagnosticPreview = {
+      ...firstPreview,
+      confirmationToken: 'd'.repeat(24),
+    };
+    try {
+      exposeBridge({
+        ...bridgeFor(facade),
+        buildLocalDiagnosticPreview: async () => success(firstPreview),
+        confirmLocalDiagnosticExport: async () => {
+          view = {
+            ...view,
+            outcome: 'SUCCESS',
+            result: {
+              fileName: 'diagnostics-20260821-120000-aaaaaaaaaaaaaaaa.zip',
+              resultToken: 'r'.repeat(24),
+              sizeBytes: 128,
+              summaryHash: 'abcd…wxyz',
+            },
+            stage: 'PUBLISHING',
+          };
+          return success(view);
+        },
+        openLocalDiagnosticResult: async () => success({ opened: true as const }),
+        previewLocalDiagnosticExport: async () => success(confirmationPreview),
+        readLocalDiagnostics: async () => success(view),
+        selectLocalDiagnosticDirectory: async () => {
+          view = {
+            ...view,
+            directory: { displayLabel: '已选择本地诊断导出文件夹', token: 's'.repeat(24) },
+          };
+          return success(view);
+        },
+      });
+      window.history.replaceState(null, '', '/v2.html#/v2/settings');
+      const user = userEvent.setup();
+      const rendered = render(<V2App />);
+      await user.click(await screen.findByRole('button', { name: '本地备份与恢复' }));
+      await user.click(screen.getByRole('button', { name: '预览诊断内容' }));
+      expect(await screen.findByText('将包含（允许列表）')).toBeVisible();
+      expect(screen.getByText('本地图片：1 项 · 64 字节')).toBeVisible();
+      expect(screen.queryByRole('button', { name: '确认导出到所选目录' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: '选择导出目录' }));
+      expect(await screen.findByRole('button', { name: '确认导出到所选目录' })).toBeEnabled();
+      await user.click(screen.getByRole('button', { name: '确认导出到所选目录' }));
+      expect(await screen.findByRole('dialog', { name: '确认导出到所选目录' })).toBeVisible();
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('dialog', { name: '确认导出到所选目录' })).not.toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: '确认导出到所选目录' }));
+      const confirmationButtons = screen.getAllByRole('button', { name: '确认导出到所选目录' });
+      const dialogConfirmation = confirmationButtons[1];
+      if (dialogConfirmation === undefined)
+        throw new Error('diagnostic confirmation button missing');
+      await user.click(dialogConfirmation);
+      expect(await screen.findByText('诊断包已导出到所选本地目录')).toBeVisible();
+      expect(screen.getByRole('button', { name: '在资源管理器中显示' })).toBeVisible();
+      expect(document.body.textContent).not.toContain(databasePath);
+      rendered.unmount();
+    } finally {
+      database.close();
+    }
+  });
+
   it('uses the real restore preflight, destructive confirmation dialog, and running maintenance view', async () => {
     const databasePath = createTemporaryDatabasePath('r10b maintenance renderer');
     await initializeDatabase({ databasePath });

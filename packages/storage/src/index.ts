@@ -25,6 +25,21 @@ export {
   projectLocatorPathForTesting,
 } from './project-locator.js';
 export { LocalDiagnosticReportStore } from './diagnostic-report-store.js';
+export {
+  LOCAL_DIAGNOSTIC_FORMAT,
+  LOCAL_DIAGNOSTIC_JSON_MAX_BYTES,
+  LOCAL_DIAGNOSTIC_MANIFEST_MAX_BYTES,
+  LOCAL_DIAGNOSTIC_MAX_CATEGORIES,
+  LOCAL_DIAGNOSTIC_MAX_TEXT_BYTES,
+  LOCAL_DIAGNOSTIC_VERSION,
+  LOCAL_DIAGNOSTIC_ZIP_MAX_BYTES,
+  LocalDiagnosticError,
+  createLocalDiagnosticPreview,
+  summarizeLocalDiagnosticCategories,
+  validateLocalDiagnosticPayload,
+  verifyLocalDiagnosticZip,
+  writeLocalDiagnosticPackage,
+} from './local-diagnostic-package.js';
 export { relativePathFromManagedAbsolutePath, resolveManagedPath } from './managed-path.js';
 export { StructuredLogSink } from './structured-log.js';
 export {
@@ -63,6 +78,14 @@ export {
 export type { DataRootMarker, ProjectDataRootOptions } from './project-data-root.js';
 export type { LocalProjectLocatorOptions } from './project-locator.js';
 export type { LocalDiagnosticReportStoreOptions } from './diagnostic-report-store.js';
+export type {
+  LocalDiagnosticCategory,
+  LocalDiagnosticCategorySummary,
+  LocalDiagnosticManifest,
+  LocalDiagnosticPayload,
+  LocalDiagnosticPreview,
+  LocalDiagnosticWriteResult,
+} from './local-diagnostic-package.js';
 export type {
   FileDescriptor,
   LocalFileRepositoryOptions,

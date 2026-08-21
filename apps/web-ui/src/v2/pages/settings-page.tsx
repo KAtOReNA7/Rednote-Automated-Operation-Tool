@@ -14,6 +14,16 @@ type V2MaintenancePreview = Extract<
   Awaited<ReturnType<PreviewMaintenance>>,
   { readonly ok: true }
 >['value'];
+type ReadDiagnostics = NonNullable<MaintenanceBridge['readLocalDiagnostics']>;
+type V2DiagnosticView = Extract<
+  Awaited<ReturnType<ReadDiagnostics>>,
+  { readonly ok: true }
+>['value'];
+type BuildDiagnostics = NonNullable<MaintenanceBridge['buildLocalDiagnosticPreview']>;
+type V2DiagnosticPreview = Extract<
+  Awaited<ReturnType<BuildDiagnostics>>,
+  { readonly ok: true }
+>['value'];
 
 const capabilityLabel = {
   STALE: '已过期',
@@ -72,6 +82,252 @@ const preconditionLabel = {
   NOT_CHECKED: '待检查',
   PASSED: '已通过',
 } as const;
+
+const diagnosticCategoryLabel = {
+  'generated-images': '已生成图片',
+  imports: '导入记录',
+  photos: '本地图片',
+  'source-snapshots': '资料快照',
+  'source-screenshots': '资料截图',
+} as const;
+
+function formatDiagnosticBytes(bytes: number): string {
+  return `${bytes.toLocaleString('zh-CN')} 字节`;
+}
+
+function LocalDiagnosticsSettings(): React.JSX.Element {
+  const { notify } = useV2Controller();
+  const [view, setView] = useState<V2DiagnosticView | null>(null);
+  const [preview, setPreview] = useState<V2DiagnosticPreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const titleRef = useRef<HTMLHeadingElement>(null);
+  const dialogRef = useDialog(confirmOpen, () => setConfirmOpen(false), returnFocus);
+  const load = useCallback(async (): Promise<void> => {
+    const result = await window.rednoteV2?.readLocalDiagnostics?.();
+    if (result === undefined) return notify('本地诊断桥接不可用。');
+    if (!result.ok) return notify(result.error.message);
+    setView(result.value);
+  }, [notify]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  useEffect(() => {
+    if (view?.outcome === 'FAILED_CLEAN' || view?.outcome === 'CLEANUP_UNPROVEN')
+      titleRef.current?.focus({ preventScroll: true });
+  }, [view?.outcome]);
+  useEffect(() => {
+    if (view?.stage === 'PREFLIGHT' || view?.stage === 'WRITING' || view?.stage === 'VERIFYING') {
+      const timer = window.setInterval(() => void load(), 600);
+      return () => window.clearInterval(timer);
+    }
+    return undefined;
+  }, [load, view?.stage]);
+  const build = async (): Promise<void> => {
+    setBusy(true);
+    try {
+      const result = await window.rednoteV2?.buildLocalDiagnosticPreview?.();
+      if (result === undefined) return notify('本地诊断预览不可用。');
+      if (!result.ok) return notify(result.error.message);
+      setPreview(result.value);
+      setView((current) =>
+        current === null ? current : { ...current, outcome: 'IDLE', result: null, stage: 'IDLE' },
+      );
+    } finally {
+      setBusy(false);
+    }
+  };
+  const choose = async (): Promise<void> => {
+    if (preview === null) return;
+    setBusy(true);
+    try {
+      const result = await window.rednoteV2?.selectLocalDiagnosticDirectory?.();
+      if (result === undefined) return notify('本地目录选择不可用。');
+      if (!result.ok) return notify(result.error.message);
+      setView(result.value);
+      if (result.value.directory === null) return;
+      const next = await window.rednoteV2?.previewLocalDiagnosticExport?.({
+        directoryToken: result.value.directory.token,
+      });
+      if (next === undefined) return notify('导出确认预览不可用。');
+      if (!next.ok) return notify(next.error.message);
+      setPreview(next.value);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const confirm = async (): Promise<void> => {
+    if (preview?.confirmationToken === null || preview === null) return;
+    setBusy(true);
+    try {
+      const result = await window.rednoteV2?.confirmLocalDiagnosticExport?.({
+        confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY',
+        confirmationToken: preview.confirmationToken,
+      });
+      if (result === undefined) return notify('本地诊断确认不可用。');
+      if (!result.ok) return notify(result.error.message);
+      setView(result.value);
+      setConfirmOpen(false);
+      setPreview(null);
+    } finally {
+      setBusy(false);
+    }
+  };
+  const openResult = async (): Promise<void> => {
+    if (view?.result === null || view === null) return;
+    const result = await window.rednoteV2?.openLocalDiagnosticResult?.({
+      resultToken: view.result.resultToken,
+    });
+    if (result === undefined) return notify('资源管理器操作不可用。');
+    if (!result.ok) return notify(result.error.message);
+  };
+  const running =
+    view?.stage === 'PREFLIGHT' || view?.stage === 'WRITING' || view?.stage === 'VERIFYING';
+  return (
+    <section className="v2-diagnostic-export" aria-labelledby="v2-local-diagnostic-title">
+      <div className="v2-settings-title">
+        <Icon name="file-text" size={22} />
+        <div>
+          <h3 id="v2-local-diagnostic-title" ref={titleRef} tabIndex={-1}>
+            本地诊断导出
+          </h3>
+          <p>先审阅允许导出的脱敏摘要，再选择本地目录并明确确认；系统不会自动上传。</p>
+        </div>
+      </div>
+      {preview === null ? (
+        <div className="v2-diagnostic-home">
+          <p>诊断只包含版本、运行健康状态和受控文件类别的数量与大小，不包含业务正文或路径。</p>
+          <Button disabled={busy || running} onClick={() => void build()} tone="primary">
+            预览诊断内容
+          </Button>
+        </div>
+      ) : (
+        <div className="v2-diagnostic-preview" aria-live="polite">
+          <div>
+            <h4>将包含（允许列表）</h4>
+            <ul>
+              {preview.categories.map((item) => (
+                <li key={item.category}>
+                  {diagnosticCategoryLabel[item.category as keyof typeof diagnosticCategoryLabel] ??
+                    '受控文件类别'}
+                  ：{item.itemCount} 项 · {formatDiagnosticBytes(item.estimatedBytes)}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <div>
+            <h4>明确排除</h4>
+            <ul>
+              {preview.excluded.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+          <p>估算大小：{formatDiagnosticBytes(preview.estimatedBytes)}。预览不会创建文件。</p>
+          <div className="v2-inline-actions">
+            <Button disabled={busy || running} onClick={() => void build()}>
+              重新生成预览
+            </Button>
+            <Button disabled={busy || running} onClick={() => void choose()} tone="primary">
+              选择导出目录
+            </Button>
+          </div>
+        </div>
+      )}
+      {view?.directory === undefined || view.directory === null ? null : (
+        <p role="status">{view.directory.displayLabel}</p>
+      )}
+      {preview?.confirmationToken === null || preview === null ? null : (
+        <Button
+          disabled={busy || running}
+          onClick={(event) => {
+            setReturnFocus(event.currentTarget);
+            setConfirmOpen(true);
+          }}
+          tone="primary"
+        >
+          确认导出到所选目录
+        </Button>
+      )}
+      {running ? (
+        <section className="v2-diagnostic-progress" role="status" aria-live="polite">
+          <strong>本地诊断导出进行中</strong>
+          <p>
+            当前阶段：
+            {view?.stage === 'WRITING'
+              ? '写入受控临时文件'
+              : view?.stage === 'VERIFYING'
+                ? '重新打开并验证 ZIP'
+                : '复核预览与目录'}
+          </p>
+        </section>
+      ) : null}
+      {view?.outcome === 'SUCCESS' && view.result !== null ? (
+        <section className="v2-maintenance-result v2-maintenance-result--success" role="status">
+          <h3>诊断包已导出到所选本地目录</h3>
+          <p>
+            文件：{view.result.fileName} · 大小：{formatDiagnosticBytes(view.result.sizeBytes)} ·
+            校验摘要：
+            {view.result.summaryHash}
+          </p>
+          <div className="v2-inline-actions">
+            <Button
+              onClick={() => {
+                void navigator.clipboard
+                  ?.writeText(view.result?.fileName ?? '')
+                  .catch(() => notify('无法复制文件名；请手动复制显示的文件名。'));
+              }}
+            >
+              复制文件名
+            </Button>
+            <Button onClick={() => void openResult()}>在资源管理器中显示</Button>
+          </div>
+        </section>
+      ) : null}
+      {view?.outcome === 'FAILED_CLEAN' ? (
+        <section className="v2-maintenance-result v2-maintenance-result--danger" role="alert">
+          <h3>导出未完成，临时文件已清理</h3>
+          <p>系统没有生成部分诊断包。</p>
+        </section>
+      ) : null}
+      {view?.outcome === 'CLEANUP_UNPROVEN' ? (
+        <section className="v2-maintenance-result v2-maintenance-result--danger" role="alert">
+          <h3>无法证明临时文件已清理</h3>
+          <p>请检查所选本地目录；系统没有把该状态写成成功。</p>
+        </section>
+      ) : null}
+      {confirmOpen && preview?.confirmationToken !== null
+        ? createPortal(
+            <div className="v2-overlay v2-maintenance-overlay" role="presentation">
+              <div
+                aria-labelledby="v2-diagnostic-confirm-title"
+                aria-modal="true"
+                className="v2-modal v2-maintenance-confirm-dialog"
+                ref={dialogRef}
+                role="dialog"
+              >
+                <div className="v2-overlay-head">
+                  <div>
+                    <p className="v2-kicker">仅本地导出</p>
+                    <h2 id="v2-diagnostic-confirm-title">确认导出到所选目录</h2>
+                    <p>确认后才会创建固定两文件的本地 ZIP。不会上传、发送或自动保留。</p>
+                  </div>
+                </div>
+                <div className="v2-provider-preview-actions">
+                  <Button onClick={() => setConfirmOpen(false)}>返回预览</Button>
+                  <Button disabled={busy} onClick={() => void confirm()} tone="primary">
+                    确认导出到所选目录
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </section>
+  );
+}
 
 function MaintenanceSettings(): React.JSX.Element {
   const { notify } = useV2Controller();
@@ -369,6 +625,7 @@ function MaintenanceSettings(): React.JSX.Element {
           <p>{result.detail}</p>
         </section>
       )}
+      <LocalDiagnosticsSettings />
       {restoreDialogOpen && restorePreview !== null
         ? createPortal(
             <div

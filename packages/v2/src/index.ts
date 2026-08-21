@@ -207,6 +207,40 @@ export interface V2MaintenanceView {
   readonly restoreStage: V2MaintenanceStage;
 }
 
+export type V2DiagnosticOutcome = 'CLEANUP_UNPROVEN' | 'FAILED_CLEAN' | 'IDLE' | 'SUCCESS';
+export type V2DiagnosticStage = 'IDLE' | 'PREFLIGHT' | 'PUBLISHING' | 'VERIFYING' | 'WRITING';
+
+export interface V2DiagnosticCategory {
+  readonly category: string;
+  readonly estimatedBytes: number;
+  readonly itemCount: number;
+}
+
+export interface V2DiagnosticPreview {
+  readonly categories: readonly V2DiagnosticCategory[];
+  readonly confirmationToken: string | null;
+  readonly estimatedBytes: number;
+  readonly excluded: readonly string[];
+  readonly state: 'PREVIEW';
+}
+
+export interface V2DiagnosticDirectorySelection {
+  readonly displayLabel: string;
+  readonly token: string;
+}
+
+export interface V2DiagnosticView {
+  readonly directory: V2DiagnosticDirectorySelection | null;
+  readonly outcome: V2DiagnosticOutcome;
+  readonly result: {
+    readonly fileName: string;
+    readonly resultToken: string;
+    readonly sizeBytes: number;
+    readonly summaryHash: string;
+  } | null;
+  readonly stage: V2DiagnosticStage;
+}
+
 export interface AccountPersonaFields {
   readonly audience: string;
   readonly boundary: string;
@@ -329,6 +363,7 @@ export type V2ReadRequest =
     }
   | { readonly view: 'CATALOG_WORK'; readonly workId: string }
   | { readonly view: 'MAINTENANCE' }
+  | { readonly view: 'LOCAL_DIAGNOSTICS' }
   | { readonly view: 'WEEKLY_PLAN'; readonly weekKey: string }
   | ({ readonly view: 'PLAN_RESCHEDULE_PREVIEW' } & PlanRescheduleFields)
   | { readonly view: 'CONTENT_PACKAGES'; readonly weekKey: string }
@@ -342,6 +377,15 @@ export type V2ReadRequest =
 
 export type V2MutationRequest =
   | { readonly action: 'CANCEL_CONTROLLED_MAINTENANCE' }
+  | { readonly action: 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW' }
+  | { readonly action: 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY' }
+  | { readonly action: 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT'; readonly directoryToken: string }
+  | {
+      readonly action: 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT';
+      readonly confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY';
+      readonly confirmationToken: string;
+    }
+  | { readonly action: 'OPEN_LOCAL_DIAGNOSTIC_RESULT'; readonly resultToken: string }
   | { readonly action: 'SELECT_BACKUP_DIRECTORY' }
   | { readonly action: 'SELECT_RESTORE_DIRECTORY' }
   | { readonly action: 'PREVIEW_CONTROLLED_BACKUP'; readonly directoryToken: string }
@@ -497,6 +541,19 @@ export interface V2Bridge {
     readonly confirmation: 'DELETE_CONTENT_AI_API_KEY';
   }) => Promise<V2Result<V2ProviderSettingsView>>;
   readonly readMaintenance?: () => Promise<V2Result<V2MaintenanceView>>;
+  readonly readLocalDiagnostics?: () => Promise<V2Result<V2DiagnosticView>>;
+  readonly buildLocalDiagnosticPreview?: () => Promise<V2Result<V2DiagnosticPreview>>;
+  readonly selectLocalDiagnosticDirectory?: () => Promise<V2Result<V2DiagnosticView>>;
+  readonly previewLocalDiagnosticExport?: (input: {
+    readonly directoryToken: string;
+  }) => Promise<V2Result<V2DiagnosticPreview>>;
+  readonly confirmLocalDiagnosticExport?: (input: {
+    readonly confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY';
+    readonly confirmationToken: string;
+  }) => Promise<V2Result<V2DiagnosticView>>;
+  readonly openLocalDiagnosticResult?: (input: {
+    readonly resultToken: string;
+  }) => Promise<V2Result<{ readonly opened: true }>>;
   readonly selectBackupDirectory?: () => Promise<V2Result<V2MaintenanceView>>;
   readonly selectRestoreDirectory?: () => Promise<V2Result<V2MaintenanceView>>;
   readonly previewControlledBackup?: (input: {
@@ -1140,6 +1197,8 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
   if (value.view === 'MAINTENANCE' && exactKeys(value, ['view'])) return { view: 'MAINTENANCE' };
+  if (value.view === 'LOCAL_DIAGNOSTICS' && exactKeys(value, ['view']))
+    return { view: 'LOCAL_DIAGNOSTICS' };
   const catalogRequest = catalogReadRequest(value);
   if (catalogRequest !== null) return catalogRequest;
   if (value.view === 'CONTENT_COPY_GENERATION_PREVIEW') {
@@ -1200,6 +1259,36 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.action === 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW' && exactKeys(value, ['action']))
+    return { action: value.action };
+  if (value.action === 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY' && exactKeys(value, ['action']))
+    return { action: value.action };
+  if (
+    value.action === 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT' &&
+    exactKeys(value, ['action', 'directoryToken']) &&
+    typeof value.directoryToken === 'string' &&
+    /^[a-z0-9_-]{24,128}$/iu.test(value.directoryToken)
+  )
+    return { action: value.action, directoryToken: value.directoryToken };
+  if (
+    value.action === 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT' &&
+    exactKeys(value, ['action', 'confirmation', 'confirmationToken']) &&
+    value.confirmation === 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY' &&
+    typeof value.confirmationToken === 'string' &&
+    /^[a-z0-9_-]{24,128}$/iu.test(value.confirmationToken)
+  )
+    return {
+      action: value.action,
+      confirmation: value.confirmation,
+      confirmationToken: value.confirmationToken,
+    };
+  if (
+    value.action === 'OPEN_LOCAL_DIAGNOSTIC_RESULT' &&
+    exactKeys(value, ['action', 'resultToken']) &&
+    typeof value.resultToken === 'string' &&
+    /^[a-z0-9_-]{24,128}$/iu.test(value.resultToken)
+  )
+    return { action: value.action, resultToken: value.resultToken };
   if (value.action === 'CANCEL_CONTROLLED_MAINTENANCE' && exactKeys(value, ['action']))
     return { action: value.action };
   if (
@@ -1745,7 +1834,8 @@ export class V2ApplicationFacade {
     if (request.view === 'ACCOUNT_PERSONA') {
       return this.#repository.getOrCreatePersona(DEFAULT_ACCOUNT_PERSONA);
     }
-    if (request.view === 'MAINTENANCE') throw new V2ContractError('INVALID_REQUEST');
+    if (request.view === 'MAINTENANCE' || request.view === 'LOCAL_DIAGNOSTICS')
+      throw new V2ContractError('INVALID_REQUEST');
     if (
       request.view === 'CATALOG_WORKS' ||
       request.view === 'CATALOG_WORK' ||
@@ -1780,7 +1870,12 @@ export class V2ApplicationFacade {
       request.action === 'PREVIEW_CONTROLLED_RESTORE' ||
       request.action === 'CONFIRM_CONTROLLED_BACKUP' ||
       request.action === 'CONFIRM_CONTROLLED_RESTORE' ||
-      request.action === 'CANCEL_CONTROLLED_MAINTENANCE'
+      request.action === 'CANCEL_CONTROLLED_MAINTENANCE' ||
+      request.action === 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW' ||
+      request.action === 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY' ||
+      request.action === 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT' ||
+      request.action === 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT' ||
+      request.action === 'OPEN_LOCAL_DIAGNOSTIC_RESULT'
     )
       throw new V2ContractError('INVALID_REQUEST');
     if (

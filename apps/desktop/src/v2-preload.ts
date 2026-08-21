@@ -23,6 +23,8 @@ import {
   type V2CatalogWorkListView,
   type V2MaintenancePreview,
   type V2MaintenanceView,
+  type V2DiagnosticPreview,
+  type V2DiagnosticView,
   type V2ProviderSettingsView,
   type V2Bridge,
   type V2Result,
@@ -119,6 +121,22 @@ const bridge: V2Bridge = Object.freeze({
   readCatalogWorks: (input: Parameters<NonNullable<V2Bridge['readCatalogWorks']>>[0]) =>
     invoke<V2CatalogWorkListView>('read', { view: 'CATALOG_WORKS', ...input }),
   readMaintenance: () => invoke<V2MaintenanceView>('read', { view: 'MAINTENANCE' }),
+  readLocalDiagnostics: () => invoke<V2DiagnosticView>('read', { view: 'LOCAL_DIAGNOSTICS' }),
+  buildLocalDiagnosticPreview: () =>
+    invoke<V2DiagnosticPreview>('mutate', { action: 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW' }),
+  selectLocalDiagnosticDirectory: () =>
+    invoke<V2DiagnosticView>('mutate', { action: 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY' }),
+  previewLocalDiagnosticExport: (input: { readonly directoryToken: string }) =>
+    invoke<V2DiagnosticPreview>('mutate', { action: 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT', ...input }),
+  confirmLocalDiagnosticExport: (input: {
+    readonly confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY';
+    readonly confirmationToken: string;
+  }) => invoke<V2DiagnosticView>('mutate', { action: 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT', ...input }),
+  openLocalDiagnosticResult: (input: { readonly resultToken: string }) =>
+    invoke<{ readonly opened: true }>('mutate', {
+      action: 'OPEN_LOCAL_DIAGNOSTIC_RESULT',
+      ...input,
+    }),
   readContentPackages: (input: Parameters<V2Bridge['readContentPackages']>[0]) =>
     invoke<ContentWorkspace>('read', { view: 'CONTENT_PACKAGES', ...input }),
   readInteractions: () => invoke<InteractionWorkspace>('read', { view: 'INTERACTIONS' }),

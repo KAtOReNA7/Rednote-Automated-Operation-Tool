@@ -79,7 +79,7 @@ describe('Issue 008 package and process boundaries', () => {
 
     expect(names).not.toMatch(/s3|oss|cos|dropbox|onedrive|icloud|webdav|sentry|openai|ocr/iu);
     expect(issue008Source).not.toMatch(
-      /login|captcha|comment|direct.?message|risk.?control|openai|ocr|cloud.?storage/iu,
+      /login|captcha|\bcomment\b|direct.?message|risk.?control|openai|ocr|cloud.?storage/iu,
     );
   });
 

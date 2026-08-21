@@ -261,7 +261,12 @@ async function startV2Application(
         if (mainWindow === null || mainWindow.id !== caller.windowId) return null;
         const selection = await dialog.showOpenDialog(mainWindow, {
           properties: ['dontAddToRecent', 'openDirectory'],
-          title: operation === 'BACKUP' ? '选择备份保存文件夹' : '选择要恢复的备份文件夹',
+          title:
+            operation === 'BACKUP'
+              ? '选择备份保存文件夹'
+              : operation === 'DIAGNOSTICS'
+                ? '选择本地诊断导出文件夹'
+                : '选择要恢复的备份文件夹',
         });
         if (
           selection.canceled ||
@@ -270,7 +275,12 @@ async function startV2Application(
         )
           return null;
         return {
-          displayLabel: operation === 'BACKUP' ? '已选择备份保存文件夹' : '已选择恢复备份文件夹',
+          displayLabel:
+            operation === 'BACKUP'
+              ? '已选择备份保存文件夹'
+              : operation === 'DIAGNOSTICS'
+                ? '已选择本地诊断导出文件夹'
+                : '已选择恢复备份文件夹',
           path: selection.filePaths[0],
         };
       },
