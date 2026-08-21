@@ -746,3 +746,102 @@ describe('R10B controlled restore', () => {
     expect(JSON.stringify(failure)).not.toContain(value.root.rootPath);
   });
 });
+
+describe('R10C controlled local diagnostics', () => {
+  it('requires preview, caller-bound directory selection, and one-time confirmation before a local ZIP exists', async () => {
+    const value = await context();
+    value.database.close();
+    openDatabases.delete(value.database);
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const runtime = await V2DesktopRuntime.openProject(value.root, {
+      appVersion: '0.0.0',
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      buildCommit: BUILD_COMMIT,
+      maintenancePicker: {
+        select: async (_caller, operation) =>
+          operation === 'DIAGNOSTICS'
+            ? { displayLabel: 'synthetic diagnostics directory', path: value.backupRoot }
+            : null,
+      },
+      openDirectory: async () => '',
+    });
+    const caller = { senderId: 101, windowId: 103 };
+    const otherCaller = { senderId: 107, windowId: 109 };
+    try {
+      const preview = (await runtime.mutate(
+        { action: 'BUILD_LOCAL_DIAGNOSTIC_PREVIEW' },
+        caller,
+      )) as { readonly confirmationToken: null; readonly categories: readonly unknown[] };
+      expect(preview.confirmationToken).toBeNull();
+      expect(preview.categories).toHaveLength(5);
+      expect(readdirSync(value.backupRoot)).toEqual([]);
+
+      const selected = (await runtime.mutate(
+        { action: 'SELECT_LOCAL_DIAGNOSTIC_DIRECTORY' },
+        caller,
+      )) as { readonly directory: { readonly token: string } | null };
+      if (selected.directory === null) throw new Error('missing diagnostic directory lease');
+      await expect(
+        runtime.mutate(
+          { action: 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT', directoryToken: selected.directory.token },
+          otherCaller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      const confirmation = (await runtime.mutate(
+        { action: 'PREVIEW_LOCAL_DIAGNOSTIC_EXPORT', directoryToken: selected.directory.token },
+        caller,
+      )) as { readonly confirmationToken: string | null };
+      if (confirmation.confirmationToken === null) throw new Error('missing confirmation lease');
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT',
+            confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY',
+            confirmationToken: confirmation.confirmationToken,
+          },
+          otherCaller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      await runtime.mutate(
+        {
+          action: 'CONFIRM_LOCAL_DIAGNOSTIC_EXPORT',
+          confirmation: 'CONFIRM_EXPORT_TO_SELECTED_DIRECTORY',
+          confirmationToken: confirmation.confirmationToken,
+        },
+        caller,
+      );
+      let state = (await runtime.read({ view: 'LOCAL_DIAGNOSTICS' }, caller)) as {
+        readonly outcome: string;
+        readonly result: { readonly fileName: string; readonly resultToken: string } | null;
+      };
+      const deadline = Date.now() + 5_000;
+      while (state.outcome === 'IDLE' && Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 10));
+        state = (await runtime.read({ view: 'LOCAL_DIAGNOSTICS' }, caller)) as typeof state;
+      }
+      expect(state).toMatchObject({ outcome: 'SUCCESS', result: { fileName: expect.any(String) } });
+      if (state.result === null) throw new Error('missing diagnostic result');
+      expect(readdirSync(value.backupRoot)).toEqual([state.result.fileName]);
+      await expect(
+        runtime.mutate(
+          { action: 'OPEN_LOCAL_DIAGNOSTIC_RESULT', resultToken: state.result.resultToken },
+          otherCaller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      await expect(
+        runtime.mutate(
+          { action: 'OPEN_LOCAL_DIAGNOSTIC_RESULT', resultToken: state.result.resultToken },
+          caller,
+        ),
+      ).resolves.toEqual({ opened: true });
+      await expect(
+        runtime.mutate(
+          { action: 'OPEN_LOCAL_DIAGNOSTIC_RESULT', resultToken: state.result.resultToken },
+          caller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+    } finally {
+      runtime.close();
+    }
+  }, 15_000);
+});

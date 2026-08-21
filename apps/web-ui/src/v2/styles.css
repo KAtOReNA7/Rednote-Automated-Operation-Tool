@@ -529,6 +529,13 @@
   .v2-settings-page .v2-provider-settings { gap: 18px; background: #fff; }
   .v2-maintenance-settings { gap: 20px; background: #fff; }
   .v2-maintenance-settings .v2-provider-section { display: grid; gap: 12px; border-top: 1px solid var(--v2-line); padding-top: 18px; }
+  .v2-diagnostic-export { display: grid; gap: 14px; border-top: 1px solid var(--v2-line); padding-top: 22px; min-width: 0; }
+  .v2-diagnostic-home, .v2-diagnostic-preview, .v2-diagnostic-progress { display: grid; gap: 12px; border: 1px solid var(--v2-line); border-radius: 14px; padding: 16px; background: #fff; }
+  .v2-diagnostic-preview { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .v2-diagnostic-preview > p, .v2-diagnostic-preview > .v2-inline-actions { grid-column: 1 / -1; }
+  .v2-diagnostic-preview h4 { font-size: 14px; color: var(--v2-ink); }
+  .v2-diagnostic-preview ul { display: grid; gap: 7px; padding-left: 18px; color: var(--v2-muted); font-size: 12px; line-height: 1.55; }
+  .v2-diagnostic-progress { background: #fff9ed; border-color: rgb(184 139 33 / 38%); }
   .v2-maintenance-settings .v2-inline-actions { display: flex; flex-wrap: wrap; gap: 10px; }
   .v2-maintenance-settings .v2-checkbox-row { display: flex; align-items: start; gap: 8px; color: var(--v2-muted); font-size: 13px; line-height: 1.5; }
   .v2-settings-page .v2-provider-settings > hr { width: 100%; margin: 4px 0; border: 0; border-top: 1px solid var(--v2-line); }
@@ -3521,6 +3528,9 @@
   }
 
   @media (max-width: 620px) {
+    .v2-diagnostic-preview {
+      grid-template-columns: 1fr;
+    }
     .v2-maintenance-preflight ul,
     .v2-maintenance-confirm-dialog .v2-provider-preview-actions {
       grid-template-columns: 1fr;

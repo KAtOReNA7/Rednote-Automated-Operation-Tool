@@ -69,8 +69,10 @@ describe('repository-facing documentation', () => {
     expect(readme).toMatch(/受控备份核心已经实现/u);
     expect(readme).toMatch(/R10B.+PR #26.+合并/su);
     expect(instructionsIndex).toMatch(/R10B.+PR #26.+合并.+main/su);
-    expect(readme).toMatch(/R10C.+R10D.+R10E.+尚未开始.+独立决策与授权/su);
-    expect(instructionsIndex).toMatch(/R10C.+R10D.+R10E.+尚未开始.+独立决策与授权/su);
+    expect(readme).toMatch(/R10C.+受控本地诊断/su);
+    expect(readme).toMatch(/R10D.+R10E.+尚未开始.+独立决策与授权/su);
+    expect(instructionsIndex).toMatch(/R10C.+受控本地.+脱敏诊断/su);
+    expect(instructionsIndex).toMatch(/R10D.+R10E.+尚未开始.+独立决策与授权/su);
     expect(readme).toContain('./docs/product/v2-r10-release-readiness-scope.md');
     expect(docsIndex).toContain('./product/v2-r10-release-readiness-scope.md');
     expect(productIndex).toContain('./v2-r10-release-readiness-scope.md');
