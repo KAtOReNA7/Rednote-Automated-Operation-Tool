@@ -416,6 +416,7 @@ async function waitForNavigationStable(client, sessionId, route) {
   } catch (error) {
     throw new Error(
       `${route} stable navigation state: ${error instanceof Error ? error.message : String(error)} last=${JSON.stringify(lastState)}`,
+      { cause: error },
     );
   }
 }
