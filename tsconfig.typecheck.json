@@ -40,5 +40,6 @@
     "tests/**/*.tsx",
     "vite.*.config.ts",
     "vitest.config.ts"
-  ]
+  ],
+  "exclude": ["**/.rednote-temp/**", "**/.vite/**", "**/dist/**", "**/node_modules/**", "**/out/**"]
 }

@@ -4,6 +4,7 @@ import {
   lstatSync,
   mkdirSync,
   readFileSync,
+  readdirSync,
   renameSync,
   writeFileSync,
 } from 'node:fs';
@@ -590,6 +591,7 @@ describe('R10B controlled restore', () => {
       )) as {
         readonly backupPreconditions: Readonly<Record<string, string>> | null;
         readonly confirmationToken: string;
+        readonly summary: string;
       };
       expect(preview.backupPreconditions).toEqual({
         directory: 'PASSED',
@@ -597,6 +599,10 @@ describe('R10B controlled restore', () => {
         space: 'PASSED',
         write: 'PASSED',
       });
+      expect(preview).toMatchObject({
+        summary: '预检已创建并清理临时写入探针；仅在确认后创建受控备份。',
+      });
+      expect(readdirSync(value.backupRoot)).toEqual([]);
       const started = await runtime.mutate(
         {
           action: 'CONFIRM_CONTROLLED_BACKUP',

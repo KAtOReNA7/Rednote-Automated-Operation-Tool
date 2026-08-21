@@ -1,10 +1,12 @@
 # R10B controlled backup and restore implementation plan
 
-Status: implementation ready for review; Draft PR #26, not merged.
+Status: implemented and merged into `main` through PR #26. User acceptance is not asserted here.
+R10C diagnostic, R10D Windows installation lifecycle and R10E release-candidate work remain
+unstarted and require independent authorization.
 
 ## Actual baseline and boundaries
 
-- Baseline: `origin/main` at `7b6dc1b99c91e313a47b42ebd8adbc00adf021cb`.
+- Merge baseline: PR #26 merged into `main`; this document does not assert a user acceptance result.
 - The real V2 root is initialized by `DesktopSettingsRuntime.ensureV2Project`, then opened by
   `V2DesktopRuntime.openProject`. The runtime owns the `DatabaseSync` connection and registers only
   `v2:workspace:read` and `v2:workspace:mutate`.
