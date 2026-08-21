@@ -96,9 +96,35 @@ jobs:
           REDNOTE_PACKAGE_OUTPUT_VARIANT: r10d-beta0-fixture
           REDNOTE_R10D_CI_FIXTURE: '1'
           REDNOTE_R10D_CI_FIXTURE_VERSION: 0.1.0-beta.0
+        shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
           node scripts/package-desktop.mjs
-          node scripts/package-installer.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R10D_BETA0_DESKTOP_BUILD_FAILED:$LASTEXITCODE" }
+          $output = Join-Path (Get-Location) 'out'
+          $fixture = Join-Path $output 'r10d-beta0-fixture'
+          $staging = Join-Path $env:TEMP 'r10d-beta0-staging'
+          $canonicalPackage = @(Get-ChildItem -LiteralPath $output -Directory | Where-Object { $_.Name -like '*-win32-x64' })
+          $fixturePackage = @(Get-ChildItem -LiteralPath $fixture -Directory | Where-Object { $_.Name -like '*-win32-x64' })
+          if ($canonicalPackage.Count -ne 1 -or $fixturePackage.Count -ne 1) { throw 'R10D_BETA0_PACKAGE_LAYOUT_INVALID' }
+          New-Item -ItemType Directory -Path $staging -Force | Out-Null
+          Move-Item -LiteralPath $canonicalPackage[0].FullName -Destination $staging
+          Move-Item -LiteralPath (Join-Path $output 'installer') -Destination $staging
+          Move-Item -LiteralPath (Join-Path $output 'installer-bundle') -Destination $staging
+          Move-Item -LiteralPath $fixturePackage[0].FullName -Destination $output
+          try {
+            $env:REDNOTE_PACKAGE_OUTPUT_VARIANT = $null
+            node scripts/package-installer.mjs
+            if ($LASTEXITCODE -ne 0) { throw "R10D_BETA0_INSTALLER_BUILD_FAILED:$LASTEXITCODE" }
+            Move-Item -LiteralPath (Join-Path $output 'installer') -Destination $fixture
+            Move-Item -LiteralPath (Join-Path $output 'installer-bundle') -Destination $fixture
+            Move-Item -LiteralPath (Join-Path $output $fixturePackage[0].Name) -Destination $fixture
+          } finally {
+            Move-Item -LiteralPath (Join-Path $output $fixturePackage[0].Name) -Destination $fixture -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath (Join-Path $staging $canonicalPackage[0].Name) -Destination $output -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath (Join-Path $staging 'installer') -Destination $output -ErrorAction SilentlyContinue
+            Move-Item -LiteralPath (Join-Path $staging 'installer-bundle') -Destination $output -ErrorAction SilentlyContinue
+          }
 
       - name: Run isolated R10D installer lifecycle
         env:
