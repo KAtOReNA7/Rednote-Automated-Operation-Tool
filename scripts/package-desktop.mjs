@@ -248,7 +248,7 @@ try {
   }
 
   await writeExperienceFiles(packagePaths[0]);
-  await writeReleaseManifest(projectRoot, packagePaths[0]);
+  await writeReleaseManifest(projectRoot, packagePaths[0], applicationVersion);
 
   process.stdout.write(
     'Packaged Windows desktop directory, V2 launchers, embedded build info, checklist, and verified Electron fuses.\n',

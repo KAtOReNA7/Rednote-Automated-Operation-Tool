@@ -9,16 +9,41 @@ export const WINDOWS_APPLICATION_NAME = 'rednote-mystery-operations';
 export const WINDOWS_PRODUCT_NAME = '红笺本地运营台';
 export const WINDOWS_MANIFEST_NAME = 'release-manifest.json';
 export const WINDOWS_MANIFEST_FORMAT = 'rednote-windows-internal-beta';
+export const WINDOWS_CANONICAL_VERSION = '0.1.0-beta.1';
+export const WINDOWS_CI_FIXTURE_VERSION = '0.1.0-beta.0';
 
-export function readApplicationVersion(projectRoot) {
+export function isCiFixtureVersionEnvironment(
+  environment = process.env,
+  platform = process.platform,
+) {
+  return (
+    platform === 'win32' &&
+    environment.GITHUB_ACTIONS === 'true' &&
+    environment.REDNOTE_R10D_CI_FIXTURE === '1' &&
+    environment.REDNOTE_R10D_CI_FIXTURE_VERSION === WINDOWS_CI_FIXTURE_VERSION
+  );
+}
+
+export function readApplicationVersion(
+  projectRoot,
+  environment = process.env,
+  platform = process.platform,
+) {
   const version = execFileSync('node', ['-p', "require('./package.json').version"], {
     cwd: projectRoot,
     encoding: 'utf8',
     windowsHide: true,
   }).trim();
-  if (!/^0\.1\.0-beta\.1$/u.test(version))
+  if (version !== WINDOWS_CANONICAL_VERSION)
     throw new Error('R10D application version must be 0.1.0-beta.1.');
-  return version;
+  if (
+    environment.REDNOTE_R10D_CI_FIXTURE !== undefined &&
+    !isCiFixtureVersionEnvironment(environment, platform)
+  )
+    throw new Error('R10D_VERSION_OVERRIDE_CI_ONLY');
+  return isCiFixtureVersionEnvironment(environment, platform)
+    ? WINDOWS_CI_FIXTURE_VERSION
+    : version;
 }
 
 export function buildIdentity(projectRoot) {
@@ -81,7 +106,11 @@ async function enumeratePayload(root, directory = root) {
   return files;
 }
 
-export async function writeReleaseManifest(projectRoot, packageDirectory) {
+export async function writeReleaseManifest(
+  projectRoot,
+  packageDirectory,
+  applicationVersion = readApplicationVersion(projectRoot),
+) {
   const { commit, sourceDateEpoch } = buildIdentity(projectRoot);
   const files = await enumeratePayload(packageDirectory);
   const paths = files.map((file) => file.path);
@@ -89,7 +118,7 @@ export async function writeReleaseManifest(projectRoot, packageDirectory) {
     throw new Error('Release manifest contains duplicate payload paths.');
   const manifest = {
     appId: WINDOWS_APPLICATION_ID,
-    applicationVersion: readApplicationVersion(projectRoot),
+    applicationVersion,
     arch: 'x64',
     buildCommit: commit,
     files: files.sort((left, right) => left.path.localeCompare(right.path)),
@@ -107,7 +136,10 @@ export async function writeReleaseManifest(projectRoot, packageDirectory) {
   return manifest;
 }
 
-export async function readReleaseManifest(packageDirectory) {
+export async function readReleaseManifest(
+  packageDirectory,
+  permittedVersions = [WINDOWS_CANONICAL_VERSION],
+) {
   const text = await readFile(join(resolve(packageDirectory), WINDOWS_MANIFEST_NAME), 'utf8');
   const manifest = JSON.parse(text);
   const allowed = new Set([
@@ -130,7 +162,8 @@ export async function readReleaseManifest(packageDirectory) {
     manifest.arch !== 'x64' ||
     manifest.appId !== WINDOWS_APPLICATION_ID ||
     manifest.unsigned !== true ||
-    !/^0\.1\.0-beta\.1$/u.test(manifest.applicationVersion) ||
+    !Array.isArray(permittedVersions) ||
+    !permittedVersions.includes(manifest.applicationVersion) ||
     !/^[a-f0-9]{40}$/u.test(manifest.buildCommit) ||
     !/^\d{10,}$/u.test(manifest.sourceDateEpoch) ||
     !Array.isArray(manifest.files)

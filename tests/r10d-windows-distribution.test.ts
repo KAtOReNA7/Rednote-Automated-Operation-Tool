@@ -6,12 +6,26 @@ import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 interface DistributionContract {
+  readonly WINDOWS_CI_FIXTURE_VERSION: string;
   readonly WINDOWS_APPLICATION_ID: string;
   readonly WINDOWS_MANIFEST_NAME: string;
-  readonly readReleaseManifest: (directory: string) => Promise<unknown>;
+  readonly isCiFixtureVersionEnvironment: (
+    environment: Record<string, string>,
+    platform: string,
+  ) => boolean;
+  readonly readApplicationVersion: (
+    root: string,
+    environment: Record<string, string>,
+    platform: string,
+  ) => string;
+  readonly readReleaseManifest: (
+    directory: string,
+    versions?: readonly string[],
+  ) => Promise<unknown>;
   readonly writeReleaseManifest: (
     root: string,
     directory: string,
+    version?: string,
   ) => Promise<{ readonly files: readonly { readonly path: string }[] }>;
 }
 
@@ -50,6 +64,23 @@ describe('R10D Windows distribution contracts', () => {
     expect(
       await readFile(join(root, 'scripts', 'run-installer-lifecycle-smoke.mjs'), 'utf8'),
     ).toContain("'xiaohongshu-mystery-operations'");
+    const installerInclude = await readFile(join(root, 'build', 'installer.nsh'), 'utf8');
+    expect(installerInclude).toContain('!macro customCheckAppRunning');
+    expect(installerInclude).toContain('${VersionCompare}');
+  });
+
+  it('opens the beta.0 fixture seam only for the exact GitHub Windows tuple', async () => {
+    const contract = await loadContract();
+    const fixture = {
+      GITHUB_ACTIONS: 'true',
+      REDNOTE_R10D_CI_FIXTURE: '1',
+      REDNOTE_R10D_CI_FIXTURE_VERSION: '0.1.0-beta.0',
+    };
+    expect(contract.isCiFixtureVersionEnvironment(fixture, 'win32')).toBe(true);
+    expect(contract.readApplicationVersion(process.cwd(), fixture, 'win32')).toBe('0.1.0-beta.0');
+    expect(() => contract.readApplicationVersion(process.cwd(), fixture, 'linux')).toThrow(
+      'R10D_VERSION_OVERRIDE_CI_ONLY',
+    );
   });
 
   it('writes and validates a closed sorted manifest without absolute paths', async () => {
@@ -79,5 +110,22 @@ describe('R10D Windows distribution contracts', () => {
     await expect(contract.readReleaseManifest(directory)).rejects.toThrow(
       'Invalid release manifest file entry.',
     );
+  });
+
+  it('accepts the CI-only beta.0 manifest only when the caller explicitly permits it', async () => {
+    const contract = await loadContract();
+    const directory = await mkdtemp(join(tmpdir(), 'r10d-beta0-manifest-'));
+    await writeFile(join(directory, 'RednoteMysteryOperations.exe'), 'synthetic executable');
+    await contract.writeReleaseManifest(
+      process.cwd(),
+      directory,
+      contract.WINDOWS_CI_FIXTURE_VERSION,
+    );
+    await expect(contract.readReleaseManifest(directory)).rejects.toThrow(
+      'Invalid release manifest schema.',
+    );
+    await expect(
+      contract.readReleaseManifest(directory, [contract.WINDOWS_CI_FIXTURE_VERSION]),
+    ).resolves.toMatchObject({ applicationVersion: contract.WINDOWS_CI_FIXTURE_VERSION });
   });
 });

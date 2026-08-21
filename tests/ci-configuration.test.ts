@@ -68,6 +68,9 @@ describe('Windows CI configuration', () => {
     expect(workflowSource).toContain('rednote-r10d-windows-installer-$shortSha');
     expect(workflowSource).toContain('out/installer-bundle/');
     expect(workflowSource).toContain('retention-days: 14');
+    expect(workflowSource).toContain("REDNOTE_R10D_CI_FIXTURE: '1'");
+    expect(workflowSource).toContain("REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'");
+    expect(workflowSource).toContain('--cleanup-ci-temp');
   });
 
   it('does not schedule overlapping specialized Vitest selectors before the full suite', () => {

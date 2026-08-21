@@ -86,7 +86,19 @@ jobs:
           Copy-Item -LiteralPath out\installer -Destination out\installer-repro-b -Recurse
           node scripts/compare-r10d-installer-samples.mjs out\installer-repro-a out\installer-repro-b
 
+      - name: Build isolated R10D beta.0 lifecycle fixture
+        env:
+          REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          REDNOTE_PACKAGE_OUTPUT_VARIANT: r10d-beta0-fixture
+          REDNOTE_R10D_CI_FIXTURE: '1'
+          REDNOTE_R10D_CI_FIXTURE_VERSION: 0.1.0-beta.0
+        run: |
+          node scripts/package-desktop.mjs
+          node scripts/package-installer.mjs
+
       - name: Run isolated R10D installer lifecycle
+        env:
+          REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'
         run: npm run test:installer-lifecycle
 
       - name: Prepare exact-head R10D installer artifact name
@@ -111,10 +123,6 @@ jobs:
 
       - name: Clean exact CI temporary directory
         if: always()
-        shell: pwsh
-        run: |
-          $workspaceParent = Split-Path -Parent (Get-Location).Path
-          $temporaryPath = Join-Path $workspaceParent ".rednote-temp\ci-${{ github.run_id }}-${{ github.run_attempt }}"
-          if (Test-Path -LiteralPath $temporaryPath) {
-            Remove-Item -LiteralPath $temporaryPath -Recurse -Force
-          }
+        env:
+          REDNOTE_R10D_CI_CLEANUP: '1'
+        run: node scripts/run-installer-lifecycle-smoke.mjs --cleanup-ci-temp

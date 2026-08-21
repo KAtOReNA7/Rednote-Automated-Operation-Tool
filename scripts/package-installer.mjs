@@ -13,7 +13,10 @@ import {
 
 const run = promisify(execFile);
 const root = resolve(import.meta.dirname, '..');
-const output = join(root, 'out');
+const outputVariant = process.env.REDNOTE_PACKAGE_OUTPUT_VARIANT;
+if (outputVariant !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(outputVariant))
+  throw new Error('Package output variant must be a finite safe directory name.');
+const output = outputVariant === undefined ? join(root, 'out') : join(root, 'out', outputVariant);
 const installers = join(output, 'installer');
 const bundle = join(output, 'installer-bundle');
 
@@ -52,7 +55,7 @@ if (packageDirectory.length !== 1)
 const applicationVersion = readApplicationVersion(root);
 const { commit, sourceDateEpoch } = buildIdentity(root);
 const prepackaged = join(output, packageDirectory[0]);
-const manifest = await readReleaseManifest(prepackaged);
+const manifest = await readReleaseManifest(prepackaged, [applicationVersion]);
 if (manifest.applicationVersion !== applicationVersion || manifest.buildCommit !== commit)
   throw new Error('Prepackaged manifest does not bind the exact installer head.');
 await rm(installers, { force: true, recursive: true });

@@ -393,6 +393,7 @@ async function startV2Application(
               blackbox.providerProtocol === 'CHAT_COMPLETIONS');
         await emitSmokeProcessSample('capability-validated');
         writeSmokeReport(smokeOutputPath, {
+          applicationVersion: app.getVersion(),
           main: true,
           mode: 'v2',
           ok,

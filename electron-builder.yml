@@ -8,6 +8,7 @@ win:
       arch:
         - x64
 nsis:
+  include: build/installer.nsh
   allowElevation: false
   allowToChangeInstallationDirectory: false
   artifactName: RednoteStudio-${version}-win-x64-setup.${ext}

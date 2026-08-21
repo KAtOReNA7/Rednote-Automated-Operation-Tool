@@ -31,6 +31,8 @@
 | D17 精确 HEAD CI artifact        | PENDING      | 待 CI workflow 证据。                                          |
 | D18 文档与阶段事实               | PENDING      | 待实现与治理测试。                                             |
 
+本轮 L01—L10 仅在精确 HEAD 的 Windows CI 完成后回填为 PASS；D13 只声明损坏安装器的失败回退。
+
 ## 实施计划
 
 1. 统一版本、应用身份和稳定 build metadata；为预打包目录生成闭合 manifest/checksum。
