@@ -111,7 +111,7 @@ jobs:
           $fixtureBundle = Join-Path $fixture 'installer-bundle'
           function Get-R10DIdentity([string]$path) {
             $records = @(Get-ChildItem -LiteralPath $path -File -Recurse | Sort-Object FullName | ForEach-Object {
-              $relative = $_.FullName.Substring($path.Length).TrimStart('\\', '/')
+              $relative = $_.FullName.Substring($path.Length).TrimStart('\', '/')
               "$relative|$($_.Length)|$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash)"
             })
             if ($records.Count -eq 0) { throw "R10D_EMPTY_IDENTITY:$path" }

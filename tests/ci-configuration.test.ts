@@ -72,6 +72,7 @@ describe('Windows CI configuration', () => {
     expect(workflowSource).toContain("REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'");
     expect(workflowSource).toContain('R10D_CANONICAL_FIXTURE_MUTATED');
     expect(workflowSource).toContain('R10D_BETA0_INSTALLER_VERSION_OR_LAYOUT_INVALID');
+    expect(workflowSource).toContain("TrimStart('\\', '/')");
     expect(workflowSource).not.toContain('r10d-beta0-staging');
     expect(workflowSource).not.toContain('Move-Item');
     expect(workflowSource).toContain('--cleanup-ci-temp');
