@@ -98,6 +98,8 @@ describe('Windows CI configuration', () => {
     );
     expect(lifecycle).toContain("await removeOwned(temporaryDirectory, 'ci-temp-cleanup')");
     expect(lifecycle).toContain('CLEANUP_TIMEOUT_MILLISECONDS');
+    expect(lifecycle).toContain('Get-Process -ErrorAction SilentlyContinue');
+    expect(lifecycle).not.toContain('Get-CimInstance');
     expect(lifecycle).not.toContain("'ci-temp-helper-release'");
   });
 
