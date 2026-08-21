@@ -100,6 +100,8 @@ describe('Windows CI configuration', () => {
     expect(lifecycle).toContain('CLEANUP_TIMEOUT_MILLISECONDS');
     expect(lifecycle).toContain('Get-Process -ErrorAction SilentlyContinue');
     expect(lifecycle).not.toContain('Get-CimInstance');
+    expect(lifecycle).toContain('L04-running-upgrade-app-ready');
+    expect(lifecycle).toContain('L04-running-uninstall-app-ready');
     expect(lifecycle).not.toContain("'ci-temp-helper-release'");
   });
 

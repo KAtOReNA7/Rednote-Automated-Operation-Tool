@@ -161,6 +161,10 @@ function installed(state, version, allowRunning = false) {
   );
 }
 
+function runningInstalled(state, version) {
+  return installed(state, version, true) && state.processes.some((process) => process.inInstall);
+}
+
 function uninstalled(state) {
   return (
     !state.installDirectory &&
@@ -273,6 +277,22 @@ async function launchSmoke(executable, workspace, reportRoot, version) {
   return { child, exit };
 }
 
+function launchRunning(executable) {
+  const child = spawn(executable, [], {
+    cwd: dirname(executable),
+    env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, NODE_OPTIONS: undefined },
+    stdio: ['ignore', 'ignore', 'ignore'],
+    windowsHide: true,
+  });
+  return { child, exit: waitForExit(child) };
+}
+
+async function stopRunning(running) {
+  if (running.child.exitCode === null && !running.child.kill())
+    throw new Error('INSTALLER_LIFECYCLE_RUNNING_APP_STOP_FAILED');
+  await running.exit;
+}
+
 async function createDataRecord(workspace) {
   const dataRoot = join(workspace, 'userData 中文 空格', 'v2-project-data');
   const databasePath = join(dataRoot, 'database', 'rednote.sqlite');
@@ -381,39 +401,39 @@ async function main() {
     if ((await first.exit) !== 0) throw new Error('INSTALLER_LIFECYCLE_BETA0_SMOKE_FAILED');
     const data = await createDataRecord(workspace);
 
-    const upgradeRunning = await launchSmoke(
-      executable,
-      workspace,
-      lifecycleRoot,
-      WINDOWS_CI_FIXTURE_VERSION,
+    const upgradeRunning = launchRunning(executable);
+    await converge('L04-running-upgrade-app-ready', readState, (state) =>
+      runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
     );
-    if (
-      (await invoke(beta1Installer, ['/S'], canonicalBundle)) === 0 ||
-      upgradeRunning.child.exitCode !== null
-    )
-      throw new Error('INSTALLER_LIFECYCLE_RUNNING_UPGRADE_NOT_BLOCKED');
-    await converge('L04-running-upgrade-block', readState, (state) =>
-      installed(state, WINDOWS_CI_FIXTURE_VERSION, true),
+    try {
+      if ((await invoke(beta1Installer, ['/S'], canonicalBundle)) === 0)
+        throw new Error('INSTALLER_LIFECYCLE_RUNNING_UPGRADE_NOT_BLOCKED');
+      await converge('L04-running-upgrade-block', readState, (state) =>
+        runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
+      );
+    } finally {
+      await stopRunning(upgradeRunning);
+    }
+    await converge('L04-running-upgrade-app-closed', readState, (state) =>
+      installed(state, WINDOWS_CI_FIXTURE_VERSION),
     );
-    if ((await upgradeRunning.exit) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_RUNNING_APP_EXIT_FAILED');
 
-    const uninstallRunning = await launchSmoke(
-      executable,
-      workspace,
-      lifecycleRoot,
-      WINDOWS_CI_FIXTURE_VERSION,
+    const uninstallRunning = launchRunning(executable);
+    await converge('L04-running-uninstall-app-ready', readState, (state) =>
+      runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
     );
-    if (
-      (await invoke(uninstaller(), ['/S'], target)) === 0 ||
-      uninstallRunning.child.exitCode !== null
-    )
-      throw new Error('INSTALLER_LIFECYCLE_RUNNING_UNINSTALL_NOT_BLOCKED');
-    await converge('L04-running-uninstall-block', readState, (state) =>
-      installed(state, WINDOWS_CI_FIXTURE_VERSION, true),
+    try {
+      if ((await invoke(uninstaller(), ['/S'], target)) === 0)
+        throw new Error('INSTALLER_LIFECYCLE_RUNNING_UNINSTALL_NOT_BLOCKED');
+      await converge('L04-running-uninstall-block', readState, (state) =>
+        runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
+      );
+    } finally {
+      await stopRunning(uninstallRunning);
+    }
+    await converge('L04-running-uninstall-app-closed', readState, (state) =>
+      installed(state, WINDOWS_CI_FIXTURE_VERSION),
     );
-    if ((await uninstallRunning.exit) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_RUNNING_APP_EXIT_FAILED');
 
     const corrupt = join(lifecycleRoot, 'corrupt-beta1.exe');
     await cp(beta1Installer, corrupt);
