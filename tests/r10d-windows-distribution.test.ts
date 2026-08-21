@@ -47,6 +47,9 @@ describe('R10D Windows distribution contracts', () => {
     expect(await readFile(join(root, 'scripts', 'package-installer.mjs'), 'utf8')).not.toContain(
       '...process.env',
     );
+    expect(
+      await readFile(join(root, 'scripts', 'run-installer-lifecycle-smoke.mjs'), 'utf8'),
+    ).toContain("'xiaohongshu-mystery-operations'");
   });
 
   it('writes and validates a closed sorted manifest without absolute paths', async () => {

@@ -31,7 +31,7 @@ if (
 const bundle = join(root, 'out', 'installer-bundle');
 const installers = (await readdir(bundle)).filter((name) => name.endsWith('.exe'));
 if (installers.length !== 1) throw new Error('INSTALLER_LIFECYCLE_EXPECTS_ONE_INSTALLER');
-const installPath = join(localAppData, 'Programs', '红笺本地运营台');
+const installPath = join(localAppData, 'Programs', 'xiaohongshu-mystery-operations');
 if (existsSync(installPath)) throw new Error('INSTALLER_LIFECYCLE_REFUSES_EXISTING_INSTALL');
 const installer = join(bundle, installers[0]);
 const install = await run(installer, ['/S'], { cwd: bundle, windowsHide: true, timeout: 180_000 });
