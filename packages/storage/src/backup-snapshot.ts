@@ -89,10 +89,15 @@ export interface CreateControlledBackupOptions {
   readonly signal?: AbortSignal;
   readonly v2DataVersion: number;
   readonly now?: () => Date;
+  /** Reports only stages the controlled backup core has actually entered. */
+  readonly onStage?: (stage: ControlledBackupStage) => void;
   readonly randomId?: () => string;
   /** @internal deterministic durability evidence only. */
   readonly internalDurabilityPort?: ControlledBackupDurabilityPort;
 }
+
+export type ControlledBackupStage =
+  'BUILDING_STAGING' | 'PREFLIGHT' | 'SUCCESS' | 'SWITCHING' | 'VERIFYING';
 
 export interface VerifyControlledBackupOptions {
   readonly backupPath: string;
@@ -768,9 +773,11 @@ async function assertSelectedRoot(
 export async function createControlledBackupSnapshot(
   options: CreateControlledBackupOptions,
 ): Promise<ControlledBackupResult> {
+  const stage = (value: ControlledBackupStage): void => options.onStage?.(value);
   const now = options.now ?? (() => new Date());
   const randomId = options.randomId ?? randomUUID;
   checkAborted(options.signal);
+  stage('PREFLIGHT');
   const selectedRoot = await assertSelectedRoot(options.root, options.selectedBackupRoot);
   const operationId = randomId().toLowerCase();
   const createdAt = now().toISOString();
@@ -800,6 +807,7 @@ export async function createControlledBackupSnapshot(
   let staging: StagingState | undefined;
   let published = false;
   try {
+    stage('BUILDING_STAGING');
     staging = await createStaging(selectedRoot, () => operationId);
     const payload = await mkdirOwned(staging, 'payload');
     await mkdirOwned(staging, 'payload/database');
@@ -889,6 +897,7 @@ export async function createControlledBackupSnapshot(
       serializeBackupCompleteMarkerV1(manifestSha256(serialized)),
       () => recordFile(staging as StagingState, 'COMPLETE.json', completePath),
     );
+    stage('VERIFYING');
     await verifyDirectory(staging.path, options.database, options.signal, staging.operationId);
     checkAborted(options.signal);
     const unavailableBefore = await syncForPublish(staging, options.internalDurabilityPort);
@@ -907,6 +916,7 @@ export async function createControlledBackupSnapshot(
         .catch(() => false)
     )
       throw fail('ALREADY_EXISTS');
+    stage('SWITCHING');
     await rename(staging.path, destination);
     published = true;
     try {
@@ -929,21 +939,25 @@ export async function createControlledBackupSnapshot(
       } catch {
         unavailable = true;
       }
-      return Object.freeze({
+      const result = Object.freeze({
         backupName: name,
         durability: unavailable ? 'DIRECTORY_SYNC_UNAVAILABLE' : 'SYNC_REQUESTS_COMPLETED',
         manifestSha256: manifestSha256(serialized),
         operationId,
         totals: manifest.totals,
       });
+      stage('SUCCESS');
+      return result;
     } catch {
-      return Object.freeze({
+      const result = Object.freeze({
         backupName: name,
         durability: 'PUBLISHED_DURABILITY_UNKNOWN',
         manifestSha256: manifestSha256(serialized),
         operationId,
         totals: manifest.totals,
       });
+      stage('SUCCESS');
+      return result;
     }
   } catch (error) {
     if (!published && staging !== undefined) {

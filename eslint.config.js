@@ -10,6 +10,7 @@ export default tseslint.config(
       '**/.vite/**',
       '**/node_modules/**',
       '**/out/**',
+      '.rednote-temp/**',
       '**/*.tsbuildinfo',
       'docs/governance/codex-master-development-instruction-v1.md',
       'docs/product/xiaohongshu-development-roadmap-v1.md',
