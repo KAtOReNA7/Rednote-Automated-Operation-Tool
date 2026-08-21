@@ -751,7 +751,7 @@ export class V2DesktopRuntime {
       stage: 'PREFLIGHT',
       summary:
         operation === 'BACKUP'
-          ? '本机将创建受控备份；确认前未写入备份目录。'
+          ? '预检已创建并清理临时写入探针；仅在确认后创建受控备份。'
           : `已核对 ${restore?.backupFileCount ?? 0} 个备份文件；恢复将替换当前本地数据。`,
     });
   }
