@@ -15,6 +15,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, join, relative, resolve } from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 
 import {
@@ -229,11 +230,12 @@ async function waitForReport(outputPath) {
   throw new Error('INSTALLER_LIFECYCLE_SMOKE_REPORT_TIMEOUT');
 }
 
-function waitForExit(child) {
+export function waitForExit(child, timeout = 35_000) {
+  if (child.exitCode !== null) return Promise.resolve(child.exitCode);
   return new Promise((resolveExit, rejectExit) => {
     const timer = setTimeout(
       () => rejectExit(new Error('INSTALLER_LIFECYCLE_SMOKE_EXIT_TIMEOUT')),
-      35_000,
+      timeout,
     );
     child.once('error', (error) => {
       clearTimeout(timer);
@@ -262,7 +264,6 @@ async function launchSmoke(executable, workspace, reportRoot, version) {
       windowsHide: true,
     },
   );
-  const exit = waitForExit(child);
   const report = await waitForReport(outputPath);
   if (
     report.ok !== true ||
@@ -274,23 +275,71 @@ async function launchSmoke(executable, workspace, reportRoot, version) {
     report.security?.externalRequestAttempts !== 0
   )
     throw new Error('INSTALLER_LIFECYCLE_INSTALLED_SMOKE_INVALID');
-  return { child, exit };
+  return { child, exit: waitForExit(child) };
 }
 
-function launchRunning(executable) {
-  const child = spawn(executable, [], {
+export function createRunningProcess(child, awaitExit = waitForExit) {
+  let spawnError;
+  child.once('error', (error) => {
+    spawnError = error;
+  });
+  return {
+    child,
+    get spawnError() {
+      return spawnError;
+    },
+    awaitExit,
+  };
+}
+
+export function launchRunning(executable, arguments_ = []) {
+  const child = spawn(executable, arguments_, {
     cwd: dirname(executable),
     env: { ...process.env, ELECTRON_RUN_AS_NODE: undefined, NODE_OPTIONS: undefined },
     stdio: ['ignore', 'ignore', 'ignore'],
     windowsHide: true,
   });
-  return { child, exit: waitForExit(child) };
+  return createRunningProcess(child);
 }
 
-async function stopRunning(running) {
-  if (running.child.exitCode === null && !running.child.kill())
-    throw new Error('INSTALLER_LIFECYCLE_RUNNING_APP_STOP_FAILED');
-  await running.exit;
+export async function stopRunning(running) {
+  if (running.spawnError !== undefined) throw running.spawnError;
+  if (running.child.exitCode !== null) return running.child.exitCode;
+  // The owned app is intentionally persistent. Its bounded exit wait begins only
+  // when this harness explicitly requests its shutdown.
+  if (!running.child.kill()) throw new Error('INSTALLER_LIFECYCLE_RUNNING_APP_STOP_FAILED');
+  return running.awaitExit(running.child);
+}
+
+async function withRunningApplication(
+  executable,
+  readState,
+  version,
+  readyStage,
+  closedStage,
+  action,
+) {
+  const running = launchRunning(executable);
+  let primaryError;
+  let cleanupError;
+  try {
+    await converge(readyStage, readState, (state) => runningInstalled(state, version));
+    if (running.spawnError !== undefined) throw running.spawnError;
+    await action();
+  } catch (error) {
+    primaryError = error;
+  } finally {
+    try {
+      await stopRunning(running);
+      await converge(closedStage, readState, (state) => installed(state, version));
+    } catch (error) {
+      cleanupError = error;
+      if (primaryError !== undefined)
+        log(closedStage, performance.now(), { cleanup: 'failed' }, 'failed');
+    }
+  }
+  if (primaryError !== undefined) throw primaryError;
+  if (cleanupError !== undefined) throw cleanupError;
 }
 
 async function createDataRecord(workspace) {
@@ -401,38 +450,34 @@ async function main() {
     if ((await first.exit) !== 0) throw new Error('INSTALLER_LIFECYCLE_BETA0_SMOKE_FAILED');
     const data = await createDataRecord(workspace);
 
-    const upgradeRunning = launchRunning(executable);
-    await converge('L04-running-upgrade-app-ready', readState, (state) =>
-      runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
-    );
-    try {
-      if ((await invoke(beta1Installer, ['/S'], canonicalBundle)) === 0)
-        throw new Error('INSTALLER_LIFECYCLE_RUNNING_UPGRADE_NOT_BLOCKED');
-      await converge('L04-running-upgrade-block', readState, (state) =>
-        runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
-      );
-    } finally {
-      await stopRunning(upgradeRunning);
-    }
-    await converge('L04-running-upgrade-app-closed', readState, (state) =>
-      installed(state, WINDOWS_CI_FIXTURE_VERSION),
+    await withRunningApplication(
+      executable,
+      readState,
+      WINDOWS_CI_FIXTURE_VERSION,
+      'L04-running-upgrade-app-ready',
+      'L04-running-upgrade-app-closed',
+      async () => {
+        if ((await invoke(beta1Installer, ['/S'], canonicalBundle)) === 0)
+          throw new Error('INSTALLER_LIFECYCLE_RUNNING_UPGRADE_NOT_BLOCKED');
+        await converge('L04-running-upgrade-block', readState, (state) =>
+          runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
+        );
+      },
     );
 
-    const uninstallRunning = launchRunning(executable);
-    await converge('L04-running-uninstall-app-ready', readState, (state) =>
-      runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
-    );
-    try {
-      if ((await invoke(uninstaller(), ['/S'], target)) === 0)
-        throw new Error('INSTALLER_LIFECYCLE_RUNNING_UNINSTALL_NOT_BLOCKED');
-      await converge('L04-running-uninstall-block', readState, (state) =>
-        runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
-      );
-    } finally {
-      await stopRunning(uninstallRunning);
-    }
-    await converge('L04-running-uninstall-app-closed', readState, (state) =>
-      installed(state, WINDOWS_CI_FIXTURE_VERSION),
+    await withRunningApplication(
+      executable,
+      readState,
+      WINDOWS_CI_FIXTURE_VERSION,
+      'L04-running-uninstall-app-ready',
+      'L04-running-uninstall-app-closed',
+      async () => {
+        if ((await invoke(uninstaller(), ['/S'], target)) === 0)
+          throw new Error('INSTALLER_LIFECYCLE_RUNNING_UNINSTALL_NOT_BLOCKED');
+        await converge('L04-running-uninstall-block', readState, (state) =>
+          runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
+        );
+      },
     );
 
     const corrupt = join(lifecycleRoot, 'corrupt-beta1.exe');
@@ -514,5 +559,7 @@ async function cleanup() {
   await removeOwned(temporaryDirectory, 'ci-temp-cleanup');
 }
 
-if (process.argv.includes('--cleanup-ci-temp')) await cleanup();
-else await main();
+if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv.includes('--cleanup-ci-temp')) await cleanup();
+  else await main();
+}

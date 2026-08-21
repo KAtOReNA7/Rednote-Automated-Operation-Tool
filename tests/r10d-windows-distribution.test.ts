@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -43,6 +44,18 @@ interface DistributionContract {
   ) => Promise<{ readonly files: readonly { readonly path: string }[] }>;
 }
 
+interface LifecycleProcessContract {
+  readonly createRunningProcess: (
+    child: EventEmitter & { exitCode: number | null },
+    awaitExit?: (child: EventEmitter & { exitCode: number | null }) => Promise<number | null>,
+  ) => unknown;
+  readonly stopRunning: (running: unknown) => Promise<number | null>;
+  readonly waitForExit: (
+    child: EventEmitter & { exitCode: number | null },
+    timeout?: number,
+  ) => Promise<number | null>;
+}
+
 const run = promisify(execFile);
 
 async function loadContract(): Promise<DistributionContract> {
@@ -51,7 +64,48 @@ async function loadContract(): Promise<DistributionContract> {
   )) as DistributionContract;
 }
 
+async function loadLifecycleProcessContract(): Promise<LifecycleProcessContract> {
+  return (await import(
+    pathToFileURL(join(process.cwd(), 'scripts/run-installer-lifecycle-smoke.mjs')).href
+  )) as LifecycleProcessContract;
+}
+
 describe('R10D Windows distribution contracts', () => {
+  it('only arms the owned running-app exit wait after the harness requests shutdown', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    const child = new EventEmitter() as EventEmitter & {
+      exitCode: number | null;
+      kill: () => boolean;
+    };
+    child.exitCode = null;
+    let waits = 0;
+    let killed = false;
+    child.kill = () => {
+      expect(waits).toBe(0);
+      killed = true;
+      child.exitCode = 0;
+      return true;
+    };
+    const running = lifecycle.createRunningProcess(child, async () => {
+      waits += 1;
+      return 0;
+    });
+
+    expect(waits).toBe(0);
+    await expect(lifecycle.stopRunning(running)).resolves.toBe(0);
+    expect(killed).toBe(true);
+    expect(waits).toBe(1);
+  });
+
+  it('keeps automatic smoke exit waiting bounded', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    const child = new EventEmitter() as EventEmitter & { exitCode: number | null };
+    child.exitCode = null;
+    await expect(lifecycle.waitForExit(child, 1)).rejects.toThrow(
+      'INSTALLER_LIFECYCLE_SMOKE_EXIT_TIMEOUT',
+    );
+  });
+
   it('uses one beta version, fixed app identity, per-user NSIS and no publish/update configuration', async () => {
     const root = process.cwd();
     const packageJson = JSON.parse(await readFile(join(root, 'package.json'), 'utf8')) as {
