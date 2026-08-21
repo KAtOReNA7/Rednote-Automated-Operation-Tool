@@ -150,8 +150,11 @@ export interface V2CatalogWorkDetail extends V2CatalogWorkSummary {
   readonly sourceBoundary: 'MISSING' | 'UNVERIFIED_OBSERVATIONS';
 }
 
-export type V2MaintenanceOutcome = 'IDLE' | 'ROLLBACK' | 'SAFETY_UNPROVEN' | 'SUCCESS';
+export type V2MaintenanceOutcome =
+  'CANCELLED' | 'FAILED' | 'IDLE' | 'ROLLBACK' | 'SAFETY_UNPROVEN' | 'SUCCESS';
 export type V2MaintenanceStage =
+  | 'CANCELLED'
+  | 'FAILED'
   | 'IDLE'
   | 'PREFLIGHT'
   | 'BUILDING_STAGING'
@@ -161,12 +164,22 @@ export type V2MaintenanceStage =
   | 'ROLLBACK'
   | 'SAFETY_UNPROVEN';
 
+export type V2MaintenancePrecondition = 'FAILED' | 'NOT_CHECKED' | 'PASSED';
+
+export interface V2MaintenanceBackupPreconditions {
+  readonly directory: V2MaintenancePrecondition;
+  readonly maintenanceLock: V2MaintenancePrecondition;
+  readonly space: V2MaintenancePrecondition;
+  readonly write: V2MaintenancePrecondition;
+}
+
 export interface V2MaintenanceDirectorySelection {
   readonly displayLabel: string;
   readonly token: string;
 }
 
 export interface V2MaintenancePreview {
+  readonly backupPreconditions: V2MaintenanceBackupPreconditions | null;
   readonly canConfirm: boolean;
   readonly confirmationToken: string | null;
   readonly fileCount: number | null;
@@ -176,9 +189,19 @@ export interface V2MaintenancePreview {
 }
 
 export interface V2MaintenanceView {
+  readonly backupDurability:
+    | 'DIRECTORY_SYNC_UNAVAILABLE'
+    | 'PUBLISHED_DURABILITY_UNKNOWN'
+    | 'SYNC_REQUESTS_COMPLETED'
+    | null;
   readonly backupDirectory: V2MaintenanceDirectorySelection | null;
   readonly backupOutcome: V2MaintenanceOutcome;
+  readonly backupPreconditions: V2MaintenanceBackupPreconditions;
   readonly backupStage: V2MaintenanceStage;
+  readonly cancelRequested: boolean;
+  readonly canCancel: boolean;
+  readonly maintenanceLocked: boolean;
+  readonly operation: 'BACKUP' | 'RESTORE' | null;
   readonly restoreDirectory: V2MaintenanceDirectorySelection | null;
   readonly restoreOutcome: V2MaintenanceOutcome;
   readonly restoreStage: V2MaintenanceStage;
@@ -318,6 +341,7 @@ export type V2ReadRequest =
   | InteractionReadRequest;
 
 export type V2MutationRequest =
+  | { readonly action: 'CANCEL_CONTROLLED_MAINTENANCE' }
   | { readonly action: 'SELECT_BACKUP_DIRECTORY' }
   | { readonly action: 'SELECT_RESTORE_DIRECTORY' }
   | { readonly action: 'PREVIEW_CONTROLLED_BACKUP'; readonly directoryToken: string }
@@ -489,6 +513,7 @@ export interface V2Bridge {
     readonly confirmation: 'RESTORE_CONTROLLED_BACKUP';
     readonly confirmationToken: string;
   }) => Promise<V2Result<V2MaintenanceView>>;
+  readonly cancelControlledMaintenance?: () => Promise<V2Result<V2MaintenanceView>>;
   readonly confirmReplySuggestions: InteractionCall<
     'CONFIRM_REPLY_SUGGESTIONS',
     InteractionWorkspace
@@ -1175,6 +1200,8 @@ export function parseV2ReadRequest(value: unknown): V2ReadRequest {
 export function parseV2MutationRequest(value: unknown): V2MutationRequest {
   assertRequestSize(value);
   if (!isRecord(value)) throw new V2ContractError('INVALID_REQUEST');
+  if (value.action === 'CANCEL_CONTROLLED_MAINTENANCE' && exactKeys(value, ['action']))
+    return { action: value.action };
   if (
     (value.action === 'SELECT_BACKUP_DIRECTORY' || value.action === 'SELECT_RESTORE_DIRECTORY') &&
     exactKeys(value, ['action'])
@@ -1752,7 +1779,8 @@ export class V2ApplicationFacade {
       request.action === 'PREVIEW_CONTROLLED_BACKUP' ||
       request.action === 'PREVIEW_CONTROLLED_RESTORE' ||
       request.action === 'CONFIRM_CONTROLLED_BACKUP' ||
-      request.action === 'CONFIRM_CONTROLLED_RESTORE'
+      request.action === 'CONFIRM_CONTROLLED_RESTORE' ||
+      request.action === 'CANCEL_CONTROLLED_MAINTENANCE'
     )
       throw new V2ContractError('INVALID_REQUEST');
     if (

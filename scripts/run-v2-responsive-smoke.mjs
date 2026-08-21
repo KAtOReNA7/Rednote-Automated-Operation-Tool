@@ -580,6 +580,73 @@ async function measureRoute(client, sessionId, route, selector) {
   };
 }
 
+async function measureMaintenanceSettings(client, sessionId) {
+  await navigate(client, sessionId, 'settings', routeSelectors.settings);
+  const opened = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const target = [...document.querySelectorAll('.v2-settings-section-nav button')]
+        .find((element) => element.textContent?.trim() === '本地备份与恢复');
+      if (!(target instanceof HTMLButtonElement)) return false;
+      target.click();
+      return true;
+    })()`,
+  );
+  assert(opened, 'R10B maintenance settings control was not found.');
+  await waitFor(
+    () =>
+      evaluate(client, sessionId, `document.querySelector('.v2-maintenance-settings') !== null`),
+    'R10B maintenance settings',
+  );
+  const measurement = await evaluate(
+    client,
+    sessionId,
+    `(() => {
+      const card = document.querySelector('.v2-maintenance-settings');
+      const start = [...(card?.querySelectorAll('button') ?? [])]
+        .find((element) => element.textContent?.trim() === '开始创建备份');
+      const restore = [...(card?.querySelectorAll('button') ?? [])]
+        .find((element) => element.textContent?.trim() === '查看恢复确认');
+      if (!(card instanceof HTMLElement) || !(start instanceof HTMLButtonElement) || !(restore instanceof HTMLButtonElement)) return null;
+      const cardRect = card.getBoundingClientRect();
+      const controls = [start, restore].map((element) => {
+        const rect = element.getBoundingClientRect();
+        return { bottom: rect.bottom, left: rect.left, right: rect.right, top: rect.top };
+      });
+      return {
+        cardRight: cardRect.right,
+        controls,
+        overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+        startDisabled: start.disabled,
+        viewportHeight: window.innerHeight,
+        viewportWidth: window.innerWidth,
+      };
+    })()`,
+  );
+  assert(measurement !== null, 'R10B maintenance controls were not measurable.');
+  assert(measurement.overflow === 0, 'R10B maintenance settings introduced horizontal overflow.');
+  assert(
+    measurement.cardRight <= measurement.viewportWidth + 1,
+    'R10B maintenance card exceeds viewport width.',
+  );
+  assert(
+    measurement.startDisabled === true,
+    'R10B backup start is enabled before all preconditions pass.',
+  );
+  assert(
+    measurement.controls.every(
+      (control) =>
+        control.left >= -1 &&
+        control.right <= measurement.viewportWidth + 1 &&
+        control.bottom > 0 &&
+        control.top < measurement.viewportHeight,
+    ),
+    'R10B maintenance primary controls are not fully visible.',
+  );
+  return measurement;
+}
+
 async function captureViewport(client, sessionId, path) {
   const { data } = await client.send(
     'Page.captureScreenshot',
@@ -2233,6 +2300,18 @@ try {
     }
   }
 
+  const maintenanceResponsive = [];
+  for (const viewport of [
+    { height: 800, width: 1280 },
+    { height: 900, width: 1440 },
+  ]) {
+    await resizeViewport(client, sessionId, viewport);
+    maintenanceResponsive.push({
+      viewport,
+      ...(await measureMaintenanceSettings(client, sessionId)),
+    });
+  }
+
   if (evidenceDirectory !== null && evidenceScenario === 'base') {
     await resizeViewport(client, sessionId, { height: 900, width: 1440 });
     await captureAdvancedSettings(
@@ -2410,6 +2489,7 @@ try {
       dynamic,
       externalBusinessConnections: 0,
       interactionStates,
+      maintenanceResponsive,
       matrix: measurements,
       navigationTransition: {
         immediate: summarizeNavigationState(transitionImmediate),

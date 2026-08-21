@@ -91,6 +91,7 @@ export type {
   ControlledBackupDatabaseAdapter,
   ControlledBackupDatabaseVerifier,
   ControlledBackupResult,
+  ControlledBackupStage,
   ControlledBackupVerification,
   CreateControlledBackupOptions,
   VerifyControlledBackupOptions,

@@ -125,6 +125,46 @@ function restoreNames() {
   };
 }
 
+async function waitForMaintenance(
+  runtime: {
+    read(
+      input: unknown,
+      caller: { readonly senderId: number; readonly windowId: number },
+    ): Promise<unknown>;
+  },
+  caller: { readonly senderId: number; readonly windowId: number },
+): Promise<{ readonly restoreOutcome: string }> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const state = (await runtime.read({ view: 'MAINTENANCE' }, caller)) as {
+      readonly restoreOutcome: string;
+    };
+    if (state.restoreOutcome !== 'IDLE') return state;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('maintenance operation did not settle');
+}
+
+async function waitForBackupMaintenance(
+  runtime: {
+    read(
+      input: unknown,
+      caller: { readonly senderId: number; readonly windowId: number },
+    ): Promise<unknown>;
+  },
+  caller: { readonly senderId: number; readonly windowId: number },
+): Promise<{ readonly backupOutcome: string }> {
+  const deadline = Date.now() + 5_000;
+  while (Date.now() < deadline) {
+    const state = (await runtime.read({ view: 'MAINTENANCE' }, caller)) as {
+      readonly backupOutcome: string;
+    };
+    if (state.backupOutcome !== 'IDLE') return state;
+    await new Promise<void>((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error('backup maintenance operation did not settle');
+}
+
 function writeRecoveryJournal(
   value: Context,
   phase: 'BUILDING_STAGING' | 'PROTECTED' | 'SWITCHED' | 'ROLLED_BACK' | 'SUCCESS',
@@ -478,7 +518,7 @@ describe('R10B controlled restore', () => {
         { action: 'PREVIEW_CONTROLLED_RESTORE', directoryToken: selection.token },
         caller,
       )) as { readonly confirmationToken: string };
-      const confirmation = runtime.mutate(
+      const confirmation = await runtime.mutate(
         {
           action: 'CONFIRM_CONTROLLED_RESTORE',
           confirmation: 'RESTORE_CONTROLLED_BACKUP',
@@ -486,12 +526,173 @@ describe('R10B controlled restore', () => {
         },
         caller,
       );
+      expect(confirmation).toMatchObject({ operation: 'RESTORE', restoreOutcome: 'IDLE' });
       await expect(runtime.read({ view: 'ACCOUNT_PERSONA' }, caller)).rejects.toMatchObject({
         code: 'PERSISTENCE_UNAVAILABLE',
       });
-      await expect(confirmation).resolves.toMatchObject({ restoreOutcome: 'SUCCESS' });
+      await expect(waitForMaintenance(runtime, caller)).resolves.toMatchObject({
+        restoreOutcome: 'SUCCESS',
+      });
       await expect(runtime.read({ view: 'ACCOUNT_PERSONA' }, caller)).resolves.toMatchObject({
         revision: 0,
+      });
+    } finally {
+      runtime.close();
+    }
+  }, 20_000);
+
+  it('reports all backup preconditions, isolates the operation, and only accepts safe cancellation', async () => {
+    const value = await context();
+    const managed = await value.repository.putBuffer(Buffer.alloc(12 * 1024 * 1024, 1), {
+      category: 'SOURCE_SNAPSHOT',
+      displayName: 'synthetic-large-copy.bin',
+    });
+    value.database
+      .prepare(
+        `INSERT INTO sources(id,url,title,source_tier,source_type,retrieved_at,content_hash,local_snapshot_path,language)
+         VALUES(?,?,?,?,?,?,?,?,?)`,
+      )
+      .run(
+        'r10b-maintenance-source',
+        'https://example.invalid/r10b-maintenance',
+        'Synthetic maintenance source',
+        'SYNTHETIC',
+        'WEB',
+        '2026-08-21T04:05:06.789Z',
+        'b'.repeat(64),
+        managed.managedPath,
+        'zh-CN',
+      );
+    value.database.close();
+    openDatabases.delete(value.database);
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const runtime = await V2DesktopRuntime.openProject(value.root, {
+      appVersion: '0.0.0',
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      buildCommit: BUILD_COMMIT,
+      maintenancePicker: {
+        select: async () => ({
+          displayLabel: 'synthetic backup destination',
+          path: value.backupRoot,
+        }),
+      },
+    });
+    const caller = { senderId: 17, windowId: 19 };
+    const otherCaller = { senderId: 23, windowId: 29 };
+    try {
+      const selected = (await runtime.mutate({ action: 'SELECT_BACKUP_DIRECTORY' }, caller)) as {
+        readonly backupDirectory: { readonly token: string } | null;
+      };
+      if (selected.backupDirectory === null) throw new Error('missing synthetic backup selection');
+      const preview = (await runtime.mutate(
+        { action: 'PREVIEW_CONTROLLED_BACKUP', directoryToken: selected.backupDirectory.token },
+        caller,
+      )) as {
+        readonly backupPreconditions: Readonly<Record<string, string>> | null;
+        readonly confirmationToken: string;
+      };
+      expect(preview.backupPreconditions).toEqual({
+        directory: 'PASSED',
+        maintenanceLock: 'PASSED',
+        space: 'PASSED',
+        write: 'PASSED',
+      });
+      const started = await runtime.mutate(
+        {
+          action: 'CONFIRM_CONTROLLED_BACKUP',
+          confirmation: 'CREATE_CONTROLLED_BACKUP',
+          confirmationToken: preview.confirmationToken,
+        },
+        caller,
+      );
+      expect(started).toMatchObject({ backupOutcome: 'IDLE', operation: 'BACKUP' });
+      await expect(runtime.read({ view: 'MAINTENANCE' }, otherCaller)).resolves.toMatchObject({
+        maintenanceLocked: true,
+        operation: null,
+      });
+      await expect(
+        runtime.mutate({ action: 'CANCEL_CONTROLLED_MAINTENANCE' }, caller),
+      ).resolves.toMatchObject({ cancelRequested: true });
+      await expect(waitForBackupMaintenance(runtime, caller)).resolves.toMatchObject({
+        backupOutcome: 'CANCELLED',
+      });
+    } finally {
+      runtime.close();
+    }
+  }, 20_000);
+
+  it('binds backup selection and confirmation leases to one caller without allowing hostile consumption', async () => {
+    const value = await context();
+    value.database.close();
+    openDatabases.delete(value.database);
+    const { V2DesktopRuntime } = await import('../apps/desktop/src/v2-runtime.js');
+    const runtime = await V2DesktopRuntime.openProject(value.root, {
+      appVersion: '0.0.0',
+      assetsDirectory: resolve('apps/web-ui/src/v2/assets/content'),
+      buildCommit: BUILD_COMMIT,
+      maintenancePicker: {
+        select: async () => ({
+          displayLabel: 'synthetic backup destination',
+          path: value.backupRoot,
+        }),
+      },
+    });
+    const caller = { senderId: 37, windowId: 41 };
+    const otherCaller = { senderId: 43, windowId: 47 };
+    try {
+      const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000);
+      const expiring = (await runtime.mutate({ action: 'SELECT_BACKUP_DIRECTORY' }, caller)) as {
+        readonly backupDirectory: { readonly token: string } | null;
+      };
+      if (expiring.backupDirectory === null) throw new Error('missing expiring backup selection');
+      clock.mockReturnValue(121_001);
+      await expect(
+        runtime.mutate(
+          { action: 'PREVIEW_CONTROLLED_BACKUP', directoryToken: expiring.backupDirectory.token },
+          caller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      clock.mockRestore();
+
+      const selected = (await runtime.mutate({ action: 'SELECT_BACKUP_DIRECTORY' }, caller)) as {
+        readonly backupDirectory: { readonly token: string } | null;
+      };
+      if (selected.backupDirectory === null) throw new Error('missing backup selection');
+      await expect(
+        runtime.mutate(
+          { action: 'PREVIEW_CONTROLLED_BACKUP', directoryToken: selected.backupDirectory.token },
+          otherCaller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      const preview = (await runtime.mutate(
+        { action: 'PREVIEW_CONTROLLED_BACKUP', directoryToken: selected.backupDirectory.token },
+        caller,
+      )) as { readonly confirmationToken: string };
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_CONTROLLED_BACKUP',
+            confirmation: 'CREATE_CONTROLLED_BACKUP',
+            confirmationToken: preview.confirmationToken,
+          },
+          otherCaller,
+        ),
+      ).rejects.toMatchObject({ code: 'INVALID_REQUEST' });
+      await expect(
+        runtime.mutate(
+          {
+            action: 'CONFIRM_CONTROLLED_BACKUP',
+            confirmation: 'CREATE_CONTROLLED_BACKUP',
+            confirmationToken: preview.confirmationToken,
+          },
+          caller,
+        ),
+      ).resolves.toMatchObject({ operation: 'BACKUP' });
+      await expect(
+        runtime.mutate({ action: 'CANCEL_CONTROLLED_MAINTENANCE' }, caller),
+      ).resolves.toMatchObject({ cancelRequested: true });
+      await expect(waitForBackupMaintenance(runtime, caller)).resolves.toMatchObject({
+        backupOutcome: 'CANCELLED',
       });
     } finally {
       runtime.close();

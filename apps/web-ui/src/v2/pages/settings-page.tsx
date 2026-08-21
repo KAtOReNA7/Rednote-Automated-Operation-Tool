@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 
-import { Button, Icon, PageHeader, useV2Controller } from '../components.js';
+import { Button, Icon, PageHeader, useDialog, useV2Controller } from '../components.js';
 
 type MaintenanceBridge = NonNullable<typeof window.rednoteV2>;
 type ReadMaintenance = NonNullable<MaintenanceBridge['readMaintenance']>;
@@ -53,13 +54,46 @@ const settingsSections = [
   ['maintenance', 'v2-maintenance', '本地备份与恢复'],
 ] as const;
 
+const maintenanceStageLabel = {
+  BUILDING_STAGING: '写入受控暂存区',
+  CANCELLED: '已在安全检查点取消',
+  FAILED: '未能完成本地维护操作',
+  IDLE: '等待开始',
+  PREFLIGHT: '复核维护前置条件',
+  ROLLBACK: '已安全回滚',
+  SAFETY_UNPROVEN: '无法证明数据安全',
+  SUCCESS: '已完成验证',
+  SWITCHING: '原子切换本地数据',
+  VERIFYING: '校验 manifest 与结果',
+} as const;
+
+const preconditionLabel = {
+  FAILED: '未通过',
+  NOT_CHECKED: '待检查',
+  PASSED: '已通过',
+} as const;
+
 function MaintenanceSettings(): React.JSX.Element {
   const { notify } = useV2Controller();
   const [view, setView] = useState<V2MaintenanceView | null>(null);
   const [backupPreview, setBackupPreview] = useState<V2MaintenancePreview | null>(null);
   const [restorePreview, setRestorePreview] = useState<V2MaintenancePreview | null>(null);
+  const [restoreDialogOpen, setRestoreDialogOpen] = useState(false);
   const [restoreChecked, setRestoreChecked] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [returnFocus, setReturnFocus] = useState<HTMLElement | null>(null);
+  const backupPreflightRef = useRef<HTMLDivElement>(null);
+  const closeRestoreDialog = useCallback((): void => {
+    setRestoreChecked(false);
+    setRestoreDialogOpen(false);
+  }, []);
+  const restoreDialogRef = useDialog(restoreDialogOpen, closeRestoreDialog, returnFocus);
+  useEffect(() => {
+    if (!restoreDialogOpen) return;
+    restoreDialogRef.current
+      ?.querySelector<HTMLElement>('[data-maintenance-cancel]')
+      ?.focus({ preventScroll: true });
+  }, [restoreDialogOpen, restoreDialogRef]);
   const load = async (): Promise<void> => {
     const result = await window.rednoteV2?.readMaintenance?.();
     if (result === undefined) return notify('本地维护桥接不可用。');
@@ -69,6 +103,29 @@ function MaintenanceSettings(): React.JSX.Element {
   useEffect(() => {
     void load();
   }, []);
+  useEffect(() => {
+    if (backupPreview?.backupPreconditions !== null)
+      backupPreflightRef.current?.focus({ preventScroll: true });
+  }, [backupPreview]);
+  const activeOutcome =
+    view?.operation === 'BACKUP' ? view.backupOutcome : (view?.restoreOutcome ?? 'IDLE');
+  const activeStage =
+    view?.operation === 'BACKUP' ? view.backupStage : (view?.restoreStage ?? 'IDLE');
+  const running = view !== null && view.operation !== null && activeOutcome === 'IDLE';
+  useEffect(() => {
+    if (!running) return undefined;
+    let mounted = true;
+    const poll = async (): Promise<void> => {
+      const result = await window.rednoteV2?.readMaintenance?.();
+      if (mounted && result?.ok === true) setView(result.value);
+    };
+    void poll();
+    const timer = window.setInterval(() => void poll(), 900);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
+  }, [running]);
   const select = async (operation: 'BACKUP' | 'RESTORE'): Promise<void> => {
     setBusy(true);
     try {
@@ -79,20 +136,21 @@ function MaintenanceSettings(): React.JSX.Element {
       if (result === undefined) return notify('本地目录选择不可用。');
       if (!result.ok) return notify(result.error.message);
       setView(result.value);
+      const token =
+        operation === 'BACKUP'
+          ? result.value.backupDirectory?.token
+          : result.value.restoreDirectory?.token;
       if (operation === 'BACKUP') setBackupPreview(null);
       else {
         setRestorePreview(null);
         setRestoreChecked(false);
       }
+      if (token !== undefined) await preview(operation, token);
     } finally {
       setBusy(false);
     }
   };
-  const preview = async (operation: 'BACKUP' | 'RESTORE'): Promise<void> => {
-    const token =
-      operation === 'BACKUP' ? view?.backupDirectory?.token : view?.restoreDirectory?.token;
-    if (token === undefined) return notify('请先选择文件夹。');
-    setBusy(true);
+  const preview = async (operation: 'BACKUP' | 'RESTORE', token: string): Promise<void> => {
     try {
       const result =
         operation === 'BACKUP'
@@ -102,8 +160,8 @@ function MaintenanceSettings(): React.JSX.Element {
       if (!result.ok) return notify(result.error.message);
       if (operation === 'BACKUP') setBackupPreview(result.value);
       else setRestorePreview(result.value);
-    } finally {
-      setBusy(false);
+    } catch {
+      notify('本地预检未能完成，请重新选择目录后再试。');
     }
   };
   const confirm = async (operation: 'BACKUP' | 'RESTORE'): Promise<void> => {
@@ -127,87 +185,242 @@ function MaintenanceSettings(): React.JSX.Element {
       if (operation === 'BACKUP') setBackupPreview(null);
       else {
         setRestorePreview(null);
-        setRestoreChecked(false);
+        closeRestoreDialog();
       }
-      notify(operation === 'BACKUP' ? '受控备份已完成。' : '恢复已结束；请确认显示的本地结果。');
+      notify(
+        operation === 'BACKUP'
+          ? '受控备份已开始；正在显示真实阶段。'
+          : '恢复已开始；本地数据已锁定。',
+      );
     } finally {
       setBusy(false);
     }
   };
+  const requestCancellation = async (): Promise<void> => {
+    const result = await window.rednoteV2?.cancelControlledMaintenance?.();
+    if (result === undefined) return notify('本地取消桥接不可用。');
+    if (!result.ok) return notify(result.error.message);
+    setView(result.value);
+    if (!result.value.canCancel && !result.value.cancelRequested)
+      notify('当前阶段不可中断；系统会继续保持本地维护锁。');
+  };
+  const backupReady = backupPreview?.canConfirm === true && !view?.maintenanceLocked;
+  const restoreReady = restorePreview?.canConfirm === true && !view?.maintenanceLocked;
+  const disabled = busy || running || view?.maintenanceLocked === true;
+  const result =
+    activeOutcome === 'IDLE'
+      ? null
+      : view?.operation === 'BACKUP'
+        ? activeOutcome === 'SUCCESS'
+          ? {
+              detail:
+                view.backupDurability === 'SYNC_REQUESTS_COMPLETED'
+                  ? '备份已发布，文件与目录同步请求已完成。'
+                  : view.backupDurability === 'DIRECTORY_SYNC_UNAVAILABLE'
+                    ? '备份已发布；目录同步能力不可用，物理断电级持久性未声明。'
+                    : '备份已发布；发布后的持久性无法完全证明。',
+              title: '备份已创建',
+              tone: 'success',
+            }
+          : activeOutcome === 'CANCELLED'
+            ? {
+                detail: '取消只在核心安全检查点生效；未发布备份。',
+                title: '备份已取消',
+                tone: 'warning',
+              }
+            : {
+                detail: '未生成可确认的备份结果；系统没有将失败写成成功。',
+                title: '备份未创建',
+                tone: 'danger',
+              }
+        : activeOutcome === 'SUCCESS'
+          ? {
+              detail: '恢复结果已校验；旧根目录保护副本仍被保留。',
+              title: '恢复完成',
+              tone: 'success',
+            }
+          : activeOutcome === 'ROLLBACK'
+            ? {
+                detail: '恢复未完成，旧数据已安全回滚。',
+                title: '恢复失败，已安全回滚',
+                tone: 'warning',
+              }
+            : activeOutcome === 'SAFETY_UNPROVEN'
+              ? {
+                  detail: '停止使用当前数据；应用保持本地数据动作闭锁。',
+                  title: '无法证明数据安全',
+                  tone: 'danger',
+                }
+              : activeOutcome === 'CANCELLED'
+                ? {
+                    detail: '取消在切换前的安全检查点生效，当前数据未被替换。',
+                    title: '恢复已取消',
+                    tone: 'warning',
+                  }
+                : {
+                    detail: '恢复没有完成；请重新执行只读预检。',
+                    title: '恢复未完成',
+                    tone: 'danger',
+                  };
   return (
     <section className="v2-card v2-settings v2-maintenance-settings" id="v2-maintenance">
       <div className="v2-settings-title">
         <Icon name="file-text" size={24} />
         <div>
-          <h2>本地备份与恢复</h2>
-          <p>目录由本机选择器保存为短期授权；页面不会显示或传递实际路径。</p>
+          <h2>
+            {running
+              ? `正在${view?.operation === 'BACKUP' ? '创建本地备份' : '恢复本地数据'}`
+              : '本地备份与恢复'}
+          </h2>
+          <p>目录授权、文件系统与 SQLite 操作只在本机主进程处理；页面不显示实际路径。</p>
         </div>
       </div>
+      {running ? (
+        <section
+          aria-live="polite"
+          aria-label="维护执行状态"
+          className="v2-maintenance-running"
+          role="status"
+        >
+          <div>
+            <p className="v2-kicker">本地维护执行中</p>
+            <h3>正在{view?.operation === 'BACKUP' ? '创建备份' : '验证并恢复'}</h3>
+            <p>当前阶段：{maintenanceStageLabel[activeStage]}</p>
+            <p className="v2-maintenance-stage-list">
+              只显示核心已确认的阶段；不显示百分比、剩余时间或模拟进度。
+            </p>
+            <Button disabled={!view?.canCancel} onClick={() => void requestCancellation()}>
+              {view?.cancelRequested ? '已请求安全取消' : '请求在安全检查点取消'}
+            </Button>
+            <p className="v2-maintenance-hint">
+              {view?.canCancel
+                ? '取消仅在安全检查点生效。'
+                : '当前处于不可中断阶段；取消不会伪装为已完成。'}
+            </p>
+          </div>
+          <aside aria-label="执行锁定说明">
+            <h3>执行期间已锁定</h3>
+            <p>维护完成前，普通数据操作保持关闭；关闭应用不会被记作成功。</p>
+          </aside>
+        </section>
+      ) : null}
       <section aria-label="创建备份" className="v2-provider-section">
-        <h3>创建受控备份</h3>
-        <p>{view?.backupDirectory?.displayLabel ?? '尚未选择保存文件夹'}</p>
+        <h3>备份范围与位置</h3>
+        <p>{view?.backupDirectory?.displayLabel ?? '尚未选择本地目录'}</p>
         <div className="v2-inline-actions">
-          <Button disabled={busy} onClick={() => void select('BACKUP')}>
-            选择文件夹
+          <Button disabled={disabled} onClick={() => void select('BACKUP')}>
+            选择本地目录
           </Button>
           <Button
-            disabled={busy || view?.backupDirectory === null || view === null}
-            onClick={() => void preview('BACKUP')}
-          >
-            运行预检
-          </Button>
-          <Button
-            disabled={busy || backupPreview?.canConfirm !== true}
+            disabled={disabled || !backupReady}
             onClick={() => void confirm('BACKUP')}
             tone="primary"
           >
-            确认创建备份
+            开始创建备份
           </Button>
         </div>
-        {backupPreview === null ? null : <p role="status">{backupPreview.summary}</p>}
+        <div
+          className="v2-maintenance-preflight"
+          data-ready={backupReady}
+          ref={backupPreflightRef}
+          tabIndex={-1}
+        >
+          <strong>{backupReady ? '目录与预检已通过' : '等待本地预检'}</strong>
+          <p>目录、空间、维护锁和写入能力必须全部通过；凭据不会被复制。</p>
+          <ul aria-label="备份执行前检查">
+            <li>目录：{preconditionLabel[view?.backupPreconditions.directory ?? 'NOT_CHECKED']}</li>
+            <li>磁盘空间：{preconditionLabel[view?.backupPreconditions.space ?? 'NOT_CHECKED']}</li>
+            <li>
+              维护锁：
+              {preconditionLabel[view?.backupPreconditions.maintenanceLock ?? 'NOT_CHECKED']}
+            </li>
+            <li>写入能力：{preconditionLabel[view?.backupPreconditions.write ?? 'NOT_CHECKED']}</li>
+          </ul>
+          {backupPreview === null ? null : <p role="status">{backupPreview.summary}</p>}
+        </div>
       </section>
       <section aria-label="恢复本地备份" className="v2-provider-section">
-        <h3>恢复本地备份</h3>
+        <h3>恢复预检</h3>
         <p>{view?.restoreDirectory?.displayLabel ?? '尚未选择备份文件夹'}</p>
         <div className="v2-inline-actions">
-          <Button disabled={busy} onClick={() => void select('RESTORE')}>
+          <Button disabled={disabled} onClick={() => void select('RESTORE')}>
             选择备份文件夹
           </Button>
           <Button
-            disabled={busy || view?.restoreDirectory === null || view === null}
-            onClick={() => void preview('RESTORE')}
+            disabled={disabled || !restoreReady}
+            onClick={(event) => {
+              setReturnFocus(event.currentTarget);
+              setRestoreChecked(false);
+              setRestoreDialogOpen(true);
+            }}
+            tone="primary"
           >
-            运行恢复预检
+            查看恢复确认
           </Button>
         </div>
-        {restorePreview === null ? null : (
-          <>
-            <p role="status">{restorePreview.summary}</p>
-            <label className="v2-checkbox-row">
-              <input
-                checked={restoreChecked}
-                onChange={(event) => setRestoreChecked(event.target.checked)}
-                type="checkbox"
-              />
-              我理解恢复会替换当前本地数据，且只能在预检通过后继续。
-            </label>
-            <Button
-              disabled={busy || !restoreChecked || !restorePreview.canConfirm}
-              onClick={() => void confirm('RESTORE')}
-              tone="primary"
-            >
-              确认恢复本地备份
-            </Button>
-          </>
-        )}
+        {restorePreview === null ? null : <p role="status">{restorePreview.summary}</p>}
       </section>
-      {view?.restoreOutcome === 'SAFETY_UNPROVEN' ? (
-        <p role="alert">恢复安全状态无法证明，项目数据保持关闭。</p>
-      ) : null}
-      {view?.restoreOutcome === 'ROLLBACK' ? <p role="alert">恢复未完成，旧数据已回滚。</p> : null}
-      {view?.restoreOutcome === 'SUCCESS' ? (
-        <p role="status">恢复成功，旧根目录保护副本仍被保留。</p>
-      ) : null}
+      {result === null ? null : (
+        <section
+          className={`v2-maintenance-result v2-maintenance-result--${result.tone}`}
+          role={result.tone === 'danger' ? 'alert' : 'status'}
+        >
+          <h3>{result.title}</h3>
+          <p>{result.detail}</p>
+        </section>
+      )}
+      {restoreDialogOpen && restorePreview !== null
+        ? createPortal(
+            <div
+              className="v2-overlay v2-maintenance-overlay"
+              onMouseDown={closeRestoreDialog}
+              role="presentation"
+            >
+              <div
+                aria-describedby="v2-maintenance-restore-description"
+                aria-labelledby="v2-maintenance-restore-title"
+                aria-modal="true"
+                className="v2-modal v2-maintenance-confirm-dialog"
+                onMouseDown={(event) => event.stopPropagation()}
+                ref={restoreDialogRef}
+                role="dialog"
+              >
+                <div className="v2-overlay-head">
+                  <div>
+                    <p className="v2-kicker">破坏性本地操作</p>
+                    <h2 id="v2-maintenance-restore-title">恢复将替换当前本地数据</h2>
+                    <p id="v2-maintenance-restore-description">
+                      预检已核对受控备份；恢复会先保护当前数据，再在本地执行验证与原子切换。
+                    </p>
+                  </div>
+                </div>
+                <div className="v2-maintenance-confirm-body">
+                  <label className="v2-checkbox-row">
+                    <input
+                      checked={restoreChecked}
+                      onChange={(event) => setRestoreChecked(event.target.checked)}
+                      type="checkbox"
+                    />
+                    我已理解：恢复会替换当前本地数据。
+                  </label>
+                </div>
+                <div className="v2-provider-preview-actions">
+                  <Button data-maintenance-cancel onClick={closeRestoreDialog}>
+                    取消，返回预检
+                  </Button>
+                  <Button
+                    disabled={busy || !restoreChecked || !restorePreview.canConfirm}
+                    onClick={() => void confirm('RESTORE')}
+                    tone="primary"
+                  >
+                    确认恢复本地备份
+                  </Button>
+                </div>
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </section>
   );
 }

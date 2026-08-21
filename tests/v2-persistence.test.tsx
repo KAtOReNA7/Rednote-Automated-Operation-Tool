@@ -34,6 +34,8 @@ import {
   type AccountPersonaFields,
   type PlanReschedulePreview,
   type V2Bridge,
+  type V2MaintenancePreview,
+  type V2MaintenanceView,
   type V2Result,
   type WeeklyPlan,
 } from '../packages/v2/src/index.js';
@@ -715,6 +717,7 @@ describe('V2 Electron boundary', () => {
     expect(Object.keys(exposed).sort()).toEqual([
       'adoptPlanItemReplacement',
       'approveContentPackages',
+      'cancelControlledMaintenance',
       'clearProviderCredential',
       'confirmControlledBackup',
       'confirmControlledRestore',
@@ -785,6 +788,7 @@ describe('V2 Electron boundary', () => {
       confirmation: 'RESTORE_CONTROLLED_BACKUP',
       confirmationToken: 'd'.repeat(24),
     });
+    await exposed.cancelControlledMaintenance?.();
     const readCatalogWork = exposed.readCatalogWork;
     const readCatalogWorks = exposed.readCatalogWorks;
     if (readCatalogWork === undefined || readCatalogWorks === undefined) {
@@ -904,6 +908,143 @@ describe('V2 Electron boundary', () => {
 });
 
 describe('V2 renderer persistence wiring', () => {
+  it('uses the real restore preflight, destructive confirmation dialog, and running maintenance view', async () => {
+    const databasePath = createTemporaryDatabasePath('r10b maintenance renderer');
+    await initializeDatabase({ databasePath });
+    const database = connectDatabase(databasePath);
+    const facade = new V2ApplicationFacade(new SqliteV2Repository(database));
+    const preconditions = {
+      directory: 'PASSED',
+      maintenanceLock: 'PASSED',
+      space: 'PASSED',
+      write: 'PASSED',
+    } as const;
+    let maintenance: V2MaintenanceView = {
+      backupDirectory: null,
+      backupDurability: null,
+      backupOutcome: 'IDLE',
+      backupPreconditions: preconditions,
+      backupStage: 'IDLE',
+      cancelRequested: false,
+      canCancel: false,
+      maintenanceLocked: false,
+      operation: null,
+      restoreDirectory: null,
+      restoreOutcome: 'IDLE',
+      restoreStage: 'IDLE',
+    };
+    const restorePreview: V2MaintenancePreview = {
+      backupPreconditions: null,
+      canConfirm: true,
+      confirmationToken: 'r'.repeat(24),
+      fileCount: 3,
+      operation: 'RESTORE',
+      stage: 'PREFLIGHT',
+      summary: '已核对 3 个备份文件；恢复将替换当前本地数据。',
+    };
+    const bridge: V2Bridge = {
+      ...bridgeFor(facade),
+      confirmControlledRestore: async () => {
+        maintenance = {
+          ...maintenance,
+          canCancel: true,
+          operation: 'RESTORE',
+          restoreOutcome: 'IDLE',
+          restoreStage: 'BUILDING_STAGING',
+        };
+        return success(maintenance);
+      },
+      previewControlledRestore: async () => success(restorePreview),
+      readMaintenance: async () => success(maintenance),
+      selectRestoreDirectory: async () => {
+        maintenance = {
+          ...maintenance,
+          restoreDirectory: { displayLabel: '已选择恢复备份文件夹', token: 's'.repeat(24) },
+        };
+        return success(maintenance);
+      },
+    };
+    const clearIntervalSpy = vi.spyOn(window, 'clearInterval');
+    try {
+      exposeBridge(bridge);
+      window.history.replaceState(null, '', '/v2.html#/v2/settings');
+      const user = userEvent.setup();
+      const rendered = render(<V2App />);
+      await user.click(await screen.findByRole('button', { name: '本地备份与恢复' }));
+      await user.click(screen.getByRole('button', { name: '选择备份文件夹' }));
+      await screen.findByText('已核对 3 个备份文件；恢复将替换当前本地数据。');
+      const trigger = screen.getByRole('button', { name: '查看恢复确认' });
+      await user.click(trigger);
+      const dialog = await screen.findByRole('dialog', { name: '恢复将替换当前本地数据' });
+      const cancel = screen.getByRole('button', { name: '取消，返回预检' });
+      expect(cancel).toHaveFocus();
+      const confirm = screen.getByRole('button', { name: '确认恢复本地备份' });
+      expect(confirm).toBeDisabled();
+      await user.click(
+        screen.getByRole('checkbox', { name: '我已理解：恢复会替换当前本地数据。' }),
+      );
+      expect(confirm).toBeEnabled();
+      await user.keyboard('{Escape}');
+      expect(dialog).not.toBeInTheDocument();
+      expect(trigger).toHaveFocus();
+      await user.click(trigger);
+      await user.click(
+        screen.getByRole('checkbox', { name: '我已理解：恢复会替换当前本地数据。' }),
+      );
+      await user.click(screen.getByRole('button', { name: '确认恢复本地备份' }));
+      expect(await screen.findByText('正在验证并恢复')).toBeVisible();
+      expect(document.body.textContent).not.toContain(databasePath);
+      rendered.unmount();
+      expect(clearIntervalSpy).toHaveBeenCalled();
+    } finally {
+      clearIntervalSpy.mockRestore();
+      database.close();
+    }
+  });
+
+  it.each([
+    ['SUCCESS', '恢复完成', '恢复失败，已安全回滚'],
+    ['ROLLBACK', '恢复失败，已安全回滚', '恢复完成'],
+    ['SAFETY_UNPROVEN', '无法证明数据安全', '恢复完成'],
+  ] as const)('renders only the %s restore result variant', async (outcome, title, absentTitle) => {
+    const databasePath = createTemporaryDatabasePath(`r10b result ${outcome}`);
+    await initializeDatabase({ databasePath });
+    const database = connectDatabase(databasePath);
+    const facade = new V2ApplicationFacade(new SqliteV2Repository(database));
+    const maintenance: V2MaintenanceView = {
+      backupDirectory: null,
+      backupDurability: null,
+      backupOutcome: 'IDLE',
+      backupPreconditions: {
+        directory: 'PASSED',
+        maintenanceLock: 'PASSED',
+        space: 'PASSED',
+        write: 'PASSED',
+      },
+      backupStage: 'IDLE',
+      cancelRequested: false,
+      canCancel: false,
+      maintenanceLocked: outcome === 'SAFETY_UNPROVEN',
+      operation: 'RESTORE',
+      restoreDirectory: null,
+      restoreOutcome: outcome,
+      restoreStage: outcome,
+    };
+    try {
+      exposeBridge({ ...bridgeFor(facade), readMaintenance: async () => success(maintenance) });
+      window.history.replaceState(null, '', '/v2.html#/v2/settings');
+      const user = userEvent.setup();
+      const rendered = render(<V2App />);
+      await user.click(await screen.findByRole('button', { name: '本地备份与恢复' }));
+      expect(await screen.findByText(title)).toBeVisible();
+      expect(screen.queryByText(absentTitle)).not.toBeInTheDocument();
+      expect(document.body.textContent).not.toContain(databasePath);
+      rendered.unmount();
+    } finally {
+      database.close();
+    }
+  });
+
   it('saves existing persona and weekly-plan controls and restores them after reopening', async () => {
     const databasePath = createTemporaryDatabasePath('v2 renderer');
     await initializeDatabase({ databasePath });

@@ -37,7 +37,7 @@ M2（Issue 012—021）已完成。
 - [Issue 026：正文事实声明映射、证据回溯与事实质量检查](./m3/M3-Issue026-factual-claim-mapping-Codex-instruction.txt)
 
 M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的表述不是当前实施状态，且不得自动
-开始。R10A 与 R10B1A—R10B1C 已完成并进入 `main`；R10B 完整受控备份与恢复在当前 Draft PR 中等待审阅。R10C 脱敏诊断、
+开始。R10A 与 R10B1A—R10B1C 已完成并进入 `main`；R10B 完整受控备份与恢复已在 Draft PR #26 实现并等待审阅。R10C 脱敏诊断、
 R10D Windows 安装/升级/卸载和 R10E Release Candidate 尚未开始，后续均等待独立决策与授权。范围见
 [`../product/v2-r10-release-readiness-scope.md`](../product/v2-r10-release-readiness-scope.md)。
 

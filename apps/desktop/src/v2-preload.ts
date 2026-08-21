@@ -63,6 +63,8 @@ const bridge: V2Bridge = Object.freeze({
     readonly confirmation: 'RESTORE_CONTROLLED_BACKUP';
     readonly confirmationToken: string;
   }) => invoke<V2MaintenanceView>('mutate', { action: 'CONFIRM_CONTROLLED_RESTORE', ...input }),
+  cancelControlledMaintenance: () =>
+    invoke<V2MaintenanceView>('mutate', { action: 'CANCEL_CONTROLLED_MAINTENANCE' }),
   confirmReplySuggestions: (input: Parameters<V2Bridge['confirmReplySuggestions']>[0]) =>
     invoke<InteractionWorkspace>('mutate', { action: 'CONFIRM_REPLY_SUGGESTIONS', ...input }),
   createInteraction: (input: Parameters<V2Bridge['createInteraction']>[0]) =>

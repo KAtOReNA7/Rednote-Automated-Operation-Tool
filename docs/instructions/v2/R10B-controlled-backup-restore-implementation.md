@@ -1,6 +1,6 @@
 # R10B controlled backup and restore implementation plan
 
-Status: implementation in progress; no acceptance item below is pre-filled as passing.
+Status: implementation ready for review; Draft PR #26, not merged.
 
 ## Actual baseline and boundaries
 
@@ -59,23 +59,27 @@ fails closed before mutation.
 
 ## Acceptance map
 
-| #   | Required evidence                                                                        | Planned location              | Status  |
-| --- | ---------------------------------------------------------------------------------------- | ----------------------------- | ------- |
-| 1   | Native picker lease and four backup preconditions                                        | V2 IPC/runtime tests          | PENDING |
-| 2   | B1 snapshot runs through V2 adapter and verifies                                         | storage/runtime integration   | PENDING |
-| 3   | Snapshot excludes credentials, cache content, paths and unreferenced files               | storage regression            | PENDING |
-| 4   | Real stages map cancellation/failure/durability without false success                    | storage/runtime tests         | PENDING |
-| 5   | Lease replay, expiry, sender mismatch, links and TOCTOU fail closed                      | V2 IPC tests                  | PENDING |
-| 6   | Read-only preflight checks manifest, files and SQLite identity                           | restore-core tests            | PENDING |
-| 7   | Exact-version policy blocks downgrade, future and unknown policy                         | restore-core tests            | PENDING |
-| 8   | Capacity, maintenance, root identity, protection and cross-volume checks block pre-write | restore-core tests            | PENDING |
-| 9   | Confirmation binds preview/root revision and expires on change                           | V2 runtime tests              | PENDING |
-| 10  | Candidate staging verifies before protected-root switch                                  | restore fault-injection tests | PENDING |
-| 11  | Pre-switch cancellation cleans only owned staging; post-switch cancellation is deferred  | restore fault-injection tests | PENDING |
-| 12  | Startup journal recovery proves success/rollback or closes data as safety-unproven       | startup recovery tests        | PENDING |
-| 13  | Result DTO/UI variants are mutually exclusive                                            | V2 renderer/runtime tests     | PENDING |
-| 14  | Cleanup verifies ownership and never deletes selected backup                             | restore-core tests            | PENDING |
-| 15  | Exactly two V2 channels and no sensitive public payload                                  | architecture/egress tests     | PENDING |
-| 16  | Frozen desktop/compact UI, focus, Esc, disabled/loading and live regions                 | renderer + isolated smoke     | PENDING |
-| 17  | R10C controls are unavailable with no route or handler                                   | renderer/architecture tests   | PENDING |
-| 18  | Docs, B1A--B1C and adjacent governance remain aligned at zero external cost              | final gate suite              | PENDING |
+| #   | Required evidence                                                                        | Verified evidence                                                                                                                              | Status |
+| --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------ |
+| 1   | Native picker lease and four backup preconditions                                        | `r10b-controlled-restore`: runtime reports all four facts; `r10b1c-backup-orchestration`: path, capacity and maintenance failures fail closed. | PASS   |
+| 2   | B1 snapshot runs through V2 adapter and verifies                                         | `r10b1c-backup-orchestration` creates a generated snapshot and verifies it read-only.                                                          | PASS   |
+| 3   | Snapshot excludes credentials, cache content, paths and unreferenced files               | `r10b1b-sqlite-inventory` excludes authorization/cache state; B1C excludes unreferenced cache and result paths.                                | PASS   |
+| 4   | Real stages map cancellation/failure/durability without false success                    | B1C cancellation/durability cases plus R10B runtime stage polling.                                                                             | PASS   |
+| 5   | Lease replay, expiry, sender mismatch, links and TOCTOU fail closed                      | `r10b-controlled-restore` binds/expires leases; B1C rejects links and invalid selected roots.                                                  | PASS   |
+| 6   | Read-only preflight checks manifest, files and SQLite identity                           | R10B restore preflight and B1C inventory/manifest verification tests.                                                                          | PASS   |
+| 7   | Exact-version policy blocks downgrade, future and unknown policy                         | `r10b-controlled-restore` blocks version mismatch before staging.                                                                              | PASS   |
+| 8   | Capacity, maintenance, root identity, protection and cross-volume checks block pre-write | R10B preview/execute capacity tests and B1C selected-root checks.                                                                              | PASS   |
+| 9   | Confirmation binds preview/root revision and expires on change                           | Runtime lease expiry, caller binding and confirmation revalidation tests.                                                                      | PASS   |
+| 10  | Candidate staging verifies before protected-root switch                                  | `rebuilds and verifies an isolated candidate before a same-parent protected switch`.                                                           | PASS   |
+| 11  | Pre-switch cancellation cleans only owned staging; post-switch cancellation is deferred  | R10B cancellation and B1C asynchronous copy-cancellation cases.                                                                                | PASS   |
+| 12  | Startup journal recovery proves success/rollback or closes data as safety-unproven       | R10B startup-journal, recovery and contradictory-topology cases.                                                                               | PASS   |
+| 13  | Result DTO/UI variants are mutually exclusive                                            | `v2-persistence` renders each restore result variant without its incompatible variant.                                                         | PASS   |
+| 14  | Cleanup verifies ownership and never deletes selected backup                             | B1C owned-staging canary test; R10B recovery cleanup cases.                                                                                    | PASS   |
+| 15  | Exactly two V2 channels and no sensitive public payload                                  | `v2-persistence` IPC/bridge tests and path-free public-failure case.                                                                           | PASS   |
+| 16  | Frozen desktop/compact UI, focus, Esc, disabled/loading and live regions                 | Figma nodes `115:79`, `117:79`--`117:247`, `129:89`, `130:111`, `131:97`, `133:79`, `134:79`; renderer and 1280/1440 isolated smoke.           | PASS   |
+| 17  | R10C controls are unavailable with no route or handler                                   | `forbidden-scope.architecture` and V2 route/IPC tests retain no R10C control surface.                                                          | PASS   |
+| 18  | Docs, B1A--B1C and adjacent governance remain aligned at zero external cost              | `repository-documentation`, R10B focused suites and repository constraints use synthetic local fixtures only.                                  | PASS   |
+
+Physical power-loss durability remains **UNKNOWN**: the result exposes only completed sync requests,
+directory-sync unavailability, or published durability unknown. It is not presented as a successful
+power-loss guarantee.
