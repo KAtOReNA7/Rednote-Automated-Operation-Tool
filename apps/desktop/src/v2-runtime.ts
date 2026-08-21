@@ -1268,6 +1268,7 @@ export class V2DesktopRuntime {
     return prepareControlledRestore({
       backupPath,
       database: this.#backupAdapter(),
+      policy: { allowedSourceAppVersions: ['0.0.0'] },
       root: this.#root,
       runtime: this.#restoreRuntimeIdentity(),
     }).catch(() => {

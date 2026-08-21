@@ -1,0 +1,21 @@
+appId: io.github.katorena7.rednote-mystery-operations
+productName: 红笺本地运营台
+directories:
+  output: out/installer
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  allowElevation: false
+  allowToChangeInstallationDirectory: false
+  artifactName: RednoteStudio-${version}-win-x64-setup.${ext}
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  deleteAppDataOnUninstall: false
+  differentialPackage: false
+  packElevateHelper: false
+  oneClick: true
+  perMachine: false
+  runAfterFinish: false

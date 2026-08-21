@@ -25,6 +25,7 @@ import { resolveDesktopRendererUrl, resolveDesktopShellSelection } from './shell
 import { registerV2Ipc, V2DesktopRuntime } from './v2-runtime.js';
 
 const APP_PROTOCOL = 'rednote';
+const WINDOWS_APPLICATION_ID = 'io.github.katorena7.rednote-mystery-operations';
 const isSmokeMode = process.argv.includes('--issue006-smoke');
 const shellSelection = resolveDesktopShellSelection(process.argv);
 const isV2ShellMode = shellSelection.mode === 'v2';
@@ -161,6 +162,8 @@ protocol.registerSchemesAsPrivileged([
     scheme: APP_PROTOCOL,
   },
 ]);
+
+if (process.platform === 'win32') app.setAppUserModelId(WINDOWS_APPLICATION_ID);
 
 if (smokeWorkspacePath !== null) {
   const isolatedUserData = join(smokeWorkspacePath, 'userData 中文 空格');

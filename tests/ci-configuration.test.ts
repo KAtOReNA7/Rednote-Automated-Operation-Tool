@@ -57,9 +57,17 @@ describe('Windows CI configuration', () => {
       'npm run package:clipper',
       'npm run test:packaged-smoke',
       'npm run audit:dependencies',
+      'npm run test:installer-lifecycle',
     ]) {
       expect(runCommands).toContain(command);
     }
+  });
+
+  it('builds and uploads only an exact-head R10D installer artifact', () => {
+    expect(workflowSource).toContain('npm run package:installer');
+    expect(workflowSource).toContain('rednote-r10d-windows-installer-$shortSha');
+    expect(workflowSource).toContain('out/installer-bundle/');
+    expect(workflowSource).toContain('retention-days: 14');
   });
 
   it('does not schedule overlapping specialized Vitest selectors before the full suite', () => {

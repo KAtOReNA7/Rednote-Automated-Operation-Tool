@@ -11,7 +11,7 @@ jobs:
   windows-required:
     name: Windows required
     runs-on: windows-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
@@ -75,7 +75,21 @@ jobs:
       - name: Audit dependencies
         run: npm run audit:dependencies
 
-      - name: Prepare exact-head V2-R08 artifact name
+      - name: Compare two semantic R10D installer builds
+        env:
+          REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        shell: pwsh
+        run: |
+          npm run package:installer
+          Copy-Item -LiteralPath out\installer -Destination out\installer-repro-a -Recurse
+          node scripts/package-installer.mjs
+          Copy-Item -LiteralPath out\installer -Destination out\installer-repro-b -Recurse
+          node scripts/compare-r10d-installer-samples.mjs out\installer-repro-a out\installer-repro-b
+
+      - name: Run isolated R10D installer lifecycle
+        run: npm run test:installer-lifecycle
+
+      - name: Prepare exact-head R10D installer artifact name
         if: github.event_name == 'pull_request'
         env:
           REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
@@ -84,14 +98,14 @@ jobs:
           $exactHeadSha = [System.Environment]::GetEnvironmentVariable('REDNOTE_EXACT_HEAD_SHA')
           $environmentFile = [System.Environment]::GetEnvironmentVariable('GITHUB_ENV')
           $shortSha = $exactHeadSha.Substring(0, 8)
-          "V2_ARTIFACT_NAME=rednote-v2-r08-windows-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "R10D_ARTIFACT_NAME=rednote-r10d-windows-installer-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
 
-      - name: Upload exact-head V2 Windows experience directory
+      - name: Upload exact-head R10D Windows installer bundle
         if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.V2_ARTIFACT_NAME }}
-          path: out/*-win32-x64/
+          name: ${{ env.R10D_ARTIFACT_NAME }}
+          path: out/installer-bundle/
           if-no-files-found: error
           retention-days: 14
 

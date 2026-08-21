@@ -46,6 +46,7 @@ M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的�
 - [R10A：发布准备范围合同](./v2/V2-R10A-release-scope-contract-Codex-instruction.txt)
 - [R10B：受控备份与恢复实施与验收映射](./v2/R10B-controlled-backup-restore-implementation.md)
 - [R10C：受控本地诊断实施与验收映射](./v2/R10C-local-diagnostics-implementation.md)
+- [R10D：Windows 分发、安装、升级与卸载实施/验收](./v2/R10D-windows-distribution-implementation.md)
 
 ## Governance
 

@@ -74,7 +74,7 @@ export interface ControlledRestorePreflight {
   readonly backupCreatedAt: string;
   readonly backupFileCount: number;
   readonly backupSizeBytes: number;
-  readonly compatibility: 'EXACT';
+  readonly compatibility: 'EXACT' | 'EXPLICIT';
   readonly manifestSha256: string;
   readonly liveRootIdentity: Readonly<{ readonly dev: number; readonly ino: number }>;
   readonly liveRootParentIdentity: Readonly<{ readonly dev: number; readonly ino: number }>;
@@ -447,14 +447,16 @@ async function assertRestoreCapacity(
   }
 }
 
-function assertExactCompatibility(
+function resolveCompatibility(
   manifest: BackupManifestV1,
   root: ProjectDataRoot,
   runtime: ControlledRestoreRuntimeIdentity,
   policy: ControlledRestoreCompatibilityPolicy | undefined,
-): void {
+): 'EXACT' | 'EXPLICIT' {
   const source = manifest.source;
-  const explicitlyAllowed = policy?.allowedSourceAppVersions?.includes(source.appVersion) === true;
+  const explicitlyAllowed =
+    runtime.appVersion === '0.1.0-beta.1' &&
+    policy?.allowedSourceAppVersions?.includes(source.appVersion) === true;
   if (
     manifest.compatibilityPolicyVersion !== 1 ||
     source.dataRootFormat !== 'rednote-project-data' ||
@@ -465,6 +467,7 @@ function assertExactCompatibility(
     (source.appVersion !== runtime.appVersion && !explicitlyAllowed)
   )
     throw fail('COMPATIBILITY_BLOCKED');
+  return source.appVersion === runtime.appVersion ? 'EXACT' : 'EXPLICIT';
 }
 
 function journalText(value: RestoreJournalV1): string {
@@ -609,7 +612,12 @@ export async function prepareControlledRestore(
       ? fail('INTEGRITY_FAILED')
       : stable(error, 'INTEGRITY_FAILED');
   });
-  assertExactCompatibility(verified.manifest, options.root, options.runtime, options.policy);
+  const compatibility = resolveCompatibility(
+    verified.manifest,
+    options.root,
+    options.runtime,
+    options.policy,
+  );
   const liveRoot = await checkedDirectory(options.root.rootPath);
   const liveRootParent = await checkedDirectory(dirname(liveRoot.path));
   await assertRestoreCapacity(
@@ -621,7 +629,7 @@ export async function prepareControlledRestore(
     backupCreatedAt: verified.manifest.createdAt,
     backupFileCount: verified.manifest.totals.fileCount,
     backupSizeBytes: verified.manifest.totals.sizeBytes,
-    compatibility: 'EXACT',
+    compatibility,
     manifestSha256: verified.manifestSha256,
     liveRootIdentity: liveRoot.identity,
     liveRootParentIdentity: liveRootParent.identity,
@@ -678,7 +686,11 @@ export async function executeControlledRestore(
       ...(options.signal === undefined ? {} : { signal: options.signal }),
     });
     if (verified.manifestSha256 !== options.preflight.manifestSha256) throw fail('PREVIEW_INVALID');
-    assertExactCompatibility(verified.manifest, options.root, options.runtime, options.policy);
+    if (
+      resolveCompatibility(verified.manifest, options.root, options.runtime, options.policy) !==
+      options.preflight.compatibility
+    )
+      throw fail('PREVIEW_INVALID');
     const candidate = await createCandidateRoot(stagingPath, options.root);
     await copyManifestPayload(options.backupPath, candidate, verified.manifest, options.signal);
     await verifyCandidateRoot(candidate, verified.manifest, options.database);
