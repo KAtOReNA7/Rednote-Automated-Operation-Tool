@@ -1327,6 +1327,230 @@
   }
 }
 
+/* Web W2 uses the accepted V2 visual primitives while keeping every panel shrinkable. */
+.web-import-strip,
+.web-library-tools,
+.web-metric-form,
+.web-settings-main,
+.web-inspector,
+.web-list-rail,
+.web-work-area {
+  min-width: 0;
+  padding: 20px;
+}
+
+.web-import-strip {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(110px, 0.35fr) minmax(180px, 0.65fr) minmax(260px, 1.5fr) auto;
+}
+
+.web-grow {
+  min-width: 0;
+}
+
+.web-three-column {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(210px, 0.65fr) minmax(360px, 1.5fr) minmax(220px, 0.75fr);
+  min-width: 0;
+}
+
+.web-list-rail,
+.web-work-area,
+.web-inspector,
+.web-action-stack {
+  align-content: start;
+  display: grid;
+  gap: 12px;
+}
+
+.web-list-rail > button,
+.web-library-grid > button {
+  background: transparent;
+  border: 1px solid var(--v2-line);
+  border-radius: 12px;
+  color: inherit;
+  cursor: pointer;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  padding: 12px;
+  text-align: left;
+}
+
+.web-list-rail > button[aria-pressed='true'],
+.web-library-grid > button[aria-pressed='true'] {
+  border-color: var(--v2-red);
+  box-shadow: 0 0 0 2px rgb(184 59 59 / 10%);
+}
+
+.web-list-rail > button > span:not(.v2-status) {
+  color: var(--v2-muted);
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.web-work-area blockquote {
+  background: #faf8f7;
+  border-left: 3px solid var(--v2-red);
+  margin: 0;
+  padding: 14px;
+}
+
+.web-action-row {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+}
+
+.web-library-tools {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(240px, 1fr) auto;
+}
+
+.web-file-button {
+  cursor: pointer;
+}
+
+.web-file-button input {
+  height: 1px;
+  opacity: 0;
+  position: absolute;
+  width: 1px;
+}
+
+.web-library-layout {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(230px, 0.34fr);
+  min-width: 0;
+}
+
+.web-library-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  min-width: 0;
+}
+
+.web-cover-placeholder {
+  align-items: end;
+  aspect-ratio: 4 / 5;
+  background: linear-gradient(145deg, #2f2a36, #7d3233);
+  border-radius: 12px;
+  color: white;
+  display: flex;
+  font-weight: 700;
+  padding: 14px;
+}
+
+.web-window-select {
+  min-width: 210px;
+}
+
+.web-metric-form {
+  display: grid;
+  gap: 16px;
+}
+
+.web-metric-grid,
+.web-kpi-grid,
+.web-two-column {
+  display: grid;
+  gap: 12px;
+}
+
+.web-metric-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.web-kpi-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
+
+.web-kpi-grid > article {
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+}
+
+.web-kpi-grid span {
+  color: var(--v2-muted);
+}
+
+.web-kpi-grid strong {
+  font-size: 28px;
+}
+
+.web-recommendation {
+  border-top: 1px solid var(--v2-line);
+  padding: 12px 0;
+}
+
+.web-settings-layout {
+  align-items: start;
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.35fr);
+  min-width: 0;
+}
+
+.web-settings-main {
+  display: grid;
+  gap: 14px;
+}
+
+.web-two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.web-settings-main hr {
+  border: 0;
+  border-top: 1px solid var(--v2-line);
+  margin: 4px 0;
+  width: 100%;
+}
+
+.web-preview ul {
+  color: #8f312e;
+  margin: 0;
+  padding-left: 20px;
+}
+
+@media (max-width: 1180px) {
+  .web-import-strip,
+  .web-three-column,
+  .web-library-layout,
+  .web-settings-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .web-library-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .web-kpi-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 800px) {
+  .web-library-grid,
+  .web-metric-grid,
+  .web-kpi-grid,
+  .web-two-column {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Web local-folder foundation reuses the frozen V2 visual system without Electron. */
 .web-connect-shell {
   align-items: center;

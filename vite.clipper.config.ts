@@ -8,9 +8,9 @@ export default defineConfig({
     outDir: '.vite/clipper',
     rollupOptions: {
       input: {
-        popup: fileURLToPath(new URL('./apps/clipper/src/popup.ts', import.meta.url)),
+        popup: fileURLToPath(new URL('./apps/clipper/src/web-export-popup.ts', import.meta.url)),
         'service-worker': fileURLToPath(
-          new URL('./apps/clipper/src/service-worker.ts', import.meta.url),
+          new URL('./apps/clipper/src/web-export-service-worker.ts', import.meta.url),
         ),
       },
       output: {
