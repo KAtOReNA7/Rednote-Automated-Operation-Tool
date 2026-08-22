@@ -2,7 +2,8 @@
 
 状态：Windows 10 `NOT_RUN`；Windows 11 `NOT_RUN`。本文件不得由 CI 或 Codex 预填 PASS。
 
-候选版本：`0.1.0-beta.1`  
+候选版本：`0.1.0-beta.1`
+
 候选 ZIP：`RednoteStudio-0.1.0-beta.1-r10e-rc.zip`
 
 ## 填写规则
