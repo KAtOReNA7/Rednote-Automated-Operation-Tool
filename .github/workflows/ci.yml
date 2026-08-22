@@ -54,6 +54,8 @@ jobs:
         env:
           REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: npm run build:web
+      - name: Build, package, and inspect Web Clipper artifact
+        run: npm run build:clipper
       - name: Run Chrome and Edge Web smoke
         run: npm run smoke:web-e2e
       - name: Audit dependencies
@@ -65,6 +67,7 @@ jobs:
           name: rednote-web-preview-${{ github.event.pull_request.head.sha }}
           path: |
             .vite/web/
+            out/clipper/
             .rednote-temp/web-e2e-report.json
           if-no-files-found: error
           retention-days: 14
