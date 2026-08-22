@@ -73,6 +73,9 @@ public static class Issue017KeyboardInput
     [DllImport("user32.dll")]
     public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr processId);
 
+    [DllImport("user32.dll", EntryPoint = "GetWindowThreadProcessId")]
+    private static extern uint GetWindowThreadProcessIdWithOwner(IntPtr hWnd, out uint processId);
+
     [DllImport("kernel32.dll")]
     public static extern uint GetCurrentThreadId();
 
@@ -127,6 +130,28 @@ public static class Issue017KeyboardInput
         return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
     }
 
+    public static uint GetWindowProcessId(IntPtr hWnd)
+    {
+        uint processId;
+        GetWindowThreadProcessIdWithOwner(hWnd, out processId);
+        return processId;
+    }
+
+    public static bool SendActionShortcut()
+    {
+        const uint keyUp = 0x0002;
+        Input[] inputs = new Input[]
+        {
+            Key(0x12, 0),
+            Key(0x10, 0),
+            Key(0x59, 0),
+            Key(0x59, keyUp),
+            Key(0x10, keyUp),
+            Key(0x12, keyUp)
+        };
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
+    }
+
     public static bool ClickPoint(int x, int y)
     {
         if (!SetCursorPos(x, y)) return false;
@@ -172,6 +197,19 @@ for ($attempt = 0; $attempt -lt 5; $attempt += 1) {
   if ([Issue017KeyboardInput]::GetForegroundWindow() -eq $browser.MainWindowHandle) {
     break
   }
+}
+$foregroundWindow = [Issue017KeyboardInput]::GetForegroundWindow()
+$foregroundOwnerProcessId = [Issue017KeyboardInput]::GetWindowProcessId($foregroundWindow)
+if ($foregroundOwnerProcessId -eq [uint32]$browser.Id) {
+  if (-not [Issue017KeyboardInput]::SendActionShortcut()) {
+    throw 'Windows did not accept the complete extension action shortcut.'
+  }
+  Start-Sleep -Milliseconds 500
+  [void][Issue017KeyboardInput]::AttachThreadInput($currentThread, $targetThread, $false)
+  if ($foregroundThread -ne 0 -and $foregroundThread -ne $targetThread) {
+    [void][Issue017KeyboardInput]::AttachThreadInput($currentThread, $foregroundThread, $false)
+  }
+  exit 0
 }
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes

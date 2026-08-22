@@ -100,6 +100,9 @@ describe('Windows CI configuration', () => {
       "throw 'The isolated browser window did not become the exact foreground target.'",
     );
     expect(clipperActionSource).toContain('SendForegroundUnlock()');
+    expect(clipperActionSource).toContain('GetWindowProcessId($foregroundWindow)');
+    expect(clipperActionSource).toContain('SendActionShortcut()');
+    expect(clipperActionSource).toContain('$foregroundOwnerProcessId -eq [uint32]$browser.Id');
     expect(clipperActionSource).toContain('$attempt -lt 5');
     expect(clipperActionSource).toMatch(
       /AutomationElement\]::FromHandle\(\r?\n\s+\$browser\.MainWindowHandle/u,
