@@ -23,12 +23,7 @@ const repositoryRoot = resolve(import.meta.dirname, '..');
 const fixtureBindHost = '127.0.0.1';
 const fixtureHostname = 'issue017-fixture.localhost';
 const temporaryRoot = join(repositoryRoot, '.rednote-temp', 'clipper-real-smoke');
-const evidencePath = join(
-  repositoryRoot,
-  'docs',
-  'evidence',
-  'm2-issue017-real-browser-smoke.json',
-);
+const evidencePath = join(repositoryRoot, 'out', 'clipper-real-smoke', 'evidence.json');
 const actionScript = join(repositoryRoot, 'scripts', 'trigger-clipper-action.ps1');
 const families = Object.freeze([
   {

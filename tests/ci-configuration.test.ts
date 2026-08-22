@@ -31,6 +31,10 @@ const clipperActionSource = readFileSync(
   resolve(repositoryRoot, 'scripts/trigger-clipper-action.ps1'),
   'utf8',
 );
+const clipperRealSmokeSource = readFileSync(
+  resolve(repositoryRoot, 'scripts/run-clipper-real-smoke.mjs'),
+  'utf8',
+);
 const workflow = parse(workflowSource) as Workflow;
 const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as {
   readonly scripts: Readonly<Record<string, string>>;
@@ -104,6 +108,10 @@ describe('Windows CI configuration', () => {
     expect(clipperActionSource).toContain('SendActionShortcut()');
     expect(clipperActionSource).toContain('$foregroundOwnerProcessId -eq [uint32]$browser.Id');
     expect(clipperActionSource).toContain('$attempt -lt 5');
+    expect(clipperRealSmokeSource).toContain(
+      "join(repositoryRoot, 'out', 'clipper-real-smoke', 'evidence.json')",
+    );
+    expect(clipperRealSmokeSource).not.toContain("'m2-issue017-real-browser-smoke.json'");
     expect(clipperActionSource).toMatch(
       /AutomationElement\]::FromHandle\(\r?\n\s+\$browser\.MainWindowHandle/u,
     );
