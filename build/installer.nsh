@@ -3,8 +3,8 @@
 !insertmacro un.VersionCompare
 
 !macro customCheckAppRunning
-  !insertmacro IS_POWERSHELL_AVAILABLE
-  !insertmacro FIND_PROCESS "${APP_EXECUTABLE_FILENAME}" $R0
+  nsProcess::FindProcess "${APP_EXECUTABLE_FILENAME}"
+  Pop $R0
   ${If} $R0 == 0
     SetErrorLevel 1603
     Abort

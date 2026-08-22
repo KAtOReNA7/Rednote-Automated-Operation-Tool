@@ -279,6 +279,9 @@ describe('R10D Windows distribution contracts', () => {
     expect(installerInclude).toContain('!insertmacro VersionCompare');
     expect(installerInclude).toContain('!insertmacro un.VersionCompare');
     expect(installerInclude).toContain('!macro customCheckAppRunning');
+    expect(installerInclude).toContain('nsProcess::FindProcess "${APP_EXECUTABLE_FILENAME}"');
+    expect(installerInclude).not.toContain('!insertmacro IS_POWERSHELL_AVAILABLE');
+    expect(installerInclude).not.toContain('!insertmacro FIND_PROCESS');
     expect(installerInclude).toContain('${VersionCompare}');
     const contract = await loadContract();
     expect(contract.WINDOWS_INSTALLER_GUID).toBe('93211c80-b79d-59cd-848c-fd9f791d6cc2');
