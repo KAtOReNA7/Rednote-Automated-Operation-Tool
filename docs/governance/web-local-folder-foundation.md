@@ -6,8 +6,9 @@
 ## 目标与边界
 
 Rednote Studio 的 Web 入口以用户明确选择的本地文件夹为业务数据唯一权威来源。浏览器
-IndexedDB 只保存可丢失的目录句柄、目录显示名和 workspace ID；清除站点数据后，重新选择同一
-目录必须恢复全部已提交的人设、活动周、计划、内容和版本。
+IndexedDB 只保存可丢失的目录句柄、目录显示名和 workspace ID；缓存写入失败不阻断已经连接的
+权威目录，只提示下次重新选择。清除站点数据后，重新选择同一目录必须恢复全部已提交的人设、
+活动周、计划、内容和版本。
 
 本阶段只迁移“连接目录 → 人设 → 周计划 → 内容”纵切和本地运行状态。互动、书库、复盘、正式
 Provider、Clipper、旧 SQLite 数据迁移和公开静态部署留待后续独立授权。Web 生产路径不依赖
@@ -57,7 +58,10 @@ RednoteData/
 4. 只有新 snapshot 完整有效后才替换 generation 对应的备用 index。
 5. 读取时校验两个 index，从最高 generation 开始验证 snapshot。最新损坏时回退上一有效状态并
    显示警告；两份都无效时不写磁盘并返回 `RECOVERY_FAILED`。
-6. 其他标签页只收到 generation 提醒，随后从权威目录重新读取；活动周或 epoch 已变化时丢弃旧
+6. 首次创建若在 manifest 后中断，只在固定 generation 1 材料可证明为全新默认状态时续接：缺失
+   snapshot 时沿用 manifest 身份重建，完整 snapshot 缺 index 时校验 identity/schema/hash 后只重建
+   index；畸形、身份冲突、未知状态或已有有效 generation 一律只读失败。
+7. 其他标签页只收到 generation 提醒，随后从权威目录重新读取；活动周或 epoch 已变化时丢弃旧
    async 结果。
 
 目录权限只在用户点击后请求。页面只显示目录名称与 workspace 短 ID，不显示绝对路径。Chrome/
@@ -71,7 +75,16 @@ preview token 与执行输入都绑定该值。切周原子提交并使旧 previ
 
 本地生成一次只接受 1—3 个不同、同周、已锁定且尚无内容包的候选。preview 绑定 week、plan
 revision、candidate IDs、repository generation 和 input hash；执行后 token 立即失效。该生成器是
-明确的零请求本地结构化草稿路径，不调用 Provider、Search、Fetch、图片或平台。
+明确的零请求本地结构化草稿路径，不调用 Provider、Search、Fetch、图片或平台。已有包编辑和
+下一批生成控件始终独立；选择、活动周或权威 generation 变化会在 UI 中明确失效旧 preview。
+
+## W1 战略纠正证据 C01—C14
+
+`tests/web-workflow.test.tsx` 通过真实可见控件连续生成 1、2、3 项，证明 21 项队列在已有包编辑和
+版本保存后仍可继续生成，并覆盖选择、generation、活动周变化后的 preview 失效、句柄缓存失败和
+权限拒绝。`tests/web-local-folder.test.ts` 覆盖 manifest/snapshot/index 两个初始化中断续接与畸形、
+身份冲突、未知状态的零新增写入 fail-closed；原 W04—W08 继续作为已提交 generation 回归。C14
+继续由 production artifact inspection 和 Chrome/Edge loopback smoke 证明。
 
 ## W01—W24 证据映射
 

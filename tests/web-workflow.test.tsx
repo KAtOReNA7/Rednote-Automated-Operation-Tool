@@ -1,13 +1,25 @@
 // @vitest-environment jsdom
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { userEvent } from '@testing-library/user-event';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { WebV2App, WebWorkspaceShell } from '../apps/web-ui/src/v2/web/web-app.js';
+import * as handleStore from '../apps/web-ui/src/v2/web/handle-store.js';
 import { BrowserWorkspaceRepository } from '../apps/web-ui/src/v2/web/repository.js';
 import { WebWorkspaceRuntime, weekInvariantFacts } from '../apps/web-ui/src/v2/web/runtime.js';
 import type { WebWorkspaceState } from '../apps/web-ui/src/v2/web/contracts.js';
 import { MemoryFolder, MemoryLock } from './support/web-folder-fixture.js';
+
+type HandleStoreModule = typeof handleStore;
+
+vi.mock('../apps/web-ui/src/v2/web/handle-store.js', async (importOriginal) => {
+  const actual = await importOriginal<HandleStoreModule>();
+  return {
+    ...actual,
+    loadWorkspaceHandle: vi.fn(),
+    saveWorkspaceHandle: vi.fn(),
+  };
+});
 
 const runtimes: WebWorkspaceRuntime[] = [];
 
@@ -31,8 +43,15 @@ async function lockActivePlan(value: WebWorkspaceRuntime): Promise<void> {
   await value.lockPlan();
 }
 
+beforeEach(() => {
+  vi.mocked(handleStore.loadWorkspaceHandle).mockResolvedValue(null);
+  vi.mocked(handleStore.saveWorkspaceHandle).mockResolvedValue(undefined);
+});
+
 afterEach(() => {
   for (const value of runtimes.splice(0)) value.close();
+  vi.restoreAllMocks();
+  Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: undefined });
   document.body.innerHTML = '';
   window.location.hash = '';
 });
@@ -231,17 +250,181 @@ describe('Web active-week and content vertical slice W09-W22', () => {
     expect(screen.queryByText(/模拟|mock/iu)).toBeNull();
   });
 
-  it('renders the real 21-item queue and keeps generation/package selections distinct', async () => {
-    const value = await runtime();
+  it('C01-C05/C07 completes three visible batches while package editing stays independent', async () => {
+    const folder = new MemoryFolder();
+    const value = await runtime(folder);
     await lockActivePlan(value);
     const user = userEvent.setup();
     render(<WebWorkspaceShell route="content" runtime={value} setRoute={() => undefined} />);
     expect(screen.getByRole('heading', { name: '内容' })).not.toBeNull();
     expect(screen.getAllByRole('checkbox')).toHaveLength(21);
+
     await user.click(screen.getAllByRole('checkbox')[0] as HTMLElement);
     expect(
       (screen.getByRole('button', { name: '预览本地生成（1/3）' }) as HTMLButtonElement).disabled,
     ).toBe(false);
+    await user.click(screen.getByRole('button', { name: '预览本地生成（1/3）' }));
+    await user.click(await screen.findByRole('button', { name: '确认并生成一次' }));
+    await waitFor(() =>
+      expect(value.queue().filter((item) => item.state === 'HAS_VERSION')).toHaveLength(1),
+    );
+    expect(screen.getAllByRole('checkbox')).toHaveLength(21);
+    expect(screen.getByRole('button', { name: '预览本地生成（0/3）' })).not.toBeNull();
+
+    await user.click(screen.getAllByRole('button', { name: '编辑' })[0] as HTMLElement);
+    const availableAfterFirst = screen
+      .getAllByRole('checkbox')
+      .filter((item) => !(item as HTMLInputElement).disabled);
+    await user.click(availableAfterFirst[0] as HTMLElement);
+    await user.click(screen.getByRole('button', { name: '预览本地生成（1/3）' }));
+    expect(await screen.findByRole('button', { name: '确认并生成一次' })).not.toBeNull();
+    await user.click(availableAfterFirst[1] as HTMLElement);
+    expect(screen.queryByRole('button', { name: '确认并生成一次' })).toBeNull();
+    expect(screen.getByText(/候选选择已变化，旧预览已失效/u)).not.toBeNull();
+    expect(screen.getByLabelText('标题')).not.toBeNull();
+    expect(screen.getByText('首次生成选择').parentElement?.textContent).toContain('2 项');
+    expect(screen.getByText('已有包选择').parentElement?.textContent).toContain('1 项');
+    await user.click(screen.getByRole('button', { name: '预览本地生成（2/3）' }));
+    await user.click(await screen.findByRole('button', { name: '确认并生成一次' }));
+    await waitFor(() =>
+      expect(value.queue().filter((item) => item.state === 'HAS_VERSION')).toHaveLength(3),
+    );
+
+    const first = value.queue().find((item) => item.package !== null)?.package;
+    if (first == null) throw new Error('missing first visible package');
+    const title = screen.getByLabelText('标题');
+    await user.clear(title);
+    await user.type(title, '本地可见修订标题');
+    await user.click(screen.getByRole('button', { name: '保存内容新版本' }));
+    await waitFor(() =>
+      expect(value.queue().find((item) => item.package?.id === first.id)?.package?.revision).toBe(
+        1,
+      ),
+    );
+    expect(screen.getByRole('button', { name: '预览本地生成（0/3）' })).not.toBeNull();
+
+    const availableAfterSave = screen
+      .getAllByRole('checkbox')
+      .filter((item) => !(item as HTMLInputElement).disabled)
+      .slice(0, 3);
+    for (const checkbox of availableAfterSave) await user.click(checkbox);
+    await user.click(screen.getByRole('button', { name: '预览本地生成（3/3）' }));
+    await user.click(await screen.findByRole('button', { name: '确认并生成一次' }));
+    await waitFor(() =>
+      expect(value.queue().filter((item) => item.state === 'HAS_VERSION')).toHaveLength(6),
+    );
+    expect(value.queue().filter((item) => item.state === 'MISSING')).toHaveLength(15);
+
+    const reopened = await runtime(folder);
+    expect(reopened.queue()).toHaveLength(21);
+    expect(reopened.queue().filter((item) => item.state === 'HAS_VERSION')).toHaveLength(6);
+    expect(reopened.queue().find((item) => item.package?.id === first.id)?.package).toMatchObject({
+      revision: 1,
+      versions: [{ version: 1 }, { fields: { title: '本地可见修订标题' }, version: 2 }],
+    });
+  });
+
+  it('C06 clears stale preview and week-local UI state after generation and week changes', async () => {
+    const value = await runtime();
+    await lockActivePlan(value);
+    const firstCandidate = value.queue()[0]?.candidate.id;
+    if (firstCandidate === undefined) throw new Error('missing first synthetic candidate');
+    await value.executeGeneration((await value.previewGeneration([firstCandidate])).token);
+    const firstPackage = value.queue()[0]?.package;
+    const firstFields = firstPackage?.versions.at(-1)?.fields;
+    if (firstPackage === null || firstPackage === undefined || firstFields === undefined)
+      throw new Error('missing first synthetic package');
+
+    const user = userEvent.setup();
+    render(<WebWorkspaceShell route="content" runtime={value} setRoute={() => undefined} />);
+    await user.click(screen.getAllByRole('button', { name: '编辑' })[0] as HTMLElement);
+    const missing = screen
+      .getAllByRole('checkbox')
+      .find((item) => !(item as HTMLInputElement).disabled);
+    if (missing === undefined) throw new Error('missing visible candidate checkbox');
+    await user.click(missing);
+    await user.click(screen.getByRole('button', { name: '预览本地生成（1/3）' }));
+    expect(await screen.findByRole('button', { name: '确认并生成一次' })).not.toBeNull();
+
+    await value.saveContentVersion(
+      firstPackage.id,
+      { ...firstFields, title: '外部 generation 修订' },
+      firstPackage.revision,
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: '确认并生成一次' })).toBeNull(),
+    );
+    expect(screen.getByText(/工作区状态已变化，旧预览已失效/u)).not.toBeNull();
+
+    await user.click(screen.getByRole('button', { name: '预览本地生成（1/3）' }));
+    const nextWeek = value.suggestedNextWeek();
+    await value.switchWeek(nextWeek);
+    await lockActivePlan(value);
+    await waitFor(() => expect(screen.getAllByRole('checkbox')).toHaveLength(21));
+    expect(screen.queryByRole('button', { name: '确认并生成一次' })).toBeNull();
+    expect(screen.queryByLabelText('标题')).toBeNull();
+    expect(screen.getByText('首次生成选择').parentElement?.textContent).toContain('0 项');
     expect(screen.getByText('已有包选择').parentElement?.textContent).toContain('0 项');
+  });
+
+  it('C08 keeps a connected FSA runtime when disposable handle caching fails', async () => {
+    const value = await runtime();
+    vi.spyOn(WebWorkspaceRuntime, 'connect').mockResolvedValue(value);
+    vi.mocked(handleStore.saveWorkspaceHandle).mockRejectedValueOnce(
+      new Error('HANDLE_STORE_UNAVAILABLE'),
+    );
+    const handle = {
+      name: '合成测试目录',
+      queryPermission: async () => 'granted' as PermissionState,
+    } as unknown as FileSystemDirectoryHandle;
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      configurable: true,
+      value: async () => handle,
+    });
+    const user = userEvent.setup();
+    render(<WebV2App />);
+    await user.click(await screen.findByRole('button', { name: '选择本地数据目录' }));
+    expect(await screen.findByRole('heading', { name: '总览' })).not.toBeNull();
+    expect(screen.getByRole('status').textContent).toContain('本次未记住目录');
+    expect(value.view.state.workspaceId).toBe('ws_syntheticworkflow00000001');
+  });
+
+  it.each([
+    ['AbortError', '已取消选择目录'],
+    ['NotAllowedError', '目录权限被拒绝'],
+  ] as const)('C09 maps picker %s to a recoverable message', async (name, expected) => {
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      configurable: true,
+      value: async () => {
+        throw new DOMException('synthetic picker result', name);
+      },
+    });
+    const user = userEvent.setup();
+    render(<WebV2App />);
+    await user.click(await screen.findByRole('button', { name: '选择本地数据目录' }));
+    expect((await screen.findByRole('status')).textContent).toContain(expected);
+    expect(
+      (screen.getByRole('button', { name: '选择本地数据目录' }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+  });
+
+  it('C09 maps a denied permission result without opening the runtime', async () => {
+    const connect = vi.spyOn(WebWorkspaceRuntime, 'connect');
+    const requestPermission = vi.fn(async () => 'denied' as PermissionState);
+    const handle = {
+      name: '拒绝权限目录',
+      queryPermission: async () => 'denied' as PermissionState,
+      requestPermission,
+    } as unknown as FileSystemDirectoryHandle;
+    Object.defineProperty(window, 'showDirectoryPicker', {
+      configurable: true,
+      value: async () => handle,
+    });
+    const user = userEvent.setup();
+    render(<WebV2App />);
+    await user.click(await screen.findByRole('button', { name: '选择本地数据目录' }));
+    expect((await screen.findByRole('status')).textContent).toContain('目录权限被拒绝');
+    expect(connect).not.toHaveBeenCalled();
+    expect(requestPermission).toHaveBeenCalledOnce();
   });
 });

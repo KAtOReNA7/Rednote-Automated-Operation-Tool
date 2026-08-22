@@ -20,6 +20,7 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder('utf-8', { fatal: true });
 const MANIFEST_PATH = 'rednote-workspace.json';
 const INDEX_PATHS = ['state/index-a.json', 'state/index-b.json'] as const;
+const INITIAL_SNAPSHOT_PATH = 'state/snapshots/00000001.json';
 
 export interface WorkspaceLock {
   run<T>(workspaceId: string, operation: () => Promise<T>): Promise<T>;
@@ -126,7 +127,12 @@ export class BrowserWorkspaceRepository {
         '重新选择的目录与原工作区身份不一致。',
       );
     }
-    return this.load(manifest.workspaceId);
+    try {
+      return await this.load(manifest.workspaceId);
+    } catch (error) {
+      if (!(error instanceof WebRepositoryError) || error.code !== 'RECOVERY_FAILED') throw error;
+      return this.#resumeInitialization(manifest);
+    }
   }
 
   public async load(workspaceId: string): Promise<LoadedWorkspace> {
@@ -200,6 +206,93 @@ export class BrowserWorkspaceRepository {
 
   async #writeInitial(state: WebWorkspaceState): Promise<LoadedWorkspace> {
     return this.#lock.run(state.workspaceId, () => this.#write(state, 1));
+  }
+
+  async #resumeInitialization(manifest: WebWorkspaceManifest): Promise<LoadedWorkspace> {
+    return this.#lock.run(manifest.workspaceId, async () => {
+      try {
+        return await this.load(manifest.workspaceId);
+      } catch (error) {
+        if (!(error instanceof WebRepositoryError) || error.code !== 'RECOVERY_FAILED') throw error;
+      }
+
+      const indexBytes = await Promise.all(INDEX_PATHS.map((path) => this.folder.read(path)));
+      let hasValidIndex = false;
+      for (const bytes of indexBytes) {
+        if (bytes === null) continue;
+        let index: WebWorkspaceIndex;
+        try {
+          index = parseWebIndex(decode(bytes));
+        } catch {
+          continue;
+        }
+        if (
+          index.workspaceId !== manifest.workspaceId ||
+          index.generation !== 1 ||
+          index.snapshotPath !== INITIAL_SNAPSHOT_PATH
+        ) {
+          throw this.#initialRecoveryFailure();
+        }
+        hasValidIndex = true;
+      }
+      if (hasValidIndex) throw this.#initialRecoveryFailure();
+
+      const initialState = this.#initialState(manifest);
+      const snapshotBytes = await this.folder.read(INITIAL_SNAPSHOT_PATH);
+      if (snapshotBytes === null) {
+        if (indexBytes.some((bytes) => bytes !== null)) throw this.#initialRecoveryFailure();
+        const loaded = await this.#write(initialState, 1);
+        return { ...loaded, recoveryWarning: '已安全续接未完成的首次初始化。' };
+      }
+
+      let snapshot: WebSnapshotEnvelope;
+      try {
+        snapshot = parseWebSnapshot(decode(snapshotBytes));
+      } catch {
+        throw this.#initialRecoveryFailure();
+      }
+      if (
+        snapshot.generation !== 1 ||
+        snapshot.workspaceId !== manifest.workspaceId ||
+        snapshot.state.workspaceId !== manifest.workspaceId ||
+        snapshot.state.activeWeekKey !== initialState.activeWeekKey ||
+        Object.keys(snapshot.state.plans).length !== 0 ||
+        Object.keys(snapshot.state.contentByWeek).length !== 0 ||
+        JSON.stringify(snapshot.state.persona) !== JSON.stringify(initialState.persona)
+      ) {
+        throw this.#initialRecoveryFailure();
+      }
+
+      const index: WebWorkspaceIndex = {
+        bytes: snapshotBytes.byteLength,
+        generation: 1,
+        schemaVersion: WEB_WORKSPACE_SCHEMA_VERSION,
+        sha256: await digest(snapshotBytes),
+        snapshotPath: INITIAL_SNAPSHOT_PATH,
+        workspaceId: manifest.workspaceId,
+      };
+      await this.folder.write(INDEX_PATHS[0], encode(index), 'replace');
+      const loaded = await this.load(manifest.workspaceId);
+      return { ...loaded, recoveryWarning: '已安全续接未完成的首次初始化。' };
+    });
+  }
+
+  #initialState(manifest: WebWorkspaceManifest): WebWorkspaceState {
+    const createdAt = new Date(manifest.createdAt);
+    if (!Number.isFinite(createdAt.getTime())) throw this.#initialRecoveryFailure();
+    return newWorkspaceState(
+      manifest.workspaceId,
+      BrowserWorkspaceRepository.currentShanghaiWeekKey(createdAt),
+      DEFAULT_ACCOUNT_PERSONA,
+    );
+  }
+
+  #initialRecoveryFailure(): WebRepositoryError {
+    return new WebRepositoryError(
+      'RECOVERY_FAILED',
+      'repository',
+      '首次初始化材料无法安全证明；原目录未被覆盖。',
+    );
   }
 
   async #write(state: WebWorkspaceState, generation: number): Promise<LoadedWorkspace> {

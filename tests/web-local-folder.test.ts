@@ -143,4 +143,85 @@ describe('Web local-folder repository W01-W08', () => {
     ).rejects.toMatchObject({ code: 'WRITE_LOCKED' });
     expect((await context.repository.load(loaded.state.workspaceId)).generation).toBe(1);
   });
+
+  it('C10 resumes the same workspace when initialization stops after the manifest', async () => {
+    const context = repository();
+    context.folder.failPath = 'state/snapshots/00000001.json';
+    await expect(context.repository.connect()).rejects.toThrow('SYNTHETIC_INTERRUPTION');
+    const manifestBytes = context.folder.files.get('rednote-workspace.json');
+    if (manifestBytes === undefined) throw new Error('missing synthetic manifest');
+    const manifest = JSON.parse(new TextDecoder().decode(manifestBytes)) as { workspaceId: string };
+    expect(context.folder.files.has('state/snapshots/00000001.json')).toBe(false);
+
+    context.folder.failPath = null;
+    const resumed = await context.repository.connect();
+    expect(resumed).toMatchObject({
+      generation: 1,
+      recoveryWarning: '已安全续接未完成的首次初始化。',
+      state: { workspaceId: manifest.workspaceId },
+    });
+  });
+
+  it('C11 rebuilds only the missing initial index from a verified snapshot', async () => {
+    const context = repository();
+    context.folder.failPath = 'state/index-a.json';
+    await expect(context.repository.connect()).rejects.toThrow('SYNTHETIC_INTERRUPTION');
+    const snapshotBefore = context.folder.files.get('state/snapshots/00000001.json');
+    if (snapshotBefore === undefined) throw new Error('missing synthetic initial snapshot');
+    const writesBefore = context.folder.writes;
+
+    context.folder.failPath = null;
+    const resumed = await context.repository.connect();
+    expect(resumed).toMatchObject({
+      generation: 1,
+      recoveryWarning: '已安全续接未完成的首次初始化。',
+    });
+    expect(context.folder.writes).toBe(writesBefore + 1);
+    expect(context.folder.files.get('state/snapshots/00000001.json')).toEqual(snapshotBefore);
+  });
+
+  it.each(['malformed snapshot', 'conflicting identity', 'unknown initial state'] as const)(
+    'C12 fails closed without another write for %s',
+    async (variant) => {
+      const context = repository();
+      context.folder.failPath = 'state/index-a.json';
+      await expect(context.repository.connect()).rejects.toThrow('SYNTHETIC_INTERRUPTION');
+      context.folder.failPath = null;
+      const snapshotPath = 'state/snapshots/00000001.json';
+      if (variant === 'malformed snapshot') {
+        context.folder.corrupt(snapshotPath);
+      } else {
+        const bytes = context.folder.files.get(snapshotPath);
+        if (bytes === undefined) throw new Error('missing synthetic initial snapshot');
+        const snapshot = JSON.parse(new TextDecoder().decode(bytes)) as {
+          state: { activeWeekKey: string; workspaceId: string };
+          workspaceId: string;
+        };
+        if (variant === 'conflicting identity') {
+          snapshot.workspaceId = 'ws_conflictingworkspace00000001';
+          snapshot.state.workspaceId = 'ws_conflictingworkspace00000001';
+        } else {
+          snapshot.state.activeWeekKey = '2026-W35';
+        }
+        context.folder.files.set(snapshotPath, new TextEncoder().encode(JSON.stringify(snapshot)));
+      }
+      const writes = context.folder.writes;
+      await expect(context.repository.connect()).rejects.toMatchObject({ code: 'RECOVERY_FAILED' });
+      expect(context.folder.writes).toBe(writes);
+    },
+  );
+
+  it('C12 does not reinterpret an unknown valid generation as first initialization', async () => {
+    const context = repository();
+    const initial = await context.repository.connect();
+    await context.repository.commit(
+      parseWebWorkspaceState({ ...initial.state, activeWeekKey: '2026-W35' }),
+      initial.generation,
+    );
+    context.folder.files.delete('state/index-a.json');
+    context.folder.corrupt('state/snapshots/00000002.json');
+    const writes = context.folder.writes;
+    await expect(context.repository.connect()).rejects.toMatchObject({ code: 'RECOVERY_FAILED' });
+    expect(context.folder.writes).toBe(writes);
+  });
 });

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   loadWorkspaceHandle,
@@ -25,7 +25,11 @@ type ConnectionState =
       readonly remembered: StoredWorkspaceHandle | null;
       readonly message: string;
     }
-  | { readonly kind: 'connected'; readonly runtime: WebWorkspaceRuntime };
+  | {
+      readonly kind: 'connected';
+      readonly runtime: WebWorkspaceRuntime;
+      readonly warning: string | null;
+    };
 
 const ROUTES = [
   { icon: 'house' as const, id: 'overview' as const, label: '总览' },
@@ -103,10 +107,12 @@ function ConnectionScreen({
 }
 
 export function WebWorkspaceShell({
+  connectionWarning = null,
   route,
   runtime,
   setRoute,
 }: {
+  readonly connectionWarning?: string | null;
   readonly route: WebRoute;
   readonly runtime: WebWorkspaceRuntime;
   readonly setRoute: (route: WebRoute) => void;
@@ -163,6 +169,11 @@ export function WebWorkspaceShell({
         </header>
         <div className="v2-app-body">
           <main className="v2-main">
+            {connectionWarning === null ? null : (
+              <div className="web-inline-warning" role="status">
+                {connectionWarning}
+              </div>
+            )}
             {view.recoveryWarning === null ? null : (
               <div className="web-inline-warning" role="status">
                 {view.recoveryWarning}
@@ -404,18 +415,48 @@ function ContentPage({
   const [generationIds, setGenerationIds] = useState<readonly string[]>([]);
   const [packageIds, setPackageIds] = useState<readonly string[]>([]);
   const [preview, setPreview] = useState<GenerationPreview | null>(null);
+  const previewRef = useRef<GenerationPreview | null>(null);
+  const previousWeekRef = useRef(view.state.activeWeekKey);
   const [activeId, setActiveId] = useState('');
   const [status, setStatus] = useState('');
-  const active =
-    queue.find((item) => item.package?.id === activeId)?.package ??
-    queue.find((item) => item.package !== null)?.package ??
-    null;
+  const active = queue.find((item) => item.package?.id === activeId)?.package ?? null;
   const version = active?.versions.at(-1);
   const [draft, setDraft] = useState<ContentPackageFields | null>(version?.fields ?? null);
   useEffect(() => {
     setDraft(version?.fields ?? null);
   }, [version?.versionId]);
-  const toggleGeneration = (candidateId: string): void =>
+  useEffect(() => {
+    const latestQueue = runtime.queue();
+    const missing = new Set(
+      latestQueue.filter((item) => item.state === 'MISSING').map((item) => item.candidate.id),
+    );
+    const packages = new Set(
+      latestQueue.flatMap((item) => (item.package === null ? [] : [item.package.id])),
+    );
+    const weekChanged = previousWeekRef.current !== view.state.activeWeekKey;
+    previousWeekRef.current = view.state.activeWeekKey;
+    if (previewRef.current !== null) {
+      previewRef.current = null;
+      setPreview(null);
+      setStatus('活动周或工作区状态已变化，旧预览已失效；请重新选择并预览。');
+    }
+    if (weekChanged) {
+      setGenerationIds([]);
+      setPackageIds([]);
+      setActiveId('');
+      setDraft(null);
+      return;
+    }
+    setGenerationIds((current) => current.filter((id) => missing.has(id)));
+    setPackageIds((current) => current.filter((id) => packages.has(id)));
+    setActiveId((current) => (packages.has(current) ? current : ''));
+  }, [runtime, view.generation, view.state.activeWeekKey]);
+  const toggleGeneration = (candidateId: string): void => {
+    if (previewRef.current !== null) {
+      previewRef.current = null;
+      setPreview(null);
+      setStatus('候选选择已变化，旧预览已失效；请重新预览。');
+    }
     setGenerationIds((current) =>
       current.includes(candidateId)
         ? current.filter((id) => id !== candidateId)
@@ -423,19 +464,24 @@ function ContentPage({
           ? [...current, candidateId]
           : current,
     );
+  };
   const previewAction = async (): Promise<void> => {
     try {
-      setPreview(await runtime.previewGeneration(generationIds));
+      const next = await runtime.previewGeneration(generationIds);
+      previewRef.current = next;
+      setPreview(next);
       setStatus('预览已绑定当前周、plan revision 与输入 hash。');
     } catch (error) {
       setStatus(message(error));
     }
   };
   const execute = async (): Promise<void> => {
-    if (preview === null) return;
+    const currentPreview = previewRef.current;
+    if (currentPreview === null) return;
     try {
-      await runtime.executeGeneration(preview.token);
+      await runtime.executeGeneration(currentPreview.token);
       setGenerationIds([]);
+      previewRef.current = null;
       setPreview(null);
       setStatus('本地零费用草稿已生成并写入新快照。');
     } catch (error) {
@@ -509,10 +555,10 @@ function ContentPage({
             ))}
           </section>
           <section className="v2-card web-content-editor">
-            {active === null || draft === null ? (
+            {queue.some((item) => item.state === 'MISSING') ? (
               <div className="web-empty">
                 <Icon name="file-text" size={34} />
-                <h2>选择 1—3 项预览生成</h2>
+                <h2>{active === null ? '选择 1—3 项预览生成' : '继续生成下一批内容'}</h2>
                 <p>仅生成同周、已锁定且没有内容包的候选；外部请求为 0。</p>
                 <Button
                   disabled={generationIds.length === 0}
@@ -535,6 +581,12 @@ function ContentPage({
                 )}
               </div>
             ) : (
+              <div className="web-preview">
+                <strong>活动周内容已全部生成</strong>
+                <small>可以继续选择已有内容包编辑并追加版本。</small>
+              </div>
+            )}
+            {active !== null && draft !== null ? (
               <>
                 <p className="v2-kicker">
                   {active.weekKey} · v{version?.version}
@@ -582,6 +634,15 @@ function ContentPage({
                   保存内容新版本
                 </Button>
               </>
+            ) : (
+              <div className="web-empty">
+                <h2>
+                  {queue.some((item) => item.package !== null)
+                    ? '选择已有内容包进行编辑'
+                    : '等待生成内容'}
+                </h2>
+                <p>内容版本编辑与待生成候选选择互相独立。</p>
+              </div>
             )}
           </section>
           <aside className="v2-card web-content-inspector">
@@ -697,7 +758,7 @@ export function WebV2App(): React.JSX.Element {
           });
         try {
           const runtime = await WebWorkspaceRuntime.connect(stored.handle, stored.workspaceId);
-          if (active) setConnection({ kind: 'connected', runtime });
+          if (active) setConnection({ kind: 'connected', runtime, warning: null });
           else runtime.close();
         } catch (error) {
           if (active)
@@ -724,19 +785,27 @@ export function WebV2App(): React.JSX.Element {
   );
   const connect = async (remembered: StoredWorkspaceHandle | null): Promise<void> => {
     if (window.showDirectoryPicker === undefined) return;
+    let runtime: WebWorkspaceRuntime | null = null;
     try {
       const handle = await window.showDirectoryPicker({ mode: 'readwrite' });
       const permission = await queryReadWritePermission(handle);
       if (permission !== 'granted' && (await requestReadWritePermission(handle)) !== 'granted')
-        throw new Error('目录权限被拒绝；未创建或覆盖任何状态文件。');
-      const runtime = await WebWorkspaceRuntime.connect(handle, remembered?.workspaceId);
-      await saveWorkspaceHandle({
-        directoryName: handle.name,
-        handle,
-        workspaceId: runtime.view.state.workspaceId,
-      });
-      setConnection({ kind: 'connected', runtime });
+        throw new DOMException('directory permission denied', 'NotAllowedError');
+      runtime = await WebWorkspaceRuntime.connect(handle, remembered?.workspaceId);
+      let warning: string | null = null;
+      try {
+        await saveWorkspaceHandle({
+          directoryName: handle.name,
+          handle,
+          workspaceId: runtime.view.state.workspaceId,
+        });
+      } catch {
+        warning = '本次未记住目录；业务数据已安全保存，下次打开时请重新选择同一目录。';
+      }
+      setConnection({ kind: 'connected', runtime, warning });
+      runtime = null;
     } catch (error) {
+      runtime?.close();
       setConnection({ kind: 'disconnected', message: message(error), remembered });
     }
   };
@@ -746,7 +815,12 @@ export function WebV2App(): React.JSX.Element {
     window.scrollTo({ top: 0 });
   };
   return connection.kind === 'connected' ? (
-    <WebWorkspaceShell route={route} runtime={connection.runtime} setRoute={setRoute} />
+    <WebWorkspaceShell
+      connectionWarning={connection.warning}
+      route={route}
+      runtime={connection.runtime}
+      setRoute={setRoute}
+    />
   ) : (
     <ConnectionScreen state={connection} onConnect={(stored) => void connect(stored)} />
   );
