@@ -306,10 +306,14 @@ describe('R10D Windows distribution contracts', () => {
     expect(installerInclude).toContain('!insertmacro VersionCompare');
     expect(installerInclude).toContain('!insertmacro un.VersionCompare');
     expect(installerInclude).toContain('!macro customCheckAppRunning');
-    expect(installerInclude).toContain('tasklist /FI "IMAGENAME eq ${APP_EXECUTABLE_FILENAME}"');
-    expect(installerInclude).toContain('findstr.exe" /B /I /C:"\\"${APP_EXECUTABLE_FILENAME}\\""');
+    expect(installerInclude).toContain('CreateToolhelp32Snapshot');
+    expect(installerInclude).toContain('Process32FirstW');
+    expect(installerInclude).toContain('Process32NextW');
+    expect(installerInclude).toContain('lstrcmpiW');
+    expect(installerInclude).toContain('CloseHandle');
     expect(installerInclude).not.toContain('nsProcess::FindProcess');
     expect(installerInclude).not.toContain('USERNAME eq %USERNAME%');
+    expect(installerInclude).not.toContain('tasklist');
     expect(installerInclude).not.toContain('!insertmacro IS_POWERSHELL_AVAILABLE');
     expect(installerInclude).not.toContain('!insertmacro FIND_PROCESS');
     expect(installerInclude).toContain('${VersionCompare}');
