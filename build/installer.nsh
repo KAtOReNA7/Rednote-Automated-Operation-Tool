@@ -38,7 +38,7 @@ custom_process_done:
     Pop $R1
     Pop $R0
     SetErrorLevel 1603
-    Abort
+    Quit
   ${EndIf}
   Pop $R5
   Pop $R4
