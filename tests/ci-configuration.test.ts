@@ -104,6 +104,8 @@ describe('Windows CI configuration', () => {
     expect(clipperActionSource).toMatch(
       /AutomationElement\]::FromHandle\(\r?\n\s+\$browser\.MainWindowHandle/u,
     );
+    expect(clipperActionSource).toContain('browserRootDeadline');
+    expect(clipperActionSource).toContain('ElementNotAvailableException');
     const uiAutomationStart = clipperActionSource.indexOf(
       'Add-Type -AssemblyName UIAutomationClient',
     );
@@ -187,6 +189,7 @@ describe('Windows CI configuration', () => {
       resolve(repositoryRoot, 'scripts', 'run-clipper-real-smoke.mjs'),
       'utf8',
     );
+    expect(clipperReal).toContain("'--force-renderer-accessibility'");
     expect(clipperReal).toContain('}, 30_000);');
     expect(clipperReal).toContain('diagnostic.trim()');
   });

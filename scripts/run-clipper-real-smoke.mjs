@@ -613,6 +613,7 @@ async function runFamily(family) {
       '--disable-background-networking',
       '--disable-component-update',
       '--disable-default-apps',
+      '--force-renderer-accessibility',
       '--disable-sync',
       '--metrics-recording-only',
       '--no-proxy-server',

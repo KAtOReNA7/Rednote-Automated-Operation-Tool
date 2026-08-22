@@ -254,9 +254,26 @@ function Invoke-VisibleElement {
   }
 }
 
-$browserRoot = [System.Windows.Automation.AutomationElement]::FromHandle(
-  $browser.MainWindowHandle
-)
+$browserRoot = $null
+$browserRootDeadline = [DateTime]::UtcNow.AddSeconds(5)
+while ($null -eq $browserRoot -and [DateTime]::UtcNow -lt $browserRootDeadline) {
+  $browser.Refresh()
+  if ($browser.MainWindowHandle -ne [IntPtr]::Zero) {
+    try {
+      $browserRoot = [System.Windows.Automation.AutomationElement]::FromHandle(
+        $browser.MainWindowHandle
+      )
+    } catch [System.Windows.Automation.ElementNotAvailableException] {
+      $browserRoot = $null
+    }
+  }
+  if ($null -eq $browserRoot) {
+    Start-Sleep -Milliseconds 100
+  }
+}
+if ($null -eq $browserRoot) {
+  throw 'The isolated browser UI Automation root was not available.'
+}
 $extensionsChinese = -join @(
   [char]0x6269,
   [char]0x5c55,
