@@ -88,7 +88,7 @@ describe('Windows CI configuration', () => {
     expect(v2Package.exports['.'].types).toBe('./dist/index.d.ts');
   });
 
-  it('uses the browser handle as the authoritative foreground check for real Clipper actions', () => {
+  it('binds real Clipper actions to the exact browser UI Automation root', () => {
     expect(clipperActionSource).toContain('[void]$shell.AppActivate($BrowserProcessId)');
     expect(clipperActionSource).not.toContain(
       "throw 'Unable to activate the isolated browser window.'",
@@ -96,11 +96,21 @@ describe('Windows CI configuration', () => {
     expect(clipperActionSource.indexOf('[void]$shell.AppActivate')).toBeLessThan(
       clipperActionSource.indexOf('[void][Issue017KeyboardInput]::AttachThreadInput'),
     );
-    expect(
-      clipperActionSource.indexOf('[void][Issue017KeyboardInput]::SetForegroundWindow'),
-    ).toBeLessThan(clipperActionSource.indexOf('did not become the exact foreground target'));
+    expect(clipperActionSource).not.toContain(
+      "throw 'The isolated browser window did not become the exact foreground target.'",
+    );
     expect(clipperActionSource).toContain('SendForegroundUnlock()');
     expect(clipperActionSource).toContain('$attempt -lt 5');
+    expect(clipperActionSource).toMatch(
+      /AutomationElement\]::FromHandle\(\r?\n\s+\$browser\.MainWindowHandle/u,
+    );
+    const uiAutomationStart = clipperActionSource.indexOf(
+      'Add-Type -AssemblyName UIAutomationClient',
+    );
+    expect(uiAutomationStart).toBeGreaterThan(-1);
+    expect(clipperActionSource.slice(0, uiAutomationStart)).not.toContain(
+      "if ($BrowserFamily -eq 'edge')",
+    );
   });
 
   it('builds exact-head R10D and closed R10E candidate artifacts only after required inputs', () => {

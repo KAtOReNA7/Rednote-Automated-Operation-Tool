@@ -116,21 +116,6 @@ public static class Issue017KeyboardInput
         };
     }
 
-    public static bool SendActionShortcut()
-    {
-        const uint keyUp = 0x0002;
-        Input[] inputs = new Input[]
-        {
-            Key(0x12, 0),
-            Key(0x10, 0),
-            Key(0x59, 0),
-            Key(0x59, keyUp),
-            Key(0x10, keyUp),
-            Key(0x12, keyUp)
-        };
-        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
-    }
-
     public static bool SendForegroundUnlock()
     {
         const uint keyUp = 0x0002;
@@ -157,9 +142,9 @@ if ($browser.MainWindowHandle -eq [IntPtr]::Zero) {
   throw 'The isolated browser does not own a visible main window.'
 }
 $shell = New-Object -ComObject WScript.Shell
-# AppActivate is only a best-effort foreground hint. On hosted Windows runners it
-# can return false for a valid top-level browser window, so the native handle path
-# below remains the authority and verifies the exact foreground target afterward.
+# Foreground activation is a best-effort visibility hint. Hosted Windows runners
+# can deny foreground ownership, so the UI Automation root bound to this exact
+# browser handle below remains the authority for the real action.
 [void]$shell.AppActivate($BrowserProcessId)
 $currentThread = [Issue017KeyboardInput]::GetCurrentThreadId()
 $targetThread = [Issue017KeyboardInput]::GetWindowThreadProcessId(
@@ -188,21 +173,6 @@ for ($attempt = 0; $attempt -lt 5; $attempt += 1) {
     break
   }
 }
-if ([Issue017KeyboardInput]::GetForegroundWindow() -ne $browser.MainWindowHandle) {
-  throw 'The isolated browser window did not become the exact foreground target.'
-}
-if ($BrowserFamily -eq 'edge') {
-  if (-not [Issue017KeyboardInput]::SendActionShortcut()) {
-    throw 'Windows did not accept the complete Edge extension action shortcut.'
-  }
-  Start-Sleep -Seconds 6
-  [void][Issue017KeyboardInput]::AttachThreadInput($currentThread, $targetThread, $false)
-  if ($foregroundThread -ne 0 -and $foregroundThread -ne $targetThread) {
-    [void][Issue017KeyboardInput]::AttachThreadInput($currentThread, $foregroundThread, $false)
-  }
-  exit 0
-}
-
 Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 
