@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 interface DistributionContract {
   readonly WINDOWS_CI_FIXTURE_VERSION: string;
   readonly WINDOWS_APPLICATION_ID: string;
+  readonly WINDOWS_INSTALLER_GUID: string;
   readonly WINDOWS_MANIFEST_NAME: string;
   readonly isCiFixtureVersionEnvironment: (
     environment: Record<string, string>,
@@ -45,15 +46,49 @@ interface DistributionContract {
 }
 
 interface LifecycleProcessContract {
+  readonly assertInvocation: (
+    stage: string,
+    result:
+      | { readonly kind: 'exit'; readonly code: number }
+      | { readonly kind: 'timeout' }
+      | { readonly kind: 'signal'; readonly signal: string }
+      | { readonly kind: 'spawn_error'; readonly code: string },
+    expectation: 'success' | 'nonzero',
+    code: string,
+  ) => number;
   readonly createRunningProcess: (
-    child: EventEmitter & { exitCode: number | null },
-    awaitExit?: (child: EventEmitter & { exitCode: number | null }) => Promise<number | null>,
+    child: EventEmitter & { exitCode: number | null; signalCode?: string | null },
+    awaitExit?: (
+      child: EventEmitter & { exitCode: number | null; signalCode?: string | null },
+    ) => Promise<number | null>,
   ) => unknown;
+  readonly formatFailureSummary: (error: Error, role?: 'primary' | 'cleanup') => string;
+  readonly invokeProcess: (
+    executable: string,
+    arguments_: readonly string[],
+    cwd: string,
+    timeout?: number,
+  ) => Promise<
+    | { readonly kind: 'exit'; readonly code: number }
+    | { readonly kind: 'timeout' }
+    | { readonly kind: 'signal'; readonly signal: string }
+    | { readonly kind: 'spawn_error'; readonly code: string }
+  >;
+  readonly retryProbe: <Value>(
+    stage: string,
+    probe: () => Promise<Value>,
+    attempts?: number,
+  ) => Promise<Value>;
+  readonly selectLifecycleFailure: (
+    primaryError: Error | undefined,
+    cleanupError: Error | undefined,
+  ) => Error | undefined;
   readonly stopRunning: (running: unknown) => Promise<number | null>;
   readonly waitForExit: (
-    child: EventEmitter & { exitCode: number | null },
+    child: EventEmitter & { exitCode: number | null; signalCode?: string | null },
     timeout?: number,
   ) => Promise<number | null>;
+  readonly waitForReport: (outputPath: string, timeout?: number) => Promise<unknown>;
 }
 
 const run = promisify(execFile);
@@ -104,6 +139,110 @@ describe('R10D Windows distribution contracts', () => {
     await expect(lifecycle.waitForExit(child, 1)).rejects.toThrow(
       'INSTALLER_LIFECYCLE_SMOKE_EXIT_TIMEOUT',
     );
+    expect(child.listenerCount('error')).toBe(0);
+    expect(child.listenerCount('exit')).toBe(0);
+  });
+
+  it('settles process exit races once and releases listeners', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    const child = new EventEmitter() as EventEmitter & {
+      exitCode: number | null;
+      signalCode: string | null;
+    };
+    child.exitCode = null;
+    child.signalCode = null;
+    const exited = lifecycle.waitForExit(child, 500);
+    child.emit('exit', null, 'SIGTERM');
+    await expect(exited).rejects.toThrow('INSTALLER_LIFECYCLE_SMOKE_EXIT_SIGNAL_SIGTERM');
+    expect(child.listenerCount('error')).toBe(0);
+    expect(child.listenerCount('exit')).toBe(0);
+  });
+
+  it('handles already-exited children and bounded partial smoke reports', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    const child = new EventEmitter() as EventEmitter & { exitCode: number | null };
+    child.exitCode = 0;
+    await expect(lifecycle.waitForExit(child, 10)).resolves.toBe(0);
+    expect(child.listenerCount('exit')).toBe(0);
+
+    const directory = await mkdtemp(join(tmpdir(), 'r10d-partial-report-'));
+    const outputPath = join(directory, 'report.json');
+    await writeFile(outputPath, '{');
+    const completed = lifecycle.waitForReport(outputPath, 500);
+    setTimeout(() => void writeFile(outputPath, '{"ok":true}'), 20);
+    await expect(completed).resolves.toEqual({ ok: true });
+    await rm(directory, { force: true, recursive: true });
+  });
+
+  it('classifies installer child outcomes without collapsing failures into nonzero exits', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    const cwd = process.cwd();
+    await expect(
+      lifecycle.invokeProcess(process.execPath, ['-e', 'process.exit(0)'], cwd, 2_000),
+    ).resolves.toEqual({ code: 0, kind: 'exit' });
+    await expect(
+      lifecycle.invokeProcess(process.execPath, ['-e', 'process.exit(7)'], cwd, 2_000),
+    ).resolves.toEqual({ code: 7, kind: 'exit' });
+    await expect(
+      lifecycle.invokeProcess(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], cwd, 20),
+    ).resolves.toEqual({ kind: 'timeout' });
+    await expect(
+      lifecycle.invokeProcess(join(cwd, 'missing-r10d-installer.exe'), [], cwd, 2_000),
+    ).resolves.toMatchObject({ kind: 'spawn_error' });
+  });
+
+  it('requires a normal nonzero exit for blocked installer lifecycle stages', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    for (const stage of ['L04-running-upgrade', 'L05-corrupt-installer', 'L07-downgrade']) {
+      expect(
+        lifecycle.assertInvocation(
+          stage,
+          { code: 5, kind: 'exit' },
+          'nonzero',
+          'INSTALLER_EXPECTED_BLOCK',
+        ),
+      ).toBe(5);
+      for (const result of [
+        { kind: 'timeout' } as const,
+        { kind: 'signal', signal: 'SIGTERM' } as const,
+        { code: 'ENOENT', kind: 'spawn_error' } as const,
+      ]) {
+        expect(() =>
+          lifecycle.assertInvocation(stage, result, 'nonzero', 'INSTALLER_EXPECTED_BLOCK'),
+        ).toThrow(/INSTALLER_EXPECTED_BLOCK_(?:TIMEOUT|SIGNAL|SPAWN_ERROR)/u);
+      }
+    }
+  });
+
+  it('retries transient directed probes but fails closed after the bound', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    let attempts = 0;
+    await expect(
+      lifecycle.retryProbe('registry', async () => {
+        attempts += 1;
+        if (attempts === 1) throw new Error('transient');
+        return 'ready';
+      }),
+    ).resolves.toBe('ready');
+    expect(attempts).toBe(2);
+    await expect(
+      lifecycle.retryProbe('registry', async () => {
+        throw new Error('persistent');
+      }),
+    ).rejects.toThrow('INSTALLER_LIFECYCLE_REGISTRY_PROBE_FAILED');
+  });
+
+  it('preserves primary failure identity and emits bounded path-free summaries', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    const primary = new Error(`PRIVATE_PATH_${process.cwd()}\nsecret detail`);
+    const cleanup = new Error('INSTALLER_LIFECYCLE_CLEANUP_TIMEOUT');
+    expect(lifecycle.selectLifecycleFailure(primary, cleanup)).toBe(primary);
+    expect(lifecycle.selectLifecycleFailure(undefined, cleanup)).toBe(cleanup);
+    const summary = lifecycle.formatFailureSummary(primary);
+    expect(summary).toContain('INSTALLER_LIFECYCLE_UNCLASSIFIED_FAILURE');
+    expect(summary).not.toContain(process.cwd());
+    expect(summary).not.toContain('\n');
+    expect(summary.length).toBeLessThanOrEqual(940);
   });
 
   it('uses one beta version, fixed app identity, per-user NSIS and no publish/update configuration', async () => {
@@ -116,6 +255,7 @@ describe('R10D Windows distribution contracts', () => {
     expect(packageJson.version).toBe('0.1.0-beta.1');
     expect(packageJson.devDependencies['electron-builder']).toBe('26.15.3');
     expect(builder).toContain('appId: io.github.katorena7.rednote-mystery-operations');
+    expect(builder).toContain('guid: 93211c80-b79d-59cd-848c-fd9f791d6cc2');
     expect(builder).toContain('perMachine: false');
     expect(builder).toContain('allowElevation: false');
     expect(builder).toContain('deleteAppDataOnUninstall: false');
@@ -140,6 +280,8 @@ describe('R10D Windows distribution contracts', () => {
     expect(installerInclude).toContain('!insertmacro un.VersionCompare');
     expect(installerInclude).toContain('!macro customCheckAppRunning');
     expect(installerInclude).toContain('${VersionCompare}');
+    const contract = await loadContract();
+    expect(contract.WINDOWS_INSTALLER_GUID).toBe('93211c80-b79d-59cd-848c-fd9f791d6cc2');
   });
 
   it('opens the beta.0 fixture seam only for the exact GitHub Windows tuple', async () => {

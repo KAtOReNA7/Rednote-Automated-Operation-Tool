@@ -8,6 +8,7 @@ win:
       arch:
         - x64
 nsis:
+  guid: 93211c80-b79d-59cd-848c-fd9f791d6cc2
   include: build/installer.nsh
   allowElevation: false
   allowToChangeInstallationDirectory: false

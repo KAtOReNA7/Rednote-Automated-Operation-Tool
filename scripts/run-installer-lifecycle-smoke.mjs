@@ -2,6 +2,7 @@ import { execFile, spawn } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import {
+  appendFile,
   cp,
   mkdir,
   mkdtemp,
@@ -23,6 +24,7 @@ import {
   WINDOWS_APPLICATION_ID,
   WINDOWS_CANONICAL_VERSION,
   WINDOWS_CI_FIXTURE_VERSION,
+  WINDOWS_INSTALLER_GUID,
   WINDOWS_PRODUCT_NAME,
 } from './windows-distribution-contract.mjs';
 
@@ -31,9 +33,107 @@ const root = resolve(import.meta.dirname, '..');
 const POLL_MILLISECONDS = 250;
 const CONVERGENCE_TIMEOUT_MILLISECONDS = 90_000;
 const CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
+const PROBE_TIMEOUT_MILLISECONDS = 4_000;
+const INSTALLER_TIMEOUT_MILLISECONDS = 180_000;
+const FAILURE_SUMMARY_LIMIT = 900;
+let activeStage = 'bootstrap';
+let lastObservedState;
+
+export class LifecycleFailure extends Error {
+  constructor(stage, code, classification = 'invariant') {
+    super(code);
+    this.name = 'LifecycleFailure';
+    this.stage = stage;
+    this.code = code;
+    this.classification = classification;
+  }
+}
 
 function delay(milliseconds) {
   return new Promise((resolveDelay) => setTimeout(resolveDelay, milliseconds));
+}
+
+function setStage(stage) {
+  activeStage = stage;
+}
+
+function failure(stage, code, classification = 'invariant') {
+  return new LifecycleFailure(stage, code, classification);
+}
+
+function stableCode(error) {
+  if (error instanceof LifecycleFailure) return error.code;
+  const message = error instanceof Error ? error.message : String(error);
+  return /^[A-Z][A-Z0-9_]{2,95}$/u.test(message)
+    ? message
+    : 'INSTALLER_LIFECYCLE_UNCLASSIFIED_FAILURE';
+}
+
+function failureClassification(error) {
+  if (error instanceof LifecycleFailure) return error.classification;
+  const code = stableCode(error);
+  if (code.includes('TIMEOUT')) return 'timeout';
+  if (code.includes('SIGNAL')) return 'signal';
+  if (code.includes('SPAWN')) return 'spawn_error';
+  if (code.includes('CLEANUP')) return 'cleanup';
+  return 'invariant';
+}
+
+function summaryState(state = lastObservedState) {
+  if (state === undefined) return { known: false };
+  return {
+    displayVersion: state.displayVersion,
+    installDirectory: state.installDirectory,
+    nsisHelperDirectories: state.nsisHelperDirectories,
+    processCount: state.processes.length,
+    registryEntries: state.registryEntries,
+    startMenu: state.startMenu,
+  };
+}
+
+export function formatFailureSummary(error, role = 'primary', state) {
+  const value = JSON.stringify({
+    classification: role === 'cleanup' ? 'cleanup' : failureClassification(error),
+    code: stableCode(error),
+    kind: 'r10d-installer-lifecycle-failure',
+    role,
+    stage: error instanceof LifecycleFailure ? error.stage : activeStage,
+    state: summaryState(state),
+  })
+    .replace(/[\r\n]/gu, ' ')
+    .slice(0, FAILURE_SUMMARY_LIMIT);
+  return `R10D_LIFECYCLE_FAILURE ${value}`;
+}
+
+async function emitFailureSummary(error, role = 'primary') {
+  const summary = formatFailureSummary(error, role);
+  process.stderr.write(`::error title=R10D lifecycle ${role}::${summary}\n`);
+  if (process.env.GITHUB_STEP_SUMMARY !== undefined) {
+    try {
+      await appendFile(process.env.GITHUB_STEP_SUMMARY, `\n\`${summary}\`\n`, 'utf8');
+    } catch {
+      process.stderr.write(
+        '::warning title=R10D lifecycle summary::R10D_STEP_SUMMARY_WRITE_FAILED\n',
+      );
+    }
+  }
+}
+
+export async function retryProbe(stage, probe, attempts = 2) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await probe();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts) await delay(POLL_MILLISECONDS);
+    }
+  }
+  throw failure(
+    stage,
+    `INSTALLER_LIFECYCLE_${stage.toUpperCase().replace(/[^A-Z0-9]+/gu, '_')}_PROBE_FAILED`,
+    failureClassification(lastError),
+  );
 }
 
 function within(parent, candidate) {
@@ -91,38 +191,108 @@ function startMenuPath() {
   );
 }
 
-async function observe(target, temporaryDirectory) {
-  const { stdout } = await run(
-    'powershell.exe',
-    [
-      '-NoLogo',
-      '-NoProfile',
-      '-NonInteractive',
-      '-Command',
-      [
-        '$target=$env:REDNOTE_R10D_INSTALL_PATH',
-        '$temp=$env:REDNOTE_R10D_TEMP_PATH',
-        '$product=$env:REDNOTE_R10D_PRODUCT_NAME',
-        '$entry=@(Get-ItemProperty -Path \'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\*\' -ErrorAction SilentlyContinue | Where-Object { $_.DisplayName -like "$product*" -and $_.DisplayIcon -and $_.DisplayIcon.StartsWith($target,[System.StringComparison]::OrdinalIgnoreCase) })',
-        '$processes=@(Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and ($_.Path.StartsWith($target,[System.StringComparison]::OrdinalIgnoreCase) -or $_.Path.StartsWith($temp,[System.StringComparison]::OrdinalIgnoreCase)) } | ForEach-Object { $parent=Split-Path -Parent $_.Path; [PSCustomObject]@{ image=[System.IO.Path]::GetFileName($_.Path); inInstall=$_.Path.StartsWith($target,[System.StringComparison]::OrdinalIgnoreCase); nsisHelper=$_.Path.StartsWith($temp,[System.StringComparison]::OrdinalIgnoreCase) -and (Split-Path -Leaf $parent) -match "^ns.*\\.tmp$"; pid=[int]$_.Id } })',
-        '$nsis=@(Get-ChildItem -LiteralPath $temp -Directory -ErrorAction SilentlyContinue | Where-Object { $_.Name -match "^ns.*\\.tmp$" } | Select-Object -ExpandProperty Name)',
-        '[PSCustomObject]@{ displayVersion=if($entry.Count -eq 1){[string]$entry[0].DisplayVersion}else{$null}; installDirectory=Test-Path -LiteralPath $target; nsisHelperDirectories=@($nsis).Count; processes=@($processes); registryEntries=@($entry).Count; startMenu=Test-Path -LiteralPath $env:REDNOTE_R10D_START_MENU_PATH } | ConvertTo-Json -Compress -Depth 4',
-      ].join('; '),
-    ],
-    {
-      env: {
-        ...process.env,
-        REDNOTE_R10D_INSTALL_PATH: target,
-        REDNOTE_R10D_PRODUCT_NAME: WINDOWS_PRODUCT_NAME,
-        REDNOTE_R10D_START_MENU_PATH: startMenuPath(),
-        REDNOTE_R10D_TEMP_PATH: temporaryDirectory,
-      },
-      maxBuffer: 16_384,
-      timeout: 10_000,
+function probeClassification(error) {
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    ('killed' in error ? error.killed === true : false)
+  )
+    return 'timeout';
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'signal' in error &&
+    typeof error.signal === 'string'
+  )
+    return 'signal';
+  if (
+    typeof error === 'object' &&
+    error !== null &&
+    'code' in error &&
+    typeof error.code === 'string'
+  )
+    return 'spawn_error';
+  return 'invariant';
+}
+
+async function registryProbe() {
+  const key = `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Uninstall\\${WINDOWS_INSTALLER_GUID}`;
+  try {
+    const { stdout } = await run('reg.exe', ['query', key, '/v', 'DisplayVersion'], {
+      maxBuffer: 4_096,
+      timeout: PROBE_TIMEOUT_MILLISECONDS,
       windowsHide: true,
-    },
-  );
-  const state = JSON.parse(stdout);
+    });
+    const match = /DisplayVersion\s+REG_SZ\s+([^\r\n]+)/iu.exec(stdout);
+    if (match?.[1] === undefined)
+      throw failure('registry', 'INSTALLER_LIFECYCLE_REGISTRY_VALUE_INVALID');
+    return { displayVersion: match[1].trim(), registryEntries: 1 };
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 1)
+      return { displayVersion: null, registryEntries: 0 };
+    throw failure(
+      'registry',
+      'INSTALLER_LIFECYCLE_REGISTRY_PROBE_FAILED',
+      probeClassification(error),
+    );
+  }
+}
+
+async function processProbe(target) {
+  try {
+    const { stdout } = await run(
+      'powershell.exe',
+      [
+        '-NoLogo',
+        '-NoProfile',
+        '-NonInteractive',
+        '-Command',
+        [
+          '$target=$env:REDNOTE_R10D_INSTALL_PATH',
+          '$items=@(Get-Process -Name "RednoteMysteryOperations" -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($target,[System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { [PSCustomObject]@{ image=[System.IO.Path]::GetFileName($_.Path); inInstall=$true; nsisHelper=$false; pid=[int]$_.Id } })',
+          '[PSCustomObject]@{processes=@($items)} | ConvertTo-Json -Compress -Depth 3',
+        ].join('; '),
+      ],
+      {
+        env: { ...process.env, REDNOTE_R10D_INSTALL_PATH: target },
+        maxBuffer: 8_192,
+        timeout: PROBE_TIMEOUT_MILLISECONDS,
+        windowsHide: true,
+      },
+    );
+    const value = JSON.parse(stdout);
+    if (!Array.isArray(value.processes) || value.processes.length > 8)
+      throw failure('process', 'INSTALLER_LIFECYCLE_PROCESS_PROBE_INVALID');
+    return value.processes;
+  } catch (error) {
+    if (error instanceof LifecycleFailure) throw error;
+    throw failure(
+      'process',
+      'INSTALLER_LIFECYCLE_PROCESS_PROBE_FAILED',
+      probeClassification(error),
+    );
+  }
+}
+
+async function helperDirectoryProbe(temporaryDirectory) {
+  const entries = await readdir(temporaryDirectory, { withFileTypes: true });
+  return entries.filter((entry) => entry.isDirectory() && /^ns.*\.tmp$/iu.test(entry.name)).length;
+}
+
+async function observe(target, temporaryDirectory, stage) {
+  setStage(stage);
+  const [registry, processes, nsisHelperDirectories] = await Promise.all([
+    retryProbe(`${stage}-registry`, registryProbe),
+    retryProbe(`${stage}-process`, () => processProbe(target)),
+    retryProbe(`${stage}-helper`, () => helperDirectoryProbe(temporaryDirectory)),
+  ]);
+  const state = {
+    ...registry,
+    installDirectory: existsSync(target),
+    nsisHelperDirectories,
+    processes,
+    startMenu: existsSync(startMenuPath()),
+  };
   if (
     typeof state.installDirectory !== 'boolean' ||
     typeof state.startMenu !== 'boolean' ||
@@ -132,6 +302,7 @@ async function observe(target, temporaryDirectory) {
     state.processes.length > 16
   )
     throw new Error('INSTALLER_LIFECYCLE_STATE_INVALID');
+  lastObservedState = state;
   return state;
 }
 
@@ -177,33 +348,95 @@ function uninstalled(state) {
 }
 
 async function converge(stage, readState, predicate, timeout = CONVERGENCE_TIMEOUT_MILLISECONDS) {
+  setStage(stage);
   const startedAt = performance.now();
   let attempts = 0;
-  let state = await readState();
+  let state = await readState(stage);
   while (!predicate(state)) {
     if (performance.now() - startedAt >= timeout) {
       log(stage, startedAt, { attempts, state: safeState(state) }, 'failed');
-      throw new Error(
-        `R10D_LIFECYCLE_CONVERGENCE_TIMEOUT:${stage}:${JSON.stringify(safeState(state))}`,
-      );
+      throw failure(stage, 'INSTALLER_LIFECYCLE_CONVERGENCE_TIMEOUT', 'timeout');
     }
     attempts += 1;
     await delay(POLL_MILLISECONDS);
-    state = await readState();
+    state = await readState(stage);
   }
   log(stage, startedAt, { attempts, state: safeState(state) });
   return state;
 }
 
-async function invoke(executable, arguments_, cwd) {
-  try {
-    await run(executable, arguments_, { cwd, timeout: 180_000, windowsHide: true });
-    return 0;
-  } catch (error) {
-    return typeof error === 'object' && error !== null && typeof error.code === 'number'
-      ? error.code
-      : -1;
-  }
+export function invokeProcess(
+  executable,
+  arguments_,
+  cwd,
+  timeout = INSTALLER_TIMEOUT_MILLISECONDS,
+) {
+  return new Promise((resolveInvocation) => {
+    const child = spawn(executable, arguments_, {
+      cwd,
+      stdio: 'ignore',
+      windowsHide: true,
+    });
+    let settled = false;
+    let timedOut = false;
+    let timer;
+    const cleanupListeners = () => {
+      if (timer !== undefined) clearTimeout(timer);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+    };
+    const settle = (result) => {
+      if (settled) return;
+      settled = true;
+      cleanupListeners();
+      resolveInvocation(result);
+    };
+    const onError = (error) => {
+      if (timedOut) {
+        settle({ kind: 'timeout' });
+        return;
+      }
+      settle({
+        code: typeof error.code === 'string' ? error.code : 'UNKNOWN',
+        kind: 'spawn_error',
+      });
+    };
+    const onExit = (code, signal) => {
+      if (timedOut) {
+        settle({ kind: 'timeout' });
+        return;
+      }
+      if (code !== null) settle({ code, kind: 'exit' });
+      else settle({ kind: 'signal', signal: signal ?? 'UNKNOWN' });
+    };
+    child.once('error', onError);
+    child.once('exit', onExit);
+    timer = setTimeout(() => {
+      timedOut = true;
+      if (!child.kill()) {
+        settle({ kind: 'timeout' });
+        return;
+      }
+      timer = setTimeout(() => settle({ kind: 'timeout' }), 5_000);
+    }, timeout);
+  });
+}
+
+export function assertInvocation(stage, result, expectation, code) {
+  if (result.kind === 'timeout') throw failure(stage, `${code}_TIMEOUT`, 'timeout');
+  if (result.kind === 'signal') throw failure(stage, `${code}_SIGNAL`, 'signal');
+  if (result.kind === 'spawn_error') throw failure(stage, `${code}_SPAWN_ERROR`, 'spawn_error');
+  if (expectation === 'success' && result.code !== 0)
+    throw failure(stage, `${code}_NONZERO_EXIT`, 'nonzero_exit');
+  if (expectation === 'nonzero' && result.code === 0)
+    throw failure(stage, `${code}_UNEXPECTED_ZERO_EXIT`, 'invariant');
+  return result.code;
+}
+
+async function invokeExpected(stage, executable, arguments_, cwd, expectation, code) {
+  setStage(stage);
+  const result = await invokeProcess(executable, arguments_, cwd);
+  return assertInvocation(stage, result, expectation, code);
 }
 
 async function assertPayload(directory, expected, version) {
@@ -217,38 +450,95 @@ async function assertPayload(directory, expected, version) {
     throw new Error('INSTALLER_LIFECYCLE_INSTALLED_PAYLOAD_INVALID');
 }
 
-async function waitForReport(outputPath) {
-  const deadline = performance.now() + 25_000;
+export async function waitForReport(outputPath, timeout = 25_000) {
+  const deadline = performance.now() + timeout;
+  let incompleteJson = false;
   while (performance.now() < deadline) {
     try {
       return JSON.parse(await readFile(outputPath, 'utf8'));
     } catch (error) {
-      if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error;
+      if (error instanceof SyntaxError) incompleteJson = true;
+      else if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT'))
+        throw failure('smoke-report', 'INSTALLER_LIFECYCLE_SMOKE_REPORT_READ_FAILED');
     }
     await delay(50);
   }
-  throw new Error('INSTALLER_LIFECYCLE_SMOKE_REPORT_TIMEOUT');
+  throw failure(
+    'smoke-report',
+    incompleteJson
+      ? 'INSTALLER_LIFECYCLE_SMOKE_REPORT_INVALID'
+      : 'INSTALLER_LIFECYCLE_SMOKE_REPORT_TIMEOUT',
+    'timeout',
+  );
 }
 
 export function waitForExit(child, timeout = 35_000) {
   if (child.exitCode !== null) return Promise.resolve(child.exitCode);
+  if (child.signalCode !== undefined && child.signalCode !== null)
+    return Promise.reject(
+      failure('process-exit', 'INSTALLER_LIFECYCLE_SMOKE_EXIT_SIGNAL', 'signal'),
+    );
   return new Promise((resolveExit, rejectExit) => {
+    let settled = false;
+    const cleanupListeners = () => {
+      clearTimeout(timer);
+      child.removeListener('error', onError);
+      child.removeListener('exit', onExit);
+    };
+    const rejectOnce = (error) => {
+      if (settled) return;
+      settled = true;
+      cleanupListeners();
+      rejectExit(error);
+    };
+    const resolveOnce = (code) => {
+      if (settled) return;
+      settled = true;
+      cleanupListeners();
+      resolveExit(code);
+    };
+    const onError = () => {
+      rejectOnce(
+        failure('process-exit', 'INSTALLER_LIFECYCLE_SMOKE_EXIT_SPAWN_ERROR', 'spawn_error'),
+      );
+    };
+    const onExit = (code, signal) => {
+      if (code !== null) resolveOnce(code);
+      else
+        rejectOnce(
+          failure(
+            'process-exit',
+            `INSTALLER_LIFECYCLE_SMOKE_EXIT_SIGNAL_${signal ?? 'UNKNOWN'}`,
+            'signal',
+          ),
+        );
+    };
     const timer = setTimeout(
-      () => rejectExit(new Error('INSTALLER_LIFECYCLE_SMOKE_EXIT_TIMEOUT')),
+      () =>
+        rejectOnce(failure('process-exit', 'INSTALLER_LIFECYCLE_SMOKE_EXIT_TIMEOUT', 'timeout')),
       timeout,
     );
-    child.once('error', (error) => {
-      clearTimeout(timer);
-      rejectExit(error);
-    });
-    child.once('exit', (code) => {
-      clearTimeout(timer);
-      resolveExit(code);
-    });
+    child.once('error', onError);
+    child.once('exit', onExit);
+    if (child.exitCode !== null) resolveOnce(child.exitCode);
+    else if (child.signalCode !== undefined && child.signalCode !== null)
+      onExit(null, child.signalCode);
   });
 }
 
-async function launchSmoke(executable, workspace, reportRoot, version) {
+async function terminateOwnedChild(child) {
+  if (child.exitCode !== null || (child.signalCode !== undefined && child.signalCode !== null))
+    return;
+  if (!child.kill())
+    throw failure('smoke-cleanup', 'INSTALLER_LIFECYCLE_SMOKE_CLEANUP_KILL_FAILED', 'cleanup');
+  await waitForExit(child, 5_000).catch((error) => {
+    if (error instanceof LifecycleFailure && error.classification === 'signal') return;
+    throw error;
+  });
+}
+
+async function launchSmoke(executable, workspace, reportRoot, version, stage) {
+  setStage(stage);
   const outputPath = join(reportRoot, `issue006-smoke-${randomUUID()}.json`);
   const child = spawn(
     executable,
@@ -264,31 +554,65 @@ async function launchSmoke(executable, workspace, reportRoot, version) {
       windowsHide: true,
     },
   );
-  const report = await waitForReport(outputPath);
-  if (
-    report.ok !== true ||
-    report.packaged !== true ||
-    report.mode !== 'v2' ||
-    report.applicationVersion !== version ||
-    report.runtime?.projectDataRootInitialized !== true ||
-    report.runtime?.sqliteInitialized !== true ||
-    report.security?.externalRequestAttempts !== 0
-  )
-    throw new Error('INSTALLER_LIFECYCLE_INSTALLED_SMOKE_INVALID');
-  return { child, exit: waitForExit(child) };
+  const exitOutcome = waitForExit(child).then(
+    (code) => ({ code, kind: 'exit' }),
+    (error) => ({ error, kind: 'error' }),
+  );
+  let primaryError;
+  try {
+    const report = await waitForReport(outputPath);
+    if (
+      report.ok !== true ||
+      report.packaged !== true ||
+      report.mode !== 'v2' ||
+      report.applicationVersion !== version ||
+      report.runtime?.projectDataRootInitialized !== true ||
+      report.runtime?.sqliteInitialized !== true ||
+      report.security?.externalRequestAttempts !== 0
+    )
+      throw failure(stage, 'INSTALLER_LIFECYCLE_INSTALLED_SMOKE_INVALID');
+  } catch (error) {
+    primaryError = error;
+  }
+  if (primaryError !== undefined) {
+    try {
+      await terminateOwnedChild(child);
+    } catch (cleanupError) {
+      await emitFailureSummary(cleanupError, 'cleanup');
+    }
+    throw primaryError;
+  }
+  return {
+    child,
+    exit: exitOutcome.then(async (outcome) => {
+      if (outcome.kind === 'error') {
+        try {
+          await terminateOwnedChild(child);
+        } catch (cleanupError) {
+          await emitFailureSummary(cleanupError, 'cleanup');
+        }
+        throw outcome.error;
+      }
+      return outcome.code;
+    }),
+  };
 }
 
 export function createRunningProcess(child, awaitExit = waitForExit) {
   let spawnError;
-  child.once('error', (error) => {
+  const onError = (error) => {
     spawnError = error;
-  });
+  };
+  child.once('error', onError);
   return {
+    awaitExit,
     child,
+    dispose() {
+      child.removeListener('error', onError);
+    },
     get spawnError() {
       return spawnError;
     },
-    awaitExit,
   };
 }
 
@@ -303,12 +627,35 @@ export function launchRunning(executable, arguments_ = []) {
 }
 
 export async function stopRunning(running) {
-  if (running.spawnError !== undefined) throw running.spawnError;
-  if (running.child.exitCode !== null) return running.child.exitCode;
-  // The owned app is intentionally persistent. Its bounded exit wait begins only
-  // when this harness explicitly requests its shutdown.
-  if (!running.child.kill()) throw new Error('INSTALLER_LIFECYCLE_RUNNING_APP_STOP_FAILED');
-  return running.awaitExit(running.child);
+  try {
+    if (running.spawnError !== undefined)
+      throw failure(
+        'running-app-cleanup',
+        'INSTALLER_LIFECYCLE_RUNNING_APP_SPAWN_ERROR',
+        'spawn_error',
+      );
+    if (running.child.exitCode !== null) return running.child.exitCode;
+    // The owned app is intentionally persistent. Its bounded exit wait begins only
+    // when this harness explicitly requests its shutdown.
+    if (!running.child.kill())
+      throw failure(
+        'running-app-cleanup',
+        'INSTALLER_LIFECYCLE_RUNNING_APP_STOP_FAILED',
+        'cleanup',
+      );
+    try {
+      return await running.awaitExit(running.child);
+    } catch (error) {
+      if (error instanceof LifecycleFailure && error.classification === 'signal') return null;
+      throw error;
+    }
+  } finally {
+    running.dispose();
+  }
+}
+
+export function selectLifecycleFailure(primaryError, cleanupError) {
+  return primaryError ?? cleanupError;
 }
 
 async function withRunningApplication(
@@ -323,8 +670,11 @@ async function withRunningApplication(
   let primaryError;
   let cleanupError;
   try {
-    await converge(readyStage, readState, (state) => runningInstalled(state, version));
-    if (running.spawnError !== undefined) throw running.spawnError;
+    await converge(readyStage, readState, (state) => {
+      if (running.spawnError !== undefined)
+        throw failure(readyStage, 'INSTALLER_LIFECYCLE_RUNNING_APP_SPAWN_ERROR', 'spawn_error');
+      return runningInstalled(state, version);
+    });
     await action();
   } catch (error) {
     primaryError = error;
@@ -334,12 +684,14 @@ async function withRunningApplication(
       await converge(closedStage, readState, (state) => installed(state, version));
     } catch (error) {
       cleanupError = error;
-      if (primaryError !== undefined)
+      if (primaryError !== undefined) {
         log(closedStage, performance.now(), { cleanup: 'failed' }, 'failed');
+        await emitFailureSummary(cleanupError, 'cleanup');
+      }
     }
   }
-  if (primaryError !== undefined) throw primaryError;
-  if (cleanupError !== undefined) throw cleanupError;
+  const selectedError = selectLifecycleFailure(primaryError, cleanupError);
+  if (selectedError !== undefined) throw selectedError;
 }
 
 async function createDataRecord(workspace) {
@@ -386,7 +738,7 @@ async function removeOwned(directory, stage = 'owned-cleanup') {
     if (!existsSync(directory)) break;
     if (performance.now() - startedAt >= CLEANUP_TIMEOUT_MILLISECONDS) {
       log(stage, startedAt, { attempts, removed: false }, 'failed');
-      throw new Error(`INSTALLER_LIFECYCLE_CLEANUP_TIMEOUT:${attempts}`);
+      throw failure(stage, 'INSTALLER_LIFECYCLE_CLEANUP_TIMEOUT', 'cleanup');
     }
     attempts += 1;
     await delay(POLL_MILLISECONDS);
@@ -399,8 +751,9 @@ async function main() {
   if (process.env.REDNOTE_R10D_LIFECYCLE_FIXTURE !== '1')
     throw new Error('INSTALLER_LIFECYCLE_FIXTURE_REQUIRED');
   const target = targetPath();
-  const readState = () => observe(target, temporaryDirectory);
-  const initial = await readState();
+  const readState = (stage) => observe(target, temporaryDirectory, stage);
+  setStage('L01-preconditions');
+  const initial = await readState('L01-preconditions');
   if (initial.installDirectory || initial.registryEntries !== 0 || initial.startMenu)
     throw new Error('INSTALLER_LIFECYCLE_REFUSES_EXISTING_INSTALL');
   log('L01-preconditions', performance.now(), { state: safeState(initial) });
@@ -433,9 +786,17 @@ async function main() {
   const workspace = await mkdtemp(join(lifecycleRoot, 'rednote-issue010-smoke-'));
   const executable = join(target, 'RednoteMysteryOperations.exe');
   const uninstaller = () => join(target, 'Uninstall 红笺本地运营台.exe');
+  let primaryError;
+  let cleanupError;
   try {
-    if ((await invoke(beta0Installer, ['/S'], fixtureBundle)) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_BETA0_INSTALL_FAILED');
+    await invokeExpected(
+      'L02-beta0-install',
+      beta0Installer,
+      ['/S'],
+      fixtureBundle,
+      'success',
+      'INSTALLER_LIFECYCLE_BETA0_INSTALL',
+    );
     await converge('L02-clean-beta0-install', readState, (state) =>
       installed(state, WINDOWS_CI_FIXTURE_VERSION),
     );
@@ -446,6 +807,7 @@ async function main() {
       workspace,
       lifecycleRoot,
       WINDOWS_CI_FIXTURE_VERSION,
+      'L03-beta0-installed-smoke',
     );
     if ((await first.exit) !== 0) throw new Error('INSTALLER_LIFECYCLE_BETA0_SMOKE_FAILED');
     const data = await createDataRecord(workspace);
@@ -457,8 +819,14 @@ async function main() {
       'L04-running-upgrade-app-ready',
       'L04-running-upgrade-app-closed',
       async () => {
-        if ((await invoke(beta1Installer, ['/S'], canonicalBundle)) === 0)
-          throw new Error('INSTALLER_LIFECYCLE_RUNNING_UPGRADE_NOT_BLOCKED');
+        await invokeExpected(
+          'L04-running-upgrade-block',
+          beta1Installer,
+          ['/S'],
+          canonicalBundle,
+          'nonzero',
+          'INSTALLER_LIFECYCLE_RUNNING_UPGRADE',
+        );
         await converge('L04-running-upgrade-block', readState, (state) =>
           runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
         );
@@ -472,8 +840,14 @@ async function main() {
       'L04-running-uninstall-app-ready',
       'L04-running-uninstall-app-closed',
       async () => {
-        if ((await invoke(uninstaller(), ['/S'], target)) === 0)
-          throw new Error('INSTALLER_LIFECYCLE_RUNNING_UNINSTALL_NOT_BLOCKED');
+        await invokeExpected(
+          'L04-running-uninstall-block',
+          uninstaller(),
+          ['/S'],
+          target,
+          'nonzero',
+          'INSTALLER_LIFECYCLE_RUNNING_UNINSTALL',
+        );
         await converge('L04-running-uninstall-block', readState, (state) =>
           runningInstalled(state, WINDOWS_CI_FIXTURE_VERSION),
         );
@@ -485,16 +859,28 @@ async function main() {
     const size = (await stat(corrupt)).size;
     if (size < 8_192) throw new Error('INSTALLER_LIFECYCLE_CORRUPT_FIXTURE_INVALID');
     await truncate(corrupt, size - 1_024);
-    if ((await invoke(corrupt, ['/S'], lifecycleRoot)) === 0)
-      throw new Error('INSTALLER_LIFECYCLE_CORRUPT_INSTALLER_ACCEPTED');
+    await invokeExpected(
+      'L05-corrupt-installer-rollback',
+      corrupt,
+      ['/S'],
+      lifecycleRoot,
+      'nonzero',
+      'INSTALLER_LIFECYCLE_CORRUPT_INSTALLER',
+    );
     await converge('L05-corrupt-installer-rollback', readState, (state) =>
       installed(state, WINDOWS_CI_FIXTURE_VERSION),
     );
     await assertPayload(target, beta0Manifest, WINDOWS_CI_FIXTURE_VERSION);
     await assertData(data);
 
-    if ((await invoke(beta1Installer, ['/S'], canonicalBundle)) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_BETA1_UPGRADE_FAILED');
+    await invokeExpected(
+      'L06-beta0-to-beta1-upgrade',
+      beta1Installer,
+      ['/S'],
+      canonicalBundle,
+      'success',
+      'INSTALLER_LIFECYCLE_BETA1_UPGRADE',
+    );
     await converge('L06-beta0-to-beta1-upgrade', readState, (state) =>
       installed(state, WINDOWS_CANONICAL_VERSION),
     );
@@ -504,24 +890,43 @@ async function main() {
       workspace,
       lifecycleRoot,
       WINDOWS_CANONICAL_VERSION,
+      'L06-beta1-installed-smoke',
     );
     if ((await upgraded.exit) !== 0) throw new Error('INSTALLER_LIFECYCLE_BETA1_SMOKE_FAILED');
     await assertData(data);
 
-    if ((await invoke(beta0Installer, ['/S'], fixtureBundle)) === 0)
-      throw new Error('INSTALLER_LIFECYCLE_DOWNGRADE_NOT_BLOCKED');
+    await invokeExpected(
+      'L07-downgrade-block',
+      beta0Installer,
+      ['/S'],
+      fixtureBundle,
+      'nonzero',
+      'INSTALLER_LIFECYCLE_DOWNGRADE',
+    );
     await converge('L07-downgrade-block', readState, (state) =>
       installed(state, WINDOWS_CANONICAL_VERSION),
     );
     await assertPayload(target, beta1Manifest, WINDOWS_CANONICAL_VERSION);
 
-    if ((await invoke(uninstaller(), ['/S'], target)) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_UNINSTALL_FAILED');
+    await invokeExpected(
+      'L08-uninstall-data-preserved',
+      uninstaller(),
+      ['/S'],
+      target,
+      'success',
+      'INSTALLER_LIFECYCLE_UNINSTALL',
+    );
     await converge('L08-uninstall-data-preserved', readState, uninstalled);
     await assertData(data);
 
-    if ((await invoke(beta1Installer, ['/S'], canonicalBundle)) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_REINSTALL_FAILED');
+    await invokeExpected(
+      'L09-reinstall-read-preserved-data',
+      beta1Installer,
+      ['/S'],
+      canonicalBundle,
+      'success',
+      'INSTALLER_LIFECYCLE_REINSTALL',
+    );
     await converge('L09-reinstall-read-preserved-data', readState, (state) =>
       installed(state, WINDOWS_CANONICAL_VERSION),
     );
@@ -530,13 +935,20 @@ async function main() {
       workspace,
       lifecycleRoot,
       WINDOWS_CANONICAL_VERSION,
+      'L09-reinstalled-smoke',
     );
     if ((await reinstalled.exit) !== 0)
       throw new Error('INSTALLER_LIFECYCLE_REINSTALL_SMOKE_FAILED');
     await assertData(data);
 
-    if ((await invoke(uninstaller(), ['/S'], target)) !== 0)
-      throw new Error('INSTALLER_LIFECYCLE_FINAL_UNINSTALL_FAILED');
+    await invokeExpected(
+      'L10-final-uninstall',
+      uninstaller(),
+      ['/S'],
+      target,
+      'success',
+      'INSTALLER_LIFECYCLE_FINAL_UNINSTALL',
+    );
     await converge('L10-final-uninstall', readState, uninstalled);
     await assertData(data);
     await removeOwned(workspace);
@@ -545,11 +957,24 @@ async function main() {
     process.stdout.write(
       `${JSON.stringify({ lifecycle: 'L01-L10', networkConnections: 0, version: WINDOWS_CANONICAL_VERSION })}\n`,
     );
+  } catch (error) {
+    primaryError = error;
   } finally {
-    if (within(temporaryDirectory, lifecycleRoot) && existsSync(lifecycleRoot))
-      await removeOwned(lifecycleRoot);
-    if (existsSync(fixtureOutput)) await removeOwned(fixtureOutput);
+    for (const [directory, stage] of [
+      [within(temporaryDirectory, lifecycleRoot) ? lifecycleRoot : undefined, 'lifecycle-cleanup'],
+      [fixtureOutput, 'fixture-cleanup'],
+    ]) {
+      if (directory === undefined || !existsSync(directory)) continue;
+      try {
+        await removeOwned(directory, stage);
+      } catch (error) {
+        cleanupError ??= error;
+        await emitFailureSummary(error, 'cleanup');
+      }
+    }
   }
+  const selectedError = selectLifecycleFailure(primaryError, cleanupError);
+  if (selectedError !== undefined) throw selectedError;
 }
 
 async function cleanup() {
@@ -559,7 +984,16 @@ async function cleanup() {
   await removeOwned(temporaryDirectory, 'ci-temp-cleanup');
 }
 
+async function runCli() {
+  try {
+    if (process.argv.includes('--cleanup-ci-temp')) await cleanup();
+    else await main();
+  } catch (error) {
+    await emitFailureSummary(error);
+    process.exitCode = 1;
+  }
+}
+
 if (process.argv[1] !== undefined && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  if (process.argv.includes('--cleanup-ci-temp')) await cleanup();
-  else await main();
+  await runCli();
 }

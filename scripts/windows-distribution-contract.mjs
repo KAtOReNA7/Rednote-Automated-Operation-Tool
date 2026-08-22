@@ -7,6 +7,7 @@ import { isAbsolute, join, relative, resolve, sep } from 'node:path';
 export const WINDOWS_APPLICATION_ID = 'io.github.katorena7.rednote-mystery-operations';
 export const WINDOWS_APPLICATION_NAME = 'rednote-mystery-operations';
 export const WINDOWS_PRODUCT_NAME = '红笺本地运营台';
+export const WINDOWS_INSTALLER_GUID = '93211c80-b79d-59cd-848c-fd9f791d6cc2';
 export const WINDOWS_MANIFEST_NAME = 'release-manifest.json';
 export const WINDOWS_MANIFEST_FORMAT = 'rednote-windows-internal-beta';
 export const WINDOWS_CANONICAL_VERSION = '0.1.0-beta.1';

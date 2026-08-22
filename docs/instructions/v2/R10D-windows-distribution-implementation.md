@@ -1,6 +1,6 @@
 # R10D Windows 分发、安装、升级与卸载实施/验收
 
-**任务状态：实施中。** 本文仅在取得实际代码、测试或托管 CI 证据后回填；当前不是发布声明。
+**任务状态：PR #29 候选验证中。** 只有精确 PR HEAD 与合并后 `main` 的 Windows required CI 均成功，R10D 才能收口；当前不是发布声明，R10E 尚未开始。
 
 ## 范围与固定边界
 
@@ -21,7 +21,7 @@
 | D07 干净安装                     | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
 | D08 数据根与凭据语义稳定         | PENDING      | 待隔离 smoke 证据。                                            |
 | D09 手动兼容升级                 | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D10 显式备份兼容                 | PENDING      | 待实现与测试。                                                 |
+| D10 显式备份兼容                 | PASS（既有） | R10B 受控备份与恢复已通过 PR #26 进入 `main`。                 |
 | D11 降级和未知安装阻断           | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
 | D12 运行中升级/卸载阻断          | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
 | D13 失败回退                     | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
@@ -29,7 +29,7 @@
 | D15 保留数据后的重装             | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
 | D16 生命周期零网络与零费用       | PENDING      | 待 CI smoke 证据。                                             |
 | D17 精确 HEAD CI artifact        | PENDING      | 待 CI workflow 证据。                                          |
-| D18 文档与阶段事实               | PENDING      | 待实现与治理测试。                                             |
+| D18 文档与阶段事实               | 条件式准确   | 文档保持候选状态；待 CI 和合并后再确认收口。                   |
 
 本轮 L01—L10 仅在精确 HEAD 的 Windows CI 完成后回填为 PASS；D13 只声明损坏安装器的失败回退。
 
