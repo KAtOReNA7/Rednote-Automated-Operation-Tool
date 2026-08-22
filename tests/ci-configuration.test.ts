@@ -31,6 +31,12 @@ const workflow = parse(workflowSource) as Workflow;
 const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as {
   readonly scripts: Readonly<Record<string, string>>;
 };
+const v2Package = JSON.parse(
+  readFileSync(resolve(repositoryRoot, 'packages/v2/package.json'), 'utf8'),
+) as {
+  readonly exports: { readonly '.': { readonly default: string; readonly types: string } };
+  readonly main: string;
+};
 const windowsJob = workflow.jobs['windows-required'];
 const runCommands =
   windowsJob?.steps
@@ -63,6 +69,9 @@ describe('Windows CI configuration', () => {
     ]) {
       expect(runCommands).toContain(command);
     }
+    expect(v2Package.main).toBe('./dist/index.js');
+    expect(v2Package.exports['.'].default).toBe('./dist/index.js');
+    expect(v2Package.exports['.'].types).toBe('./dist/index.d.ts');
   });
 
   it('builds exact-head R10D and closed R10E candidate artifacts only after required inputs', () => {
