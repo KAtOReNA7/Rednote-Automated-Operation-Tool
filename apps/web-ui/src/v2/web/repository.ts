@@ -2,9 +2,12 @@ import { DEFAULT_ACCOUNT_PERSONA } from '@mystery-operations/v2';
 
 import {
   WEB_WORKSPACE_FORMAT,
+  WEB_WORKSPACE_LEGACY_SCHEMA_VERSION,
   WEB_WORKSPACE_SCHEMA_VERSION,
   WebRepositoryError,
+  migrateWebWorkspaceState,
   newWorkspaceState,
+  parseAnyWebSnapshot,
   parseWebIndex,
   parseWebManifest,
   parseWebSnapshot,
@@ -30,7 +33,10 @@ export interface LoadedWorkspace {
   readonly generation: number;
   readonly index: WebWorkspaceIndex;
   readonly lastSavedAt: string;
+  readonly nextGeneration: number;
   readonly recoveryWarning: string | null;
+  readonly sourceSchemaVersion:
+    typeof WEB_WORKSPACE_LEGACY_SCHEMA_VERSION | typeof WEB_WORKSPACE_SCHEMA_VERSION;
   readonly state: WebWorkspaceState;
 }
 
@@ -128,7 +134,10 @@ export class BrowserWorkspaceRepository {
       );
     }
     try {
-      return await this.load(manifest.workspaceId);
+      const loaded = await this.load(manifest.workspaceId);
+      return loaded.sourceSchemaVersion === WEB_WORKSPACE_LEGACY_SCHEMA_VERSION
+        ? await this.#migrateLegacy(loaded)
+        : loaded;
     } catch (error) {
       if (!(error instanceof WebRepositoryError) || error.code !== 'RECOVERY_FAILED') throw error;
       return this.#resumeInitialization(manifest);
@@ -150,6 +159,7 @@ export class BrowserWorkspaceRepository {
       }
     }
     candidates.sort((left, right) => right.index.generation - left.index.generation);
+    const nextGeneration = Math.max(0, ...candidates.map(({ index }) => index.generation)) + 1;
     let invalidSnapshot = false;
     for (const candidate of candidates) {
       const snapshotBytes = await this.folder.read(candidate.index.snapshotPath);
@@ -162,18 +172,24 @@ export class BrowserWorkspaceRepository {
         continue;
       }
       try {
-        const snapshot = parseWebSnapshot(decode(snapshotBytes));
+        const snapshot = parseAnyWebSnapshot(decode(snapshotBytes));
         if (
           snapshot.workspaceId !== workspaceId ||
-          snapshot.generation !== candidate.index.generation
+          snapshot.generation !== candidate.index.generation ||
+          snapshot.schemaVersion !== candidate.index.schemaVersion
         )
           throw new Error('identity');
         return {
           generation: snapshot.generation,
           index: candidate.index,
           lastSavedAt: snapshot.savedAt,
+          nextGeneration,
           recoveryWarning: invalidIndex || invalidSnapshot ? '已回退到上一份可验证状态。' : null,
-          state: snapshot.state,
+          sourceSchemaVersion: snapshot.schemaVersion,
+          state:
+            snapshot.schemaVersion === WEB_WORKSPACE_LEGACY_SCHEMA_VERSION
+              ? migrateWebWorkspaceState(snapshot.state)
+              : snapshot.state,
         };
       } catch {
         invalidSnapshot = true;
@@ -200,12 +216,74 @@ export class BrowserWorkspaceRepository {
           '工作区已被其他标签页更新，请先刷新。',
         );
       }
-      return this.#write(next, expectedGeneration + 1);
+      return this.#write(next, current.nextGeneration);
     });
   }
 
   async #writeInitial(state: WebWorkspaceState): Promise<LoadedWorkspace> {
     return this.#lock.run(state.workspaceId, () => this.#write(state, 1));
+  }
+
+  async #migrateLegacy(loaded: LoadedWorkspace): Promise<LoadedWorkspace> {
+    return this.#lock.run(loaded.state.workspaceId, async () => {
+      const current = await this.load(loaded.state.workspaceId);
+      if (current.sourceSchemaVersion === WEB_WORKSPACE_SCHEMA_VERSION) return current;
+      if (
+        current.generation !== loaded.generation ||
+        current.index.sha256 !== loaded.index.sha256
+      ) {
+        throw new WebRepositoryError(
+          'REVISION_CONFLICT',
+          'repository',
+          '迁移前工作区已变化，请重新载入。',
+        );
+      }
+      const snapshotPath = `state/snapshots/${String(current.nextGeneration).padStart(8, '0')}.json`;
+      const interruptedSnapshot = await this.folder.read(snapshotPath);
+      if (interruptedSnapshot !== null) {
+        let parsed: WebSnapshotEnvelope;
+        try {
+          const candidate = parseAnyWebSnapshot(decode(interruptedSnapshot));
+          if (candidate.schemaVersion !== WEB_WORKSPACE_SCHEMA_VERSION)
+            throw new Error('legacy migration target');
+          parsed = candidate;
+        } catch {
+          throw new WebRepositoryError(
+            'RECOVERY_FAILED',
+            'repository',
+            '迁移中断材料无法安全证明；原快照未被覆盖。',
+          );
+        }
+        if (
+          parsed.generation !== current.nextGeneration ||
+          parsed.workspaceId !== current.state.workspaceId ||
+          JSON.stringify(parsed.state) !== JSON.stringify(current.state)
+        ) {
+          throw new WebRepositoryError(
+            'RECOVERY_FAILED',
+            'repository',
+            '迁移中断材料与原状态不一致；原快照未被覆盖。',
+          );
+        }
+        const index: WebWorkspaceIndex = {
+          bytes: interruptedSnapshot.byteLength,
+          generation: parsed.generation,
+          schemaVersion: WEB_WORKSPACE_SCHEMA_VERSION,
+          sha256: await digest(interruptedSnapshot),
+          snapshotPath,
+          workspaceId: parsed.workspaceId,
+        };
+        await this.folder.write(
+          INDEX_PATHS[(parsed.generation - 1) % 2] ?? INDEX_PATHS[0],
+          encode(index),
+          'replace',
+        );
+        const recovered = await this.load(current.state.workspaceId);
+        return { ...recovered, recoveryWarning: '已安全续接中断的 W1→W2 升级。' };
+      }
+      const migrated = await this.#write(current.state, current.nextGeneration);
+      return { ...migrated, recoveryWarning: 'W1 工作区已无损升级为 W2；原快照仍保留。' };
+    });
   }
 
   async #resumeInitialization(manifest: WebWorkspaceManifest): Promise<LoadedWorkspace> {
@@ -228,6 +306,7 @@ export class BrowserWorkspaceRepository {
         }
         if (
           index.workspaceId !== manifest.workspaceId ||
+          index.schemaVersion !== WEB_WORKSPACE_SCHEMA_VERSION ||
           index.generation !== 1 ||
           index.snapshotPath !== INITIAL_SNAPSHOT_PATH
         ) {
@@ -247,7 +326,10 @@ export class BrowserWorkspaceRepository {
 
       let snapshot: WebSnapshotEnvelope;
       try {
-        snapshot = parseWebSnapshot(decode(snapshotBytes));
+        const parsed = parseAnyWebSnapshot(decode(snapshotBytes));
+        if (parsed.schemaVersion !== WEB_WORKSPACE_SCHEMA_VERSION)
+          throw this.#initialRecoveryFailure();
+        snapshot = parsed;
       } catch {
         throw this.#initialRecoveryFailure();
       }
@@ -332,7 +414,15 @@ export class BrowserWorkspaceRepository {
       encode(index),
       'replace',
     );
-    return { generation, index, lastSavedAt: snapshot.savedAt, recoveryWarning: null, state };
+    return {
+      generation,
+      index,
+      lastSavedAt: snapshot.savedAt,
+      nextGeneration: generation + 1,
+      recoveryWarning: null,
+      sourceSchemaVersion: WEB_WORKSPACE_SCHEMA_VERSION,
+      state,
+    };
   }
 
   public static currentShanghaiWeekKey(now = new Date()): string {
