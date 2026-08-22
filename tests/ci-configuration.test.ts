@@ -37,7 +37,7 @@ const v2Package = JSON.parse(
   readonly exports: {
     readonly '.': {
       readonly default: string;
-      readonly development: string;
+      readonly 'rednote-runtime': string;
       readonly types: string;
     };
   };
@@ -75,9 +75,12 @@ describe('Windows CI configuration', () => {
     ]) {
       expect(runCommands).toContain(command);
     }
-    expect(v2Package.main).toBe('./dist/index.js');
-    expect(v2Package.exports['.'].development).toBe('./src/index.ts');
-    expect(v2Package.exports['.'].default).toBe('./dist/index.js');
+    expect(packageJson.scripts['test:clipper-real']).toContain(
+      'node --conditions=rednote-runtime scripts/run-clipper-real-smoke.mjs',
+    );
+    expect(v2Package.main).toBe('./src/index.ts');
+    expect(v2Package.exports['.']['rednote-runtime']).toBe('./dist/index.js');
+    expect(v2Package.exports['.'].default).toBe('./src/index.ts');
     expect(v2Package.exports['.'].types).toBe('./dist/index.d.ts');
   });
 
