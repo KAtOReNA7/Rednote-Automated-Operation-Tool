@@ -108,6 +108,8 @@ describe('Windows CI configuration', () => {
     expect(clipperActionSource).toContain('ElementNotAvailableException');
     expect(clipperActionSource).toContain('Find-VisibleNameContaining');
     expect(clipperActionSource).toContain('[System.StringComparison]::OrdinalIgnoreCase');
+    expect(clipperActionSource).toContain('$element.Current.AutomationId');
+    expect(clipperActionSource).toContain('$diagnostics.Count -ge 24');
     const uiAutomationStart = clipperActionSource.indexOf(
       'Add-Type -AssemblyName UIAutomationClient',
     );

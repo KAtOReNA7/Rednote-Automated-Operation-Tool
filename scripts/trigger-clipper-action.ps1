@@ -250,10 +250,16 @@ function Find-VisibleNameContaining {
         continue
       }
       $name = $element.Current.Name
+      $automationId = $element.Current.AutomationId
       foreach ($fragment in $Fragments) {
         if (
-          -not [string]::IsNullOrWhiteSpace($name) -and
-          $name.IndexOf($fragment, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+          (
+            -not [string]::IsNullOrWhiteSpace($name) -and
+            $name.IndexOf($fragment, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+          ) -or (
+            -not [string]::IsNullOrWhiteSpace($automationId) -and
+            $automationId.IndexOf($fragment, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+          )
         ) {
           return $element
         }
@@ -263,6 +269,45 @@ function Find-VisibleNameContaining {
     }
   }
   return $null
+}
+
+function Get-VisibleButtonDiagnostics {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.Windows.Automation.AutomationElement]$Root
+  )
+
+  $buttonCondition = [System.Windows.Automation.PropertyCondition]::new(
+    [System.Windows.Automation.AutomationElement]::ControlTypeProperty,
+    [System.Windows.Automation.ControlType]::Button
+  )
+  $buttons = $Root.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    $buttonCondition
+  )
+  $diagnostics = @()
+  foreach ($button in $buttons) {
+    if ($diagnostics.Count -ge 24) {
+      break
+    }
+    try {
+      if ($button.Current.IsOffscreen) {
+        continue
+      }
+      $name = ([string]$button.Current.Name -replace '[\r\n\t]', ' ').Trim()
+      $automationId = ([string]$button.Current.AutomationId -replace '[\r\n\t]', ' ').Trim()
+      if ([string]::IsNullOrWhiteSpace($name) -and [string]::IsNullOrWhiteSpace($automationId)) {
+        continue
+      }
+      $diagnostics += [pscustomobject]@{
+        name = $name.Substring(0, [Math]::Min($name.Length, 80))
+        automationId = $automationId.Substring(0, [Math]::Min($automationId.Length, 80))
+      }
+    } catch [System.Runtime.InteropServices.COMException] {
+      continue
+    }
+  }
+  return ($diagnostics | ConvertTo-Json -Compress)
 }
 
 function Invoke-VisibleElement {
@@ -354,7 +399,8 @@ if ($null -eq $extensionsButton) {
     -Fragments @($extensionsChinese, $extensionsEdgeChinese, 'Extensions')
 }
 if ($null -eq $extensionsButton) {
-  throw 'The isolated browser Extensions toolbar button was not found.'
+  $buttonDiagnostics = Get-VisibleButtonDiagnostics -Root $browserRoot
+  throw "The isolated browser Extensions toolbar button was not found. Visible buttons: $buttonDiagnostics"
 }
 Invoke-VisibleElement -Element $extensionsButton
 Start-Sleep -Milliseconds 500
