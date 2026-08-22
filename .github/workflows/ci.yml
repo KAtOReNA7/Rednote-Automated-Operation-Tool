@@ -5,13 +5,73 @@ on:
     branches:
       - main
   pull_request:
+  workflow_dispatch:
 
 permissions:
   contents: read
 
 jobs:
+  web-required:
+    name: Web required
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out exact head
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Prepare repository-volume temporary paths
+        shell: pwsh
+        run: |
+          $workspaceParent = Split-Path -Parent (Get-Location).Path
+          $temporaryPath = Join-Path $workspaceParent ".rednote-temp\web-${{ github.run_id }}-${{ github.run_attempt }}"
+          $cachePath = Join-Path $workspaceParent '.rednote-npm-cache'
+          $environmentFile = [System.Environment]::GetEnvironmentVariable('GITHUB_ENV')
+          New-Item -ItemType Directory -Force -Path $temporaryPath, $cachePath | Out-Null
+          "TEMP=$temporaryPath" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "TMP=$temporaryPath" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "npm_config_cache=$cachePath" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Check formatting
+        run: npm run format-check
+      - name: Lint
+        run: npm run lint
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Run normal Vitest suite once
+        run: node scripts/run-portable-vitest.mjs --observable --suite=normal run --maxWorkers=1 --no-file-parallelism
+      - name: Build and inspect static Web artifact
+        env:
+          REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run build:web
+      - name: Run Chrome and Edge Web smoke
+        run: npm run smoke:web-e2e
+      - name: Audit dependencies
+        run: npm run audit:dependencies
+      - name: Upload exact-head Web preview and report
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rednote-web-preview-${{ github.event.pull_request.head.sha }}
+          path: |
+            .vite/web/
+            .rednote-temp/web-e2e-report.json
+          if-no-files-found: error
+          retention-days: 14
+
   windows-required:
     name: Windows required
+    if: github.event_name == 'workflow_dispatch'
     runs-on: windows-latest
     timeout-minutes: 45
 

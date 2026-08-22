@@ -5,6 +5,7 @@ out/
 coverage/
 package-lock.json
 scripts/trigger-clipper-action.ps1
+启动 Rednote Web FSA 验收.cmd
 
 # Frozen source documents are preserved verbatim.
 docs/governance/codex-master-development-instruction-v1.md

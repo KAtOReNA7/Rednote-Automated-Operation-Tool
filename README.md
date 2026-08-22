@@ -7,18 +7,38 @@
   <img alt="V2 R09 accepted and merged" src="https://img.shields.io/badge/V2--R09-已验收并合并-2ea44f" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Development preview" src="https://img.shields.io/badge/状态-开发预览版-c69026" />
+  <img alt="Web local-folder foundation" src="https://img.shields.io/badge/WebUI-本地文件基础开发中-b42318" />
 </p>
 
-# Rednote V2
+# Rednote Studio
 
-面向推理小说内容运营的 Windows 本地工作台。它把账号人设、周计划、内容包和评论/私信回复整理到
-一个桌面应用里，数据保存在本机，所有对外发布与发送动作仍由用户亲自在官方平台完成。
+面向推理小说内容运营的本地优先工作台。项目正在从 Windows Electron 桌面线转向 Chrome/Edge
+静态 WebUI：用户选择自己的固定本地文件夹，网页只把业务数据写入该目录。所有对外发布与发送
+动作仍由用户亲自在官方平台完成。
 
 > [!IMPORTANT]
 > 当前版本是**开发预览版**，不是正式生产版本。V2-R01—R07 已获用户验收；V2-D-FINAL、R08 N1—N7
 > 和 R09 均已完成用户验收并合并到 `main`。R09 已将既有本地 Catalog 以只读方式接入 V2 书库；
-> R10A 与 R10B1A—R10B1C 已进入 `main`；R10B 完整受控备份与恢复已通过 PR #26 合并到 `main`。R10C 提供只经人工
-> 预览、目录选择和明确确认后才写入的脱敏本地诊断包；R10D 的未签名、每用户离线安装候选正在 PR #29 接受精确 Windows 生命周期门禁，只有该门禁和合并后 `main` CI 均通过才进入 `main`；R10E 尚未开始。
+> R10A 与 R10B1A—R10B1C 已进入 `main`；R10D 也已进入 `main`，但旧桌面发行线现已冻结并作为迁移参考保留。R10E RC 不再合并或发布；
+> 当前唯一在建主线是 WebUI 本地文件基础。互动、复盘、书库、Provider、Clipper、旧数据迁移和
+> 公开静态部署尚未进入 Web 生产路径。
+
+## WebUI 转型状态
+
+当前分支交付第一条纵切：连接本地目录、保存人设、创建并锁定活动周计划、显示同周 21 项内容
+队列、分批生成 1—3 项零费用本地草稿、保存新版本、刷新与重选目录恢复。权威数据使用严格的
+JSON snapshot、双 index 和 SHA-256 验证；IndexedDB 仅保存可丢失的目录句柄。
+
+```powershell
+npm ci
+npm run build:web
+npm run preview:web
+```
+
+然后用最新版 Chrome 或 Edge 打开终端显示的地址，选择一个空目录作为 `RednoteData`。Web 入口
+不读取 Electron SQLite 或系统凭据，也不会自动调用模型、Search、Fetch、图片或平台 API。
+文件格式与恢复合同见
+[Web 本地文件基础合同](./docs/governance/web-local-folder-foundation.md)。
 
 ## 现在能做什么
 
@@ -113,8 +133,9 @@ npm run check
 ## 数据与安全边界
 
 - 数据默认保存在本机；云数据库、云存储和远程队列都不是运行前提。
-- renderer 不能直接访问 Node、SQLite、文件系统、凭据或网络；这些能力由 Electron main 管理。
-- V2 继续只使用两条受控 workspace IPC；用户正文不写进日志、错误消息或 Git。
+- Web 入口只通过用户授权的 File System Access API 目录读写版本化 JSON；不使用 Node、Electron、
+  preload、IPC、SQLite、系统凭据库或本地 HTTP 服务。
+- 保留的桌面历史实现仍通过 Electron main 隔离 Node、SQLite、文件和凭据；它不是 Web 运行依赖。
 - 真实密钥不会进入 SQLite、日志、诊断、fixture、截图或导出文件。
 - 未经明确授权，应用不会探测或调用真实模型、搜索、图片或业务 API，也不会产生服务费用。
 - `aiDisclosure` 默认并固定为 `false`，不参与门禁、评分、审批或排期。
@@ -125,20 +146,19 @@ npm run check
 
 ```mermaid
 flowchart LR
-    UI["V2 React 界面"] --> IPC["2 条受控 workspace IPC"]
-    IPC --> APP["Electron main / V2 application"]
-    APP --> DB["本地 SQLite"]
-    APP --> FILES["受控本地文件"]
-    APP --> REVIEW["本地指标 / 确定性复盘"]
-    APP --> CONTROL["能力、费用、预览与逐次确认"]
-    CONTROL --> PROVIDERS["受控模型 / 图片 Provider"]
-    APP -. 未接入 .-> PLATFORM["搜索 / OCR / 小红书平台"]
+    WEB["Web React 界面"] --> FSA["用户授权的 File System Access API"]
+    FSA --> JSON["严格 JSON snapshot / 双 index / SHA-256"]
+    JSON --> SLICE["人设 / 活动周 / 计划 / 内容版本"]
+    WEB -. 后续迁移 .-> PROVIDERS["互动 / 复盘 / 书库 / Provider / Clipper"]
+    DESKTOP["Electron / SQLite 历史线"] -. 迁移参考，非 Web 依赖 .-> WEB
+    WEB -. 永不自动操作 .-> PLATFORM["小红书官方平台"]
 ```
 
 主要代码位置：
 
-- `apps/desktop`：Electron 主进程、安全边界与打包。
-- `apps/web-ui`：V2 与旧版 React 界面。
+- `apps/desktop`：冻结保留的 Electron 主进程、安全边界与打包历史线。
+- `apps/web-ui/src/v2/web`：静态 Web 入口、浏览器 runtime 与本地目录 repository。
+- `apps/web-ui`：其余 V2 与旧版 React 界面，作为后续迁移参考。
 - `packages/v2`：V2 workspace、周计划、内容包、互动、指标复盘和 Provider 动作合同。
 - `packages/db`、`packages/storage`：SQLite 与本地文件能力。
 - `docs`：产品合同、ADR、历史验收证据和任务指令。
