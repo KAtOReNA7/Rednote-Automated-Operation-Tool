@@ -99,6 +99,8 @@ describe('Windows CI configuration', () => {
     expect(
       clipperActionSource.indexOf('[void][Issue017KeyboardInput]::SetForegroundWindow'),
     ).toBeLessThan(clipperActionSource.indexOf('did not become the exact foreground target'));
+    expect(clipperActionSource).toContain('SendForegroundUnlock()');
+    expect(clipperActionSource).toContain('$attempt -lt 5');
   });
 
   it('builds exact-head R10D and closed R10E candidate artifacts only after required inputs', () => {

@@ -131,6 +131,17 @@ public static class Issue017KeyboardInput
         return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
     }
 
+    public static bool SendForegroundUnlock()
+    {
+        const uint keyUp = 0x0002;
+        Input[] inputs = new Input[]
+        {
+            Key(0x12, 0),
+            Key(0x12, keyUp)
+        };
+        return SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(Input))) == inputs.Length;
+    }
+
     public static bool ClickPoint(int x, int y)
     {
         if (!SetCursorPos(x, y)) return false;
@@ -164,11 +175,19 @@ $foregroundThread = [Issue017KeyboardInput]::GetWindowThreadProcessId(
 if ($foregroundThread -ne 0 -and $foregroundThread -ne $targetThread) {
   [void][Issue017KeyboardInput]::AttachThreadInput($currentThread, $foregroundThread, $true)
 }
-[void][Issue017KeyboardInput]::ShowWindowAsync($browser.MainWindowHandle, 9)
-[void][Issue017KeyboardInput]::BringWindowToTop($browser.MainWindowHandle)
-[void][Issue017KeyboardInput]::SetForegroundWindow($browser.MainWindowHandle)
-[void][Issue017KeyboardInput]::SetFocus($browser.MainWindowHandle)
-Start-Sleep -Milliseconds 250
+for ($attempt = 0; $attempt -lt 5; $attempt += 1) {
+  [void][Issue017KeyboardInput]::ShowWindowAsync($browser.MainWindowHandle, 9)
+  [void][Issue017KeyboardInput]::BringWindowToTop($browser.MainWindowHandle)
+  if (-not [Issue017KeyboardInput]::SendForegroundUnlock()) {
+    throw 'Windows did not accept the foreground activation input.'
+  }
+  [void][Issue017KeyboardInput]::SetForegroundWindow($browser.MainWindowHandle)
+  [void][Issue017KeyboardInput]::SetFocus($browser.MainWindowHandle)
+  Start-Sleep -Milliseconds 250
+  if ([Issue017KeyboardInput]::GetForegroundWindow() -eq $browser.MainWindowHandle) {
+    break
+  }
+}
 if ([Issue017KeyboardInput]::GetForegroundWindow() -ne $browser.MainWindowHandle) {
   throw 'The isolated browser window did not become the exact foreground target.'
 }
