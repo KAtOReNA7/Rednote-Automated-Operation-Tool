@@ -154,6 +154,12 @@ describe('Windows CI configuration', () => {
     );
     expect(lifecycle).toContain('::error title=R10D lifecycle');
     expect(lifecycle).toContain('GITHUB_STEP_SUMMARY');
+    const clipperReal = readFileSync(
+      resolve(repositoryRoot, 'scripts', 'run-clipper-real-smoke.mjs'),
+      'utf8',
+    );
+    expect(clipperReal).toContain('}, 30_000);');
+    expect(clipperReal).toContain('diagnostic.trim()');
   });
 
   it('does not schedule overlapping specialized Vitest selectors before the full suite', () => {

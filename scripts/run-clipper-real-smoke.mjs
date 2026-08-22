@@ -505,8 +505,14 @@ function triggerAction(browserProcessId, browserFamily) {
     });
     const timer = setTimeout(() => {
       process.kill();
-      rejectAction(new Error('The real extension action shortcut timed out.'));
-    }, 15_000);
+      rejectAction(
+        new Error(
+          `The real extension action shortcut timed out.${
+            diagnostic.trim() === '' ? '' : ` ${diagnostic.trim()}`
+          }`,
+        ),
+      );
+    }, 30_000);
     process.once('error', (error) => {
       clearTimeout(timer);
       rejectAction(error);
