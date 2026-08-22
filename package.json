@@ -1,6 +1,6 @@
 {
   "name": "xiaohongshu-mystery-operations",
-  "version": "0.0.0",
+  "version": "0.1.0-beta.1",
   "private": true,
   "description": "Windows-local mystery fiction content operations system",
   "type": "module",
@@ -54,6 +54,8 @@
     "test:topics": "node scripts/run-portable-vitest.mjs run tests/topics-contracts.test.ts tests/topics-policy.test.ts tests/topics-quota.test.ts tests/topics-generator.test.ts tests/topics-migration.test.ts tests/topics-repository.test.ts tests/topics-gold.test.ts tests/topics-capacity.test.ts tests/topics-workflow.test.ts tests/topics-runtime.test.ts tests/topics-ipc.test.ts tests/topics-renderer.test.tsx tests/topics-governance.test.ts tests/settings-ipc.test.ts",
     "test:validation-reliability": "node scripts/run-portable-vitest.mjs run tests/validation-reliability-governance.test.ts",
     "package:desktop": "npm run build:desktop && node scripts/package-desktop.mjs",
+    "package:installer": "npm run package:desktop && node scripts/package-installer.mjs",
+    "test:installer-lifecycle": "node scripts/run-installer-lifecycle-smoke.mjs",
     "package:clipper": "npm run build:clipper",
     "prepare:electron": "node scripts/ensure-electron-binary.mjs",
     "typecheck": "tsc -p tsconfig.typecheck.json --noEmit --pretty false"
@@ -69,6 +71,7 @@
     "@types/node": "26.1.1",
     "@vitejs/plugin-react": "6.0.4",
     "electron": "43.2.0",
+    "electron-builder": "26.15.3",
     "eslint": "10.8.0",
     "globals": "17.8.0",
     "jsdom": "30.0.0",

@@ -68,7 +68,7 @@ describe('R08 exact-head desktop package contract', () => {
     ]) {
       expect(checklist).toContain(required);
     }
-    expect(consumers).toContain('rednote-v2-r08-windows-$shortSha');
+    expect(consumers).toContain('rednote-r10d-windows-installer-$shortSha');
     expect(consumers).not.toMatch(
       /返回当前绿色版本|V2-R07-体验清单|v2-r03-experience-checklist|rednote-v2-r05-windows/u,
     );

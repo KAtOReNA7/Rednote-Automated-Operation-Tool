@@ -28,7 +28,7 @@ describe('Issue 013 repository-volume portability', () => {
     for (const [name, command] of Object.entries(manifest.scripts)) {
       if (name === 'test' || name.startsWith('test:')) {
         expect(command, name).toMatch(
-          /run-portable-vitest\.mjs|run-electron-smoke\.mjs|run-packaged-smoke\.mjs|run-clipper-real-smoke\.mjs/iu,
+          /run-portable-vitest\.mjs|run-electron-smoke\.mjs|run-packaged-smoke\.mjs|run-clipper-real-smoke\.mjs|run-installer-lifecycle-smoke\.mjs/iu,
         );
       }
     }

@@ -6,13 +6,20 @@ import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
 
 const projectRoot = fileURLToPath(new URL('.', import.meta.url));
+const commit = execFileSync('git', ['rev-parse', 'HEAD'], {
+  cwd: projectRoot,
+  encoding: 'utf8',
+  windowsHide: true,
+}).trim();
+const sourceDateEpoch = execFileSync('git', ['show', '-s', '--format=%ct', 'HEAD'], {
+  cwd: projectRoot,
+  encoding: 'utf8',
+  windowsHide: true,
+}).trim();
 const buildInfo = Object.freeze({
-  builtAt: new Date().toISOString(),
-  commit: execFileSync('git', ['rev-parse', 'HEAD'], {
-    cwd: projectRoot,
-    encoding: 'utf8',
-    windowsHide: true,
-  }).trim(),
+  builtAt: new Date(Number(sourceDateEpoch) * 1000).toISOString(),
+  commit,
+  sourceDateEpoch,
   v2DataVersion: 1,
 });
 if (!/^[a-f0-9]{40}$/u.test(buildInfo.commit)) throw new Error('Invalid build commit identity.');

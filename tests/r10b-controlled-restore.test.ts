@@ -278,6 +278,31 @@ describe('R10B controlled restore', () => {
     );
   });
 
+  it('marks only the approved 0.0.0 source version as explicitly compatible when every data fingerprint matches', async () => {
+    const value = await context();
+    const created = await backup(value);
+    const backupPath = join(value.backupRoot, created.backupName);
+    const preflight = await prepareControlledRestore({
+      backupPath,
+      database: adapter(value),
+      policy: { allowedSourceAppVersions: ['0.0.0'] },
+      randomId: () => OPERATION_ID,
+      root: value.root,
+      runtime: { ...restoreIdentity(value), appVersion: '0.1.0-beta.1' },
+    });
+    expect(preflight.compatibility).toBe('EXPLICIT');
+    await expect(
+      prepareControlledRestore({
+        backupPath,
+        database: adapter(value),
+        policy: { allowedSourceAppVersions: ['0.0.0'] },
+        randomId: () => OPERATION_ID,
+        root: value.root,
+        runtime: { ...restoreIdentity(value), appVersion: '0.1.0-beta.2' },
+      }),
+    ).rejects.toMatchObject({ code: 'COMPATIBILITY_BLOCKED' });
+  });
+
   it('checks the same bounded staging capacity in preview and before a destructive switch', async () => {
     const value = await context();
     const created = await backup(value);

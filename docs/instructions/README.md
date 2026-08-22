@@ -38,7 +38,7 @@ M2（Issue 012—021）已完成。
 
 M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的表述不是当前实施状态，且不得自动
 开始。R10A 与 R10B1A—R10B1C 已完成并进入 `main`；R10B 完整受控备份与恢复已通过 PR #26 合并到 `main`。R10C 提供受控本地
-脱敏诊断；R10D Windows 安装/升级/卸载和 R10E Release Candidate 尚未开始，后续均等待独立决策与授权。范围见
+脱敏诊断；R10D Windows 安装/升级/卸载候选正在 PR #29 接受精确 Windows 生命周期门禁，只有 PR 与合并后 `main` CI 均通过才视为进入主线；R10E Release Candidate 尚未开始。范围见
 [`../product/v2-r10-release-readiness-scope.md`](../product/v2-r10-release-readiness-scope.md)。
 
 ## V2
@@ -46,6 +46,7 @@ M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的�
 - [R10A：发布准备范围合同](./v2/V2-R10A-release-scope-contract-Codex-instruction.txt)
 - [R10B：受控备份与恢复实施与验收映射](./v2/R10B-controlled-backup-restore-implementation.md)
 - [R10C：受控本地诊断实施与验收映射](./v2/R10C-local-diagnostics-implementation.md)
+- [R10D：Windows 分发、安装、升级与卸载实施/验收](./v2/R10D-windows-distribution-implementation.md)
 
 ## Governance
 

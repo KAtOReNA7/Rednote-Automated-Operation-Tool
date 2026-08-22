@@ -57,9 +57,68 @@ describe('Windows CI configuration', () => {
       'npm run package:clipper',
       'npm run test:packaged-smoke',
       'npm run audit:dependencies',
+      'npm run test:installer-lifecycle',
     ]) {
       expect(runCommands).toContain(command);
     }
+  });
+
+  it('builds and uploads only an exact-head R10D installer artifact', () => {
+    expect(workflowSource).toContain('npm run package:installer');
+    expect(workflowSource).toContain('rednote-r10d-windows-installer-$shortSha');
+    expect(workflowSource).toContain('out/installer-bundle/');
+    expect(workflowSource).toContain('retention-days: 14');
+    expect(workflowSource).toContain("REDNOTE_R10D_CI_FIXTURE: '1'");
+    expect(workflowSource).toContain("REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'");
+    expect(workflowSource).toContain('R10D_CANONICAL_FIXTURE_MUTATED');
+    expect(workflowSource).toContain('R10D_BETA0_INSTALLER_VERSION_OR_LAYOUT_INVALID');
+    expect(workflowSource).toContain("TrimStart('\\', '/')");
+    expect(workflowSource).not.toContain('r10d-beta0-staging');
+    expect(workflowSource).not.toContain('Move-Item');
+    expect(workflowSource).toContain('--cleanup-ci-temp');
+  });
+
+  it('fails closed between each native R10D installer build phase', () => {
+    const semanticBuild = runCommands.find((command) =>
+      command.includes('scripts/compare-r10d-installer-samples.mjs'),
+    );
+    expect(semanticBuild).toContain("$ErrorActionPreference = 'Stop'");
+    expect(semanticBuild).toContain('R10D_FIRST_INSTALLER_BUILD_FAILED:$LASTEXITCODE');
+    expect(semanticBuild).toContain('R10D_SECOND_INSTALLER_BUILD_FAILED:$LASTEXITCODE');
+    expect(semanticBuild).toContain('R10D_SEMANTIC_INSTALLER_COMPARE_FAILED:$LASTEXITCODE');
+  });
+
+  it('cleans only the verified CI temporary directory with bounded convergence', () => {
+    const lifecycle = readFileSync(
+      resolve(repositoryRoot, 'scripts', 'run-installer-lifecycle-smoke.mjs'),
+      'utf8',
+    );
+    expect(lifecycle).toContain(
+      "join(dirname(resolve(workspace)), '.rednote-temp', `ci-${runId}-${attempt}`)",
+    );
+    expect(lifecycle).toContain("await removeOwned(temporaryDirectory, 'ci-temp-cleanup')");
+    expect(lifecycle).toContain('CLEANUP_TIMEOUT_MILLISECONDS');
+    expect(lifecycle).toContain("'tasklist.exe'");
+    expect(lifecycle).toContain('IMAGENAME eq ${WINDOWS_APPLICATION_EXECUTABLE}');
+    expect(lifecycle).not.toContain('Get-Process -Name "RednoteMysteryOperations"');
+    expect(lifecycle).toContain('WINDOWS_INSTALLER_GUID');
+    expect(lifecycle).toContain('retryProbe(`${stage}-registry`, registryProbe)');
+    expect(lifecycle).not.toContain('CurrentVersion\\Uninstall\\*');
+    expect(lifecycle).not.toContain('Get-CimInstance');
+    expect(lifecycle).toContain('L04-running-upgrade-app-ready');
+    expect(lifecycle).toContain('L04-running-uninstall-app-ready');
+    expect(lifecycle).not.toContain("'ci-temp-helper-release'");
+  });
+
+  it('runs one required workflow per PR head and one for merged main', () => {
+    expect(workflowSource).toMatch(/push:\s+branches:\s+- main\s+pull_request:/u);
+    expect(workflowSource).toContain('Run isolated R10D installer lifecycle');
+    const lifecycle = readFileSync(
+      resolve(repositoryRoot, 'scripts', 'run-installer-lifecycle-smoke.mjs'),
+      'utf8',
+    );
+    expect(lifecycle).toContain('::error title=R10D lifecycle');
+    expect(lifecycle).toContain('GITHUB_STEP_SUMMARY');
   });
 
   it('does not schedule overlapping specialized Vitest selectors before the full suite', () => {
@@ -85,6 +144,7 @@ describe('Windows CI configuration', () => {
     expect(workflow.permissions).toEqual({ contents: 'read' });
     expect(workflow.env).toBeUndefined();
     expect(windowsJob?.env).toBeUndefined();
-    expect(workflowSource).not.toMatch(/secrets\.|\$env:/iu);
+    expect(workflowSource).not.toMatch(/secrets\./iu);
+    expect([...workflowSource.matchAll(/\$env:([A-Z0-9_]+)/gu)]).toHaveLength(0);
   });
 });

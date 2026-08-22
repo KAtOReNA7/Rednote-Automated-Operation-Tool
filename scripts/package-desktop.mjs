@@ -18,9 +18,11 @@ import {
   R08_EXPERIENCE_FILES,
   renderWindowsLauncher,
 } from './package-contract.mjs';
+import { readApplicationVersion, writeReleaseManifest } from './windows-distribution-contract.mjs';
 
 const execFileAsync = promisify(execFile);
 const projectRoot = resolve(import.meta.dirname, '..');
+const applicationVersion = readApplicationVersion(projectRoot);
 const buildDirectory = join(projectRoot, '.vite');
 const outputVariant = process.env.REDNOTE_PACKAGE_OUTPUT_VARIANT;
 if (outputVariant !== undefined && !/^[a-z0-9][a-z0-9-]{0,63}$/u.test(outputVariant)) {
@@ -163,7 +165,7 @@ try {
         main: '.vite/build/main.cjs',
         name: 'rednote-mystery-operations',
         productName: '红笺本地运营台',
-        version: '0.0.0',
+        version: applicationVersion,
       },
       null,
       2,
@@ -246,6 +248,7 @@ try {
   }
 
   await writeExperienceFiles(packagePaths[0]);
+  await writeReleaseManifest(projectRoot, packagePaths[0], applicationVersion);
 
   process.stdout.write(
     'Packaged Windows desktop directory, V2 launchers, embedded build info, checklist, and verified Electron fuses.\n',
