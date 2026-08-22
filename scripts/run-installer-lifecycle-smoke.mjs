@@ -926,7 +926,7 @@ async function main() {
     await invokeExpected(
       'L08-uninstall-data-preserved',
       uninstaller(),
-      uninstallerInvocationArguments(target),
+      ['/S'],
       target,
       'success',
       'INSTALLER_LIFECYCLE_UNINSTALL',
@@ -959,7 +959,7 @@ async function main() {
     await invokeExpected(
       'L10-final-uninstall',
       uninstaller(),
-      uninstallerInvocationArguments(target),
+      ['/S'],
       target,
       'success',
       'INSTALLER_LIFECYCLE_FINAL_UNINSTALL',
