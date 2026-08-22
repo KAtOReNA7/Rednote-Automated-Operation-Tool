@@ -1,5 +1,3 @@
-import { createHash } from 'node:crypto';
-
 import {
   type FinishReason,
   type JsonObject,
@@ -7,6 +5,7 @@ import {
   type ProviderWarningCode,
 } from '../contracts.js';
 import { ProviderError } from '../errors.js';
+import { textSha256 } from './text-sha256.js';
 
 export function asRecord(value: unknown): Readonly<Record<string, unknown>> | null {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -26,7 +25,7 @@ export function parseJsonEnvelope(
       causeCategory: 'PROTOCOL',
       details: {
         characterCount: body.length,
-        contentHash: createHash('sha256').update(body, 'utf8').digest('hex'),
+        contentHash: textSha256(body),
       },
       modelId: context.modelId,
       operation: context.operation,

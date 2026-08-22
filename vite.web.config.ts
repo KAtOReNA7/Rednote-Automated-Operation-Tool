@@ -18,7 +18,7 @@ const sourceDateEpoch = execFileSync('git', ['show', '-s', '--format=%ct', 'HEAD
 const buildInfo = Object.freeze({
   builtAt: new Date(Number(sourceDateEpoch) * 1_000).toISOString(),
   commit,
-  v2DataVersion: 1,
+  v2DataVersion: 2,
 });
 
 if (!/^[a-f0-9]{40}$/u.test(commit)) throw new Error('Invalid build commit identity.');

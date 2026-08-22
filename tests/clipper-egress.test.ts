@@ -17,14 +17,16 @@ describe('Issue 017 outbound and data egress evidence', () => {
     expect(matrix).not.toMatch(/\b(?:TBD|TODO|待定|待回填)\b/iu);
   });
 
-  it('limits product network calls to the fixed loopback endpoint and four routes', () => {
-    const worker = source('apps/clipper/src/service-worker.ts');
-    const fetchTargets = [...worker.matchAll(/fetch\(`\$\{[^}]+\}(?<path>\/v1\/[^`]+)`/gu)].map(
-      (match) => match.groups?.path,
+  it('keeps the W2 production extension network-free and removes loopback permission', () => {
+    const implementation = [
+      source('apps/clipper/src/web-export-service-worker.ts'),
+      source('apps/clipper/src/web-export-popup.ts'),
+    ].join('\n');
+    const manifest = source('apps/clipper/static/manifest.json');
+    expect(implementation).not.toMatch(
+      /\bfetch\s*\(|WebSocket|EventSource|sendBeacon|XMLHttpRequest|127\.0\.0\.1|localhost|\/v1\/pairings|\/v1\/browser-clips/iu,
     );
-    expect(fetchTargets).toEqual(['/v1/pairings/exchange', '/v1/browser-clips', '/v1/status']);
-    expect(worker).not.toMatch(/https?:\/\/(?!127\.0\.0\.1)/iu);
-    expect(worker).not.toMatch(/WebSocket|EventSource|sendBeacon|XMLHttpRequest/iu);
+    expect(manifest).not.toMatch(/host_permissions|127\.0\.0\.1|localhost|storage/iu);
   });
 
   it('never puts the runtime token into clip payloads, logs, URLs, or renderer DTOs', () => {

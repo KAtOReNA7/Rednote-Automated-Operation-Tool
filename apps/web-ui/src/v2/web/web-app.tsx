@@ -1,22 +1,36 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import {
   loadWorkspaceHandle,
   saveWorkspaceHandle,
   type StoredWorkspaceHandle,
 } from './handle-store.js';
-import { WebRepositoryError } from './contracts.js';
 import { queryReadWritePermission, requestReadWritePermission } from './folder-port.js';
-import { WebWorkspaceRuntime, type GenerationPreview, type RuntimeView } from './runtime.js';
+import {
+  WebWorkspaceRuntime,
+  type GenerationPreview,
+  type RuntimeView,
+  type WebAiPreview,
+  type WebAiResult,
+} from './runtime.js';
 import {
   WebButton as Button,
   WebIcon as Icon,
   WebPageHeader as PageHeader,
+  webSafeErrorMessage,
   WebStatusPill as StatusPill,
 } from './ui.js';
 import type { ContentPackageFields } from './contracts.js';
+import {
+  AiPreviewCard,
+  InteractionPage,
+  LibraryPage,
+  ReviewPage,
+  SettingsPage,
+} from './w2-pages.js';
 
-type WebRoute = 'content' | 'diagnostics' | 'overview' | 'weekly-plan';
+type WebRoute =
+  'content' | 'interaction' | 'library' | 'overview' | 'review' | 'settings' | 'weekly-plan';
 type ConnectionState =
   | { readonly kind: 'loading' }
   | { readonly kind: 'unsupported' }
@@ -31,11 +45,20 @@ type ConnectionState =
       readonly warning: string | null;
     };
 
+const CONTENT_STATUS_LABEL = Object.freeze({
+  APPROVED: '已批准',
+  DRAFT: '草稿',
+  REVIEW_REQUIRED: '待复核',
+});
+
 const ROUTES = [
   { icon: 'house' as const, id: 'overview' as const, label: '总览' },
   { icon: 'calendar-blank' as const, id: 'weekly-plan' as const, label: '本周计划' },
   { icon: 'file-text' as const, id: 'content' as const, label: '内容' },
-  { icon: 'gear-six' as const, id: 'diagnostics' as const, label: '本地运行状态' },
+  { icon: 'bookmark-simple' as const, id: 'interaction' as const, label: '互动' },
+  { icon: 'books' as const, id: 'library' as const, label: '书库' },
+  { icon: 'export' as const, id: 'review' as const, label: '数据复盘' },
+  { icon: 'gear-six' as const, id: 'settings' as const, label: '设置' },
 ] as const;
 
 function routeFromHash(): WebRoute {
@@ -44,12 +67,11 @@ function routeFromHash(): WebRoute {
 }
 
 function message(error: unknown): string {
-  if (error instanceof WebRepositoryError) return error.message;
   if (error instanceof DOMException) {
     if (error.name === 'NotAllowedError') return '目录权限被拒绝；你可以重新选择本地数据目录。';
     if (error.name === 'AbortError') return '已取消选择目录；未创建或覆盖任何文件。';
   }
-  return '本地操作未完成；未创建或覆盖未知文件。';
+  return webSafeErrorMessage(error);
 }
 
 function useRuntimeView(runtime: WebWorkspaceRuntime): RuntimeView {
@@ -123,8 +145,14 @@ export function WebWorkspaceShell({
       <PlanPage runtime={runtime} view={view} />
     ) : route === 'content' ? (
       <ContentPage runtime={runtime} view={view} />
-    ) : route === 'diagnostics' ? (
-      <DiagnosticsPage runtime={runtime} view={view} />
+    ) : route === 'interaction' ? (
+      <InteractionPage runtime={runtime} view={view} />
+    ) : route === 'library' ? (
+      <LibraryPage runtime={runtime} view={view} />
+    ) : route === 'review' ? (
+      <ReviewPage runtime={runtime} view={view} />
+    ) : route === 'settings' ? (
+      <SettingsPage runtime={runtime} view={view} />
     ) : (
       <OverviewPage runtime={runtime} view={view} />
     );
@@ -282,6 +310,24 @@ function OverviewPage({
               </dd>
             </div>
             <div>
+              <dt>待处理互动</dt>
+              <dd>
+                {
+                  view.state.interactions.filter((item) =>
+                    ['NEW', 'SUGGESTED', 'CONFIRMED'].includes(item.status),
+                  ).length
+                }
+              </dd>
+            </div>
+            <div>
+              <dt>书库资料</dt>
+              <dd>{view.state.library.length}</dd>
+            </div>
+            <div>
+              <dt>指标版本</dt>
+              <dd>{view.state.metricSnapshots.length}</dd>
+            </div>
+            <div>
               <dt>快照</dt>
               <dd>{view.snapshotHashPrefix}</dd>
             </div>
@@ -419,11 +465,15 @@ function ContentPage({
   const previousWeekRef = useRef(view.state.activeWeekKey);
   const [activeId, setActiveId] = useState('');
   const [status, setStatus] = useState('');
+  const [aiPreview, setAiPreview] = useState<WebAiPreview | null>(null);
+  const [aiResult, setAiResult] = useState<WebAiResult | null>(null);
   const active = queue.find((item) => item.package?.id === activeId)?.package ?? null;
   const version = active?.versions.at(-1);
   const [draft, setDraft] = useState<ContentPackageFields | null>(version?.fields ?? null);
   useEffect(() => {
     setDraft(version?.fields ?? null);
+    setAiPreview(null);
+    setAiResult(null);
   }, [version?.versionId]);
   useEffect(() => {
     const latestQueue = runtime.queue();
@@ -493,6 +543,37 @@ function ContentPage({
     try {
       await runtime.saveContentVersion(active.id, draft, active.revision);
       setStatus('已追加内容新版本。');
+    } catch (error) {
+      setStatus(message(error));
+    }
+  };
+  const previewAi = async (): Promise<void> => {
+    if (active === null) return;
+    try {
+      setAiPreview(await runtime.previewProviderAction('CONTENT_COPY', active.id));
+      setAiResult(null);
+    } catch (error) {
+      setStatus(message(error));
+    }
+  };
+  const executeAi = async (): Promise<void> => {
+    if (aiPreview === null) return;
+    try {
+      const result = await runtime.executeProviderAction(aiPreview.token);
+      setAiResult(result);
+      setDraft(result.fields);
+      setAiPreview(null);
+      setStatus('模型文案仅在页面中预览；确认保存前不会写入工作区。');
+    } catch (error) {
+      setStatus(message(error));
+    }
+  };
+  const saveAi = async (): Promise<void> => {
+    if (active === null || aiResult === null) return;
+    try {
+      await runtime.saveModelContentResult(aiResult, active.revision);
+      setAiResult(null);
+      setStatus('模型文案已追加为待复核的新版本。');
     } catch (error) {
       setStatus(message(error));
     }
@@ -630,9 +711,18 @@ function ContentPage({
                     onChange={(event) => setDraft({ ...draft, materialNotes: event.target.value })}
                   />
                 </label>
-                <Button onClick={() => void save()} tone="primary">
-                  保存内容新版本
-                </Button>
+                <div className="web-action-row">
+                  <Button onClick={() => void save()} tone="primary">
+                    保存内容新版本
+                  </Button>
+                  <Button onClick={() => void previewAi()}>预览 AI 文案新版本</Button>
+                  <Button disabled={aiResult === null} onClick={() => void saveAi()}>
+                    保存模型预览
+                  </Button>
+                </div>
+                {aiPreview === null ? null : (
+                  <AiPreviewCard onConfirm={() => void executeAi()} preview={aiPreview} />
+                )}
               </>
             ) : (
               <div className="web-empty">
@@ -648,7 +738,9 @@ function ContentPage({
           <aside className="v2-card web-content-inspector">
             <p className="v2-kicker">版本检查</p>
             <h2>
-              {active === null ? '等待生成' : `${active.status} · ${active.versions.length} 个版本`}
+              {active === null
+                ? '等待生成'
+                : `${CONTENT_STATUS_LABEL[active.status]} · ${active.versions.length} 个版本`}
             </h2>
             <dl className="v2-facts">
               <div>
@@ -665,63 +757,28 @@ function ContentPage({
               </div>
               <div>
                 <dt>真实请求</dt>
-                <dd>0</dd>
+                <dd>仅在用户确认后最多 1 次</dd>
               </div>
             </dl>
+            <Button
+              disabled={active === null || active.status === 'APPROVED'}
+              onClick={() => {
+                if (active !== null)
+                  void runtime
+                    .approveContent(active.id, active.revision)
+                    .then(() => setStatus('当前版本已批准，可在数据复盘录入指标。'))
+                    .catch((error: unknown) => setStatus(message(error)));
+              }}
+              tone="primary"
+            >
+              批准当前版本
+            </Button>
           </aside>
         </div>
       )}
       <p className="web-live-status" aria-live="polite">
         {status}
       </p>
-    </div>
-  );
-}
-
-function DiagnosticsPage({
-  runtime,
-  view,
-}: {
-  readonly runtime: WebWorkspaceRuntime;
-  readonly view: RuntimeView;
-}): React.JSX.Element {
-  const diagnostics = useMemo(
-    () => runtime.diagnostics(),
-    [runtime, view.generation, view.lastProblem, view.pendingWrites],
-  );
-  const exportDiagnostics = (): void => {
-    const blob = new Blob([`${JSON.stringify(diagnostics, null, 2)}\n`], {
-      type: 'application/json',
-    });
-    const href = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.download = 'rednote-web-diagnostics.json';
-    link.href = href;
-    link.click();
-    URL.revokeObjectURL(href);
-  };
-  return (
-    <div className="web-page">
-      <PageHeader
-        eyebrow="安全诊断 · 不含正文、标题、绝对路径或凭据"
-        title="本地运行状态"
-        description="查看目录权限、快照、活动周、写锁与一致性；稳定错误码可用于定位。"
-        actions={
-          <Button icon="export" onClick={exportDiagnostics}>
-            导出脱敏诊断 JSON
-          </Button>
-        }
-      />
-      <section className="v2-card web-diagnostics">
-        <dl>
-          {Object.entries(diagnostics).map(([key, value]) => (
-            <div key={key}>
-              <dt>{key}</dt>
-              <dd>{typeof value === 'object' ? JSON.stringify(value) : String(value)}</dd>
-            </div>
-          ))}
-        </dl>
-      </section>
     </div>
   );
 }

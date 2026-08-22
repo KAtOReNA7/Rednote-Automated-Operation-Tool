@@ -36,6 +36,51 @@ await new Promise((resolveListen) => server.listen(0, '127.0.0.1', resolveListen
 const address = server.address();
 if (address === null || typeof address === 'string') throw new Error('WEB_SERVER_START_FAILED');
 const url = `http://127.0.0.1:${address.port}/web.html`;
+const fsaFixture = String.raw`(() => {
+  const files = new Map();
+  const directories = new Map();
+  const missing = () => new DOMException('not found', 'NotFoundError');
+  const directory = (prefix, name) => {
+    const value = {
+      kind: 'directory',
+      name,
+      queryPermission: async () => 'granted',
+      requestPermission: async () => 'granted',
+      getDirectoryHandle: async (child, options = {}) => {
+        const path = prefix === '' ? child : prefix + '/' + child;
+        if (!directories.has(path)) {
+          if (options.create !== true) throw missing();
+          directories.set(path, directory(path, child));
+        }
+        return directories.get(path);
+      },
+      getFileHandle: async (child, options = {}) => {
+        const path = prefix === '' ? child : prefix + '/' + child;
+        if (!files.has(path) && options.create !== true) throw missing();
+        return {
+          kind: 'file',
+          name: child,
+          getFile: async () => new File([files.get(path) ?? new Uint8Array()], child),
+          createWritable: async () => {
+            let pending = new Uint8Array();
+            return {
+              write: async (data) => {
+                if (data instanceof ArrayBuffer) pending = new Uint8Array(data.slice(0));
+                else if (ArrayBuffer.isView(data)) pending = new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength));
+                else pending = new Uint8Array(await new Response(data).arrayBuffer());
+              },
+              close: async () => { files.set(path, new Uint8Array(pending)); },
+              abort: async () => undefined,
+            };
+          },
+        };
+      },
+    };
+    return value;
+  };
+  const root = directory('', 'W2 synthetic workspace');
+  Object.defineProperty(window, 'showDirectoryPicker', { configurable: true, value: async () => root });
+})();`;
 
 const candidates =
   process.platform === 'win32'
@@ -122,9 +167,12 @@ async function inspect(family, executable) {
   );
   try {
     const [port] = await waitFor(join(profile, 'DevToolsActivePort'));
-    const target = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, {
-      method: 'PUT',
-    }).then((response) => response.json());
+    const target = await fetch(
+      `http://127.0.0.1:${port}/json/new?${encodeURIComponent('about:blank')}`,
+      {
+        method: 'PUT',
+      },
+    ).then((response) => response.json());
     const socket = new WebSocket(target.webSocketDebuggerUrl);
     await new Promise((resolveOpen, reject) => {
       socket.onopen = resolveOpen;
@@ -132,6 +180,7 @@ async function inspect(family, executable) {
     });
     let id = 0;
     const externalRequests = [];
+    const consoleErrors = [];
     const pending = new Map();
     socket.onmessage = (event) => {
       const value = JSON.parse(String(event.data));
@@ -144,6 +193,10 @@ async function inspect(family, executable) {
           externalRequests.push(new URL(requestUrl).origin);
         }
       }
+      if (value.method === 'Runtime.exceptionThrown')
+        consoleErrors.push(value.params?.exceptionDetails?.text ?? 'runtime exception');
+      if (value.method === 'Log.entryAdded' && value.params?.entry?.level === 'error')
+        consoleErrors.push(value.params.entry.text ?? 'console error');
       const promise = pending.get(value.id);
       if (promise) {
         pending.delete(value.id);
@@ -159,6 +212,10 @@ async function inspect(family, executable) {
       });
     await call('Runtime.enable');
     await call('Network.enable');
+    await call('Log.enable');
+    await call('Page.enable');
+    await call('Page.addScriptToEvaluateOnNewDocument', { source: fsaFixture });
+    await call('Page.navigate', { url });
     let ready = false;
     for (let attempt = 0; attempt < 100; attempt += 1) {
       const evaluated = await call('Runtime.evaluate', {
@@ -173,6 +230,33 @@ async function inspect(family, executable) {
       await new Promise((resolveWait) => setTimeout(resolveWait, 100));
     }
     if (!ready) throw new Error(`${family.toUpperCase()}_WEB_UI_NOT_READY`);
+    await call('Runtime.evaluate', {
+      expression: 'document.querySelector("#web-root button:not([disabled])")?.click(); true',
+      returnByValue: true,
+    });
+    let connected = false;
+    for (let attempt = 0; attempt < 150; attempt += 1) {
+      const evaluated = await call('Runtime.evaluate', {
+        expression:
+          'document.querySelector("[data-web-workspace]") !== null && document.querySelectorAll("nav a").length === 7',
+        returnByValue: true,
+      });
+      if (evaluated.result.value === true) {
+        connected = true;
+        break;
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+    }
+    if (!connected) {
+      const diagnostic = await call('Runtime.evaluate', {
+        expression:
+          '({ rootText: document.querySelector("#web-root")?.textContent?.slice(0, 500), supported: typeof window.showDirectoryPicker === "function" })',
+        returnByValue: true,
+      });
+      throw new Error(
+        `${family.toUpperCase()}_WEB_WORKSPACE_NOT_CONNECTED:${JSON.stringify(diagnostic.result.value)}:${consoleErrors.join('|').slice(0, 500)}`,
+      );
+    }
     const widths = [];
     for (const [width, height] of [
       [1280, 800],
@@ -184,26 +268,52 @@ async function inspect(family, executable) {
         mobile: false,
         width,
       });
-      const evaluated = await call('Runtime.evaluate', {
-        expression: `(() => { const button=document.querySelector('#web-root button:not([disabled])'); button?.focus(); const live=document.querySelector('[aria-live]'); return { active: document.activeElement===button, buttonLabel:button?.textContent?.trim(), clientWidth:document.documentElement.clientWidth, hasLiveRegion:live!==null, rootText:document.querySelector('#web-root')?.textContent?.slice(0,200), scrollWidth:document.documentElement.scrollWidth, supported:typeof window.showDirectoryPicker==='function', title:document.title }; })()`,
-        returnByValue: true,
-      });
-      const result = { height, width, ...evaluated.result.value };
-      if (!result.supported) throw new Error(`${family.toUpperCase()}_FSA_UNSUPPORTED`);
-      if (!result.active) throw new Error(`${family.toUpperCase()}_KEYBOARD_FOCUS_FAILED`);
-      if (!result.hasLiveRegion) throw new Error(`${family.toUpperCase()}_ARIA_LIVE_MISSING`);
-      if (result.clientWidth !== width || result.scrollWidth !== width)
-        throw new Error(
-          `${family.toUpperCase()}_HORIZONTAL_OVERFLOW:${result.clientWidth}/${result.scrollWidth}/${width}`,
-        );
-      if (result.title !== 'Rednote Studio · Web 本地工作台')
-        throw new Error(`${family.toUpperCase()}_TITLE_MISMATCH`);
-      if (!result.rootText?.includes('业务数据只写入你选择的固定文件夹'))
-        throw new Error(`${family.toUpperCase()}_CONNECTION_COPY_MISSING`);
-      widths.push(result);
+      const routes = [];
+      for (const route of [
+        'overview',
+        'weekly-plan',
+        'content',
+        'interaction',
+        'library',
+        'review',
+        'settings',
+      ]) {
+        await call('Runtime.evaluate', {
+          expression: `window.location.hash = ${JSON.stringify(`#/web/${route}`)}; true`,
+          returnByValue: true,
+        });
+        let result;
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const evaluated = await call('Runtime.evaluate', {
+            expression: `(() => { const active=document.querySelector('a[href="#/web/${route}"][aria-current="page"]'); const button=document.querySelector('#web-root button:not([disabled])'); button?.focus(); return { active:document.activeElement===button, buttonLabel:button?.textContent?.trim(), clientWidth:document.documentElement.clientWidth, hasHeading:document.querySelector('main h1')!==null, hasLiveRegion:document.querySelector('[aria-live]')!==null, routeActive:active!==null, scrollWidth:document.documentElement.scrollWidth, title:document.title }; })()`,
+            returnByValue: true,
+          });
+          result = evaluated.result.value;
+          if (result.routeActive && result.hasHeading) break;
+          await new Promise((resolveWait) => setTimeout(resolveWait, 50));
+        }
+        if (!result?.routeActive || !result.hasHeading)
+          throw new Error(`${family.toUpperCase()}_ROUTE_NOT_READY:${route}`);
+        if (!result.active)
+          throw new Error(`${family.toUpperCase()}_KEYBOARD_FOCUS_FAILED:${route}`);
+        if (!result.hasLiveRegion)
+          throw new Error(`${family.toUpperCase()}_ARIA_LIVE_MISSING:${route}`);
+        if (result.scrollWidth !== result.clientWidth)
+          throw new Error(
+            `${family.toUpperCase()}_HORIZONTAL_OVERFLOW:${route}:${result.clientWidth}/${result.scrollWidth}/${width}`,
+          );
+        if (result.title !== 'Rednote Studio · Web 本地工作台')
+          throw new Error(`${family.toUpperCase()}_TITLE_MISMATCH`);
+        routes.push({ route, ...result });
+      }
+      widths.push({ height, routes, width });
     }
+    if (consoleErrors.length > 0)
+      throw new Error(
+        `${family.toUpperCase()}_CONSOLE_ERRORS:${consoleErrors.join('|').slice(0, 500)}`,
+      );
     socket.close();
-    return { externalRequests: [...new Set(externalRequests)], family, widths };
+    return { consoleErrors, externalRequests: [...new Set(externalRequests)], family, widths };
   } finally {
     child.kill();
     await new Promise((resolveExit) => {
@@ -224,7 +334,13 @@ try {
     0,
   );
   if (externalConnections !== 0) throw new Error('UNEXPECTED_EXTERNAL_CONNECTION');
-  const report = { browsers, externalConnections, fsaPickerAutomated: false, url: '/web.html' };
+  const report = {
+    browsers,
+    externalConnections,
+    nativeFsaPickerAutomated: false,
+    syntheticFolderInjected: true,
+    url: '/web.html',
+  };
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 } finally {

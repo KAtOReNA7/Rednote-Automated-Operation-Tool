@@ -18,6 +18,7 @@ const textFiles = files.filter((file) => /\.(?:css|html|js|json)$/u.test(file));
 const source = (await Promise.all(textFiles.map((file) => readFile(file, 'utf8')))).join('\n');
 const forbidden = [
   ['Electron runtime', /\belectron\b|ipcRenderer|contextBridge|rednoteV2/u],
+  ['Node runtime shim', /__vite-browser-external|\bnode:(?:fs|path|crypto|http|https|net|tls)\b/u],
   ['test adapter', /DETERMINISTIC_MOCK|r07-packaged-blackbox|__V2_R01_SMOKE__/u],
   ['absolute Windows path', /[A-Za-z]:\\(?:Users|porject|project)\\/u],
   ['secret material', /gho_[A-Za-z0-9]+|Authorization\s*[:=]|BEGIN PRIVATE KEY/u],

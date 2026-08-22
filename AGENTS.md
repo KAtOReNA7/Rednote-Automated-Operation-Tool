@@ -45,6 +45,11 @@
 
 - 默认不得读取、打印、复制、提交或探测真实密钥，也不要求用户在聊天、指令、fixture 或截图
   中粘贴密钥。
+- W2 纯 Web 工作台只有一项窄例外：用户可以在设置页把 Provider API key 输入当前页面会话内存，
+  并在逐次预览后明确确认一次文本请求。该 key 不得进入 workspace snapshot、IndexedDB、
+  local/session storage、URL、DOM attribute、日志、诊断、导出、测试输出或 Git；刷新、关闭、
+  断开工作区后必须清除。此例外不适用于 Electron renderer/preload、Clipper、Search、Fetch、图片
+  或平台操作，也不得削弱 main-process `CredentialStore`/`safeStorage` 规则。
 - 密钥不得进入 Git、SQLite/WAL/SHM、日志、audit、诊断、导出、fixture、截图、错误消息、
   IPC、缓存或测试输出。数据库只保存非秘密引用；secret 只由 main-process
   `CredentialStore`/`safeStorage` 处理，renderer/preload 不接收 secret、raw request、

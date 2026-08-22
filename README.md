@@ -7,7 +7,7 @@
   <img alt="V2 R09 accepted and merged" src="https://img.shields.io/badge/V2--R09-已验收并合并-2ea44f" />
   <img alt="Windows local first" src="https://img.shields.io/badge/平台-Windows%20本地优先-111111" />
   <img alt="Development preview" src="https://img.shields.io/badge/状态-开发预览版-c69026" />
-  <img alt="Web local-folder foundation" src="https://img.shields.io/badge/WebUI-本地文件基础开发中-b42318" />
+  <img alt="Web functional equivalence" src="https://img.shields.io/badge/WebUI-W2%20Draft%20候选-b42318" />
 </p>
 
 # Rednote Studio
@@ -20,14 +20,15 @@
 > 当前版本是**开发预览版**，不是正式生产版本。V2-R01—R07 已获用户验收；V2-D-FINAL、R08 N1—N7
 > 和 R09 均已完成用户验收并合并到 `main`。R09 已将既有本地 Catalog 以只读方式接入 V2 书库；
 > R10A 与 R10B1A—R10B1C 已进入 `main`；R10D 也已进入 `main`，但旧桌面发行线现已冻结并作为迁移参考保留。R10E RC 不再合并或发布；
-> 当前唯一在建主线是 WebUI 本地文件基础。互动、复盘、书库、Provider、Clipper、旧数据迁移和
-> 公开静态部署尚未进入 Web 生产路径。
+> WebUI W1 本地目录基础已进入 `main`；当前分支正在交付 W2 功能等价候选，接通七页、会话级
+> Provider 文本动作和纯文件 Clipper 交接。W2 尚未合并，公开静态部署、旧 SQLite 迁移和桌面端
+> 退休均属于尚未开始的 W3。
 
 ## WebUI 转型状态
 
-当前分支交付第一条纵切：连接本地目录、保存人设、创建并锁定活动周计划、显示同周 21 项内容
-队列、分批生成 1—3 项零费用本地草稿、保存新版本、刷新与重选目录恢复。权威数据使用严格的
-JSON snapshot、双 index 和 SHA-256 验证；IndexedDB 仅保存可丢失的目录句柄。
+W2 在 W1 纵切上继续使用同一个用户授权目录：总览、本周计划、内容、互动、书库、数据复盘和
+设置均读取严格的 schema v2 JSON snapshot。合法 W1 schema v1 工作区会追加一份不可变 W2
+snapshot 后切换双 index，原最后一份 W1 snapshot 不被改写。IndexedDB 仍只保存可丢失的目录句柄。
 
 ```powershell
 npm ci
@@ -37,18 +38,20 @@ npm run preview:web
 
 然后用最新版 Chrome 或 Edge 打开终端显示的地址，选择一个空目录作为 `RednoteData`。Web 入口
 不读取 Electron SQLite 或系统凭据，也不会自动调用模型、Search、Fetch、图片或平台 API。
+可选文本 Provider 只在用户预览并确认后最多发送一次；API key 只驻留当前页面内存，刷新即清除。
 文件格式与恢复合同见
-[Web 本地文件基础合同](./docs/governance/web-local-folder-foundation.md)。
+[Web 本地文件基础合同](./docs/governance/web-local-folder-foundation.md)和
+[W2 功能等价实施与证据](./docs/governance/web-functional-equivalence.md)。
 
 ## 现在能做什么
 
 - **账号人设**：保存账号名称、定位、语气和目标读者，关闭再打开仍能恢复。
 - **本周计划**：生成确定性候选，按周查看，支持单选、批量选择、跨周和任意日期时间改期。
 - **内容包**：从已锁定计划生成本地内容包，编辑并保留版本，单篇或批量批准后导出。
-- **互动回复**：手动粘贴评论或私信，可关联已有内容包，生成可编辑的回复建议。
+- **Web 互动回复**：本地录入评论或私信、关联内容、追加回复版本并记录用户已在官方端手工发送；不会自动发送。
 - **数据复盘**：为已批准内容包手工录入 24H、72H、7D 指标，查看单篇明细、本地汇总和确定性建议。
-- **只读书库**：从既有本地 Catalog 查看 Work、Expression、Edition、来源与关系，不修改目录事实。
-- **受控 Provider**：配置研究、写作和图片模型槽；周计划、文案、封面和回复都先预览，再由用户逐次确认。
+- **Web 书库**：显式预览并导入严格 Catalog JSON 或 `.rednote-clip.json`，支持本地搜索、分页、详情和来源状态。
+- **Web 受控 Provider**：仅接通文案和回复文本；配置 HTTPS Base URL、模型、预算和会话 key，先预览再逐次确认。Search、Fetch 和图片关闭。
 - **本地数据**：计划、内容包、互动、指标和状态保存在本机 SQLite 与受控文件目录中；R10B 已通过 PR #26 合并，提供受控备份、恢复预检、保护性切换和失败闭锁。
 - **本地诊断**：在“设置 → 本地备份与恢复”先预览固定允许列表，再由用户选择目录并确认，生成只含 `manifest.json` 与 `diagnostic.json` 的本地 ZIP；不会自动上传。
 
@@ -136,7 +139,7 @@ npm run check
 - Web 入口只通过用户授权的 File System Access API 目录读写版本化 JSON；不使用 Node、Electron、
   preload、IPC、SQLite、系统凭据库或本地 HTTP 服务。
 - 保留的桌面历史实现仍通过 Electron main 隔离 Node、SQLite、文件和凭据；它不是 Web 运行依赖。
-- 真实密钥不会进入 SQLite、日志、诊断、fixture、截图或导出文件。
+- Web 会话 key 仅在用户输入与当前页面内存中存在；刷新/关闭即清除，不进入 workspace、IndexedDB、SQLite、日志、诊断、截图或导出文件。
 - 未经明确授权，应用不会探测或调用真实模型、搜索、图片或业务 API，也不会产生服务费用。
 - `aiDisclosure` 默认并固定为 `false`，不参与门禁、评分、审批或排期。
 - 版权风险不进入字段、门禁、评分、审批、优先级、排期或导出决策。
@@ -148,8 +151,9 @@ npm run check
 flowchart LR
     WEB["Web React 界面"] --> FSA["用户授权的 File System Access API"]
     FSA --> JSON["严格 JSON snapshot / 双 index / SHA-256"]
-    JSON --> SLICE["人设 / 活动周 / 计划 / 内容版本"]
-    WEB -. 后续迁移 .-> PROVIDERS["互动 / 复盘 / 书库 / Provider / Clipper"]
+    JSON --> SLICE["人设 / 活动周 / 计划 / 内容 / 互动 / 书库 / 复盘"]
+    WEB --> PROVIDERS["用户确认的文本 Provider · 会话 key"]
+    CLIPPER["用户点击 Clipper"] --> FILE[".rednote-clip.json"] --> WEB
     DESKTOP["Electron / SQLite 历史线"] -. 迁移参考，非 Web 依赖 .-> WEB
     WEB -. 永不自动操作 .-> PLATFORM["小红书官方平台"]
 ```

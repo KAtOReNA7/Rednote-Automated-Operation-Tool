@@ -6,28 +6,37 @@ import { describe, expect, it } from 'vitest';
 const root = resolve(import.meta.dirname, '..');
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8');
 
-describe('Web production and CI contracts W23-W24', () => {
-  it('uses one static, network-closed Web entry without Electron or mock fallback', () => {
+describe('Web production and CI contracts W2-18/W2-24/W2-30', () => {
+  it('uses one static Web entry with an explicit HTTPS Provider boundary and no desktop bridge', () => {
     const html = read('apps/web-ui/web.html');
     const config = read('vite.web.config.ts');
     const webSources = [
       'contracts.ts',
+      'browser-provider.ts',
       'folder-port.ts',
       'handle-store.ts',
       'repository.ts',
       'runtime.ts',
       'ui.tsx',
+      'w2-pages.tsx',
       'web-app.tsx',
       'web-main.tsx',
     ]
       .map((file) => read(`apps/web-ui/src/v2/web/${file}`))
       .join('\n');
-    expect(html).toContain("connect-src 'self'");
+    expect(html).toContain("connect-src 'self' https:");
     expect(html).not.toMatch(/unsafe-|https?:\/\//u);
     expect(config).toContain("outDir: fileURLToPath(new URL('./.vite/web'");
     expect(webSources).not.toMatch(/rednoteV2|rednoteDesktop|ipcRenderer|from ['"]electron/u);
-    expect(webSources).not.toMatch(/\bfetch\s*\(|XMLHttpRequest|EventSource|sendBeacon/u);
+    const provider = read('apps/web-ui/src/v2/web/browser-provider.ts');
+    expect(provider.match(/this\.#fetch\(/gu) ?? []).toHaveLength(1);
+    expect(webSources.replace(provider, '')).not.toMatch(
+      /\bfetch\s*\(|XMLHttpRequest|EventSource|sendBeacon/u,
+    );
     expect(webSources).not.toMatch(/DETERMINISTIC_MOCK|r07-packaged-blackbox/u);
+    const inspector = read('scripts/inspect-web-artifact.mjs');
+    expect(inspector).toMatch(/__vite-browser-external/);
+    expect(inspector).toMatch(/node:\(\?:fs\|path\|crypto/);
   });
 
   it('keeps Web required fast and moves installer lifecycle to manual history validation', () => {
@@ -38,6 +47,7 @@ describe('Web production and CI contracts W23-W24', () => {
     );
     expect(webJob).toContain('--suite=normal');
     expect(webJob).toContain('npm run build:web');
+    expect(webJob).toContain('npm run build:clipper');
     expect(webJob).toContain('npm run smoke:web-e2e');
     expect(webJob).toContain('npm run audit:dependencies');
     expect(webJob).not.toMatch(/electron|installer|package:desktop|capacity/iu);

@@ -8,12 +8,30 @@ import {
   type WeeklyPlan,
 } from '@mystery-operations/v2';
 
-export const WEB_WORKSPACE_SCHEMA_VERSION = 1 as const;
+import {
+  emptyW2Slices,
+  parseW2Slices,
+  type WebClipReceipt,
+  type WebInteractionItem,
+  type WebLibraryItem,
+  type WebMetricVersion,
+  type WebProviderSettings,
+  type WebStrategyDecision,
+} from './w2-state.js';
+
+export const WEB_WORKSPACE_SCHEMA_VERSION = 2 as const;
+export const WEB_WORKSPACE_LEGACY_SCHEMA_VERSION = 1 as const;
 export const WEB_WORKSPACE_FORMAT = 'rednote-web-workspace' as const;
 
 export interface WebContentVersion {
   readonly createdAt: string;
   readonly fields: ContentPackageFields;
+  readonly modelId: string | null;
+  readonly source: 'LOCAL' | 'MODEL';
+  readonly usage: Readonly<{
+    readonly inputTokens: number | null;
+    readonly outputTokens: number | null;
+  }> | null;
   readonly version: number;
   readonly versionId: string;
 }
@@ -22,7 +40,7 @@ export interface WebContentPackage {
   readonly candidateId: string;
   readonly id: string;
   readonly revision: number;
-  readonly status: 'DRAFT' | 'REVIEW_REQUIRED';
+  readonly status: 'APPROVED' | 'DRAFT' | 'REVIEW_REQUIRED';
   readonly versions: readonly WebContentVersion[];
   readonly weekKey: string;
 }
@@ -34,17 +52,54 @@ export interface WebContentWorkspace {
 
 export interface WebWorkspaceState {
   readonly activeWeekKey: string;
+  readonly clipReceipts: readonly WebClipReceipt[];
   readonly contentByWeek: Readonly<Record<string, WebContentWorkspace>>;
+  readonly interactions: readonly WebInteractionItem[];
+  readonly library: readonly WebLibraryItem[];
+  readonly metricSnapshots: readonly WebMetricVersion[];
   readonly persona: AccountPersona;
   readonly plans: Readonly<Record<string, WeeklyPlan>>;
+  readonly provider: WebProviderSettings;
   readonly schemaVersion: typeof WEB_WORKSPACE_SCHEMA_VERSION;
+  readonly strategyDecisions: readonly WebStrategyDecision[];
   readonly workspaceId: string;
+}
+
+export interface WebWorkspaceStateV1 {
+  readonly activeWeekKey: string;
+  readonly contentByWeek: Readonly<Record<string, WebContentWorkspaceV1>>;
+  readonly persona: AccountPersona;
+  readonly plans: Readonly<Record<string, WeeklyPlan>>;
+  readonly schemaVersion: typeof WEB_WORKSPACE_LEGACY_SCHEMA_VERSION;
+  readonly workspaceId: string;
+}
+
+export interface WebContentVersionV1 {
+  readonly createdAt: string;
+  readonly fields: ContentPackageFields;
+  readonly version: number;
+  readonly versionId: string;
+}
+
+export interface WebContentPackageV1 {
+  readonly candidateId: string;
+  readonly id: string;
+  readonly revision: number;
+  readonly status: 'DRAFT' | 'REVIEW_REQUIRED';
+  readonly versions: readonly WebContentVersionV1[];
+  readonly weekKey: string;
+}
+
+export interface WebContentWorkspaceV1 {
+  readonly packages: readonly WebContentPackageV1[];
+  readonly weekKey: string;
 }
 
 export interface WebWorkspaceManifest {
   readonly createdAt: string;
   readonly format: typeof WEB_WORKSPACE_FORMAT;
-  readonly schemaVersion: typeof WEB_WORKSPACE_SCHEMA_VERSION;
+  readonly schemaVersion:
+    typeof WEB_WORKSPACE_LEGACY_SCHEMA_VERSION | typeof WEB_WORKSPACE_SCHEMA_VERSION;
   readonly workspaceId: string;
 }
 
@@ -59,11 +114,22 @@ export interface WebSnapshotEnvelope {
 export interface WebWorkspaceIndex {
   readonly bytes: number;
   readonly generation: number;
-  readonly schemaVersion: typeof WEB_WORKSPACE_SCHEMA_VERSION;
+  readonly schemaVersion:
+    typeof WEB_WORKSPACE_LEGACY_SCHEMA_VERSION | typeof WEB_WORKSPACE_SCHEMA_VERSION;
   readonly sha256: string;
   readonly snapshotPath: string;
   readonly workspaceId: string;
 }
+
+export interface WebSnapshotEnvelopeV1 {
+  readonly generation: number;
+  readonly savedAt: string;
+  readonly schemaVersion: typeof WEB_WORKSPACE_LEGACY_SCHEMA_VERSION;
+  readonly state: WebWorkspaceStateV1;
+  readonly workspaceId: string;
+}
+
+export type AnyWebSnapshotEnvelope = WebSnapshotEnvelope | WebSnapshotEnvelopeV1;
 
 export type WebRepositoryErrorCode =
   | 'DIRECTORY_NOT_WRITABLE'
@@ -133,14 +199,15 @@ export function parseWebManifest(value: unknown): WebWorkspaceManifest {
   }
   if (
     value.format !== WEB_WORKSPACE_FORMAT ||
-    value.schemaVersion !== WEB_WORKSPACE_SCHEMA_VERSION
+    (value.schemaVersion !== WEB_WORKSPACE_LEGACY_SCHEMA_VERSION &&
+      value.schemaVersion !== WEB_WORKSPACE_SCHEMA_VERSION)
   ) {
     throw new WebRepositoryError('INVALID_WORKSPACE', 'schema', '工作区格式或版本不受支持。');
   }
   return Object.freeze({
     createdAt: text(value.createdAt),
     format: WEB_WORKSPACE_FORMAT,
-    schemaVersion: WEB_WORKSPACE_SCHEMA_VERSION,
+    schemaVersion: value.schemaVersion,
     workspaceId: text(value.workspaceId, SAFE_ID),
   });
 }
@@ -160,8 +227,9 @@ export function parseWebIndex(value: unknown): WebWorkspaceIndex {
     bytes: integer(value.bytes, 2),
     generation: integer(value.generation, 1),
     schemaVersion:
-      value.schemaVersion === WEB_WORKSPACE_SCHEMA_VERSION
-        ? WEB_WORKSPACE_SCHEMA_VERSION
+      value.schemaVersion === WEB_WORKSPACE_SCHEMA_VERSION ||
+      value.schemaVersion === WEB_WORKSPACE_LEGACY_SCHEMA_VERSION
+        ? value.schemaVersion
         : (() => {
             throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '状态索引版本不受支持。');
           })(),
@@ -171,7 +239,7 @@ export function parseWebIndex(value: unknown): WebWorkspaceIndex {
   });
 }
 
-function parseContentVersion(value: unknown): WebContentVersion {
+function parseContentVersionV1(value: unknown): WebContentVersionV1 {
   if (!record(value) || !exact(value, ['createdAt', 'fields', 'version', 'versionId'])) {
     throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容版本不符合合同。');
   }
@@ -180,6 +248,70 @@ function parseContentVersion(value: unknown): WebContentVersion {
     fields: parseContentPackageFields(value.fields),
     version: integer(value.version, 1),
     versionId: text(value.versionId),
+  });
+}
+
+function parseContentVersion(value: unknown): WebContentVersion {
+  if (
+    !record(value) ||
+    !exact(value, ['createdAt', 'fields', 'modelId', 'source', 'usage', 'version', 'versionId'])
+  ) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容版本不符合合同。');
+  }
+  if (value.source !== 'LOCAL' && value.source !== 'MODEL') {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容版本来源不受支持。');
+  }
+  let usage: WebContentVersion['usage'] = null;
+  if (value.usage !== null) {
+    if (!record(value.usage) || !exact(value.usage, ['inputTokens', 'outputTokens'])) {
+      throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容版本用量不符合合同。');
+    }
+    const tokenValue = (candidate: unknown): number | null =>
+      candidate === null ? null : integer(candidate);
+    usage = Object.freeze({
+      inputTokens: tokenValue(value.usage.inputTokens),
+      outputTokens: tokenValue(value.usage.outputTokens),
+    });
+  }
+  return Object.freeze({
+    createdAt: text(value.createdAt),
+    fields: parseContentPackageFields(value.fields),
+    modelId: value.modelId === null ? null : text(value.modelId),
+    source: value.source,
+    usage,
+    version: integer(value.version, 1),
+    versionId: text(value.versionId),
+  });
+}
+
+function parseContentPackageV1(value: unknown): WebContentPackageV1 {
+  if (
+    !record(value) ||
+    !exact(value, ['candidateId', 'id', 'revision', 'status', 'versions', 'weekKey']) ||
+    !Array.isArray(value.versions) ||
+    value.versions.length === 0 ||
+    value.versions.length > 100
+  ) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容包不符合合同。');
+  }
+  const versions = value.versions.map(parseContentVersionV1);
+  const revision = integer(value.revision);
+  if (
+    versions.some((item, index) => item.version !== index + 1) ||
+    versions.at(-1)?.version !== revision + 1
+  ) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容版本链不连续。');
+  }
+  if (value.status !== 'DRAFT' && value.status !== 'REVIEW_REQUIRED') {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容状态不受支持。');
+  }
+  return Object.freeze({
+    candidateId: text(value.candidateId),
+    id: text(value.id),
+    revision,
+    status: value.status,
+    versions: Object.freeze(versions),
+    weekKey: assertWeekKey(value.weekKey),
   });
 }
 
@@ -201,17 +333,33 @@ function parseContentPackage(value: unknown): WebContentPackage {
   ) {
     throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容版本链不连续。');
   }
-  if (value.status !== 'DRAFT' && value.status !== 'REVIEW_REQUIRED') {
+  if (!['APPROVED', 'DRAFT', 'REVIEW_REQUIRED'].includes(String(value.status))) {
     throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容状态不受支持。');
   }
   return Object.freeze({
     candidateId: text(value.candidateId),
     id: text(value.id),
     revision,
-    status: value.status,
+    status: value.status as WebContentPackage['status'],
     versions: Object.freeze(versions),
     weekKey: assertWeekKey(value.weekKey),
   });
+}
+
+function parseContentWorkspaceV1(value: unknown, expectedWeekKey: string): WebContentWorkspaceV1 {
+  if (!record(value) || !exact(value, ['packages', 'weekKey']) || !Array.isArray(value.packages)) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '内容工作区不符合合同。');
+  }
+  const weekKey = assertWeekKey(value.weekKey);
+  const packages = value.packages.map(parseContentPackageV1);
+  if (
+    weekKey !== expectedWeekKey ||
+    packages.some((item) => item.weekKey !== weekKey) ||
+    new Set(packages.map((item) => item.candidateId)).size !== packages.length
+  ) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'invariant', '内容工作区的周身份不一致。');
+  }
+  return Object.freeze({ packages: Object.freeze(packages), weekKey });
 }
 
 function parseContentWorkspace(value: unknown, expectedWeekKey: string): WebContentWorkspace {
@@ -230,7 +378,23 @@ function parseContentWorkspace(value: unknown, expectedWeekKey: string): WebCont
   return Object.freeze({ packages: Object.freeze(packages), weekKey });
 }
 
-export function parseWebWorkspaceState(value: unknown): WebWorkspaceState {
+function parsePlans(value: unknown): Readonly<Record<string, WeeklyPlan>> {
+  if (!record(value))
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '计划集合不符合合同。');
+  return Object.freeze(
+    Object.fromEntries(
+      Object.entries(value).map(([key, plan]) => {
+        const weekKey = assertWeekKey(key);
+        const parsed = parseWeeklyPlan(plan);
+        if (parsed.weekKey !== weekKey)
+          throw new WebRepositoryError('SCHEMA_INVALID', 'invariant', '计划周身份不一致。');
+        return [weekKey, parsed];
+      }),
+    ),
+  );
+}
+
+export function parseWebWorkspaceStateV1(value: unknown): WebWorkspaceStateV1 {
   if (
     !record(value) ||
     !exact(value, [
@@ -241,21 +405,56 @@ export function parseWebWorkspaceState(value: unknown): WebWorkspaceState {
       'schemaVersion',
       'workspaceId',
     ]) ||
-    !record(value.plans) ||
+    !record(value.contentByWeek) ||
+    value.schemaVersion !== WEB_WORKSPACE_LEGACY_SCHEMA_VERSION
+  ) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', 'W1 工作区快照不符合合同。');
+  }
+  const plans = parsePlans(value.plans);
+  const contentByWeek = Object.fromEntries(
+    Object.entries(value.contentByWeek).map(([key, content]) => {
+      const weekKey = assertWeekKey(key);
+      const parsed = parseContentWorkspaceV1(content, weekKey);
+      const candidateIds = new Set(plans[weekKey]?.candidates.map((item) => item.id) ?? []);
+      if (parsed.packages.some((item) => !candidateIds.has(item.candidateId))) {
+        throw new WebRepositoryError('SCHEMA_INVALID', 'invariant', '内容包未关联同周计划项。');
+      }
+      return [weekKey, parsed];
+    }),
+  );
+  return Object.freeze({
+    activeWeekKey: assertWeekKey(value.activeWeekKey),
+    contentByWeek: Object.freeze(contentByWeek),
+    persona: parseAccountPersona(value.persona),
+    plans,
+    schemaVersion: WEB_WORKSPACE_LEGACY_SCHEMA_VERSION,
+    workspaceId: text(value.workspaceId, SAFE_ID),
+  });
+}
+
+export function parseWebWorkspaceState(value: unknown): WebWorkspaceState {
+  if (
+    !record(value) ||
+    !exact(value, [
+      'activeWeekKey',
+      'clipReceipts',
+      'contentByWeek',
+      'interactions',
+      'library',
+      'metricSnapshots',
+      'persona',
+      'plans',
+      'provider',
+      'schemaVersion',
+      'strategyDecisions',
+      'workspaceId',
+    ]) ||
     !record(value.contentByWeek) ||
     value.schemaVersion !== WEB_WORKSPACE_SCHEMA_VERSION
   ) {
     throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '工作区快照不符合合同。');
   }
-  const plans = Object.fromEntries(
-    Object.entries(value.plans).map(([key, plan]) => {
-      const weekKey = assertWeekKey(key);
-      const parsed = parseWeeklyPlan(plan);
-      if (parsed.weekKey !== weekKey)
-        throw new WebRepositoryError('SCHEMA_INVALID', 'invariant', '计划周身份不一致。');
-      return [weekKey, parsed];
-    }),
-  );
+  const plans = parsePlans(value.plans);
   const contentByWeek = Object.fromEntries(
     Object.entries(value.contentByWeek).map(([key, content]) => {
       const weekKey = assertWeekKey(key);
@@ -268,8 +467,30 @@ export function parseWebWorkspaceState(value: unknown): WebWorkspaceState {
     }),
   );
   const activeWeekKey = assertWeekKey(value.activeWeekKey);
+  const packageStatuses = new Map(
+    Object.values(contentByWeek).flatMap((workspace) =>
+      workspace.packages.map((item) => [item.id, item.status] as const),
+    ),
+  );
+  let slices;
+  try {
+    slices = parseW2Slices(
+      {
+        clipReceipts: value.clipReceipts,
+        interactions: value.interactions,
+        library: value.library,
+        metricSnapshots: value.metricSnapshots,
+        provider: value.provider,
+        strategyDecisions: value.strategyDecisions,
+      },
+      packageStatuses,
+    );
+  } catch {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', 'W2 业务状态不符合合同。');
+  }
   return Object.freeze({
     activeWeekKey,
+    ...slices,
     contentByWeek: Object.freeze(contentByWeek),
     persona: parseAccountPersona(value.persona),
     plans: Object.freeze(plans),
@@ -299,6 +520,59 @@ export function parseWebSnapshot(value: unknown): WebSnapshotEnvelope {
   });
 }
 
+export function parseAnyWebSnapshot(value: unknown): AnyWebSnapshotEnvelope {
+  if (
+    !record(value) ||
+    !exact(value, ['generation', 'savedAt', 'schemaVersion', 'state', 'workspaceId'])
+  ) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '状态快照不符合合同。');
+  }
+  if (value.schemaVersion === WEB_WORKSPACE_SCHEMA_VERSION) return parseWebSnapshot(value);
+  if (value.schemaVersion !== WEB_WORKSPACE_LEGACY_SCHEMA_VERSION) {
+    throw new WebRepositoryError('SCHEMA_INVALID', 'schema', '状态快照版本不受支持。');
+  }
+  const state = parseWebWorkspaceStateV1(value.state);
+  const workspaceId = text(value.workspaceId, SAFE_ID);
+  if (state.workspaceId !== workspaceId)
+    throw new WebRepositoryError('SCHEMA_INVALID', 'invariant', '快照工作区身份不一致。');
+  return Object.freeze({
+    generation: integer(value.generation, 1),
+    savedAt: text(value.savedAt),
+    schemaVersion: WEB_WORKSPACE_LEGACY_SCHEMA_VERSION,
+    state,
+    workspaceId,
+  });
+}
+
+export function migrateWebWorkspaceState(value: WebWorkspaceStateV1): WebWorkspaceState {
+  const slices = emptyW2Slices();
+  return parseWebWorkspaceState({
+    activeWeekKey: value.activeWeekKey,
+    ...slices,
+    contentByWeek: Object.fromEntries(
+      Object.entries(value.contentByWeek).map(([weekKey, workspace]) => [
+        weekKey,
+        {
+          packages: workspace.packages.map((item) => ({
+            ...item,
+            versions: item.versions.map((version) => ({
+              ...version,
+              modelId: null,
+              source: 'LOCAL',
+              usage: null,
+            })),
+          })),
+          weekKey,
+        },
+      ]),
+    ),
+    persona: value.persona,
+    plans: value.plans,
+    schemaVersion: WEB_WORKSPACE_SCHEMA_VERSION,
+    workspaceId: value.workspaceId,
+  });
+}
+
 export function newWorkspaceState(
   workspaceId: string,
   activeWeekKey: string,
@@ -306,6 +580,7 @@ export function newWorkspaceState(
 ): WebWorkspaceState {
   return parseWebWorkspaceState({
     activeWeekKey,
+    ...emptyW2Slices(),
     contentByWeek: {},
     persona,
     plans: {},

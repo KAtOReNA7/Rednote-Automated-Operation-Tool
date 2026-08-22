@@ -21,5 +21,8 @@ Issue 024 的结构化 Content Brief、字段锁定与受控生成、Issue 025 �
 [`evidence/m3-issue024-local-evidence.md`](./evidence/m3-issue024-local-evidence.md)、
 [`evidence/m3-issue025-local-evidence.md`](./evidence/m3-issue025-local-evidence.md) 和
 [`evidence/m3-issue026-local-evidence.md`](./evidence/m3-issue026-local-evidence.md)。上述 M3/Issue 027
-材料为历史审计记录，不是当前实施状态。当前活跃工作为 R10 发布准备范围合同；R10 功能尚未开始，见
-[`product/v2-r10-release-readiness-scope.md`](./product/v2-r10-release-readiness-scope.md)。
+材料为历史审计记录，不是当前实施状态。Windows R10 历史线已冻结为迁移参考；当前活跃工作是
+W1 合并后的 WebUI W2 功能等价候选，见
+[`governance/web-functional-equivalence.md`](./governance/web-functional-equivalence.md)。冻结的 R10
+范围合同仍可从 [`product/v2-r10-release-readiness-scope.md`](./product/v2-r10-release-readiness-scope.md)
+查阅；W3 尚未开始。
