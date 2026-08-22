@@ -306,6 +306,7 @@ describe('R10D Windows distribution contracts', () => {
     expect(installerInclude).toContain('!insertmacro VersionCompare');
     expect(installerInclude).toContain('!insertmacro un.VersionCompare');
     expect(installerInclude).toContain('!macro customCheckAppRunning');
+    expect(installerInclude).toMatch(/!macro customInit\s+!insertmacro customCheckAppRunning/u);
     expect(installerInclude).toContain('CreateToolhelp32Snapshot');
     expect(installerInclude).toContain('Process32FirstW');
     expect(installerInclude).toContain('Process32NextW');

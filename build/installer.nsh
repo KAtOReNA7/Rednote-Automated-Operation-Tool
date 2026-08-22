@@ -49,6 +49,7 @@ custom_process_done:
 !macroend
 
 !macro customInit
+  !insertmacro customCheckAppRunning
   ReadRegStr $R0 HKCU "${UNINSTALL_REGISTRY_KEY}" "DisplayVersion"
   ${If} $R0 != ""
     ${VersionCompare} "${VERSION}" "$R0" $R1
