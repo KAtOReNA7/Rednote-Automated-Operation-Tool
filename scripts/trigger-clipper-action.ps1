@@ -146,9 +146,10 @@ if ($browser.MainWindowHandle -eq [IntPtr]::Zero) {
   throw 'The isolated browser does not own a visible main window.'
 }
 $shell = New-Object -ComObject WScript.Shell
-if (-not $shell.AppActivate($BrowserProcessId)) {
-  throw 'Unable to activate the isolated browser window.'
-}
+# AppActivate is only a best-effort foreground hint. On hosted Windows runners it
+# can return false for a valid top-level browser window, so the native handle path
+# below remains the authority and verifies the exact foreground target afterward.
+[void]$shell.AppActivate($BrowserProcessId)
 $currentThread = [Issue017KeyboardInput]::GetCurrentThreadId()
 $targetThread = [Issue017KeyboardInput]::GetWindowThreadProcessId(
   $browser.MainWindowHandle,

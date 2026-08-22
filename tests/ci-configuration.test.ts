@@ -27,6 +27,10 @@ const repositoryRoot = fileURLToPath(new URL('..', import.meta.url));
 const workflowPath = resolve(repositoryRoot, '.github/workflows/ci.yml');
 const packagePath = resolve(repositoryRoot, 'package.json');
 const workflowSource = readFileSync(workflowPath, 'utf8');
+const clipperActionSource = readFileSync(
+  resolve(repositoryRoot, 'scripts/trigger-clipper-action.ps1'),
+  'utf8',
+);
 const workflow = parse(workflowSource) as Workflow;
 const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as {
   readonly scripts: Readonly<Record<string, string>>;
@@ -82,6 +86,19 @@ describe('Windows CI configuration', () => {
     expect(v2Package.exports['.']['rednote-runtime']).toBe('./dist/index.js');
     expect(v2Package.exports['.'].default).toBe('./src/index.ts');
     expect(v2Package.exports['.'].types).toBe('./dist/index.d.ts');
+  });
+
+  it('uses the browser handle as the authoritative foreground check for real Clipper actions', () => {
+    expect(clipperActionSource).toContain('[void]$shell.AppActivate($BrowserProcessId)');
+    expect(clipperActionSource).not.toContain(
+      "throw 'Unable to activate the isolated browser window.'",
+    );
+    expect(clipperActionSource.indexOf('[void]$shell.AppActivate')).toBeLessThan(
+      clipperActionSource.indexOf('[void][Issue017KeyboardInput]::AttachThreadInput'),
+    );
+    expect(
+      clipperActionSource.indexOf('[void][Issue017KeyboardInput]::SetForegroundWindow'),
+    ).toBeLessThan(clipperActionSource.indexOf('did not become the exact foreground target'));
   });
 
   it('builds exact-head R10D and closed R10E candidate artifacts only after required inputs', () => {

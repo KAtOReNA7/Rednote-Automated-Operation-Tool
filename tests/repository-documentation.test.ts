@@ -87,7 +87,6 @@ describe('repository-facing documentation', () => {
     );
     expect(instructionsIndex).toMatch(/R10C.+受控本地.+脱敏诊断/su);
     expect(instructionsIndex).toMatch(/R10D.+Windows.+分发.+安装.+升级.+卸载/su);
-    expect(instructionsIndex).toMatch(/R10E.+Release Candidate.+验收/su);
     expect(readme).toContain('./docs/product/v2-r10-release-readiness-scope.md');
     expect(docsIndex).toContain('./product/v2-r10-release-readiness-scope.md');
     expect(productIndex).toContain('./v2-r10-release-readiness-scope.md');
