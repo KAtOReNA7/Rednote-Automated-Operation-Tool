@@ -98,7 +98,9 @@ describe('Windows CI configuration', () => {
     );
     expect(lifecycle).toContain("await removeOwned(temporaryDirectory, 'ci-temp-cleanup')");
     expect(lifecycle).toContain('CLEANUP_TIMEOUT_MILLISECONDS');
-    expect(lifecycle).toContain('Get-Process -Name "RednoteMysteryOperations"');
+    expect(lifecycle).toContain("'tasklist.exe'");
+    expect(lifecycle).toContain('IMAGENAME eq ${WINDOWS_APPLICATION_EXECUTABLE}');
+    expect(lifecycle).not.toContain('Get-Process -Name "RednoteMysteryOperations"');
     expect(lifecycle).toContain('WINDOWS_INSTALLER_GUID');
     expect(lifecycle).toContain('retryProbe(`${stage}-registry`, registryProbe)');
     expect(lifecycle).not.toContain('CurrentVersion\\Uninstall\\*');

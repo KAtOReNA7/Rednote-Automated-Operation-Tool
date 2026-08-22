@@ -36,6 +36,7 @@ const CLEANUP_TIMEOUT_MILLISECONDS = 30_000;
 const PROBE_TIMEOUT_MILLISECONDS = 4_000;
 const INSTALLER_TIMEOUT_MILLISECONDS = 180_000;
 const FAILURE_SUMMARY_LIMIT = 900;
+const WINDOWS_APPLICATION_EXECUTABLE = 'RednoteMysteryOperations.exe';
 let activeStage = 'bootstrap';
 let lastObservedState;
 
@@ -238,32 +239,42 @@ async function registryProbe() {
   }
 }
 
-async function processProbe(target) {
+export function parseTasklistProcesses(stdout) {
+  const processes = [];
+  for (const line of stdout.split(/\r?\n/gu)) {
+    const match = /^"([^"]+)","([0-9]+)"/u.exec(line.trim());
+    if (match === null || match[1]?.toLowerCase() !== WINDOWS_APPLICATION_EXECUTABLE.toLowerCase())
+      continue;
+    const pid = Number(match[2]);
+    if (!Number.isSafeInteger(pid) || pid <= 0)
+      throw failure('process', 'INSTALLER_LIFECYCLE_PROCESS_PROBE_INVALID');
+    processes.push({
+      image: WINDOWS_APPLICATION_EXECUTABLE,
+      inInstall: true,
+      nsisHelper: false,
+      pid,
+    });
+  }
+  if (
+    processes.length > 8 ||
+    (stdout.includes(WINDOWS_APPLICATION_EXECUTABLE) && processes.length === 0)
+  )
+    throw failure('process', 'INSTALLER_LIFECYCLE_PROCESS_PROBE_INVALID');
+  return processes;
+}
+
+async function processProbe() {
   try {
     const { stdout } = await run(
-      'powershell.exe',
-      [
-        '-NoLogo',
-        '-NoProfile',
-        '-NonInteractive',
-        '-Command',
-        [
-          '$target=$env:REDNOTE_R10D_INSTALL_PATH',
-          '$items=@(Get-Process -Name "RednoteMysteryOperations" -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($target,[System.StringComparison]::OrdinalIgnoreCase) } | ForEach-Object { [PSCustomObject]@{ image=[System.IO.Path]::GetFileName($_.Path); inInstall=$true; nsisHelper=$false; pid=[int]$_.Id } })',
-          '[PSCustomObject]@{processes=@($items)} | ConvertTo-Json -Compress -Depth 3',
-        ].join('; '),
-      ],
+      'tasklist.exe',
+      ['/FI', `IMAGENAME eq ${WINDOWS_APPLICATION_EXECUTABLE}`, '/FO', 'CSV', '/NH'],
       {
-        env: { ...process.env, REDNOTE_R10D_INSTALL_PATH: target },
         maxBuffer: 8_192,
         timeout: PROBE_TIMEOUT_MILLISECONDS,
         windowsHide: true,
       },
     );
-    const value = JSON.parse(stdout);
-    if (!Array.isArray(value.processes) || value.processes.length > 8)
-      throw failure('process', 'INSTALLER_LIFECYCLE_PROCESS_PROBE_INVALID');
-    return value.processes;
+    return parseTasklistProcesses(stdout);
   } catch (error) {
     if (error instanceof LifecycleFailure) throw error;
     throw failure(
@@ -283,7 +294,7 @@ async function observe(target, temporaryDirectory, stage) {
   setStage(stage);
   const [registry, processes, nsisHelperDirectories] = await Promise.all([
     retryProbe(`${stage}-registry`, registryProbe),
-    retryProbe(`${stage}-process`, () => processProbe(target)),
+    retryProbe(`${stage}-process`, processProbe),
     retryProbe(`${stage}-helper`, () => helperDirectoryProbe(temporaryDirectory)),
   ]);
   const state = {

@@ -74,6 +74,12 @@ interface LifecycleProcessContract {
     | { readonly kind: 'signal'; readonly signal: string }
     | { readonly kind: 'spawn_error'; readonly code: string }
   >;
+  readonly parseTasklistProcesses: (stdout: string) => readonly {
+    readonly image: string;
+    readonly inInstall: boolean;
+    readonly nsisHelper: boolean;
+    readonly pid: number;
+  }[];
   readonly retryProbe: <Value>(
     stage: string,
     probe: () => Promise<Value>,
@@ -230,6 +236,27 @@ describe('R10D Windows distribution contracts', () => {
         throw new Error('persistent');
       }),
     ).rejects.toThrow('INSTALLER_LIFECYCLE_REGISTRY_PROBE_FAILED');
+  });
+
+  it('parses only the exact application image from the bounded tasklist probe', async () => {
+    const lifecycle = await loadLifecycleProcessContract();
+    expect(
+      lifecycle.parseTasklistProcesses(
+        '"RednoteMysteryOperations.exe","4242","Console","1","12,000 K"\r\n' +
+          '"RednoteMysteryOperations-helper.exe","4243","Console","1","8,000 K"\r\n',
+      ),
+    ).toEqual([
+      {
+        image: 'RednoteMysteryOperations.exe',
+        inInstall: true,
+        nsisHelper: false,
+        pid: 4242,
+      },
+    ]);
+    expect(lifecycle.parseTasklistProcesses('INFO: No tasks match.\r\n')).toEqual([]);
+    expect(() =>
+      lifecycle.parseTasklistProcesses('RednoteMysteryOperations.exe malformed'),
+    ).toThrow('INSTALLER_LIFECYCLE_PROCESS_PROBE_INVALID');
   });
 
   it('preserves primary failure identity and emits bounded path-free summaries', async () => {
