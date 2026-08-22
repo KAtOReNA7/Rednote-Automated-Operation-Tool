@@ -70,7 +70,7 @@ describe('repository-facing documentation', () => {
     expect(readme).toMatch(/R10B.+PR #26.+合并/su);
     expect(instructionsIndex).toMatch(/R10B.+PR #26.+合并.+main/su);
     expect(readme).toMatch(/R10C.+受控本地诊断/su);
-    expect(readme).toMatch(/R10D.+每用户离线安装.+R10E.+独立授权/su);
+    expect(readme).toMatch(/R10D.+每用户离线安装.+PR #29.+Windows CI.+R10E.+尚未开始/su);
     expect(instructionsIndex).toMatch(/R10C.+受控本地.+脱敏诊断/su);
     expect(instructionsIndex).toMatch(/R10D.+Windows.+分发.+安装.+升级.+卸载/su);
     expect(readme).toContain('./docs/product/v2-r10-release-readiness-scope.md');
