@@ -232,6 +232,39 @@ function Find-VisibleNamedElement {
   return $null
 }
 
+function Find-VisibleNameContaining {
+  param(
+    [Parameter(Mandatory = $true)]
+    [System.Windows.Automation.AutomationElement]$Root,
+    [Parameter(Mandatory = $true)]
+    [string[]]$Fragments
+  )
+
+  $elements = $Root.FindAll(
+    [System.Windows.Automation.TreeScope]::Descendants,
+    [System.Windows.Automation.Condition]::TrueCondition
+  )
+  foreach ($element in $elements) {
+    try {
+      if ($element.Current.IsOffscreen) {
+        continue
+      }
+      $name = $element.Current.Name
+      foreach ($fragment in $Fragments) {
+        if (
+          -not [string]::IsNullOrWhiteSpace($name) -and
+          $name.IndexOf($fragment, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+        ) {
+          return $element
+        }
+      }
+    } catch [System.Runtime.InteropServices.COMException] {
+      continue
+    }
+  }
+  return $null
+}
+
 function Invoke-VisibleElement {
   param(
     [Parameter(Mandatory = $true)]
@@ -316,6 +349,11 @@ if ($null -eq $extensionsButton) {
   $extensionsButton = Find-VisibleNamedElement -Root $browserRoot -Name 'Extensions'
 }
 if ($null -eq $extensionsButton) {
+  $extensionsButton = Find-VisibleNameContaining `
+    -Root $browserRoot `
+    -Fragments @($extensionsChinese, $extensionsEdgeChinese, 'Extensions')
+}
+if ($null -eq $extensionsButton) {
   throw 'The isolated browser Extensions toolbar button was not found.'
 }
 Invoke-VisibleElement -Element $extensionsButton
@@ -331,6 +369,11 @@ while ($null -eq $extensionAction -and [DateTime]::UtcNow -lt $deadline) {
     $extensionAction = Find-VisibleNamedElement `
       -Root ([System.Windows.Automation.AutomationElement]::RootElement) `
       -Name $extensionTitleChinese
+  }
+  if ($null -eq $extensionAction) {
+    $extensionAction = Find-VisibleNameContaining `
+      -Root ([System.Windows.Automation.AutomationElement]::RootElement) `
+      -Fragments @($extensionNameChinese, $extensionTitleChinese)
   }
   if ($null -eq $extensionAction) {
     Start-Sleep -Milliseconds 100

@@ -106,6 +106,8 @@ describe('Windows CI configuration', () => {
     );
     expect(clipperActionSource).toContain('browserRootDeadline');
     expect(clipperActionSource).toContain('ElementNotAvailableException');
+    expect(clipperActionSource).toContain('Find-VisibleNameContaining');
+    expect(clipperActionSource).toContain('[System.StringComparison]::OrdinalIgnoreCase');
     const uiAutomationStart = clipperActionSource.indexOf(
       'Add-Type -AssemblyName UIAutomationClient',
     );
