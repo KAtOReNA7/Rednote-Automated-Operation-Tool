@@ -21,5 +21,8 @@ Issue 024 的结构化 Content Brief、字段锁定与受控生成、Issue 025 �
 [`evidence/m3-issue024-local-evidence.md`](./evidence/m3-issue024-local-evidence.md)、
 [`evidence/m3-issue025-local-evidence.md`](./evidence/m3-issue025-local-evidence.md) 和
 [`evidence/m3-issue026-local-evidence.md`](./evidence/m3-issue026-local-evidence.md)。上述 M3/Issue 027
-材料为历史审计记录，不是当前实施状态。当前活跃工作为 R10 发布准备范围合同；R10 功能尚未开始，见
-[`product/v2-r10-release-readiness-scope.md`](./product/v2-r10-release-readiness-scope.md)。
+材料为历史审计记录，不是当前实施状态。当前活跃工作为 R10 发布准备：R10D 已通过 PR #29 与主线
+Windows CI，R10E 正在准备 Draft Release Candidate 并等待 Windows 10/11 独立人工验收。范围见
+[`product/v2-r10-release-readiness-scope.md`](./product/v2-r10-release-readiness-scope.md)，用户入口见
+[`user-guide/windows-beta-user-guide.md`](./user-guide/windows-beta-user-guide.md) 与
+[`reviews/R10E-windows-10-11-user-acceptance.md`](./reviews/R10E-windows-10-11-user-acceptance.md)。

@@ -1,6 +1,6 @@
 # R10D Windows 分发、安装、升级与卸载实施/验收
 
-**任务状态：PR #29 候选验证中。** 只有精确 PR HEAD 与合并后 `main` 的 Windows required CI 均成功，R10D 才能收口；当前不是发布声明，R10E 尚未开始。
+**任务状态：已合并并通过主线验证。** PR #29 的最终 HEAD 为 `f9311084de603e0f3f4626b6bf55d0ea88962358`，普通 merge commit 为 `d71b7d8b1063823d04043a5e9991c9ac696e40ce`；精确 PR HEAD 与合并后 `main` 的 Windows required CI 均已成功。R10D 已收口，但这不是正式发布声明；R10E 只建立 Draft Release Candidate 并等待 Windows 10/11 人工验收。
 
 ## 范围与固定边界
 
@@ -10,28 +10,28 @@
 
 ## D01—D18 验收回填
 
-| 项目                             | 状态         | 证据                                                           |
-| -------------------------------- | ------------ | -------------------------------------------------------------- |
-| D01 单一版本与稳定应用身份       | PASS（本地） | `0.1.0-beta.1`、固定 appId 与 x64 manifest。                   |
-| D02 NSIS 每用户离线安装          | PASS（本地） | 固定 NSIS one-click/per-user 配置。                            |
-| D03 未签名内部 beta              | PASS（本地） | 无证书表、无 signing 配置且 elevation helper 关闭。            |
-| D04 零自动更新/后台下载          | PASS（本地） | 显式 `--publish never`；raw `latest.yml` 不进入交付 bundle。   |
-| D05 release manifest 与 checksum | PASS（本地） | canonical bundle 只含 installer、manifest、SHA256SUMS 与说明。 |
-| D06 可重复 exact-head 构建       | PASS（语义） | 规范 payload 与 NSIS 脚本一致；不宣称 NSIS 外层字节稳定。      |
-| D07 干净安装                     | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D08 数据根与凭据语义稳定         | PENDING      | 待隔离 smoke 证据。                                            |
-| D09 手动兼容升级                 | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D10 显式备份兼容                 | PASS（既有） | R10B 受控备份与恢复已通过 PR #26 进入 `main`。                 |
-| D11 降级和未知安装阻断           | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D12 运行中升级/卸载阻断          | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D13 失败回退                     | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D14 卸载默认保留数据             | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D15 保留数据后的重装             | PENDING      | 仅 GitHub-hosted Windows CI 可验证。                           |
-| D16 生命周期零网络与零费用       | PENDING      | 待 CI smoke 证据。                                             |
-| D17 精确 HEAD CI artifact        | PENDING      | 待 CI workflow 证据。                                          |
-| D18 文档与阶段事实               | 条件式准确   | 文档保持候选状态；待 CI 和合并后再确认收口。                   |
+| 项目                             | 状态         | 证据                                                             |
+| -------------------------------- | ------------ | ---------------------------------------------------------------- |
+| D01 单一版本与稳定应用身份       | PASS（本地） | `0.1.0-beta.1`、固定 appId 与 x64 manifest。                     |
+| D02 NSIS 每用户离线安装          | PASS（本地） | 固定 NSIS one-click/per-user 配置。                              |
+| D03 未签名内部 beta              | PASS（本地） | 无证书表、无 signing 配置且 elevation helper 关闭。              |
+| D04 零自动更新/后台下载          | PASS（本地） | 显式 `--publish never`；raw `latest.yml` 不进入交付 bundle。     |
+| D05 release manifest 与 checksum | PASS（本地） | canonical bundle 只含 installer、manifest、SHA256SUMS 与说明。   |
+| D06 可重复 exact-head 构建       | PASS（语义） | 规范 payload 与 NSIS 脚本一致；不宣称 NSIS 外层字节稳定。        |
+| D07 干净安装                     | PASS（CI）   | PR/main 的隔离 Windows L02 安装成功。                            |
+| D08 数据根与凭据语义稳定         | PASS（CI）   | L03、L06、L09 使用隔离合成数据根并验证保留。                     |
+| D09 手动兼容升级                 | PASS（CI）   | L06 beta.0→beta.1 手动升级成功。                                 |
+| D10 显式备份兼容                 | PASS（既有） | R10B 受控备份与恢复已通过 PR #26 进入 `main`。                   |
+| D11 降级和未知安装阻断           | PASS（CI）   | L07 降级阻断且 beta.1 payload 保持。                             |
+| D12 运行中升级/卸载阻断          | PASS（CI）   | L04 两条运行中阻断均得到确定性非零退出。                         |
+| D13 失败回退                     | PASS（CI）   | L05 损坏安装器安全失败并保留 beta.0 与数据。                     |
+| D14 卸载默认保留数据             | PASS（CI）   | L08 卸载后合成数据、备份和诊断标记保留。                         |
+| D15 保留数据后的重装             | PASS（CI）   | L09 重装并读取保留数据。                                         |
+| D16 生命周期零网络与零费用       | PASS（CI）   | L01—L10 报告外部连接为 0，无真实模型或费用。                     |
+| D17 精确 HEAD CI artifact        | PASS（CI）   | run 32565194439 artifact 9474092899，未过期。                    |
+| D18 文档与阶段事实               | PASS         | PR #29 已普通合并，main run 32566317756 / job 97015340441 成功。 |
 
-本轮 L01—L10 仅在精确 HEAD 的 Windows CI 完成后回填为 PASS；D13 只声明损坏安装器的失败回退。
+L01—L10 已由精确 PR HEAD 与合并后 `main` 的 Windows required CI 验证；D13 仍只声明损坏安装器的失败回退，不扩大为任意事故回滚保证。
 
 ## 实施计划
 

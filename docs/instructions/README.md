@@ -1,4 +1,4 @@
-# 历史 Issue 执行指令与当前 R10A 归档
+# 历史 Issue 执行指令与当前 R10 归档
 
 这些文件是已完成工作的原始授权与审计证据，不是待办任务。除非用户明确要求修正文档事实，
 不得重写其内容，也不得因为文件中提及后续 Issue 而自动开始开发。
@@ -38,7 +38,7 @@ M2（Issue 012—021）已完成。
 
 M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的表述不是当前实施状态，且不得自动
 开始。R10A 与 R10B1A—R10B1C 已完成并进入 `main`；R10B 完整受控备份与恢复已通过 PR #26 合并到 `main`。R10C 提供受控本地
-脱敏诊断；R10D Windows 安装/升级/卸载候选正在 PR #29 接受精确 Windows 生命周期门禁，只有 PR 与合并后 `main` CI 均通过才视为进入主线；R10E Release Candidate 尚未开始。范围见
+脱敏诊断；R10D Windows 安装/升级/卸载已通过 PR #29 和合并后 `main` Windows CI 进入主线；R10E 正在建立可审计 Draft Release Candidate，Windows 10/11 人工验收均保持 `NOT_RUN`。范围见
 [`../product/v2-r10-release-readiness-scope.md`](../product/v2-r10-release-readiness-scope.md)。
 
 ## V2
@@ -47,6 +47,7 @@ M3 Issue 022—026 与后续历史材料均为审计记录；旧 Issue 027 的�
 - [R10B：受控备份与恢复实施与验收映射](./v2/R10B-controlled-backup-restore-implementation.md)
 - [R10C：受控本地诊断实施与验收映射](./v2/R10C-local-diagnostics-implementation.md)
 - [R10D：Windows 分发、安装、升级与卸载实施/验收](./v2/R10D-windows-distribution-implementation.md)
+- [R10E：Release Candidate 实施与验收映射](./v2/R10E-release-candidate-implementation.md)
 
 ## Governance
 

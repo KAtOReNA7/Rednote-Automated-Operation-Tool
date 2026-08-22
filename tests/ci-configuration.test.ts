@@ -55,18 +55,22 @@ describe('Windows CI configuration', () => {
       'npm run build',
       'npm run package:desktop',
       'npm run package:clipper',
+      'npm run test:clipper-real',
       'npm run test:packaged-smoke',
       'npm run audit:dependencies',
+      'npm run package:release-candidate',
       'npm run test:installer-lifecycle',
     ]) {
       expect(runCommands).toContain(command);
     }
   });
 
-  it('builds and uploads only an exact-head R10D installer artifact', () => {
+  it('builds exact-head R10D and closed R10E candidate artifacts only after required inputs', () => {
     expect(workflowSource).toContain('npm run package:installer');
     expect(workflowSource).toContain('rednote-r10d-windows-installer-$shortSha');
     expect(workflowSource).toContain('out/installer-bundle/');
+    expect(workflowSource).toContain('rednote-r10e-release-candidate-$shortSha');
+    expect(workflowSource).toContain('out/r10e-release-assets/');
     expect(workflowSource).toContain('retention-days: 14');
     expect(workflowSource).toContain("REDNOTE_R10D_CI_FIXTURE: '1'");
     expect(workflowSource).toContain("REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'");
@@ -76,6 +80,17 @@ describe('Windows CI configuration', () => {
     expect(workflowSource).not.toContain('r10d-beta0-staging');
     expect(workflowSource).not.toContain('Move-Item');
     expect(workflowSource).toContain('--cleanup-ci-temp');
+
+    const fixture = workflowSource.indexOf('Build isolated R10D beta.0 lifecycle fixture');
+    const candidate = workflowSource.indexOf('Package exact-head R10E release candidate');
+    const lifecycle = workflowSource.indexOf('Run isolated R10D installer lifecycle');
+    const candidateUpload = workflowSource.indexOf(
+      'Upload exact-head R10E release candidate assets',
+    );
+    expect(fixture).toBeGreaterThan(0);
+    expect(candidate).toBeGreaterThan(fixture);
+    expect(lifecycle).toBeGreaterThan(candidate);
+    expect(candidateUpload).toBeGreaterThan(lifecycle);
   });
 
   it('fails closed between each native R10D installer build phase', () => {
@@ -113,6 +128,7 @@ describe('Windows CI configuration', () => {
   it('runs one required workflow per PR head and one for merged main', () => {
     expect(workflowSource).toMatch(/push:\s+branches:\s+- main\s+pull_request:/u);
     expect(workflowSource).toContain('Run isolated R10D installer lifecycle');
+    expect(workflowSource).toContain('Run real Chrome and Edge Clipper smoke');
     const lifecycle = readFileSync(
       resolve(repositoryRoot, 'scripts', 'run-installer-lifecycle-smoke.mjs'),
       'utf8',
@@ -145,6 +161,7 @@ describe('Windows CI configuration', () => {
     expect(workflow.env).toBeUndefined();
     expect(windowsJob?.env).toBeUndefined();
     expect(workflowSource).not.toMatch(/secrets\./iu);
+    expect(workflowSource).not.toMatch(/gh release|git tag|create-release/iu);
     expect([...workflowSource.matchAll(/\$env:([A-Z0-9_]+)/gu)]).toHaveLength(0);
   });
 });

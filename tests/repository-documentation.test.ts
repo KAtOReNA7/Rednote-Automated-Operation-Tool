@@ -17,6 +17,18 @@ const r10Scope = readFileSync(
 const docsIndex = readFileSync(resolve(projectRoot, 'docs/README.md'), 'utf8');
 const productIndex = readFileSync(resolve(projectRoot, 'docs/product/README.md'), 'utf8');
 const instructionsIndex = readFileSync(resolve(projectRoot, 'docs/instructions/README.md'), 'utf8');
+const r10eImplementation = readFileSync(
+  resolve(projectRoot, 'docs/instructions/v2/R10E-release-candidate-implementation.md'),
+  'utf8',
+);
+const r10eUat = readFileSync(
+  resolve(projectRoot, 'docs/reviews/R10E-windows-10-11-user-acceptance.md'),
+  'utf8',
+);
+const r10eUserGuide = readFileSync(
+  resolve(projectRoot, 'docs/user-guide/windows-beta-user-guide.md'),
+  'utf8',
+);
 
 interface ProjectProgress {
   readonly completedThrough: number;
@@ -70,9 +82,14 @@ describe('repository-facing documentation', () => {
     expect(readme).toMatch(/R10B.+PR #26.+合并/su);
     expect(instructionsIndex).toMatch(/R10B.+PR #26.+合并.+main/su);
     expect(readme).toMatch(/R10C.+受控本地诊断/su);
-    expect(readme).toMatch(/R10D.+每用户离线安装.+PR #29.+Windows CI.+R10E.+尚未开始/su);
+    expect(readme).toMatch(
+      /R10D.+每用户离线安装.+PR #29.+Windows CI.+R10E.+Draft Release Candidate/su,
+    );
     expect(instructionsIndex).toMatch(/R10C.+受控本地.+脱敏诊断/su);
     expect(instructionsIndex).toMatch(/R10D.+Windows.+分发.+安装.+升级.+卸载/su);
+    expect(instructionsIndex).toMatch(/R10E.+Release Candidate.+验收/su);
+    expect(docsIndex).toContain('./user-guide/windows-beta-user-guide.md');
+    expect(docsIndex).toContain('./reviews/R10E-windows-10-11-user-acceptance.md');
     expect(readme).toContain('./docs/product/v2-r10-release-readiness-scope.md');
     expect(docsIndex).toContain('./product/v2-r10-release-readiness-scope.md');
     expect(productIndex).toContain('./v2-r10-release-readiness-scope.md');
@@ -104,6 +121,23 @@ describe('repository-facing documentation', () => {
       expect(content, path).toMatch(/M4[\s\S]{0,100}?未开始/u);
       expect(content, path).toMatch(/下一步[\s\S]{0,120}?受控本地(?:内容)?试运行/u);
     }
+  });
+
+  it('keeps the R10E candidate auditable without pre-filling Win10 or Win11 acceptance', () => {
+    expect(r10eImplementation).toContain('v0.1.0-beta.1');
+    expect(r10eImplementation).toContain('Rednote V2 0.1.0-beta.1 Release Candidate');
+    expect(r10eImplementation).toMatch(/Draft \+ prerelease/u);
+    expect(r10eImplementation).toMatch(/不创建真实 tag ref/u);
+    expect(r10eImplementation).toMatch(/Windows 10\/11.+NOT_RUN/u);
+    expect(r10eUserGuide).toContain('RednoteStudio-0.1.0-beta.1-r10e-rc.zip');
+    expect(r10eUserGuide).toMatch(/SmartScreen/u);
+    expect(r10eUserGuide).toMatch(/beta\.0.+beta\.1/su);
+    expect(r10eUserGuide).toMatch(/受控备份与恢复/u);
+    expect(r10eUserGuide).toMatch(/本地诊断包/u);
+    expect(r10eUat).toMatch(/Windows 10 `NOT_RUN`；Windows 11 `NOT_RUN`/u);
+    expect(r10eUat.match(/W10-\d{2}/gu)).toHaveLength(15);
+    expect(r10eUat.match(/W11-\d{2}/gu)).toHaveLength(15);
+    expect(r10eUat).not.toMatch(/最终结论：`PASS`/u);
   });
 
   it('parses only explicit Issue references and rejects gaps or contradictory next states', () => {

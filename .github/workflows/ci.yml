@@ -71,6 +71,9 @@ jobs:
       - name: Package Chrome and Edge unpacked extensions
         run: npm run package:clipper
 
+      - name: Run real Chrome and Edge Clipper smoke
+        run: npm run test:clipper-real
+
       - name: Run packaged executable smoke
         run: npm run test:packaged-smoke
 
@@ -130,6 +133,11 @@ jobs:
           $fixtureInstallers = @(Get-ChildItem -LiteralPath $fixtureBundle -File -Filter '*.exe')
           if ($fixtureManifest.applicationVersion -ne '0.1.0-beta.0' -or $fixtureInstallers.Count -ne 1 -or $fixtureInstallers[0].Name -ne 'RednoteStudio-0.1.0-beta.0-win-x64-setup.exe' -or @(Get-ChildItem -LiteralPath $fixtureBundle -File -Recurse).Count -ne 4) { throw 'R10D_BETA0_INSTALLER_VERSION_OR_LAYOUT_INVALID' }
 
+      - name: Package exact-head R10E release candidate
+        env:
+          REDNOTE_EXACT_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: npm run package:release-candidate
+
       - name: Run isolated R10D installer lifecycle
         env:
           REDNOTE_R10D_LIFECYCLE_FIXTURE: '1'
@@ -145,6 +153,7 @@ jobs:
           $environmentFile = [System.Environment]::GetEnvironmentVariable('GITHUB_ENV')
           $shortSha = $exactHeadSha.Substring(0, 8)
           "R10D_ARTIFACT_NAME=rednote-r10d-windows-installer-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
+          "R10E_ARTIFACT_NAME=rednote-r10e-release-candidate-$shortSha" | Out-File -FilePath $environmentFile -Append -Encoding utf8
 
       - name: Upload exact-head R10D Windows installer bundle
         if: github.event_name == 'pull_request'
@@ -152,6 +161,15 @@ jobs:
         with:
           name: ${{ env.R10D_ARTIFACT_NAME }}
           path: out/installer-bundle/
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload exact-head R10E release candidate assets
+        if: github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.R10E_ARTIFACT_NAME }}
+          path: out/r10e-release-assets/
           if-no-files-found: error
           retention-days: 14
 

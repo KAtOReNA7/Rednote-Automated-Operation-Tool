@@ -55,6 +55,7 @@
     "test:validation-reliability": "node scripts/run-portable-vitest.mjs run tests/validation-reliability-governance.test.ts",
     "package:desktop": "npm run build:desktop && node scripts/package-desktop.mjs",
     "package:installer": "npm run package:desktop && node scripts/package-installer.mjs",
+    "package:release-candidate": "node scripts/package-release-candidate.mjs",
     "test:installer-lifecycle": "node scripts/run-installer-lifecycle-smoke.mjs",
     "package:clipper": "npm run build:clipper",
     "prepare:electron": "node scripts/ensure-electron-binary.mjs",
