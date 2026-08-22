@@ -20,7 +20,7 @@
 custom_process_loop:
   StrCmp $R3 0 custom_process_close
   System::Call '*$R2(i,i,i,i,i,i,i,i,i,&w260.R4)'
-  System::Call 'kernel32::lstrcmpiW(w R4, w "${APP_EXECUTABLE_FILENAME}") i.R5'
+  System::Call 'kernel32::lstrcmpiW(w R4, w "RednoteMysteryOperations.exe") i.R5'
   IntCmp $R5 0 custom_process_found
   System::Call 'kernel32::Process32NextW(i R1, i R2) i.R3'
   Goto custom_process_loop

@@ -310,6 +310,7 @@ describe('R10D Windows distribution contracts', () => {
     expect(installerInclude).toContain('CreateToolhelp32Snapshot');
     expect(installerInclude).toContain('Process32FirstW');
     expect(installerInclude).toContain('Process32NextW');
+    expect(installerInclude).toContain('w "RednoteMysteryOperations.exe"');
     expect(installerInclude).toContain('lstrcmpiW');
     expect(installerInclude).toContain('CloseHandle');
     expect(installerInclude).not.toContain('nsProcess::FindProcess');
