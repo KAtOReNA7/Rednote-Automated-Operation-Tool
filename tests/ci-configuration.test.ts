@@ -34,7 +34,13 @@ const packageJson = JSON.parse(readFileSync(packagePath, 'utf8')) as {
 const v2Package = JSON.parse(
   readFileSync(resolve(repositoryRoot, 'packages/v2/package.json'), 'utf8'),
 ) as {
-  readonly exports: { readonly '.': { readonly default: string; readonly types: string } };
+  readonly exports: {
+    readonly '.': {
+      readonly default: string;
+      readonly development: string;
+      readonly types: string;
+    };
+  };
   readonly main: string;
 };
 const windowsJob = workflow.jobs['windows-required'];
@@ -70,6 +76,7 @@ describe('Windows CI configuration', () => {
       expect(runCommands).toContain(command);
     }
     expect(v2Package.main).toBe('./dist/index.js');
+    expect(v2Package.exports['.'].development).toBe('./src/index.ts');
     expect(v2Package.exports['.'].default).toBe('./dist/index.js');
     expect(v2Package.exports['.'].types).toBe('./dist/index.d.ts');
   });
