@@ -450,6 +450,10 @@ async function invokeExpected(stage, executable, arguments_, cwd, expectation, c
   return assertInvocation(stage, result, expectation, code);
 }
 
+export function uninstallerInvocationArguments(target) {
+  return ['/S', `_?=${target}`];
+}
+
 async function assertPayload(directory, expected, version) {
   const manifest = await readReleaseManifest(directory, [version]);
   if (
@@ -854,7 +858,7 @@ async function main() {
         await invokeExpected(
           'L04-running-uninstall-block',
           uninstaller(),
-          ['/S'],
+          uninstallerInvocationArguments(target),
           target,
           'nonzero',
           'INSTALLER_LIFECYCLE_RUNNING_UNINSTALL',
@@ -922,7 +926,7 @@ async function main() {
     await invokeExpected(
       'L08-uninstall-data-preserved',
       uninstaller(),
-      ['/S'],
+      uninstallerInvocationArguments(target),
       target,
       'success',
       'INSTALLER_LIFECYCLE_UNINSTALL',
@@ -955,7 +959,7 @@ async function main() {
     await invokeExpected(
       'L10-final-uninstall',
       uninstaller(),
-      ['/S'],
+      uninstallerInvocationArguments(target),
       target,
       'success',
       'INSTALLER_LIFECYCLE_FINAL_UNINSTALL',

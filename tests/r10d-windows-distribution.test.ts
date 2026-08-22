@@ -90,6 +90,7 @@ interface LifecycleProcessContract {
     cleanupError: Error | undefined,
   ) => Error | undefined;
   readonly stopRunning: (running: unknown) => Promise<number | null>;
+  readonly uninstallerInvocationArguments: (target: string) => readonly string[];
   readonly waitForExit: (
     child: EventEmitter & { exitCode: number | null; signalCode?: string | null },
     timeout?: number,
@@ -199,6 +200,11 @@ describe('R10D Windows distribution contracts', () => {
 
   it('requires a normal nonzero exit for blocked installer lifecycle stages', async () => {
     const lifecycle = await loadLifecycleProcessContract();
+    const installTarget = join('controlled', '安装 空格');
+    expect(lifecycle.uninstallerInvocationArguments(installTarget)).toEqual([
+      '/S',
+      `_?=${installTarget}`,
+    ]);
     for (const stage of ['L04-running-upgrade', 'L05-corrupt-installer', 'L07-downgrade']) {
       expect(
         lifecycle.assertInvocation(
